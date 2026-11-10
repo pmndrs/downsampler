@@ -171,6 +171,24 @@ export class Downsampler {
 
 	}
 
+	/**
+	 * Record the mip chain into a compute pass the caller owns, one dispatch per
+	 * batch. Dispatches in a compute pass are separate usage scopes, so each batch
+	 * reads what the previous one wrote. Use it to share one pass (and one pair of
+	 * timestamp writes) with other dispatches. Throws for unsupported textures.
+	 */
+	encodePass( pass: GPUComputePassEncoder, texture: GPUTexture, options: EncodeOptions = {} ): void {
+
+		for ( const batch of this.prepare( texture, options ) ) {
+
+			pass.setPipeline( batch.pipeline );
+			pass.setBindGroup( 0, batch.bindGroup );
+			pass.dispatchWorkgroups( batch.groupsX, batch.groupsY, texture.depthOrArrayLayers );
+
+		}
+
+	}
+
 	/** Encode and submit in one call. */
 	generate( texture: GPUTexture, options: EncodeOptions = {} ): void {
 
