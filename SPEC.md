@@ -215,7 +215,21 @@ Beyond SPD: sizes over 4096², render-pass-matching odd sizes, conservative min/
 | Packed float | rg11b10ufloat | tier1 | `ufloat11/10` quantization (no sign, 6/5-bit mantissa, negatives clamp to 0, round to nearest even); no WGSL pack builtin, so encode in the shader and in core |
 | Integer | r32uint, rg32uint, rgba32uint, rgba8uint, rgba16uint, r32sint, rgba8sint (core); r8/r16/rg8/rg16 uint/sint (tier1) | mixed | separate `u32`/`i32` kernel (`texture_2d<u32>`, `vec4u`). Folds only at first (min, max, bitwise custom: ID, visibility and occupancy pyramids); `'average'` would need a declared rounding rule |
 | sRGB | rgba8unorm-srgb, bgra8unorm-srgb | **never** (even with a non-sRGB view format) | reduce linear values, then write sRGB-encoded values to an rgba8unorm (or bgra8unorm, which needs `bgra8unorm-storage`) scratch and `copyTextureToTexture` each level (verified allowed: formats differing only in sRGB-ness). Needs load/store transform hooks; quantize-as-stored is `decode(round(encode(v)·255)/255)` |
-| Out of scope | rgb9e5ufloat (not storage, not renderable, no copy-compatible format); BC/ETC2/ASTC (generate before compression); depth as destination (use r32float, §4 Separate source) | — | — |
+| Shared exponent | rgb9e5ufloat (32-bit HDR, common for GI and irradiance) | **never** storage or renderable, so render-pass mipmaps can't produce it either | **buffer output path** (below): pack in the shader, `copyBufferToTexture` into the level. Verified on Chrome 148 / M5 Pro: packed texels round-trip exactly through the copy and a sampled read |
+| Out of scope | BC/ETC2/ASTC (generate before compression); depth as destination (use r32float, §4 Separate source) | — | — |
+
+**Buffer output path.** WebGPU allows `copyBufferToTexture` into formats that are neither storage nor renderable, so a kernel can write texels to a storage buffer and copy them into each level.
+- **Layout:** one buffer per batch, with each level and layer at its own offset and rows padded to 256 bytes. That is a single binding, so this path isn't bound by `maxStorageTexturesPerShaderStage`: 6 levels per dispatch even at the default limit of 4.
+- **Cost:** one extra write and read of the written levels (the levels below 0, about a third of the base texture's bytes), plus the copies.
+- **Uses:**
+  - rgb9e5ufloat, the only GPU route to its mips in WebGPU.
+  - An alternative to the sRGB scratch texture: `copyBufferToTexture` into rgba8unorm-srgb is allowed.
+  - A fallback for bgra8unorm and rg11b10ufloat on devices without `bgra8unorm-storage` or tier1.
+- **rgb9e5 packing:**
+  - Shared exponent `e = max(−16, ⌊log2 max(r,g,b)⌋) + 16`; mantissas `round(c / 2^(e−24))`, bumping `e` when the largest rounds to 512 (EXT_texture_shared_exponent).
+  - Take ⌊log2⌋ from the float's exponent bits, not `log2()`, which isn't exact near powers of two.
+  - Quantize-as-stored is pack → unpack, mirrored in core with exhaustive tests.
+  - Probe kernel: `results/probes/rgb9e5-buffer-copy.mjs`.
 
 Optimisation: with `float32-filterable`, float32 formats may take the sample path; measure first (nvpro measured the sampler 26–32 % faster on NVIDIA, §13).
 
@@ -232,9 +246,10 @@ Optimisation: with `float32-filterable`, float32 formats may take the sample pat
 1. fewer-channel unorm8/float16 + bgra8unorm (table only)
 2. snorm8, unorm16, snorm16
 3. rgb10a2unorm
-4. sRGB scratch + transform hooks (the three.js PR needs this)
-5. rg11b10ufloat
-6. integers
+4. buffer output path + rgb9e5ufloat
+5. sRGB + transform hooks (the three.js PR needs this), choosing between scratch texture and buffer output by measurement
+6. rg11b10ufloat
+7. integers
 
 ## 7. Correctness specification
 
