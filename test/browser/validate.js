@@ -79,6 +79,7 @@ export async function validate( device, { onProgress = () => {}, quick = false }
 	const started = performance.now();
 	const cases = quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
 	let runs = 0;
+	const skipped = [];
 	device.pushErrorScope( 'validation' );
 
 	try {
@@ -91,7 +92,14 @@ export async function validate( device, { onProgress = () => {}, quick = false }
 
 		for ( const format of Object.keys( formats ) ) {
 
-			const { quantization, channels, filterable } = formats[ format ];
+			const { quantization, channels, filterable, feature } = formats[ format ];
+			if ( feature !== undefined && ! device.features.has( feature ) ) {
+
+				skipped.push( `${ format } (needs ${ feature })` );
+				continue;
+
+			}
+
 			const formatVariants = variants.filter( variant => filterable || ! variant.filterableOnly );
 
 			for ( const [ shapeIndex, [ width, height, layers = 1, dimension ] ] of cases.entries() ) {
@@ -171,7 +179,7 @@ export async function validate( device, { onProgress = () => {}, quick = false }
 
 	}
 
-	return { passed: true, cases: results.length, checks: runs, ms: Math.round( performance.now() - started ), results };
+	return { passed: true, cases: results.length, checks: runs, skipped, ms: Math.round( performance.now() - started ), results };
 
 }
 
@@ -331,6 +339,12 @@ async function validateOptions( device ) {
 
 	}
 
+	// A format whose storage needs a feature the device lacks is reported by name.
+	const plain = await ( await navigator.gpu.requestAdapter() ).requestDevice();
+	const r8 = plain.createTexture( { size: [ 4, 4 ], format: 'r8unorm', mipLevelCount: 3, usage: GPUTextureUsage.TEXTURE_BINDING } );
+	const featureReason = new Downsampler( plain ).unsupportedReason( r8 );
+	plain.destroy();
+	if ( ! featureReason?.includes( 'texture-formats-tier1' ) ) throw new Error( `expected a missing-feature reason for r8unorm, got ${ featureReason }` );
 	results.push( { option: 'unsupported textures' } );
 
 	// Sources that can't feed a destination are rejected with a reason.

@@ -170,7 +170,7 @@ downsampler.encode( encoder, hiZ /* rg32float */, { source: { texture: depthText
 downsampler.sourceUnsupportedReason( destination, source, baseMipLevel ); // string | null
 ```
 
-The destination must have `TEXTURE_BINDING | STORAGE_BINDING` usage and format `rgba8unorm`, `rgba16float`, `r32float`, `rg32float` or `rgba32float`. Its dimension must be `2d`, with `textureBindingViewDimension` either `2d` or `2d-array`.
+The destination must have `TEXTURE_BINDING | STORAGE_BINDING` usage and a format from `formats`: `rgba8unorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, plus `bgra8unorm` (needs `bgra8unorm-storage`) and `r8unorm`, `rg8unorm`, `r16float`, `rg16float` (need `texture-formats-tier1`). `unsupportedReason` names a missing feature. Its dimension must be `2d`, with `textureBindingViewDimension` either `2d` or `2d-array`.
 
 ### Planned
 
@@ -214,8 +214,8 @@ Beyond SPD: sizes over 4096², render-pass-matching odd sizes, conservative min/
 | Group | Formats | Storage | Work needed |
 |---|---|---|---|
 | Done | rgba8unorm, rgba16float, r32float, rg32float, rgba32float | core | ✅ |
-| Same quantization, fewer channels | r8unorm, rg8unorm, r16float, rg16float | `texture-formats-tier1` | table rows + feature check only |
-| Canvas format | bgra8unorm | `bgra8unorm-storage` | table row + feature check; swizzle is done by the hardware |
+| Same quantization, fewer channels | r8unorm, rg8unorm, r16float, rg16float | `texture-formats-tier1` | ✅ (no WGSL `enable` needed on Chrome 148) |
+| Canvas format | bgra8unorm | `bgra8unorm-storage` | ✅ hardware swizzles on read and write, so kernels and minmax channel parity are unaffected |
 | snorm8 | rgba8snorm (core), r8snorm, rg8snorm (tier1) | mixed | `snorm8` quantization: integer domain ×127, clamp to [−127, 127] (−128 and −127 both decode to −1) |
 | 16-bit norm | r16unorm, rg16unorm, rgba16unorm, and the snorm versions | tier1 | `unorm16`/`snorm16`: integer domain ×65535; four-texel sums stay exact in f32 (< 2²⁴) |
 | Packed | rgb10a2unorm | tier1 | per-channel scale `(1023, 1023, 1023, 3)` |
@@ -273,7 +273,7 @@ Optimisation: with `float32-filterable`, float32 formats may take the sample pat
 
 - **Shapes:** 1×1, 1D tails (1×128, 128×1, 128×8), odd and prime sizes, partial workgroups, rectangles, NPOT (192×108, 255×257, 1920×1080), layers (×3), both 2D view variants, and multi-batch sizes (2048², 96×4096).
 - **Kernel widths:** 1, 4, 5 and 6 levels per dispatch, filtered by the device limit.
-- **Formats:** all supported destination formats. float32 formats skip the 'average (load)' variant, since they always load.
+- **Formats:** all supported destination formats. float32 formats skip the 'average (load)' variant, since they always load. Formats whose feature the device lacks are reported as skipped (`validation.skipped`), never silently passed. The suite requests `texture-formats-tier1` and `bgra8unorm-storage` when available, but not `float32-filterable`, so float32 keeps exercising the load path.
 - **Patterns:**
   - constant (weights)
   - random, including HDR values in [−4, 12] for float formats

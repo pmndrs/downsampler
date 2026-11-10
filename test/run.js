@@ -48,6 +48,7 @@ try {
 	const { validation, timing, adapter } = report;
 	console.log( JSON.stringify( adapter ) );
 	console.log( `validation passed: ${ validation.cases } cases, ${ validation.checks } pattern runs, ${ validation.ms } ms` );
+	if ( validation.skipped.length ) console.log( `skipped (feature unavailable): ${ validation.skipped.join( ', ' ) }` );
 
 	if ( timing?.timestamps === false ) console.log( 'timestamp-query unavailable: benchmark skipped' );
 

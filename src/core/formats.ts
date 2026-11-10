@@ -14,12 +14,21 @@ export interface FormatInfo {
 	channels: 1 | 2 | 4;
 	/** Whether a filtering sampler can read it without optional features. */
 	filterable: boolean;
+	/** Device feature needed to use it as a storage texture, if any. */
+	feature?: string;
 }
 
 /** Formats supported by the current kernels. See SPEC.md for the planned matrix. */
 export const formats = {
 	rgba8unorm: { quantization: 'unorm8', bytesPerTexel: 4, channels: 4, filterable: true },
 	rgba16float: { quantization: 'float16', bytesPerTexel: 8, channels: 4, filterable: true },
+	// Storage for these needs optional features. bgra8unorm is swizzled by the
+	// hardware on read and write, so kernels see RGBA like any other format.
+	bgra8unorm: { quantization: 'unorm8', bytesPerTexel: 4, channels: 4, filterable: true, feature: 'bgra8unorm-storage' },
+	r8unorm: { quantization: 'unorm8', bytesPerTexel: 1, channels: 1, filterable: true, feature: 'texture-formats-tier1' },
+	rg8unorm: { quantization: 'unorm8', bytesPerTexel: 2, channels: 2, filterable: true, feature: 'texture-formats-tier1' },
+	r16float: { quantization: 'float16', bytesPerTexel: 2, channels: 1, filterable: true, feature: 'texture-formats-tier1' },
+	rg16float: { quantization: 'float16', bytesPerTexel: 4, channels: 2, filterable: true, feature: 'texture-formats-tier1' },
 	// Filtering float32 needs the optional `float32-filterable` feature, so these
 	// always use the load path.
 	r32float: { quantization: 'float32', bytesPerTexel: 4, channels: 1, filterable: false },

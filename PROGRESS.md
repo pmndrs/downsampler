@@ -8,11 +8,10 @@ Last updated: 2026-11-10 · Branch: `m2-reductions`
 
 ## Now
 
-- [ ] M2.3.1: fewer-channel unorm8/float16 formats (r8unorm, rg8unorm, r16float, rg16float) and bgra8unorm, behind `texture-formats-tier1` / `bgra8unorm-storage` (SPEC §6.1)
+- [ ] M2.3.2: snorm8, unorm16, snorm16 (SPEC §6.1)
 
 ## Next (M2, features: SPEC §11)
 
-- [ ] M2.3.2: snorm8, unorm16, snorm16
 - [ ] M2.3.3: rgb10a2unorm
 - [ ] M2.3.4: buffer output path + rgb9e5ufloat (probe: `results/probes/rgb9e5-buffer-copy.mjs`)
 - [ ] M2.3.5: sRGB + load/store transform hooks (scratch texture vs buffer output, by measurement)
@@ -35,6 +34,8 @@ Last updated: 2026-11-10 · Branch: `m2-reductions`
 - [x] M2.2: separate source (depth → Hi-Z), r32float/rg32float/rgba32float (`60ff7d3`)
 - [x] Research: gpuweb #386/#5253, nvpro_pyramid, SPD manual, subgroups → SPEC §13 (`c843165`, `f2e70b8`)
 - [x] Format plan probed (`190f809`); rgb9e5ufloat buffer path verified (`4229752`)
+- [x] Plan update: PROGRESS.md, odd-size decision, build-first milestones (`31ff437`)
+- [x] M2.3.1: bgra8unorm, r8unorm, rg8unorm, r16float, rg16float behind their features; skipped formats reported (see log)
 
 ## Decisions (dated; details in SPEC)
 
@@ -57,6 +58,8 @@ Last updated: 2026-11-10 · Branch: `m2-reductions`
 | 2026-11-10 | `60ff7d3` | Apple M5 Pro, Chrome (puppeteer) | full GPU matrix | ✅ 2699 cases, 8448 pattern runs |
 | 2026-11-10 | `60ff7d3` | SwiftShader | quick | ✅ 1225 cases |
 | 2026-11-10 | `c843165` | Apple M5 Pro | quick | ✅ 2359 cases |
+| 2026-11-10 | M2.3.1 | Apple M5 Pro, Chrome 148 | full GPU matrix | ✅ 5579 cases, 18048 pattern runs |
+| 2026-11-10 | M2.3.1 | SwiftShader | quick | ✅ 1477 cases; skipped r8unorm, rg8unorm, r16float, rg16float (no tier1) |
 
 ## Notes
 

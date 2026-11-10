@@ -1,4 +1,4 @@
-import { isSupportedFormat, type SupportedFormat } from '../core/formats.js';
+import { formats, isSupportedFormat, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { planBatches, type Batch, type OddSizePolicy } from '../core/plan.js';
 import { reductionKey, type Reduction } from '../core/reduction.js';
 import { createKernel, kernelLayoutEntries, type SourceAccess, type ViewDimension } from './kernel.js';
@@ -119,6 +119,8 @@ export class Downsampler {
 	unsupportedReason( texture: GPUTexture ): string | null {
 
 		if ( ! isSupportedFormat( texture.format ) ) return `format ${ texture.format } is not supported`;
+		const feature: string | undefined = ( formats[ texture.format ] as FormatInfo ).feature;
+		if ( feature !== undefined && ! this.device.features.has( feature ) ) return `format ${ texture.format } needs the "${ feature }" device feature`;
 		if ( texture.dimension !== '2d' ) return `dimension ${ texture.dimension } is not supported`;
 		if ( texture.sampleCount !== 1 ) return 'multisampled textures are not supported';
 		if ( ( texture.usage & GPUTextureUsage.STORAGE_BINDING ) === 0 ) return 'texture needs STORAGE_BINDING usage';
