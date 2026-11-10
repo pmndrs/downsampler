@@ -1,4 +1,5 @@
-// Benchmark: render-pass baseline vs the downsampler at each kernel width.
+// Benchmark: render-pass baseline vs the downsampler at each kernel width, plus
+// 'average' read with textureLoad instead of the sampler, and a 'max' fold.
 // Results are medians over rotating-order rounds; marker cost is subtracted.
 import { formats } from '/dist/index.js';
 import { Downsampler } from '/dist/webgpu/index.js';
@@ -19,6 +20,11 @@ export async function benchmark( device, { sizes = defaultSizes, rounds = 11, re
 		strategies[ `compute${ levels }` ] = { passes: texture => downsampler.prepare( texture ).length, encode: ( encoder, texture ) => downsampler.encode( encoder, texture ) };
 
 	}
+
+	const load = new Downsampler( device, { levelsPerDispatch: limit, averageAccess: 'load' } );
+	strategies[ `load${ limit }` ] = { passes: texture => load.prepare( texture ).length, encode: ( encoder, texture ) => load.encode( encoder, texture ) };
+	const max = new Downsampler( device, { levelsPerDispatch: limit } );
+	strategies[ `max${ limit }` ] = { parity: false, passes: texture => max.prepare( texture, { reduction: 'max' } ).length, encode: ( encoder, texture ) => max.encode( encoder, texture, { reduction: 'max' } ) };
 
 	const names = Object.keys( strategies );
 	const results = [];
@@ -48,7 +54,7 @@ export async function benchmark( device, { sizes = defaultSizes, rounds = 11, re
 				// validation suite is the correctness oracle).
 				const last = textures.render.mipLevelCount - 1;
 				const baseline = await readMip( device, textures.render, last );
-				for ( const name of names.slice( 1 ) ) {
+				for ( const name of names.slice( 1 ).filter( name => strategies[ name ].parity !== false ) ) {
 
 					const actual = await readMip( device, textures[ name ], last );
 					const error = Math.max( ...actual.map( ( value, i ) => Math.abs( value - baseline[ i ] ) ) );

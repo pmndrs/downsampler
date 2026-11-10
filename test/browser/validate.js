@@ -16,14 +16,38 @@ export const shapes = [
 
 const patterns = [ 'constant', 'random', 'edge', 'tiles' ];
 
-function check( actual, expected, quantization, label ) {
+// Custom fold used to test the hook: per channel, the smallest value >= 0.5, else
+// the smallest value. A min under a total order, so associative, commutative and
+// idempotent, and sensitive to the value domain (it breaks if a kernel passes
+// 0–255 units instead of normalized values).
+const preferHigh = {
+	wgsl: `fn reduce(a: vec4f, b: vec4f) -> vec4f {
+	let ha = a >= vec4f(0.5);
+	let hb = b >= vec4f(0.5);
+	return select(b, a, (ha & !hb) | ((ha == hb) & (a <= b)));
+}`,
+	reference: ( a, b ) => ( a >= 0.5 ) !== ( b >= 0.5 ) ? ( a >= 0.5 ? a : b ) : Math.min( a, b )
+};
+
+// Each reduction runs the full shape × width × format matrix. 'constant' says
+// nothing about a fold, so folds skip it.
+export const variants = [
+	{ name: 'average', reduction: 'average', patterns },
+	{ name: 'average (load)', reduction: 'average', access: 'load', patterns },
+	{ name: 'min', reduction: 'min', patterns: patterns.slice( 1 ) },
+	{ name: 'max', reduction: 'max', patterns: patterns.slice( 1 ) },
+	{ name: 'minmax', reduction: 'minmax', patterns: patterns.slice( 1 ) },
+	{ name: 'custom', reduction: { wgsl: preferHigh.wgsl }, reference: preferHigh.reference, patterns: patterns.slice( 1 ) }
+];
+
+function check( actual, expected, quantization, label, reduction = 'average' ) {
 
 	let maxError = 0;
 
 	for ( let i = 0; i < expected.values.length; i ++ ) {
 
 		const error = Math.abs( actual[ i ] - expected.values[ i ] );
-		const limit = tolerance( expected.values[ i ], quantization, expected.filterTolerance[ i ] );
+		const limit = tolerance( expected.values[ i ], quantization, expected.filterTolerance[ i ], reduction );
 		if ( ! Number.isFinite( actual[ i ] ) || error > limit ) throw new Error( `${ label }: value ${ i }, actual ${ actual[ i ] }, expected ${ expected.values[ i ] }, error ${ error } > ${ limit }` );
 		maxError = Math.max( maxError, error );
 
@@ -46,13 +70,17 @@ export async function validate( device, { onProgress = () => {}, quick = false }
 	const results = [];
 	const started = performance.now();
 	const cases = quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
+	let runs = 0;
 	device.pushErrorScope( 'validation' );
 
 	try {
 
 		for ( const levels of levelOptions( device ) ) {
 
-			const downsampler = new Downsampler( device, { levelsPerDispatch: levels } );
+			const downsamplers = {
+				sample: new Downsampler( device, { levelsPerDispatch: levels } ),
+				load: new Downsampler( device, { levelsPerDispatch: levels, averageAccess: 'load' } )
+			};
 
 			for ( const format of Object.keys( formats ) ) {
 
@@ -61,32 +89,43 @@ export async function validate( device, { onProgress = () => {}, quick = false }
 				for ( const [ width, height, layers = 1, dimension ] of cases ) {
 
 					const texture = createTexture( device, { width, height, layers, format, dimension } );
-					const result = { width, height, layers, format, levelsPerDispatch: levels, dispatches: 0, maxError: 0 };
 
 					try {
 
-						// Reusing one texture with changing input exercises the cached plans.
-						for ( const pattern of patterns ) {
+						for ( const variant of variants ) {
 
-							const input = makeData( width, height, layers, format, pattern, pattern === 'tiles' ? results.length + 3 : 1 );
-							upload( device, texture, input );
-							poison( device, texture );
-							downsampler.generate( texture );
-							let previous = toFloats( input, format ), w = width, h = height;
+							const downsampler = downsamplers[ variant.access ?? 'sample' ];
+							const options = { reduction: variant.reduction };
+							const reference = variant.reference ?? variant.reduction;
+							const result = { width, height, layers, format, levelsPerDispatch: levels, reduction: variant.name, dispatches: 0, maxError: 0 };
 
-							for ( let level = 1; level < texture.mipLevelCount; level ++ ) {
+							// Reusing one texture with changing input exercises the cached plans.
+							for ( const pattern of variant.patterns ) {
 
-								const expected = reduceReference( previous, w, h, layers, quantization );
-								const actual = await readMip( device, texture, level );
-								result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ width }x${ height }x${ layers } ${ format } ${ pattern } L${ levels } mip ${ level }` ) );
-								previous = actual; w = expected.width; h = expected.height;
+								const input = makeData( width, height, layers, format, pattern, pattern === 'tiles' ? results.length + 3 : 1 );
+								upload( device, texture, input );
+								poison( device, texture );
+								downsampler.generate( texture, options );
+								let previous = toFloats( input, format ), w = width, h = height;
+
+								for ( let level = 1; level < texture.mipLevelCount; level ++ ) {
+
+									const expected = reduceReference( previous, w, h, layers, quantization, reference );
+									const actual = await readMip( device, texture, level );
+									result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ width }x${ height }x${ layers } ${ format } ${ variant.name } ${ pattern } L${ levels } mip ${ level }`, reference ) );
+									previous = actual; w = expected.width; h = expected.height;
+
+								}
+
+								runs ++;
 
 							}
 
+							result.dispatches = downsampler.prepare( texture, options ).length;
+							results.push( result );
+
 						}
 
-						result.dispatches = downsampler.prepare( texture ).length;
-						results.push( result );
 						onProgress( `validated ${ width }×${ height }×${ layers } ${ format }, ${ levels } levels/dispatch` );
 
 					} finally {
@@ -111,7 +150,7 @@ export async function validate( device, { onProgress = () => {}, quick = false }
 
 	}
 
-	return { passed: true, cases: results.length, checks: results.length * patterns.length, ms: Math.round( performance.now() - started ), results };
+	return { passed: true, cases: results.length, checks: runs, ms: Math.round( performance.now() - started ), results };
 
 }
 

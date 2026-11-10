@@ -1,6 +1,6 @@
 # downsampler — core specification
 
-Status: milestone 1 (port of the validated three.js prototype). This document is the source of truth for scope, design decisions, correctness requirements and the remaining plan. Update it when a decision changes.
+Status: milestone 2 in progress (M2.1, reductions and the load path, done). This document is the source of truth for scope, design decisions, correctness requirements and the remaining plan. Update it when a decision changes.
 
 ## 1. Purpose
 
@@ -67,6 +67,30 @@ A batch reads one source level and writes up to `levelsPerDispatch` consecutive 
 - **Batch boundaries:** a batch ends at `levelsPerDispatch`, or where the next reduction is inexact under `'exact'`.
 - **Layers:** workgroup z selects the array layer, so all layers go in one dispatch.
 
+### Reductions
+
+- **`'average'`** is the bilinear sample above. It matches render-pass mipmaps.
+- **Folds** (`'min'`, `'max'`, `'minmax'`, custom) combine every source texel an output texel covers with a binary `reduce`.
+  - **Footprint:** texels `2x` and `2x+1`, plus `2x+2` along an odd source dimension, clamped (`footprint()` in core). With an odd size `2n+1`, output texel `x` spans `[x(2+1/n), (x+1)(2+1/n))`, which touches `2x … 2x+2`. So this is the smallest conservative footprint, the rule Hi-Z needs. Under `'exact'` an odd size only occurs at a batch's first output, which reads it with `textureLoad`. Inside a batch every reduction is an exact 2×2.
+  - **Contract:** `reduce` must be associative, commutative and idempotent (a semilattice). Idempotence makes clamped duplicate reads and the overlap between neighbouring odd footprints harmless. A sum or count is therefore not a valid fold.
+  - **`'minmax'`** takes the min of even channels and the max of odd channels, so `rg` holds (min, max) and `ba` a second pair. In-texture levels are read as already-reduced pairs. Expanding a single-channel source to `(d, d)` belongs to the separate source (M2.2).
+  - **Units:** custom folds see normalized values. For unorm8 the kernel converts to and from its 0–255 working units around the call.
+  - **Tolerance:** folds select existing values, so the GPU must match the oracle exactly.
+
+### Source access
+
+- **`'sample'`:** one `textureSampleLevel`. `'average'` only, filterable formats only.
+- **`'load'`:** `textureLoad` of the footprint, bound as `unfilterable-float`. Required for folds, and for formats without filtering such as r32float without `float32-filterable` (M2.3). For `'average'` it computes the bilinear weights in the shader, without the sampler's fixed-point weight rounding. unorm8 texels are rounded back to exact integers on load, so even-size averages are exact.
+- Bind group layouts are explicit, not `'auto'`, so layouts can be shared across reductions and the load path can declare `unfilterable-float`.
+- **`'average'` keeps the sampler by default.** Load against sample, same run with rotated order (Apple M5 Pro, Chrome 155, 2026-11-10, measured while the machine had a load average of ~18, so only the ratios are usable; `results/m5-pro-m2.1-under-load.json`):
+
+  | Format | 256² | 512² | 1024² | 2048² | 4096² | 1920×1080 | 512²×6 |
+  |---|---:|---:|---:|---:|---:|---:|---:|
+  | rgba8 | +12 % | +19 % | +50 % | +26 % | −3 % | +16 % | +13 % |
+  | rgba16f | +11 % | +4 % | +2 % | +3 % | +2 % | +1 % | +2 % |
+
+  The unorm8 load path does four loads plus rounding where the sampler does one fetch. A `'max'` fold costs about the same as load-average. `averageAccess: 'load'` stays as an option: it is the path for unfilterable formats, and the GPU suite uses it. Re-measure on an idle machine and on other vendors (M3).
+
 ### Tiles
 
 | Levels in batch | Workgroup | First-output tile | Source tile | Workgroup memory |
@@ -93,29 +117,32 @@ Every intermediate level is quantized exactly as stored, so a chain equals level
 
 ### Caching
 
-- Pipelines are cached per `Downsampler` (per device).
+- Pipelines are cached per `Downsampler` (per device) and per reduction; bind group layouts per format, view dimension, width and access.
 - Bind groups are cached per texture and options in a `WeakMap`.
 - `release(texture)` drops a texture's entries early.
 
 ## 5. API
 
-### Implemented (M1)
+### Implemented
 
 ```ts
 import { Downsampler } from 'downsampler/webgpu';
 
 const device = await adapter.requestDevice( { requiredLimits: Downsampler.requiredLimits( adapter ) } );
-const downsampler = new Downsampler( device );          // { levelsPerDispatch? }
+const downsampler = new Downsampler( device );          // { levelsPerDispatch?, averageAccess? }
 downsampler.supports( texture );                         // boolean
 downsampler.unsupportedReason( texture );                // string | null
-downsampler.encode( encoder, texture, { baseMipLevel, mipLevelCount, oddSizes: 'exact' } );
+downsampler.encode( encoder, texture, {
+	baseMipLevel, mipLevelCount, oddSizes: 'exact',
+	reduction: 'average' | 'min' | 'max' | 'minmax' | { wgsl: 'fn reduce(a: vec4f, b: vec4f) -> vec4f { … }' },
+} );
 downsampler.generate( texture );                         // encode + submit
 downsampler.prepare( texture );                          // planned dispatches (inspection/testing)
 
 import { generateMipmaps, requiredLimits } from 'downsampler/three';
 generateMipmaps( renderer, texture );                    // false if not allocated/supported
 
-import { planBatches, reduceReference } from 'downsampler'; // backend-neutral core
+import { planBatches, reduceReference, footprint } from 'downsampler'; // backend-neutral core
 ```
 
 The texture must have `TEXTURE_BINDING | STORAGE_BINDING` usage and format `rgba8unorm` or `rgba16float`. Its dimension must be `2d`, with `textureBindingViewDimension` either `2d` or `2d-array`.
@@ -125,7 +152,6 @@ The texture must have `TEXTURE_BINDING | STORAGE_BINDING` usage and format `rgba
 ```ts
 downsampler.encode( encoder, destination, {
 	source: { texture, mipLevel },      // separate source, e.g. depth32float → r32float Hi-Z
-	reduction: 'average' | 'min' | 'max' | 'minmax' | { wgsl: 'fn reduce4(a: vec4f, b: vec4f, c: vec4f, d: vec4f) -> vec4f' },
 	layers: [ first, count ],
 	rect: { x, y, width, height },      // SPD rectInfo
 	oddSizes: 'exact' | 'fast',
@@ -139,8 +165,8 @@ downsampler.encode( encoder, destination, {
 |---|---|---|
 | Up to 12 levels from ≤4096² | ✅ | any size, by chaining (2 dispatches up to 4096²) |
 | Single dispatch | ❌ by design | §2.2 |
-| Custom reduction (`SpdReduce4`) | ❌ | average/min/max/minmax + custom WGSL hook. Min/max must not use the bilinear sampler. |
-| Load vs. linear-sampler source | sampler only | add a `textureLoad`/`textureGather` path: needed for min/max, depth sources, and r32float/rgba32float without `float32-filterable` |
+| Custom reduction (`SpdReduce4`) | ✅ | average/min/max/minmax + custom WGSL `reduce(a, b)` fold (§4 Reductions). A weighted custom reduction (SPD's `SpdReduce4` used for averages) isn't offered: under `'exact'` it has no defined odd-size meaning. Transforms around an average (premultiply, sRGB) are planned as load/store hooks with §6.1. |
+| Load vs. linear-sampler source | ✅ | `textureLoad` path (§4 Source access). `textureGather` for single-channel Hi-Z is an M3 candidate: one gather replaces four loads. |
 | Separate source/destination | ❌ | enables depth → Hi-Z (depth formats cannot be storage textures) |
 | Texture arrays | ✅ all layers | add a layer range; cube maps as 6 layers (2d-array view; not available in compatibility mode) |
 | Sub-rectangle (`rectInfo`) | ❌ | offset/size uniform; output tile offset |
@@ -188,7 +214,10 @@ Probed in Chrome 155 on Apple/Metal:
 - **Options:** a sub-range writes only its levels and doesn't modify its source; unsupported textures report a reason and `generate` throws.
 - **GPU validation errors and device loss fail the run.**
 
-New features add their own oracle first: min/max, sRGB, the source/destination split, rect, layer range, and `'fast'` with its clamped reference.
+- **Reductions:** every shape × width × format case runs `'average'` through the sampler and through loads, plus `'min'`, `'max'`, `'minmax'` and a custom fold. The custom fold depends on the value domain, so it catches unit mix-ups. Folds skip the constant pattern and must match exactly. The `edge` pattern on odd shapes exercises the `2x+2` footprint.
+- **Oracle independence:** a core test checks that max chains are conservative: every texel bounds each base texel its normalized area touches, without using `footprint()`.
+
+New features add their own oracle first: sRGB, the source/destination split, rect, layer range, and `'fast'` with its clamped reference.
 
 ## 8. Performance methodology
 
@@ -239,7 +268,7 @@ three.js does not take runtime dependencies for core features. The plan:
 
 1. **M1 (done):** port the kernel, Downsampler, three adapter, core unit tests, GPU suite, device lab, benchmark and CI.
 2. **M2 (parity), in this order:**
-   1. load path + reductions (min/max/minmax/custom)
+   1. ✅ load path + reductions (min/max/minmax/custom)
    2. separate source/destination (Hi-Z)
    3. format table + sRGB via scratch
    4. layer range + rect
@@ -251,4 +280,4 @@ three.js does not take runtime dependencies for core features. The plan:
 
 - Publish as bare `downsampler` or `@pmndrs/downsampler`? (`package.json` currently uses `downsampler`.)
 - Cube maps in compatibility mode: they can't be viewed as 2d-array, so either per-face views or the render fallback.
-- Whether `'fast'` should be the default for Hi-Z, where conservative min/max coverage of odd edges matters more than matching render-pass weights. Hi-Z also needs an odd-edge rule: include the dropped row/column in min/max.
+- Whether `'fast'` should be the default for Hi-Z. Under `'exact'`, min/max already use the conservative odd footprint (§4 Reductions), so `'exact'` Hi-Z is correct. `'fast'` would need the same rule in workgroup memory, where the `2x+2` texel can sit in the neighbouring tile (a one-texel halo). Decide with M2.5 and a measurement.

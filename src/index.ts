@@ -6,3 +6,5 @@ export { formats, isSupportedFormat, quantize, roundHalfEven, toHalf, fromHalf }
 export type { FormatInfo, Quantization, SupportedFormat } from './core/formats.js';
 export { reduceReference, tolerance } from './core/reference.js';
 export type { ReferenceLevel } from './core/reference.js';
+export { footprint, foldChannel, isBuiltinReduction, reductionKey } from './core/reduction.js';
+export type { BuiltinReduction, CustomReduction, Reduction, ReferenceReduction } from './core/reduction.js';

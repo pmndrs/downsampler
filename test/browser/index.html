@@ -61,7 +61,7 @@
 
 				if ( ! timing?.results.length ) return '';
 				const names = timing.strategies;
-				const rows = timing.results.map( row => `<tr><td>${ row.width }×${ row.height }×${ row.layers }</td><td>${ row.format }</td>${ names.map( name => `<td>${ row.gpuMs[ name ].toFixed( 4 ) }</td><td>${ row.passes[ name ] }</td>` ).join( '' ) }<td>${ ( row.gpuMs.render / row.gpuMs[ names[ names.length - 1 ] ] ).toFixed( 2 ) }×</td></tr>` );
+				const rows = timing.results.map( row => `<tr><td>${ row.width }×${ row.height }×${ row.layers }</td><td>${ row.format }</td>${ names.map( name => `<td>${ row.gpuMs[ name ].toFixed( 4 ) }</td><td>${ row.passes[ name ] }</td>` ).join( '' ) }<td>${ ( row.gpuMs.render / row.gpuMs[ names.filter( name => name.startsWith( 'compute' ) ).pop() ] ).toFixed( 2 ) }×</td></tr>` );
 				return `<table><tr><th>size</th><th>format</th>${ names.map( name => `<th>${ name } ms</th><th>passes</th>` ).join( '' ) }<th>speedup</th></tr>${ rows.join( '' ) }</table>`;
 
 			}

@@ -1,10 +1,10 @@
 # downsampler
 
-GPU texture downsampling: mip chains today, with reduction pyramids (Hi-Z, min/max) and custom reductions next. WebGPU first, engine-agnostic, zero dependencies. Adapters for three.js and others sit on top.
+GPU texture downsampling: mip chains, min/max reduction pyramids and custom reductions, with Hi-Z from depth next. WebGPU first, engine-agnostic, zero dependencies. Adapters for three.js and others sit on top.
 
 A WGSL implementation of the ideas in AMD FidelityFX SPD: a 64×64 source tile reduced to six levels per workgroup in workgroup memory, with every level written once. It targets SPD's feature set. See [SPEC.md](SPEC.md) for the full design, parity table and roadmap.
 
-> Status: early (milestone 1). Supports `rgba8unorm` and `rgba16float`, 2D textures and array layers. Not yet published to npm.
+> Status: early (milestone 2 in progress). Supports `rgba8unorm` and `rgba16float`, 2D textures and array layers, and average, min, max, minmax and custom reductions. Not yet published to npm.
 
 ## Two things to know first
 
@@ -26,6 +26,13 @@ const downsampler = new Downsampler( device );
 downsampler.generate( texture );                    // encode + submit
 downsampler.encode( encoder, texture );             // or record into your own encoder
 downsampler.encode( encoder, texture, { baseMipLevel: 2, mipLevelCount: 4 } );
+
+// Reduction pyramids. Odd sizes include the extra row/column, so min/max are conservative.
+downsampler.generate( texture, { reduction: 'max' } );
+downsampler.generate( texture, { reduction: 'minmax' } );  // r/b = min, g/a = max
+downsampler.generate( texture, { reduction: { wgsl: `
+	fn reduce( a: vec4f, b: vec4f ) -> vec4f { return max( a, b ); }  // associative, commutative, idempotent
+` } } );
 ```
 
 three.js (`WebGPURenderer`, texture allocated with storage usage, e.g. `StorageTexture`):

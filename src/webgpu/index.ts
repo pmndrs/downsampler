@@ -1,4 +1,5 @@
 export { Downsampler } from './downsampler.js';
 export type { DownsamplerOptions, EncodeOptions } from './downsampler.js';
-export { createKernel } from './kernel.js';
-export type { KernelOptions, ViewDimension } from './kernel.js';
+export { createKernel, kernelLayoutEntries } from './kernel.js';
+export type { KernelOptions, SourceAccess, ViewDimension } from './kernel.js';
+export type { Reduction, CustomReduction, BuiltinReduction } from '../core/reduction.js';

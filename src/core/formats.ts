@@ -11,12 +11,14 @@ export interface FormatInfo {
 	/** Bytes per texel, for readback and planning. */
 	bytesPerTexel: number;
 	channels: 4;
+	/** Whether a filtering sampler can read it without optional features. */
+	filterable: boolean;
 }
 
 /** Formats supported by the current kernels. See SPEC.md for the planned matrix. */
 export const formats = {
-	rgba8unorm: { quantization: 'unorm8', bytesPerTexel: 4, channels: 4 },
-	rgba16float: { quantization: 'float16', bytesPerTexel: 8, channels: 4 }
+	rgba8unorm: { quantization: 'unorm8', bytesPerTexel: 4, channels: 4, filterable: true },
+	rgba16float: { quantization: 'float16', bytesPerTexel: 8, channels: 4, filterable: true }
 } as const satisfies Record<string, FormatInfo>;
 
 export type SupportedFormat = keyof typeof formats;
