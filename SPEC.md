@@ -195,24 +195,46 @@ downsampler.encode( encoder, destination, {
 | Intermediate precision | differs by design | SPD keeps unrounded values in LDS between levels; we round each level as stored, so a chain equals level-by-level generation and 8-bit results won't match SPD bit for bit (§4 Quantization) |
 | LDS layout (one float4 array vs per channel) | ❌ | M3 candidate; measure first |
 | Packed fp16 math | ❌ | optional `shader-f16`; keep only if measurably faster |
-| Wave/subgroup ops | ❌ | optional `subgroups` (Chrome only). WGSL defines no quad↔`local_invocation_index` mapping in compute, so derive positions from `subgroup_id`/`subgroup_invocation_id` and use `subgroupShuffleXor`. Upper-bound test first (§13 Subgroups); current kernels are near bandwidth-bound at ≥2048². |
+| Wave/subgroup ops | ❌ | optional `subgroups` (Chrome, Safari 27.3; workgroup-memory fallback for Firefox). WGSL defines no quad↔`local_invocation_index` mapping in compute, so derive positions from `subgroup_id`/`subgroup_invocation_id` and use `subgroupShuffleXor`. Upper-bound test first (§13 Subgroups); current kernels are near bandwidth-bound at ≥2048². |
 | Odd sizes | ✅ `'exact'` | add `'fast'` (§2.1) |
 
 Beyond SPD: sizes over 4096², render-pass-matching odd sizes, conservative min/max at odd edges (SPD drops the last row/column, and unclamped loads read zeros past the edge), and automatic fallback to the 4-storage-texture limit.
 
 ### 6.1 Formats
 
-Probed in Chrome 155 on Apple/Metal:
+**Storage support, probed** (Chrome 148, Apple M5 Pro, 2026-11-10; storage + sampling usage, with and without the optional features):
 
-| Format | Storage | Status / plan |
-|---|---|---|
-| rgba8unorm, rgba16float | core | ✅ |
-| rgba32float, r32float, rg32float | core | ✅ quantization `float32` (identity). Always the load path; with `float32-filterable` an average from a float32 *source* may sample. Fewer-channel formats keep the vec4 working value and store their own channels. |
-| depth16unorm, depth24plus, depth32float (+ stencil variants) | never storage | ✅ as a separate source only (depth aspect, `unfilterable-float`) |
-| r8unorm, rg8unorm, r16float, rg16float, rgb10a2unorm, rg11b10ufloat, 16-bit norm formats | `texture-formats-tier1` | add per-format quantization and channel count |
-| rgba8snorm | core | add `snorm8` quantization |
-| rgba8unorm-srgb, bgra8unorm-srgb | **never storage**: Dawn rejects STORAGE_BINDING even with a non-sRGB view format | reduce in linear space, write sRGB-encoded values to an `rgba8unorm` scratch, then `copyTextureToTexture` (copies between formats that differ only in sRGB-ness are allowed: verified) |
-| bgra8unorm | `bgra8unorm-storage` (write-only) | optional |
+| Group | Formats | Storage | Work needed |
+|---|---|---|---|
+| Done | rgba8unorm, rgba16float, r32float, rg32float, rgba32float | core | ✅ |
+| Same quantization, fewer channels | r8unorm, rg8unorm, r16float, rg16float | `texture-formats-tier1` | table rows + feature check only |
+| Canvas format | bgra8unorm | `bgra8unorm-storage` | table row + feature check; swizzle is done by the hardware |
+| snorm8 | rgba8snorm (core), r8snorm, rg8snorm (tier1) | mixed | `snorm8` quantization: integer domain ×127, clamp to [−127, 127] (−128 and −127 both decode to −1) |
+| 16-bit norm | r16unorm, rg16unorm, rgba16unorm, and the snorm versions | tier1 | `unorm16`/`snorm16`: integer domain ×65535; four-texel sums stay exact in f32 (< 2²⁴) |
+| Packed | rgb10a2unorm | tier1 | per-channel scale `(1023, 1023, 1023, 3)` |
+| Packed float | rg11b10ufloat | tier1 | `ufloat11/10` quantization (no sign, 6/5-bit mantissa, negatives clamp to 0, round to nearest even); no WGSL pack builtin, so encode in the shader and in core |
+| Integer | r32uint, rg32uint, rgba32uint, rgba8uint, rgba16uint, r32sint, rgba8sint (core); r8/r16/rg8/rg16 uint/sint (tier1) | mixed | separate `u32`/`i32` kernel (`texture_2d<u32>`, `vec4u`). Folds only at first (min, max, bitwise custom: ID, visibility and occupancy pyramids); `'average'` would need a declared rounding rule |
+| sRGB | rgba8unorm-srgb, bgra8unorm-srgb | **never** (even with a non-sRGB view format) | reduce linear values, then write sRGB-encoded values to an rgba8unorm (or bgra8unorm, which needs `bgra8unorm-storage`) scratch and `copyTextureToTexture` each level (verified allowed: formats differing only in sRGB-ness). Needs load/store transform hooks; quantize-as-stored is `decode(round(encode(v)·255)/255)` |
+| Out of scope | rgb9e5ufloat (not storage, not renderable, no copy-compatible format); BC/ETC2/ASTC (generate before compression); depth as destination (use r32float, §4 Separate source) | — | — |
+
+Optimisation: with `float32-filterable`, float32 formats may take the sample path; measure first (nvpro measured the sampler 26–32 % faster on NVIDIA, §13).
+
+**What every new format needs:**
+1. A row in `formats` (quantization family, channels, per-channel scale, required feature). `unsupportedReason` then names a missing feature.
+2. Quantization in core, with exhaustive unit tests for 8/10/11/16-bit encodings, plus the matching WGSL `quantize`. Integer families keep the integer working domain, so sums stay exact.
+3. GPU suite entries:
+   - Fixtures and readback decode, including CPU pack/unpack for rgb10a2 and rg11b10.
+   - Gated on the feature, and reported as skipped, not passed, when it's missing. SwiftShader may lack tier1.
+   - Plus the three mutation checks.
+4. Docs and the format table.
+
+**Suggested order:**
+1. fewer-channel unorm8/float16 + bgra8unorm (table only)
+2. snorm8, unorm16, snorm16
+3. rgb10a2unorm
+4. sRGB scratch + transform hooks (the three.js PR needs this)
+5. rg11b10ufloat
+6. integers
 
 ## 7. Correctness specification
 
@@ -311,7 +333,15 @@ three.js does not take runtime dependencies for core features. The plan:
 
 ## 13. Research (2026-11-10)
 
-Prior art and the standards discussion, reviewed against this spec. The sources are linked; claims attributed to people come from their comments.
+Reference material, mostly for after M2–M3: prior art and the standards discussion, reviewed against this spec. Consult it when a problem matches something solved here. Sources are linked; claims attributed to people come from their comments.
+
+### Community prior art (WebGPU)
+
+- [webgpu-spd](https://github.com/JolifantoBambla/webgpu-spd) (`JolifantoBambla`, 2024): a WGSL SPD port, single dispatch with the atomic handoff; see the #7 note below.
+- `davidar`'s SPD port (2022, gpuweb#386): 0.3–0.4 ms against about 2 ms for repeated blits.
+- `greggman`'s compute generator (gpuweb#5253, 2025): 4 levels per dispatch, faster on Mac and slower on NVIDIA/D3D12. It also covers his render-pass approach and his per-frame throughput method.
+- [`Volcomix`'s fiddle](https://jsfiddle.net/1w9L6u07/) (2026): video frame → pyramid with quad/subgroup ops (see below).
+- Outside WebGPU: [nvpro_pyramid](https://github.com/nvpro-samples/vk_compute_mipmaps) (Vulkan) and AMD FidelityFX SPD (D3D12/Vulkan).
 
 ### gpuweb: mipmaps in core ([#386](https://github.com/gpuweb/gpuweb/issues/386), [#5253](https://github.com/gpuweb/gpuweb/discussions/5253))
 
@@ -341,9 +371,10 @@ The rows are folded into §6. Differences SPD users must be told about: mip coun
 ### Subgroups ([WGSL §15.4–15.5, §17.12–17.13](https://gpuweb.github.io/gpuweb/wgsl/), [Chrome 134](https://developer.chrome.com/blog/new-in-webgpu-134))
 
 - **Availability:**
-  - `subgroups` shipped in Chrome 134. `subgroup_id` arrived in Chrome 144 (emulated on D3D), `subgroup_uniformity` in 145, and `subgroup-size-control` in 151–152.
-  - Not in Firefox or Safari.
+  - `subgroups` shipped in Chrome 134 and Safari 27.3; Firefox doesn't have it. (caniuse still shows Safari without it; this is corrected from the project owner's testing.)
+  - Chrome added `subgroup_id` in 144 (emulated on D3D), `subgroup_uniformity` in 145 and `subgroup-size-control` in 151–152.
   - Sizes are powers of two from 4 to 128 and may vary on Vulkan.
+  - Requirement: any subgroup kernel ships alongside the workgroup-memory kernel as the fallback, chosen by `device.features`.
 - **Constraints:**
   - Quads are defined only for fragment shaders, and there is no defined relationship between lanes and `local_invocation_index`. SPD's `ARmpRed8x8` + `WaveReadLaneAt` and nvpro's shuffles both assume one.
   - Without `subgroup_uniformity`, subgroup calls must sit in workgroup-uniform control flow, so not inside our `local.x < extent` guards.
