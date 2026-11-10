@@ -195,7 +195,7 @@ downsampler.encode( encoder, destination, {
 | Intermediate precision | differs by design | SPD keeps unrounded values in LDS between levels; we round each level as stored, so a chain equals level-by-level generation and 8-bit results won't match SPD bit for bit (§4 Quantization) |
 | LDS layout (one float4 array vs per channel) | ❌ | M3 candidate; measure first |
 | Packed fp16 math | ❌ | optional `shader-f16`; keep only if measurably faster |
-| Wave/subgroup ops | ❌ | optional `subgroups`; WGSL defines no quad↔`local_invocation_index` mapping in compute, so derive positions from `subgroup_id`/`subgroup_invocation_id`, or use shuffles. Measure first; current kernels are near bandwidth-bound at ≥2048². |
+| Wave/subgroup ops | ❌ | optional `subgroups` (Chrome only). WGSL defines no quad↔`local_invocation_index` mapping in compute, so derive positions from `subgroup_id`/`subgroup_invocation_id` and use `subgroupShuffleXor`. Upper-bound test first (§13 Subgroups); current kernels are near bandwidth-bound at ≥2048². |
 | Odd sizes | ✅ `'exact'` | add `'fast'` (§2.1) |
 
 Beyond SPD: sizes over 4096², render-pass-matching odd sizes, conservative min/max at odd edges (SPD drops the last row/column, and unclamped loads read zeros past the edge), and automatic fallback to the 4-storage-texture limit.
@@ -337,6 +337,25 @@ Prior art and the standards discussion, reviewed against this spec. The sources 
 ### SPD manual ([single-pass downsampler](https://gpuopen.com/manuals/fidelityfx_sdk/techniques/single-pass-downsampler/))
 
 The rows are folded into §6. Differences SPD users must be told about: mip count off by one, odd-size results, per-level rounding, no zero reads at edges, the `reduce(a, b)` contract, and that a same-size source writes destination level 0 at full size.
+
+### Subgroups ([WGSL §15.4–15.5, §17.12–17.13](https://gpuweb.github.io/gpuweb/wgsl/), [Chrome 134](https://developer.chrome.com/blog/new-in-webgpu-134))
+
+- **Availability:**
+  - `subgroups` shipped in Chrome 134. `subgroup_id` arrived in Chrome 144 (emulated on D3D), `subgroup_uniformity` in 145, and `subgroup-size-control` in 151–152.
+  - Not in Firefox or Safari.
+  - Sizes are powers of two from 4 to 128 and may vary on Vulkan.
+- **Constraints:**
+  - Quads are defined only for fragment shaders, and there is no defined relationship between lanes and `local_invocation_index`. SPD's `ARmpRed8x8` + `WaveReadLaneAt` and nvpro's shuffles both assume one.
+  - Without `subgroup_uniformity`, subgroup calls must sit in workgroup-uniform control flow, so not inside our `local.x < extent` guards.
+- **Portable scheme (not built):**
+  - Linear id `subgroup_id · subgroup_size + subgroup_invocation_id`, mapped to an `ARmpRed8x8`-style layout.
+  - `subgroupShuffleXor` with masks 1/2 per level, then 4/8, 16/32. Shuffles are hoisted out of the guards, with clamped neighbours swapped for the lane's own value.
+  - A uniform `num_subgroups · subgroup_size == 256` test selects it over the LDS path.
+- **Payoff:** barriers fall from 10 to 1–2 in the 6-level kernel, and LDS from 16 KiB to about 1 KiB. Plausible gain at ≤512² (latency-bound); about nothing at 4096² (bandwidth-bound).
+- **Oracle:** the butterfly sums `(a+b)+(c+d)`. That doesn't matter for unorm8 integers, but float averages need the oracle to pair the same way.
+- **Cheaper first:**
+  - Without subgroups, writing each level's result to slot (2x, 2y), or ping-ponging two buffers, removes one of the two barriers per level.
+  - Decide with an upper-bound kernel (barriers and LDS for levels 2+ removed, timing only) and a layout-only control. Abandon if the upper bound is under ~5 %.
 
 ### Consequences for the plan
 
