@@ -56,20 +56,25 @@ export function reduceReference( source: Float32Array, width: number, height: nu
 			const sy = ( y + 0.5 ) * height / h - 0.5;
 			const y0 = Math.floor( sy ), fy = sy - y0;
 
+			const r0 = ( layer * height + clamp( y0, height ) ) * width, r1 = ( layer * height + clamp( y0 + 1, height ) ) * width;
+			const exactY = exact( fy );
+
 			for ( let x = 0; x < w; x ++ ) {
 
 				const sx = ( x + 0.5 ) * width / w - 0.5;
 				const x0 = Math.floor( sx ), fx = sx - x0;
+				const c0 = clamp( x0, width ), c1 = clamp( x0 + 1, width ), exactX = exact( fx );
+				const i00 = ( r0 + c0 ) * 4, i10 = ( r0 + c1 ) * 4, i01 = ( r1 + c0 ) * 4, i11 = ( r1 + c1 ) * 4;
 
 				for ( let c = 0; c < 4; c ++ ) {
 
-					const get = ( dx: number, dy: number ) => source[ ( ( layer * height + clamp( y0 + dy, height ) ) * width + clamp( x0 + dx, width ) ) * 4 + c ];
-					const top = get( 0, 0 ) * ( 1 - fx ) + get( 1, 0 ) * fx;
-					const bottom = get( 0, 1 ) * ( 1 - fx ) + get( 1, 1 ) * fx;
+					const a = source[ i00 + c ], b = source[ i10 + c ], d = source[ i01 + c ], e = source[ i11 + c ];
+					const top = a * ( 1 - fx ) + b * fx;
+					const bottom = d * ( 1 - fx ) + e * fx;
 					const index = ( ( layer * h + y ) * w + x ) * 4 + c;
-					const gx = Math.max( Math.abs( get( 1, 0 ) - get( 0, 0 ) ), Math.abs( get( 1, 1 ) - get( 0, 1 ) ) );
-					const gy = Math.max( Math.abs( get( 0, 1 ) - get( 0, 0 ) ), Math.abs( get( 1, 1 ) - get( 1, 0 ) ) );
-					filterTolerance[ index ] = ( exact( fx ) ? 0 : gx / 256 ) + ( exact( fy ) ? 0 : gy / 256 );
+					const gx = Math.max( Math.abs( b - a ), Math.abs( e - d ) );
+					const gy = Math.max( Math.abs( d - a ), Math.abs( e - b ) );
+					filterTolerance[ index ] = ( exactX ? 0 : gx / 256 ) + ( exactY ? 0 : gy / 256 );
 					values[ index ] = quantize( top * ( 1 - fy ) + bottom * fy, quantization );
 
 				}

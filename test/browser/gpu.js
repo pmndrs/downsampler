@@ -127,6 +127,51 @@ export async function readMip( device, texture, level ) {
 
 }
 
+/** Every level from `fromLevel` on, read back with a single submit and map. */
+export async function readMips( device, texture, fromLevel = 0 ) {
+
+	const bytes = formats[ texture.format ].bytesPerTexel, layers = texture.depthOrArrayLayers;
+	const levels = [];
+	let size = 0;
+
+	for ( let level = fromLevel; level < texture.mipLevelCount; level ++ ) {
+
+		const width = Math.max( 1, texture.width >> level ), height = Math.max( 1, texture.height >> level );
+		const bytesPerRow = Math.ceil( width * bytes / 256 ) * 256;
+		levels.push( { level, width, height, bytesPerRow, offset: size } );
+		size += bytesPerRow * height * layers;
+
+	}
+
+	if ( levels.length === 0 ) return [];
+	const buffer = device.createBuffer( { size, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ } );
+	const encoder = device.createCommandEncoder();
+	for ( const { level, width, height, bytesPerRow, offset } of levels ) encoder.copyTextureToBuffer( { texture, mipLevel: level }, { buffer, offset, bytesPerRow, rowsPerImage: height }, [ width, height, layers ] );
+	device.queue.submit( [ encoder.finish() ] );
+	await buffer.mapAsync( GPUMapMode.READ );
+	const mapped = buffer.getMappedRange();
+	const output = levels.map( ( { width, height, bytesPerRow, offset } ) => decodeRows( mapped, offset, bytesPerRow, width, height * layers, bytes ) );
+	buffer.unmap();
+	buffer.destroy();
+	return output;
+
+}
+
+function decodeRows( mapped, offset, bytesPerRow, width, rows, bytes ) {
+
+	const output = new Float32Array( width * rows * 4 );
+
+	for ( let row = 0; row < rows; row ++ ) {
+
+		const values = bytes === 4 ? new Uint8Array( mapped, offset + row * bytesPerRow, width * 4 ) : new Uint16Array( mapped, offset + row * bytesPerRow, width * 4 );
+		for ( let i = 0; i < values.length; i ++ ) output[ row * width * 4 + i ] = bytes === 4 ? values[ i ] / 255 : fromHalf( values[ i ] );
+
+	}
+
+	return output;
+
+}
+
 export function median( values ) {
 
 	const sorted = values.slice().sort( ( a, b ) => a - b );

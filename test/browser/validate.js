@@ -3,7 +3,7 @@
 // rounding differences do not accumulate along the chain.
 import { formats, reduceReference, tolerance } from '/dist/index.js';
 import { Downsampler } from '/dist/webgpu/index.js';
-import { createTexture, makeData, poison, readMip, toFloats, upload } from './gpu.js';
+import { createTexture, makeData, poison, readMip, readMips, toFloats, upload } from './gpu.js';
 
 // [ width, height, layers?, viewDimension? ]: 1×1, 1D tails, odd sizes, partial
 // workgroups, rectangles, layers, both 2D view variants, and multi-batch sizes.
@@ -75,64 +75,75 @@ export async function validate( device, { onProgress = () => {}, quick = false }
 
 	try {
 
-		for ( const levels of levelOptions( device ) ) {
+		const downsamplers = levelOptions( device ).map( levels => ( {
+			levels,
+			sample: new Downsampler( device, { levelsPerDispatch: levels } ),
+			load: new Downsampler( device, { levelsPerDispatch: levels, averageAccess: 'load' } )
+		} ) );
 
-			const downsamplers = {
-				sample: new Downsampler( device, { levelsPerDispatch: levels } ),
-				load: new Downsampler( device, { levelsPerDispatch: levels, averageAccess: 'load' } )
-			};
+		for ( const format of Object.keys( formats ) ) {
 
-			for ( const format of Object.keys( formats ) ) {
+			const { quantization } = formats[ format ];
 
-				const { quantization } = formats[ format ];
+			for ( const [ shapeIndex, [ width, height, layers = 1, dimension ] ] of cases.entries() ) {
 
-				for ( const [ width, height, layers = 1, dimension ] of cases ) {
+				const texture = createTexture( device, { width, height, layers, format, dimension } );
+				// Inputs and first-level references depend only on shape, format,
+				// pattern and reduction, so they are shared across kernel widths.
+				const inputs = new Map(), firstLevels = new Map();
 
-					const texture = createTexture( device, { width, height, layers, format, dimension } );
+				try {
 
-					try {
+					for ( const { levels, ...byAccess } of downsamplers ) for ( const variant of variants ) {
 
-						for ( const variant of variants ) {
+						const downsampler = byAccess[ variant.access ?? 'sample' ];
+						const options = { reduction: variant.reduction };
+						const reference = variant.reference ?? variant.reduction;
+						const result = { width, height, layers, format, levelsPerDispatch: levels, reduction: variant.name, dispatches: 0, maxError: 0 };
 
-							const downsampler = downsamplers[ variant.access ?? 'sample' ];
-							const options = { reduction: variant.reduction };
-							const reference = variant.reference ?? variant.reduction;
-							const result = { width, height, layers, format, levelsPerDispatch: levels, reduction: variant.name, dispatches: 0, maxError: 0 };
+						// Reusing one texture with changing input exercises the cached plans.
+						for ( const pattern of variant.patterns ) {
 
-							// Reusing one texture with changing input exercises the cached plans.
-							for ( const pattern of variant.patterns ) {
+							if ( ! inputs.has( pattern ) ) {
 
-								const input = makeData( width, height, layers, format, pattern, pattern === 'tiles' ? results.length + 3 : 1 );
-								upload( device, texture, input );
-								poison( device, texture );
-								downsampler.generate( texture, options );
-								let previous = toFloats( input, format ), w = width, h = height;
-
-								for ( let level = 1; level < texture.mipLevelCount; level ++ ) {
-
-									const expected = reduceReference( previous, w, h, layers, quantization, reference );
-									const actual = await readMip( device, texture, level );
-									result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ width }x${ height }x${ layers } ${ format } ${ variant.name } ${ pattern } L${ levels } mip ${ level }`, reference ) );
-									previous = actual; w = expected.width; h = expected.height;
-
-								}
-
-								runs ++;
+								const data = makeData( width, height, layers, format, pattern, pattern === 'tiles' ? shapeIndex + 3 : 1 );
+								inputs.set( pattern, { data, floats: toFloats( data, format ) } );
 
 							}
 
-							result.dispatches = downsampler.prepare( texture, options ).length;
-							results.push( result );
+							const input = inputs.get( pattern );
+							upload( device, texture, input.data );
+							poison( device, texture );
+							downsampler.generate( texture, options );
+							const mips = await readMips( device, texture, 1 );
+							let previous = input.floats, w = width, h = height;
+
+							for ( let level = 1; level < texture.mipLevelCount; level ++ ) {
+
+								const key = `${ variant.name }:${ pattern }`;
+								let expected = level === 1 ? firstLevels.get( key ) : undefined;
+								if ( expected === undefined ) expected = reduceReference( previous, w, h, layers, quantization, reference );
+								if ( level === 1 ) firstLevels.set( key, expected );
+								const actual = mips[ level - 1 ];
+								result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ width }x${ height }x${ layers } ${ format } ${ variant.name } ${ pattern } L${ levels } mip ${ level }`, reference ) );
+								previous = actual; w = expected.width; h = expected.height;
+
+							}
+
+							runs ++;
 
 						}
 
-						onProgress( `validated ${ width }×${ height }×${ layers } ${ format }, ${ levels } levels/dispatch` );
-
-					} finally {
-
-						texture.destroy();
+						result.dispatches = downsampler.prepare( texture, options ).length;
+						results.push( result );
 
 					}
+
+					onProgress( `validated ${ width }×${ height }×${ layers } ${ format }` );
+
+				} finally {
+
+					texture.destroy();
 
 				}
 
