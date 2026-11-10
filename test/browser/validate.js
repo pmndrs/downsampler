@@ -188,9 +188,11 @@ export const sourceCases = [
 	{ source: 'rgba16float', destination: 'rgba8unorm', relation: 'half', reductions: [ 'average', 'min' ] }
 ];
 
+// After the source batch, every batch is the in-place code the main matrix covers
+// at 2048², so 512² (multi-batch at every width) stands in for it here.
 export const sourceShapes = [
 	[ 1, 1 ], [ 2, 2 ], [ 3, 7 ], [ 17, 9 ], [ 64, 64 ], [ 65, 129 ], [ 1, 128 ], [ 255, 257 ], [ 192, 108 ],
-	[ 64, 32, 3 ], [ 17, 11, 3 ], [ 2048, 2048 ], [ 1920, 1080 ]
+	[ 64, 32, 3 ], [ 17, 11, 3 ], [ 512, 512 ], [ 1920, 1080 ]
 ];
 
 async function makeSource( device, format, width, height, layers, pattern, seed ) {

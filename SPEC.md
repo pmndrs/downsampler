@@ -62,7 +62,7 @@ Rules:
 
 A batch reads one source level and writes up to `levelsPerDispatch` consecutive levels.
 
-- **First output:** a hardware bilinear sample at each texel centre, using normalized coordinates. That is an exact 2×2 box for even sizes, and correct weights for odd ones.
+- **First output:** a hardware bilinear sample at each texel centre, using normalized coordinates. That is an exact 2×2 box for even sizes. For odd sizes it reproduces render-pass and WebGL mipmaps, which is **not** area-correct: 3→1 takes only the centre texel, so a 31×31 texture can reduce to an unrepresentative 1×1 (`greggman`'s example in gpuweb#5253). Area-weighted odd sizes are a candidate opt-in (§13).
 - **Later levels in the batch:** exact 2:1 reductions in workgroup memory, with clamped reads for unit dimensions and partial tiles.
 - **Batch boundaries:** a batch ends at `levelsPerDispatch`, or where the next reduction is inexact under `'exact'`.
 - **Layers:** workgroup z selects the array layer, so all layers go in one dispatch.
@@ -186,13 +186,19 @@ downsampler.encode( encoder, destination, {
 | Load vs. linear-sampler source | ✅ | `textureLoad` path (§4 Source access). `textureGather` for single-channel Hi-Z is an M3 candidate: one gather replaces four loads. |
 | Separate source/destination | ✅ | `source: { texture, mipLevel }`, same size (copy) or half (§4 Separate source). Depth sources supported. |
 | Texture arrays | ✅ all layers | add a layer range; cube maps as 6 layers (2d-array view; not available in compatibility mode) |
-| Sub-rectangle (`rectInfo`) | ❌ | offset/size uniform; output tile offset |
-| Custom load/store (format conversion) | 2 formats | see §6.1 |
+| Sub-rectangle (`rectInfo`) | ❌ | offset/size uniform; output tile offset. SPD snaps the rect to 64-texel source tiles and recomputes levels below 64×64 for the whole texture: decide whether to match |
+| Custom load/store (format conversion) | 5 destination formats; any float/depth source | see §6.1; load/store hooks (premultiply, sRGB) planned with M2.3 |
+| Global atomic counter, `globallycoherent` mip 6 | ❌ by design | No counter buffer to allocate, reset or alias; the dispatch boundary replaces it (§2.2) |
+| Mip count (`mips`, max 12) | ✅ no cap | **Off by one for SPD users:** in place, `mipLevelCount` includes the source level, so SPD `mips = N` is `mipLevelCount: N + 1` |
+| Levels written | ✅ | In place, as SPD: `baseMipLevel` is read and later levels written. With `source`, destination `baseMipLevel` is written at the source size (copy) or half; SPD always halves |
+| sRGB (sample sRGB view, write UNORM UAV) | planned | WebGPU forbids sRGB storage even through a view, so: scratch copy (§6.1) |
+| Intermediate precision | differs by design | SPD keeps unrounded values in LDS between levels; we round each level as stored, so a chain equals level-by-level generation and 8-bit results won't match SPD bit for bit (§4 Quantization) |
+| LDS layout (one float4 array vs per channel) | ❌ | M3 candidate; measure first |
 | Packed fp16 math | ❌ | optional `shader-f16`; keep only if measurably faster |
 | Wave/subgroup ops | ❌ | optional `subgroups`; WGSL defines no quad↔`local_invocation_index` mapping in compute, so derive positions from `subgroup_id`/`subgroup_invocation_id`, or use shuffles. Measure first; current kernels are near bandwidth-bound at ≥2048². |
 | Odd sizes | ✅ `'exact'` | add `'fast'` (§2.1) |
 
-Beyond SPD: sizes over 4096², exact odd-size results, and automatic fallback to the 4-storage-texture limit.
+Beyond SPD: sizes over 4096², render-pass-matching odd sizes, conservative min/max at odd edges (SPD drops the last row/column, and unclamped loads read zeros past the edge), and automatic fallback to the 4-storage-texture limit.
 
 ### 6.1 Formats
 
@@ -235,7 +241,7 @@ Probed in Chrome 155 on Apple/Metal:
 - **GPU validation errors and device loss fail the run.**
 
 - **Reductions:** every shape × width × format case runs `'average'` through the sampler and through loads, plus `'min'`, `'max'`, `'minmax'` and a custom fold. The custom fold depends on the value domain, so it catches unit mix-ups. Folds skip the constant pattern and must match exactly. The `edge` pattern on odd shapes exercises the `2x+2` footprint.
-- **Separate source:** 8 source → destination pairs (depth32float/depth16unorm/r32float → r32float/rg32float Hi-Z, rgba8 ↔ rgba16f conversions), each in copy or half relation. 13 shapes (odd, 1D, NPOT, layers, 2048², 1920×1080), all kernel widths, random/edge/tiles patterns, and the destination poisoned from level 0. The oracle's source values are read back from the source texture, not taken from the fill data. Options cover rejected sources, `source.mipLevel`, and replacing the source texture with the same options.
+- **Separate source:** 8 source → destination pairs (depth32float/depth16unorm/r32float → r32float/rg32float Hi-Z, rgba8 ↔ rgba16f conversions), each in copy or half relation. 13 shapes (odd, 1D, NPOT, layers, 512² for multi-batch, 1920×1080), all kernel widths, random/edge/tiles patterns, and the destination poisoned from level 0. The oracle's source values are read back from the source texture, not taken from the fill data. Options cover rejected sources, `source.mipLevel`, and replacing the source texture with the same options.
 - **Oracle independence:** a core test checks that max chains are conservative: every texel bounds each base texel its normalized area touches, without using `footprint()`.
 
 New features add their own oracle first: sRGB, rect, layer range, and `'fast'` with its clamped reference.
@@ -302,3 +308,44 @@ three.js does not take runtime dependencies for core features. The plan:
 - Publish as bare `downsampler` or `@pmndrs/downsampler`? (`package.json` currently uses `downsampler`.)
 - Cube maps in compatibility mode: they can't be viewed as 2d-array, so either per-face views or the render fallback.
 - Whether `'fast'` should be the default for Hi-Z. Under `'exact'`, min/max already use the conservative odd footprint (§4 Reductions), so `'exact'` Hi-Z is correct. `'fast'` would need the same rule in workgroup memory, where the `2x+2` texel can sit in the neighbouring tile (a one-texel halo). Decide with M2.5 and a measurement.
+
+## 13. Research (2026-11-10)
+
+Prior art and the standards discussion, reviewed against this spec. The sources are linked; claims attributed to people come from their comments.
+
+### gpuweb: mipmaps in core ([#386](https://github.com/gpuweb/gpuweb/issues/386), [#5253](https://github.com/gpuweb/gpuweb/discussions/5253))
+
+- **History:** proposed in 2019 as `generateMipmaps(texture)`. It is still open on "Milestone 4+", with no spec PR. The group leans toward a userland or "official helpers" library over a core API. No implementer has re-engaged since 2022.
+- **Cross-vendor performance is the open question.** `greggman` found a compute generator slower than render passes on NVIDIA/D3D12, up to 10× for SPD-style ports. `toji` reported an internal partner seeing the same and suggested drivers may fast-path the render-pass pattern. `greggman` also found timestamp-query unreliable and measured work per frame instead. `aleino-nv` (NVIDIA) asked for NVIDIA numbers. **Every number in §8 is Apple-only and timestamp-based, so no general speed claim can be made yet.**
+- **Other requirements raised:** wrap vs clamp edges, alpha-coverage preservation, out-of-bounds texels contributing nothing, cube maps (compute needs a 2d-array view; compatibility mode can't provide one), and the unmeasured cost of adding `STORAGE_BINDING` to sampled textures (`Kangz`). The last matters for §10, where three.js would add the usage.
+- **Evidence for §2.2:** [webgpu-spd#7](https://github.com/JolifantoBambla/webgpu-spd/issues/7) fixed missing mips on M1 by adding a `storageBarrier`. In WGSL that barrier is workgroup-scoped, so the fix isn't guaranteed.
+- **Video:** there's no zero-copy way to put an external texture into level 0 (`kainino0x`). A separate source plus `copyExternalImageToTexture` is the current path. [This jsfiddle](https://jsfiddle.net/1w9L6u07/) samples level 1 from a `texture_external` and uses quad/subgroup ops in compute. That layout is undefined behaviour in WGSL (§6 subgroup row), and its odd sizes behave like our `'fast'`.
+
+### nvpro_pyramid ([vk_compute_mipmaps](https://github.com/nvpro-samples/vk_compute_mipmaps), [strategy](https://nvpro-samples.github.io/vk_compute_mipmaps/docs/strategy.md.html))
+
+- **Odd sizes are area-weighted**, not render-pass parity. Per axis the kernel is 1, 2 or 3 taps, with weights `(n−x, n, x+1) / (2n+1)` for size `2n+1`: each source texel's overlap with the output. 3→1 averages all three texels. Its support (2x … 2x+2) is exactly our fold footprint.
+- **At most 2 levels per dispatch through odd sizes.** Each tile recomputes a 1-texel halo of the intermediate level. The authors found 3+ levels unpromising, because the halo grows 1, 3, 7… texels per level.
+- **No single dispatch**, by design. A fast pipeline (power-of-two tiles, up to 6 levels) handles even sizes.
+- **Their measurements (RTX 3090 only):**
+  - Dropping the bilinear sampler cost 26–32 %, consistent with §4 Source access.
+  - 1024-thread workgroups were worse everywhere, and 1-level dispatches worse than multi-level.
+  - Packed sRGB or f16 shared memory gave no gain.
+  - On even sizes it ran near their speed-of-light baseline; at 1080p it took twice the baseline's time.
+- **Subgroups:** `subgroupShuffleXor` across quads and teams of 16 reduces shared memory to 64 B. It assumes a lane = local index mapping that GLSL/WGSL don't guarantee, and has a TODO for subgroup sizes other than 32. The gain isn't isolated in their data.
+- **Benchmark method:** interleaved alternatives, min and median over 256 batches, a speed-of-light baseline kernel, and a CPU reference check.
+
+### SPD manual ([single-pass downsampler](https://gpuopen.com/manuals/fidelityfx_sdk/techniques/single-pass-downsampler/))
+
+The rows are folded into §6. Differences SPD users must be told about: mip count off by one, odd-size results, per-level rounding, no zero reads at edges, the `reduce(a, b)` contract, and that a same-size source writes destination level 0 at full size.
+
+### Consequences for the plan
+
+1. **Cross-vendor throughput data before any default or speed claim** (M3 moves ahead of the three.js PR):
+   - Add a throughput benchmark mode (work per frame, as in `greggman`'s method) alongside timestamps.
+   - Get NVIDIA/D3D12, AMD and Intel numbers from the device lab.
+   - Measure `STORAGE_BINDING` sampling cost.
+   - If compute loses on a vendor, adapters must choose the path per device.
+2. **Exact tail kernel** (candidate). Once a level fits one workgroup's memory, reduce every remaining level there through any parity, with exact `'exact'` weights (no halo needed). 1920×1080 would drop from 7 dispatches to about 3–4. Measure it: a boundary costs ~1–2 µs (§2.2).
+3. **Halo batches under `'exact'`** (candidate). Our odd bilinear taps also fall in 2x … 2x+2, so nvpro's halo structure carries one odd step per dispatch without changing results.
+4. **Area-weighted odd sizes** (candidate opt-in, e.g. `oddSizes: 'box'`). This is the quality fix for the 31×31 case, and a defined meaning for weighted reductions at odd sizes. It needs its own oracle.
+5. **Engagement:** one data-backed comment in #5253 (method, named devices, device-lab link), and a comment on webgpu-spd#7 citing the memory model. Both only after the cross-vendor data exists.
