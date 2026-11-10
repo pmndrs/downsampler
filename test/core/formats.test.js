@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { roundHalfEven, toHalf, fromHalf, quantize } from '../../dist/index.js';
+import { integerDomains, roundHalfEven, toHalf, fromHalf, quantize } from '../../dist/index.js';
 
 test( 'roundHalfEven breaks exact ties to even', () => {
 
@@ -35,5 +35,22 @@ test( 'unorm8 quantization clamps and rounds', () => {
 	assert.equal( quantize( 1.2, 'unorm8' ), 1 );
 	assert.equal( quantize( - 1, 'unorm8' ), 0 );
 	assert.equal( quantize( 179.5 / 255, 'unorm8' ) * 255, 180 );
+
+} );
+
+test( 'normalized quantization: every stored integer round-trips, ties go to even, snorm never yields -128', () => {
+
+	for ( const [ quantization, { scale, min, max } ] of Object.entries( integerDomains ) ) {
+
+		for ( let k = min; k <= max; k ++ ) assert.equal( quantize( k / scale, quantization ) * scale, k, `${ quantization } ${ k }` );
+		assert.equal( quantize( 2, quantization ), 1 );
+		assert.equal( quantize( - 2, quantization ), min / scale );
+		assert.equal( quantize( 2.5 / scale, quantization ) * scale, 2 );
+		assert.equal( quantize( 3.5 / scale, quantization ) * scale, 4 );
+
+	}
+
+	assert.equal( quantize( - 2.5 / 127, 'snorm8' ) * 127, - 2 );
+	assert.equal( quantize( - 3.5 / 127, 'snorm8' ) * 127, - 4 );
 
 } );

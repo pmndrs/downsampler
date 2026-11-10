@@ -4,7 +4,27 @@
  */
 
 /** How values are rounded between levels. */
-export type Quantization = 'unorm8' | 'float16' | 'float32';
+export type Quantization = 'unorm8' | 'snorm8' | 'unorm16' | 'snorm16' | 'float16' | 'float32';
+
+/**
+ * Normalized formats are reduced in integer units (value × scale), so 2:1 sums
+ * are exact in f32 (4 × 65535 < 2²⁴) and ties round to even. snorm clamps to
+ * ±scale: −128 and −32768 also decode to −1, so they are never produced.
+ */
+export const integerDomains = {
+	unorm8: { scale: 255, min: 0, max: 255 },
+	snorm8: { scale: 127, min: - 127, max: 127 },
+	unorm16: { scale: 65535, min: 0, max: 65535 },
+	snorm16: { scale: 32767, min: - 32767, max: 32767 }
+} as const;
+
+export type IntegerQuantization = keyof typeof integerDomains;
+
+export function isIntegerDomain( quantization: Quantization ): quantization is IntegerQuantization {
+
+	return Object.prototype.hasOwnProperty.call( integerDomains, quantization );
+
+}
 
 export interface FormatInfo {
 	quantization: Quantization;
@@ -22,6 +42,7 @@ export interface FormatInfo {
 export const formats = {
 	rgba8unorm: { quantization: 'unorm8', bytesPerTexel: 4, channels: 4, filterable: true },
 	rgba16float: { quantization: 'float16', bytesPerTexel: 8, channels: 4, filterable: true },
+	rgba8snorm: { quantization: 'snorm8', bytesPerTexel: 4, channels: 4, filterable: true },
 	// Storage for these needs optional features. bgra8unorm is swizzled by the
 	// hardware on read and write, so kernels see RGBA like any other format.
 	bgra8unorm: { quantization: 'unorm8', bytesPerTexel: 4, channels: 4, filterable: true, feature: 'bgra8unorm-storage' },
@@ -29,6 +50,15 @@ export const formats = {
 	rg8unorm: { quantization: 'unorm8', bytesPerTexel: 2, channels: 2, filterable: true, feature: 'texture-formats-tier1' },
 	r16float: { quantization: 'float16', bytesPerTexel: 2, channels: 1, filterable: true, feature: 'texture-formats-tier1' },
 	rg16float: { quantization: 'float16', bytesPerTexel: 4, channels: 2, filterable: true, feature: 'texture-formats-tier1' },
+	r8snorm: { quantization: 'snorm8', bytesPerTexel: 1, channels: 1, filterable: true, feature: 'texture-formats-tier1' },
+	rg8snorm: { quantization: 'snorm8', bytesPerTexel: 2, channels: 2, filterable: true, feature: 'texture-formats-tier1' },
+	// 16-bit normalized formats sample as unfilterable-float (Dawn, Apple), so they load.
+	r16unorm: { quantization: 'unorm16', bytesPerTexel: 2, channels: 1, filterable: false, feature: 'texture-formats-tier1' },
+	rg16unorm: { quantization: 'unorm16', bytesPerTexel: 4, channels: 2, filterable: false, feature: 'texture-formats-tier1' },
+	rgba16unorm: { quantization: 'unorm16', bytesPerTexel: 8, channels: 4, filterable: false, feature: 'texture-formats-tier1' },
+	r16snorm: { quantization: 'snorm16', bytesPerTexel: 2, channels: 1, filterable: false, feature: 'texture-formats-tier1' },
+	rg16snorm: { quantization: 'snorm16', bytesPerTexel: 4, channels: 2, filterable: false, feature: 'texture-formats-tier1' },
+	rgba16snorm: { quantization: 'snorm16', bytesPerTexel: 8, channels: 4, filterable: false, feature: 'texture-formats-tier1' },
 	// Filtering float32 needs the optional `float32-filterable` feature, so these
 	// always use the load path.
 	r32float: { quantization: 'float32', bytesPerTexel: 4, channels: 1, filterable: false },
@@ -106,7 +136,13 @@ export function fromHalf( bits: number ): number {
 /** Quantize a value the way the GPU kernels do between levels. */
 export function quantize( value: number, quantization: Quantization ): number {
 
-	if ( quantization === 'unorm8' ) return roundHalfEven( Math.min( 1, Math.max( 0, value ) ) * 255 ) / 255;
+	if ( isIntegerDomain( quantization ) ) {
+
+		const { scale, min, max } = integerDomains[ quantization ];
+		return roundHalfEven( Math.min( max, Math.max( min, value * scale ) ) ) / scale;
+
+	}
+
 	if ( quantization === 'float32' ) return Math.fround( value );
 	return fromHalf( toHalf( value ) );
 

@@ -216,8 +216,8 @@ Beyond SPD: sizes over 4096², render-pass-matching odd sizes, conservative min/
 | Done | rgba8unorm, rgba16float, r32float, rg32float, rgba32float | core | ✅ |
 | Same quantization, fewer channels | r8unorm, rg8unorm, r16float, rg16float | `texture-formats-tier1` | ✅ (no WGSL `enable` needed on Chrome 148) |
 | Canvas format | bgra8unorm | `bgra8unorm-storage` | ✅ hardware swizzles on read and write, so kernels and minmax channel parity are unaffected |
-| snorm8 | rgba8snorm (core), r8snorm, rg8snorm (tier1) | mixed | `snorm8` quantization: integer domain ×127, clamp to [−127, 127] (−128 and −127 both decode to −1) |
-| 16-bit norm | r16unorm, rg16unorm, rgba16unorm, and the snorm versions | tier1 | `unorm16`/`snorm16`: integer domain ×65535; four-texel sums stay exact in f32 (< 2²⁴) |
+| snorm8 | rgba8snorm (core), r8snorm, rg8snorm (tier1) | mixed | ✅ `snorm8`: integer units ×127, clamped to [−127, 127] (−128 and −127 both decode to −1); tie parity in `i32` (negative float → `u32` is undefined) |
+| 16-bit norm | r16unorm, rg16unorm, rgba16unorm, and the snorm versions | tier1 | ✅ `unorm16`/`snorm16`: integer units ×65535 / ×32767; four-texel sums stay exact in f32 (< 2²⁴). They sample as `unfilterable-float` on Dawn/Apple, so they always load |
 | Packed | rgb10a2unorm | tier1 | per-channel scale `(1023, 1023, 1023, 3)` |
 | Packed float | rg11b10ufloat | tier1 | `ufloat11/10` quantization (no sign, 6/5-bit mantissa, negatives clamp to 0, round to nearest even); no WGSL pack builtin, so encode in the shader and in core |
 | Integer | r32uint, rg32uint, rgba32uint, rgba8uint, rgba16uint, r32sint, rgba8sint (core); r8/r16/rg8/rg16 uint/sint (tier1) | mixed | separate `u32`/`i32` kernel (`texture_2d<u32>`, `vec4u`). Folds only at first (min, max, bitwise custom: ID, visibility and occupancy pyramids); `'average'` would need a declared rounding rule |
@@ -267,13 +267,14 @@ Optimisation: with `float32-filterable`, float32 formats may take the sample pat
 - float16: `max(0.002, 0.3 % of the reference value)`.
 - float32: `max(1e-6, 1e-5 relative)`.
 - Plus a filter allowance where bilinear weights aren't exactly representable with 8 fractional bits.
+- **Normalized formats, levels reduced in workgroup memory:** exact. Those levels use integer math, so this is what tests round-half-to-even. The oracle computes averages in integer units for the same reason: readback values like 8/255 as f32 average to a hair off an exact tie and round the wrong way. That flaw was in the oracle from M1 until 2026-11-10, hidden by the 2-step tolerance. Only a batch's first output (sampler, or float weights) gets the tolerance.
 - Folds: exact. The one exception is a level read straight from a unorm source, which allows 2⁻²¹ relative, because unorm → float conversion needn't be correctly rounded (SwiftShader's depth16unorm differs from k/65535 by an ulp).
 
 **Required matrix.** Every change must pass all of it.
 
 - **Shapes:** 1×1, 1D tails (1×128, 128×1, 128×8), odd and prime sizes, partial workgroups, rectangles, NPOT (192×108, 255×257, 1920×1080), layers (×3), both 2D view variants, and multi-batch sizes (2048², 96×4096).
 - **Kernel widths:** 1, 4, 5 and 6 levels per dispatch, filtered by the device limit.
-- **Formats:** all supported destination formats. float32 formats skip the 'average (load)' variant, since they always load. Formats whose feature the device lacks are reported as skipped (`validation.skipped`), never silently passed. The suite requests `texture-formats-tier1` and `bgra8unorm-storage` when available, but not `float32-filterable`, so float32 keeps exercising the load path.
+- **Formats:** all supported destination formats. One 4-channel format per quantization family (rgba8unorm, rgba8snorm, rgba16unorm, rgba16snorm, rgba16float, rgba32float) runs every shape. The rest of each family runs a representative subset: unit and odd sizes, 1D tails, partial tiles, layers, both view dimensions, and 512×32 (multi-batch at every width). The untrimmed matrix passed once with every format on every shape (10187 cases, 2026-11-10). float32 formats skip the 'average (load)' variant, since they always load. Formats whose feature the device lacks are reported as skipped (`validation.skipped`), never silently passed. The suite requests `texture-formats-tier1` and `bgra8unorm-storage` when available, but not `float32-filterable`, so float32 keeps exercising the load path.
 - **Patterns:**
   - constant (weights)
   - random, including HDR values in [−4, 12] for float formats

@@ -4,7 +4,7 @@ GPU texture downsampling: mip chains, min/max reduction pyramids (Hi-Z from dept
 
 A WGSL implementation of the ideas in AMD FidelityFX SPD: a 64×64 source tile reduced to six levels per workgroup in workgroup memory, with every level written once. It targets SPD's feature set. See [SPEC.md](SPEC.md) for the full design, parity table and roadmap.
 
-> Status: early (milestone 2 in progress). Destinations `rgba8unorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, and with optional features `bgra8unorm`, `r8unorm`, `rg8unorm`, `r16float`, `rg16float`; any float-sampleable or depth source; 2D textures and array layers; average, min, max, minmax and custom reductions. Not yet published to npm.
+> Status: early (milestone 2 in progress). Destinations `rgba8unorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, `rgba8snorm`, and with optional features `bgra8unorm`, `r8unorm`, `rg8unorm`, `r8snorm`, `rg8snorm`, `r16float`, `rg16float` and the 16-bit normalized formats; any float-sampleable or depth source; 2D textures and array layers; average, min, max, minmax and custom reductions. Not yet published to npm.
 
 ## Two things to know first
 

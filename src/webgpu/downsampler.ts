@@ -251,7 +251,9 @@ export class Downsampler {
 	private access( reduction: Reduction, format: string ): SourceAccess {
 
 		if ( reduction !== 'average' ) return 'load';
-		const filterable = ! format.startsWith( 'depth' ) && ( ! format.endsWith( '32float' ) || this.device.features.has( 'float32-filterable' ) );
+		const float32 = format.endsWith( '32float' ) && this.device.features.has( 'float32-filterable' );
+		const known = isSupportedFormat( format ) ? ( formats[ format ] as FormatInfo ).filterable : ! format.startsWith( 'depth' ) && ! format.endsWith( '32float' ) && ! /16[us]norm$/.test( format );
+		const filterable = known || float32;
 		return filterable ? this.averageAccess ?? 'sample' : 'load';
 
 	}

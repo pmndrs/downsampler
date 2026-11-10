@@ -1,5 +1,5 @@
 // Shared browser-side helpers for the GPU suite, benchmark and device lab.
-import { formats, fromHalf, toHalf } from '/dist/index.js';
+import { formats, fromHalf, integerDomains, isIntegerDomain, toHalf } from '/dist/index.js';
 import { Downsampler } from '/dist/webgpu/index.js';
 
 export async function requestDevice() {
@@ -35,12 +35,13 @@ export function mipLevels( width, height ) {
 
 }
 
-export function createTexture( device, { width, height, layers = 1, format, dimension = layers > 1 ? '2d-array' : '2d', storage = true } ) {
+/** `render` adds RENDER_ATTACHMENT (the benchmark's baseline and markers need it; not every format is renderable). */
+export function createTexture( device, { width, height, layers = 1, format, dimension = layers > 1 ? '2d-array' : '2d', storage = true, render = false } ) {
 
 	return device.createTexture( {
 		label: `test ${ width }x${ height }x${ layers } ${ format }`,
 		size: [ width, height, layers ], format, mipLevelCount: mipLevels( width, height ), textureBindingViewDimension: dimension,
-		usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST | ( storage ? GPUTextureUsage.STORAGE_BINDING : 0 )
+		usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST | ( storage ? GPUTextureUsage.STORAGE_BINDING : 0 ) | ( render ? GPUTextureUsage.RENDER_ATTACHMENT : 0 )
 	} );
 
 }
@@ -49,7 +50,29 @@ export function createTexture( device, { width, height, layers = 1, format, dime
 function storage( format ) {
 
 	const { quantization, channels } = formats[ format ];
-	return { channels, Array: quantization === 'unorm8' ? Uint8Array : quantization === 'float16' ? Uint16Array : Float32Array, quantization };
+	const arrays = { unorm8: Uint8Array, snorm8: Int8Array, unorm16: Uint16Array, snorm16: Int16Array, float16: Uint16Array, float32: Float32Array };
+	return { channels, Array: arrays[ quantization ], quantization };
+
+}
+
+/** A value in a format's encoding (the inverse of `decode`), rounding to nearest. */
+function encode( value, quantization ) {
+
+	if ( isIntegerDomain( quantization ) ) {
+
+		const { scale, min, max } = integerDomains[ quantization ];
+		return Math.min( max, Math.max( min, Math.round( value * scale ) ) );
+
+	}
+
+	return quantization === 'float16' ? toHalf( value ) : value;
+
+}
+
+function decode( stored, quantization ) {
+
+	if ( isIntegerDomain( quantization ) ) return Math.max( - 1, stored / integerDomains[ quantization ].scale );
+	return quantization === 'float16' ? fromHalf( stored ) : stored;
 
 }
 
@@ -71,11 +94,13 @@ export function makeData( width, height, layers, format, pattern = 'random', see
 		let value = ( state >>> 24 ) / 255;
 		if ( pattern === 'random' && quantization === 'float16' && ! unit ) value = ( ( state >>> 24 ) - 64 ) / 16;
 		if ( pattern === 'random' && quantization === 'float32' ) value = unit ? ( state >>> 8 ) / 2 ** 24 : ( state >>> 8 ) / 2 ** 20 - 4;
+		if ( pattern === 'random' && quantization === 'unorm16' ) value = ( state >>> 16 ) / 65535;
+		if ( pattern === 'random' && quantization.startsWith( 'snorm' ) ) value = ( state >>> 16 ) / 32767.5 - 1;
 		if ( pattern === 'edge' ) value = x === width - 1 || y === height - 1 ? ( c + layer + 1 ) / ( layers + 4 ) : 0;
 		if ( pattern === 'constant' ) value = ( c + layer + 1 ) / ( layers + 4 );
 		if ( pattern === 'tiles' ) value = ( ( ( x >> 6 ) * 53 + ( y >> 6 ) * 29 + seed * 97 + c * 37 + layer * 11 ) % 256 ) / 255;
 		const index = ( ( layer * height + y ) * width + x ) * channels + c;
-		data[ index ] = quantization === 'unorm8' ? Math.round( value * 255 ) : quantization === 'float16' ? toHalf( value ) : value;
+		data[ index ] = encode( value, quantization );
 
 	}
 
@@ -92,7 +117,7 @@ export function toFloats( data, format ) {
 	for ( let i = 0; i < texels; i ++ ) for ( let c = 0; c < 4; c ++ ) {
 
 		const value = c < channels ? data[ i * channels + c ] : c === 3 ? 1 : 0;
-		output[ i * 4 + c ] = c >= channels ? value : quantization === 'unorm8' ? value / 255 : quantization === 'float16' ? fromHalf( value ) : value;
+		output[ i * 4 + c ] = c >= channels ? value : decode( value, quantization );
 
 	}
 
@@ -108,20 +133,23 @@ export function upload( device, texture, data ) {
 
 }
 
-/** Overwrite levels so a skipped write cannot pass on stale data. */
+/**
+ * Overwrite levels so a skipped write cannot pass on stale data. Uses
+ * writeTexture rather than a render-pass clear: not every format is renderable.
+ */
 export function poison( device, texture, fromLevel = 1 ) {
 
-	const encoder = device.createCommandEncoder();
-	for ( let level = fromLevel; level < texture.mipLevelCount; level ++ ) for ( let layer = 0; layer < texture.depthOrArrayLayers; layer ++ ) {
+	const { channels, Array, quantization } = storage( texture.format );
+	const colour = [ 0.9, 0.1, 0.7, 0.3 ].slice( 0, channels ).map( value => encode( value, quantization ) );
 
-		encoder.beginRenderPass( { colorAttachments: [ {
-			view: texture.createView( { dimension: '2d', baseMipLevel: level, mipLevelCount: 1, baseArrayLayer: layer, arrayLayerCount: 1 } ),
-			loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.9, g: 0.1, b: 0.7, a: 0.3 }
-		} ] } ).end();
+	for ( let level = fromLevel; level < texture.mipLevelCount; level ++ ) {
+
+		const width = Math.max( 1, texture.width >> level ), height = Math.max( 1, texture.height >> level ), layers = texture.depthOrArrayLayers;
+		const data = new Array( width * height * layers * channels );
+		for ( let i = 0; i < data.length; i ++ ) data[ i ] = colour[ i % channels ];
+		device.queue.writeTexture( { texture, mipLevel: level }, data, { bytesPerRow: width * formats[ texture.format ].bytesPerTexel, rowsPerImage: height }, [ width, height, layers ] );
 
 	}
-
-	device.queue.submit( [ encoder.finish() ] );
 
 }
 

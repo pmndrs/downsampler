@@ -1,4 +1,4 @@
-import { formats, isSupportedFormat, sampledChannels, type SupportedFormat } from '../core/formats.js';
+import { formats, integerDomains, isIntegerDomain, isSupportedFormat, sampledChannels, type SupportedFormat } from '../core/formats.js';
 import { tileSize, workgroupSide } from '../core/plan.js';
 import { isBuiltinReduction, reductionKey, type Reduction } from '../core/reduction.js';
 
@@ -24,8 +24,8 @@ export interface KernelOptions {
 	/**
 	 * Format of the texture the first output reads, when it isn't `format` (a
 	 * separate source, e.g. depth32float). Single-channel sources are splatted to
-	 * all four channels; unorm8 loads are rounded to exact integers only when the
-	 * source itself is unorm8.
+	 * all four channels; loads are rounded to exact integer units only when the
+	 * source has the destination's normalized encoding.
 	 */
 	sourceFormat?: string;
 }
@@ -68,8 +68,9 @@ export function createKernel( { format, dimension, count, reduction = 'average',
 	const array = dimension === '2d-array';
 	const suffix = array ? '_array' : '';
 	const layer = array ? ', i32(group.z)' : '';
-	const unorm8 = formats[ format ].quantization === 'unorm8';
-	const exactLoads = unorm8 && isSupportedFormat( sourceFormat ) && formats[ sourceFormat ].quantization === 'unorm8';
+	const quantization = formats[ format ].quantization;
+	const integer = isIntegerDomain( quantization );
+	const exactLoads = integer && isSupportedFormat( sourceFormat ) && formats[ sourceFormat ].quantization === quantization;
 	const splat = sampledChannels( sourceFormat ) === 1 ? '.xxxx' : '';
 	const tile = tileSize( count );
 	const side = workgroupSide( tile );
@@ -81,40 +82,54 @@ var<workgroup> tile: array<vec4f, ${ tile * tile }>;
 `;
 	for ( let i = 0; i < count; i ++ ) code += `@group(0) @binding(${ i + 2 }) var mip${ i }: texture_storage_2d${ suffix }<${ format }, write>;\n`;
 
-	// Intermediate levels are quantized exactly as they would be stored. 8-bit
-	// values stay in integer 0–255 units so 2:1 averages are exact and ties round
-	// to even; with k/255 floats, float error turns ties into round-ups that drift
-	// by several steps along long 1D tails.
-	code += unorm8 ? `
-const SCALE = 255.0;
+	// Intermediate levels are quantized exactly as they would be stored.
+	// Normalized values stay in integer units (value × scale) so 2:1 averages are
+	// exact and ties round to even; with k/255 floats, float error turns ties into
+	// round-ups that drift by several steps along long 1D tails. The parity test
+	// uses i32: converting a negative float to u32 is undefined (snorm).
+	if ( integer ) {
+
+		const { scale, min, max } = integerDomains[ quantization ];
+		code += `
+const SCALE = ${ scale }.0;
 fn quantize(value: vec4f) -> vec4f {
-	let scaled = clamp(value, vec4f(0), vec4f(255));
+	let scaled = clamp(value, vec4f(${ min }.0), vec4f(${ max }.0));
 	let lower = floor(scaled);
 	let fraction = scaled - lower;
 	let nearest = select(lower, lower + vec4f(1), fraction > vec4f(0.5));
-	return select(nearest, lower + vec4f(vec4u(lower) & vec4u(1)), fraction == vec4f(0.5));
+	return select(nearest, lower + vec4f(vec4i(lower) & vec4i(1)), fraction == vec4f(0.5));
 }
-` : formats[ format ].quantization === 'float16' ? `
+`;
+
+	} else if ( quantization === 'float16' ) {
+
+		code += `
 const SCALE = 1.0;
 fn quantize(value: vec4f) -> vec4f {
 	return vec4f(unpack2x16float(pack2x16float(value.xy)), unpack2x16float(pack2x16float(value.zw)));
 }
-` : `
+`;
+
+	} else {
+
+		code += `
 const SCALE = 1.0;
 fn quantize(value: vec4f) -> vec4f { return value; }
 `;
+
+	}
 
 	if ( ! average ) {
 
 		// Folds see normalized values; the tile holds scaled ones.
 		if ( isBuiltinReduction( reduction ) ) code += `fn fold(a: vec4f, b: vec4f) -> vec4f { return ${ builtinFolds[ reduction as keyof typeof builtinFolds ] }; }\n`;
-		else code += `${ reduction.wgsl }\nfn fold(a: vec4f, b: vec4f) -> vec4f { return ${ unorm8 ? 'reduce(a / SCALE, b / SCALE) * SCALE' : 'reduce(a, b)' }; }\n`;
+		else code += `${ reduction.wgsl }\nfn fold(a: vec4f, b: vec4f) -> vec4f { return ${ integer ? 'reduce(a / SCALE, b / SCALE) * SCALE' : 'reduce(a, b)' }; }\n`;
 
 	}
 
 	if ( access === 'load' ) {
 
-		// unorm8 texels are rounded back to exact integers so later sums are exact.
+		// Normalized texels are rounded back to exact integer units so later sums are exact.
 		code += `
 fn load(p: vec2u, layer: u32) -> vec4f {
 	let v = textureLoad(source, vec2i(p)${ array ? ', i32(layer)' : '' }, 0)${ splat } * SCALE;

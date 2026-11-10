@@ -36,7 +36,7 @@ export async function benchmark( device, { sizes = defaultSizes, formats: benchF
 
 		for ( const format of benchFormats ) for ( const [ width, height, layers = 1 ] of sizes ) {
 
-			const textures = Object.fromEntries( names.map( name => [ name, createTexture( device, { width, height, layers, format } ) ] ) );
+			const textures = Object.fromEntries( names.map( name => [ name, createTexture( device, { width, height, layers, format, render: true } ) ] ) );
 
 			try {
 

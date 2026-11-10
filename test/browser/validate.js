@@ -1,7 +1,7 @@
 // GPU correctness suite. Every texel of every generated level is checked against
 // the CPU reference, computed from the GPU's own previous level so permitted
 // rounding differences do not accumulate along the chain.
-import { copyReference, formats, reduceReference, sampledChannels, tolerance } from '/dist/index.js';
+import { copyReference, formats, isIntegerDomain, reduceReference, sampledChannels, tolerance } from '/dist/index.js';
 import { Downsampler } from '/dist/webgpu/index.js';
 import { createDepthSource, createTexture, makeData, poison, readMip, readMips, toFloats, upload } from './gpu.js';
 
@@ -12,6 +12,16 @@ export const shapes = [
 	[ 128, 8 ], [ 1, 128 ], [ 128, 1 ], [ 192, 108 ], [ 255, 257 ], [ 256, 256 ], [ 512, 32 ],
 	[ 64, 32, 3 ], [ 17, 11, 3 ], [ 32, 16, 1, '2d-array' ], [ 17, 9, 1, '2d-array' ],
 	[ 2048, 2048 ], [ 96, 4096 ], [ 1920, 1080 ]
+];
+
+// One 4-channel format per quantization family runs every shape. The others in
+// a family differ only in channel count or storage format string, so they run a
+// representative subset: unit and odd sizes, 1D tails, partial tiles, layers,
+// both view dimensions and a multi-batch shape (512×32 is multi-batch at every width).
+export const familyFormats = [ 'rgba8unorm', 'rgba8snorm', 'rgba16unorm', 'rgba16snorm', 'rgba16float', 'rgba32float' ];
+export const subsetShapes = [
+	[ 1, 1 ], [ 3, 7 ], [ 17, 9 ], [ 31, 33 ], [ 65, 129 ], [ 1, 128 ], [ 128, 8 ], [ 192, 108 ], [ 512, 32 ],
+	[ 17, 11, 3 ], [ 17, 9, 1, '2d-array' ]
 ];
 
 const patterns = [ 'constant', 'random', 'edge', 'tiles' ];
@@ -47,7 +57,7 @@ export const variants = [
  * unorm → float conversion needn't be correctly rounded (SwiftShader's
  * depth16unorm differs from k / 65535 by an ulp), so even exact folds can see it.
  */
-function check( actual, expected, quantization, label, reduction = 'average', channels = 4, slack = 0 ) {
+function check( actual, expected, quantization, label, reduction = 'average', channels = 4, slack = 0, exact = false ) {
 
 	let maxError = 0;
 
@@ -55,7 +65,7 @@ function check( actual, expected, quantization, label, reduction = 'average', ch
 
 		if ( i % 4 >= channels ) continue;
 		const error = Math.abs( actual[ i ] - expected.values[ i ] );
-		const limit = tolerance( expected.values[ i ], quantization, expected.filterTolerance[ i ], reduction ) + Math.abs( expected.values[ i ] ) * slack;
+		const limit = exact ? 0 : tolerance( expected.values[ i ], quantization, expected.filterTolerance[ i ], reduction ) + Math.abs( expected.values[ i ] ) * slack;
 		if ( ! Number.isFinite( actual[ i ] ) || error > limit ) throw new Error( `${ label }: value ${ i }, actual ${ actual[ i ] }, expected ${ expected.values[ i ] }, error ${ error } > ${ limit }` );
 		maxError = Math.max( maxError, error );
 
@@ -102,7 +112,9 @@ export async function validate( device, { onProgress = () => {}, quick = false }
 
 			const formatVariants = variants.filter( variant => filterable || ! variant.filterableOnly );
 
-			for ( const [ shapeIndex, [ width, height, layers = 1, dimension ] ] of cases.entries() ) {
+			const formatCases = familyFormats.includes( format ) ? cases : subsetShapes.filter( shape => cases.some( c => c.join() === shape.join() ) );
+
+			for ( const [ shapeIndex, [ width, height, layers = 1, dimension ] ] of formatCases.entries() ) {
 
 				const texture = createTexture( device, { width, height, layers, format, dimension } );
 				// Inputs and first-level references depend only on shape, format,
@@ -133,6 +145,11 @@ export async function validate( device, { onProgress = () => {}, quick = false }
 							poison( device, texture );
 							downsampler.generate( texture, options );
 							const mips = await readMips( device, texture, 1 );
+							// Levels reduced in workgroup memory use exact integer math in
+							// normalized formats: they must match the oracle bit for bit,
+							// which is what tests tie rounding. Only a batch's first output
+							// (sampler or float weights) gets the tolerance.
+							const firstOutputs = new Set( downsampler.prepare( texture, options ).map( batch => batch.firstMipLevel ) );
 							let previous = input.floats, w = width, h = height;
 
 							for ( let level = 1; level < texture.mipLevelCount; level ++ ) {
@@ -142,7 +159,7 @@ export async function validate( device, { onProgress = () => {}, quick = false }
 								if ( expected === undefined ) expected = reduceReference( previous, w, h, layers, quantization, reference );
 								if ( level === 1 ) firstLevels.set( key, expected );
 								const actual = mips[ level - 1 ];
-								result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ width }x${ height }x${ layers } ${ format } ${ variant.name } ${ pattern } L${ levels } mip ${ level }`, reference, channels ) );
+								result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ width }x${ height }x${ layers } ${ format } ${ variant.name } ${ pattern } L${ levels } mip ${ level }`, reference, channels, 0, isIntegerDomain( quantization ) && ! firstOutputs.has( level ) ) );
 								previous = actual; w = expected.width; h = expected.height;
 
 							}
@@ -262,7 +279,8 @@ async function validateSource( device, { quick, onProgress } ) {
 
 							for ( let level = 0; level < destination.mipLevelCount; level ++ ) {
 
-								const expected = level === 0 && dw === width && dh === height ? copyReference( previous, w, h, layers, quantization ) : reduceReference( previous, w, h, layers, quantization, reduction );
+								const quantizedInput = level > 0 || formats[ sourceFormat ]?.quantization === quantization;
+								const expected = level === 0 && dw === width && dh === height ? copyReference( previous, w, h, layers, quantization ) : reduceReference( previous, w, h, layers, quantization, reduction, { quantizedInput } );
 								const slack = level === 0 && /unorm/.test( sourceFormat ) ? 2 ** - 21 : 0;
 								check( mips[ level ], expected, quantization, `${ label } mip ${ level }`, reduction, channels, slack );
 								previous = mips[ level ]; w = expected.width; h = expected.height;

@@ -8,11 +8,10 @@ Last updated: 2026-11-10 · Branch: `m2-reductions`
 
 ## Now
 
-- [ ] M2.3.2: snorm8, unorm16, snorm16 (SPEC §6.1)
+- [ ] M2.3.3: rgb10a2unorm (SPEC §6.1)
 
 ## Next (M2, features: SPEC §11)
 
-- [ ] M2.3.3: rgb10a2unorm
 - [ ] M2.3.4: buffer output path + rgb9e5ufloat (probe: `results/probes/rgb9e5-buffer-copy.mjs`)
 - [ ] M2.3.5: sRGB + load/store transform hooks (scratch texture vs buffer output, by measurement)
 - [ ] M2.3.6: rg11b10ufloat
@@ -35,6 +34,7 @@ Last updated: 2026-11-10 · Branch: `m2-reductions`
 - [x] Research: gpuweb #386/#5253, nvpro_pyramid, SPD manual, subgroups → SPEC §13 (`c843165`, `f2e70b8`)
 - [x] Format plan probed (`190f809`); rgb9e5ufloat buffer path verified (`4229752`)
 - [x] Plan update: PROGRESS.md, odd-size decision, build-first milestones (`31ff437`)
+- [x] M2.3.2: rgba8snorm, r8/rg8snorm, 16-bit unorm/snorm; exact checks for in-tile integer levels; oracle tie fix (M2.3.2)
 - [x] M2.3.1: bgra8unorm, r8unorm, rg8unorm, r16float, rg16float behind their features; skipped formats reported (`ab67d0f`)
 
 ## Decisions (dated; details in SPEC)
@@ -60,9 +60,13 @@ Last updated: 2026-11-10 · Branch: `m2-reductions`
 | 2026-11-10 | `c843165` | Apple M5 Pro | quick | ✅ 2359 cases |
 | 2026-11-10 | `ab67d0f` | Apple M5 Pro, Chrome 148 | full GPU matrix | ✅ 5579 cases, 18048 pattern runs |
 | 2026-11-10 | `ab67d0f` | SwiftShader | quick | ✅ 1477 cases; skipped r8unorm, rg8unorm, r16float, rg16float (no tier1) |
+| 2026-11-10 | M2.3.2 | Apple M5 Pro, Chrome 148 | full GPU matrix, untrimmed (every format × every shape) | ✅ 10187 cases, 33024 pattern runs, 600 s |
+| 2026-11-10 | M2.3.2 | Apple M5 Pro, Chrome 148 | full GPU matrix (family-trimmed) | ✅ 6443 cases, 20752 pattern runs, 361 s |
+| 2026-11-10 | M2.3.2 | SwiftShader | quick | ✅ 1729 cases; 12 tier1 formats skipped |
 
 ## Notes
 
 - The dev machine is often loaded (load average 12–18 from other projects): only trust ratios from the same run, and don't update SPEC §8 absolute numbers until it's idle.
-- The full matrix takes about 3–4 minutes under load. 2048² shapes dominate.
+- The full matrix takes about 6 minutes under load (family-trimmed). The six family formats on 2048², 96×4096 and 1920×1080 dominate. If it grows further, run big shapes with fewer patterns or widths.
+- In-tile levels of normalized formats are checked bit-exactly. Before that, a tie-rounding bug in the oracle (present since M1) was hidden by the 2-step tolerance.
 - SwiftShader exposes 4 storage textures, so CI can't cover the 5- and 6-level kernels (CLAUDE.md).
