@@ -1,0 +1,2550 @@
+{
+  "date": "2026-11-10T02:39:23.116Z",
+  "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "device": "",
+    "description": "",
+    "isFallbackAdapter": false,
+    "timestamps": true,
+    "maxStorageTexturesPerShaderStage": 6,
+    "subgroupMinSize": 32,
+    "subgroupMaxSize": 32
+  },
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36",
+  "validation": {
+    "passed": true,
+    "cases": 170,
+    "checks": 680,
+    "ms": 2386,
+    "results": [
+      {
+        "width": 1,
+        "height": 1,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 0,
+        "maxError": 0
+      },
+      {
+        "width": 2,
+        "height": 2,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 1,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 3,
+        "height": 7,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 2,
+        "maxError": 0
+      },
+      {
+        "width": 7,
+        "height": 4,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 15,
+        "height": 17,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 4,
+        "maxError": 0.003921583294868469
+      },
+      {
+        "width": 16,
+        "height": 16,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 4,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 17,
+        "height": 9,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 4,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 31,
+        "height": 33,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 5,
+        "maxError": 0.003921598196029663
+      },
+      {
+        "width": 64,
+        "height": 64,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 6,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 65,
+        "height": 129,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 7,
+        "maxError": 0.003921598196029663
+      },
+      {
+        "width": 128,
+        "height": 8,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 7,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 1,
+        "height": 128,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 7,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 128,
+        "height": 1,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 7,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 192,
+        "height": 108,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 7,
+        "maxError": 0.003921598196029663
+      },
+      {
+        "width": 255,
+        "height": 257,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 8,
+        "maxError": 0.003921598196029663
+      },
+      {
+        "width": 256,
+        "height": 256,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 8,
+        "maxError": 0.003921568859368563
+      },
+      {
+        "width": 512,
+        "height": 32,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 9,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 64,
+        "height": 32,
+        "layers": 3,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 6,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 17,
+        "height": 11,
+        "layers": 3,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 4,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 32,
+        "height": 16,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 5,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 17,
+        "height": 9,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 1,
+        "dispatches": 4,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 1,
+        "height": 1,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 0,
+        "maxError": 0
+      },
+      {
+        "width": 2,
+        "height": 2,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 1,
+        "maxError": 0.00048828125
+      },
+      {
+        "width": 3,
+        "height": 7,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 2,
+        "maxError": 0.0185546875
+      },
+      {
+        "width": 7,
+        "height": 4,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 2,
+        "maxError": 0.01171875
+      },
+      {
+        "width": 15,
+        "height": 17,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 4,
+        "maxError": 0.0234375
+      },
+      {
+        "width": 16,
+        "height": 16,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 4,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 17,
+        "height": 9,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 4,
+        "maxError": 0.0078125
+      },
+      {
+        "width": 31,
+        "height": 33,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 5,
+        "maxError": 0.02734375
+      },
+      {
+        "width": 64,
+        "height": 64,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 6,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 65,
+        "height": 129,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 7,
+        "maxError": 0.0078125
+      },
+      {
+        "width": 128,
+        "height": 8,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 7,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 1,
+        "height": 128,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 7,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 128,
+        "height": 1,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 7,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 192,
+        "height": 108,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 7,
+        "maxError": 0.0078125
+      },
+      {
+        "width": 255,
+        "height": 257,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 8,
+        "maxError": 0.029296875
+      },
+      {
+        "width": 256,
+        "height": 256,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 8,
+        "maxError": 0.0078125
+      },
+      {
+        "width": 512,
+        "height": 32,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 9,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 64,
+        "height": 32,
+        "layers": 3,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 6,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 17,
+        "height": 11,
+        "layers": 3,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 4,
+        "maxError": 0.0234375
+      },
+      {
+        "width": 32,
+        "height": 16,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 5,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 17,
+        "height": 9,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 1,
+        "dispatches": 4,
+        "maxError": 0.0078125
+      },
+      {
+        "width": 1,
+        "height": 1,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 0,
+        "maxError": 0
+      },
+      {
+        "width": 2,
+        "height": 2,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 1,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 3,
+        "height": 7,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0
+      },
+      {
+        "width": 7,
+        "height": 4,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 15,
+        "height": 17,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 3,
+        "maxError": 0.003921583294868469
+      },
+      {
+        "width": 16,
+        "height": 16,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 1,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 17,
+        "height": 9,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 1,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 31,
+        "height": 33,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 4,
+        "maxError": 0.003921598196029663
+      },
+      {
+        "width": 64,
+        "height": 64,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 65,
+        "height": 129,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.003921598196029663
+      },
+      {
+        "width": 128,
+        "height": 8,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 1,
+        "height": 128,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 128,
+        "height": 1,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 192,
+        "height": 108,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 5,
+        "maxError": 0.003921598196029663
+      },
+      {
+        "width": 255,
+        "height": 257,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 7,
+        "maxError": 0.003921598196029663
+      },
+      {
+        "width": 256,
+        "height": 256,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.003921568859368563
+      },
+      {
+        "width": 512,
+        "height": 32,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 3,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 64,
+        "height": 32,
+        "layers": 3,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 17,
+        "height": 11,
+        "layers": 3,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 32,
+        "height": 16,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 17,
+        "height": 9,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 4,
+        "dispatches": 1,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 1,
+        "height": 1,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 0,
+        "maxError": 0
+      },
+      {
+        "width": 2,
+        "height": 2,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 1,
+        "maxError": 0.00048828125
+      },
+      {
+        "width": 3,
+        "height": 7,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.0185546875
+      },
+      {
+        "width": 7,
+        "height": 4,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.01171875
+      },
+      {
+        "width": 15,
+        "height": 17,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 3,
+        "maxError": 0.0234375
+      },
+      {
+        "width": 16,
+        "height": 16,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 1,
+        "maxError": 0.00048828125
+      },
+      {
+        "width": 17,
+        "height": 9,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 1,
+        "maxError": 0.0078125
+      },
+      {
+        "width": 31,
+        "height": 33,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 4,
+        "maxError": 0.02734375
+      },
+      {
+        "width": 64,
+        "height": 64,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.001953125
+      },
+      {
+        "width": 65,
+        "height": 129,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.0078125
+      },
+      {
+        "width": 128,
+        "height": 8,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 1,
+        "height": 128,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 128,
+        "height": 1,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 192,
+        "height": 108,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 5,
+        "maxError": 0.0078125
+      },
+      {
+        "width": 255,
+        "height": 257,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 7,
+        "maxError": 0.029296875
+      },
+      {
+        "width": 256,
+        "height": 256,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 512,
+        "height": 32,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 3,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 64,
+        "height": 32,
+        "layers": 3,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.001953125
+      },
+      {
+        "width": 17,
+        "height": 11,
+        "layers": 3,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.0234375
+      },
+      {
+        "width": 32,
+        "height": 16,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 2,
+        "maxError": 0.00048828125
+      },
+      {
+        "width": 17,
+        "height": 9,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 4,
+        "dispatches": 1,
+        "maxError": 0.0078125
+      },
+      {
+        "width": 1,
+        "height": 1,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 0,
+        "maxError": 0
+      },
+      {
+        "width": 2,
+        "height": 2,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 1,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 3,
+        "height": 7,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0
+      },
+      {
+        "width": 7,
+        "height": 4,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 15,
+        "height": 17,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 3,
+        "maxError": 0.003921583294868469
+      },
+      {
+        "width": 16,
+        "height": 16,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 1,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 17,
+        "height": 9,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 1,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 31,
+        "height": 33,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 4,
+        "maxError": 0.003921598196029663
+      },
+      {
+        "width": 64,
+        "height": 64,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 65,
+        "height": 129,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.003921598196029663
+      },
+      {
+        "width": 128,
+        "height": 8,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 1,
+        "height": 128,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 128,
+        "height": 1,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 192,
+        "height": 108,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 5,
+        "maxError": 0.003921598196029663
+      },
+      {
+        "width": 255,
+        "height": 257,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 7,
+        "maxError": 0.003921598196029663
+      },
+      {
+        "width": 256,
+        "height": 256,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.003921568859368563
+      },
+      {
+        "width": 512,
+        "height": 32,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 64,
+        "height": 32,
+        "layers": 3,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 17,
+        "height": 11,
+        "layers": 3,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 32,
+        "height": 16,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 1,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 17,
+        "height": 9,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 5,
+        "dispatches": 1,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 1,
+        "height": 1,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 0,
+        "maxError": 0
+      },
+      {
+        "width": 2,
+        "height": 2,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 1,
+        "maxError": 0.00048828125
+      },
+      {
+        "width": 3,
+        "height": 7,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.0185546875
+      },
+      {
+        "width": 7,
+        "height": 4,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.01171875
+      },
+      {
+        "width": 15,
+        "height": 17,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 3,
+        "maxError": 0.0234375
+      },
+      {
+        "width": 16,
+        "height": 16,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 1,
+        "maxError": 0.00048828125
+      },
+      {
+        "width": 17,
+        "height": 9,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 1,
+        "maxError": 0.0078125
+      },
+      {
+        "width": 31,
+        "height": 33,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 4,
+        "maxError": 0.02734375
+      },
+      {
+        "width": 64,
+        "height": 64,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.001953125
+      },
+      {
+        "width": 65,
+        "height": 129,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.0078125
+      },
+      {
+        "width": 128,
+        "height": 8,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.001953125
+      },
+      {
+        "width": 1,
+        "height": 128,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 128,
+        "height": 1,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 192,
+        "height": 108,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 5,
+        "maxError": 0.0078125
+      },
+      {
+        "width": 255,
+        "height": 257,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 7,
+        "maxError": 0.029296875
+      },
+      {
+        "width": 256,
+        "height": 256,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 512,
+        "height": 32,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 64,
+        "height": 32,
+        "layers": 3,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.001953125
+      },
+      {
+        "width": 17,
+        "height": 11,
+        "layers": 3,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 2,
+        "maxError": 0.0234375
+      },
+      {
+        "width": 32,
+        "height": 16,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 1,
+        "maxError": 0.00048828125
+      },
+      {
+        "width": 17,
+        "height": 9,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 5,
+        "dispatches": 1,
+        "maxError": 0.0078125
+      },
+      {
+        "width": 1,
+        "height": 1,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 0,
+        "maxError": 0
+      },
+      {
+        "width": 2,
+        "height": 2,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 1,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 3,
+        "height": 7,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0
+      },
+      {
+        "width": 7,
+        "height": 4,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 15,
+        "height": 17,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 3,
+        "maxError": 0.003921583294868469
+      },
+      {
+        "width": 16,
+        "height": 16,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 1,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 17,
+        "height": 9,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 1,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 31,
+        "height": 33,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 4,
+        "maxError": 0.003921598196029663
+      },
+      {
+        "width": 64,
+        "height": 64,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 1,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 65,
+        "height": 129,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0.003921598196029663
+      },
+      {
+        "width": 128,
+        "height": 8,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 1,
+        "height": 128,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 128,
+        "height": 1,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 192,
+        "height": 108,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 5,
+        "maxError": 0.003921598196029663
+      },
+      {
+        "width": 255,
+        "height": 257,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 7,
+        "maxError": 0.003921598196029663
+      },
+      {
+        "width": 256,
+        "height": 256,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0.003921568859368563
+      },
+      {
+        "width": 512,
+        "height": 32,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 64,
+        "height": 32,
+        "layers": 3,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 1,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 17,
+        "height": 11,
+        "layers": 3,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 32,
+        "height": 16,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 1,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 17,
+        "height": 9,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "levelsPerDispatch": 6,
+        "dispatches": 1,
+        "maxError": 0.003921568393707275
+      },
+      {
+        "width": 1,
+        "height": 1,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 0,
+        "maxError": 0
+      },
+      {
+        "width": 2,
+        "height": 2,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 1,
+        "maxError": 0.00048828125
+      },
+      {
+        "width": 3,
+        "height": 7,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0.0185546875
+      },
+      {
+        "width": 7,
+        "height": 4,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0.01171875
+      },
+      {
+        "width": 15,
+        "height": 17,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 3,
+        "maxError": 0.0234375
+      },
+      {
+        "width": 16,
+        "height": 16,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 1,
+        "maxError": 0.00048828125
+      },
+      {
+        "width": 17,
+        "height": 9,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 1,
+        "maxError": 0.0078125
+      },
+      {
+        "width": 31,
+        "height": 33,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 4,
+        "maxError": 0.02734375
+      },
+      {
+        "width": 64,
+        "height": 64,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 1,
+        "maxError": 0.00048828125
+      },
+      {
+        "width": 65,
+        "height": 129,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0.0078125
+      },
+      {
+        "width": 128,
+        "height": 8,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0.001953125
+      },
+      {
+        "width": 1,
+        "height": 128,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 128,
+        "height": 1,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0.00390625
+      },
+      {
+        "width": 192,
+        "height": 108,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 5,
+        "maxError": 0.0078125
+      },
+      {
+        "width": 255,
+        "height": 257,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 7,
+        "maxError": 0.029296875
+      },
+      {
+        "width": 256,
+        "height": 256,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0.001953125
+      },
+      {
+        "width": 512,
+        "height": 32,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0.001953125
+      },
+      {
+        "width": 64,
+        "height": 32,
+        "layers": 3,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 1,
+        "maxError": 0
+      },
+      {
+        "width": 17,
+        "height": 11,
+        "layers": 3,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 2,
+        "maxError": 0.0234375
+      },
+      {
+        "width": 32,
+        "height": 16,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 1,
+        "maxError": 0.00048828125
+      },
+      {
+        "width": 17,
+        "height": 9,
+        "layers": 1,
+        "format": "rgba16float",
+        "levelsPerDispatch": 6,
+        "dispatches": 1,
+        "maxError": 0.0078125
+      },
+      {
+        "option": "baseMipLevel/mipLevelCount"
+      },
+      {
+        "option": "unsupported textures"
+      }
+    ]
+  },
+  "timing": {
+    "timestamps": true,
+    "rounds": 11,
+    "repeats": 16,
+    "strategies": [
+      "render",
+      "compute4",
+      "compute6"
+    ],
+    "results": [
+      {
+        "width": 256,
+        "height": 256,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "passes": {
+          "render": 8,
+          "compute4": 2,
+          "compute6": 2
+        },
+        "gpuMs": {
+          "render": 0.0801004375,
+          "compute4": 0.009150937500000001,
+          "compute6": 0.0079270625
+        },
+        "markerMs": 0.000585875,
+        "samples": {
+          "marker": [
+            0.002085875,
+            0.0016900625,
+            0.0017030625,
+            0.00170825,
+            0.0041926875,
+            0.000565125,
+            0.0005495,
+            0.000585875,
+            0.0005625,
+            0.0005650625,
+            0.00058325
+          ],
+          "render": [
+            0.1148211875,
+            0.1732290625,
+            0.1154253125,
+            0.114329,
+            0.0802435625,
+            0.078850375,
+            0.0788894375,
+            0.1151961875,
+            0.0800976875,
+            0.0806863125,
+            0.080014375
+          ],
+          "compute4": [
+            0.0284214375,
+            0.026674125,
+            0.0259995625,
+            0.0239761875,
+            0.007330625,
+            0.0072290625,
+            0.0093983125,
+            0.0091690625,
+            0.0075885,
+            0.009781125,
+            0.0097368125
+          ],
+          "compute6": [
+            0.028832875,
+            0.03390575,
+            0.030025625,
+            0.0346114375,
+            0.007906125,
+            0.0082993125,
+            0.00985925,
+            0.0076951875,
+            0.0085129375,
+            0.0082863125,
+            0.008137875
+          ]
+        }
+      },
+      {
+        "width": 512,
+        "height": 512,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "passes": {
+          "render": 9,
+          "compute4": 3,
+          "compute6": 2
+        },
+        "gpuMs": {
+          "render": 0.0881600625,
+          "compute4": 0.014890375,
+          "compute6": 0.0098175
+        },
+        "markerMs": 0.0006068125,
+        "samples": {
+          "marker": [
+            0.0006068125,
+            0.000596375,
+            0.0005573125,
+            0.0007290625,
+            0.0008046875,
+            0.0006145625,
+            0.0005885625,
+            0.000609375,
+            0.0006171875,
+            0.000559875,
+            0.0005806875
+          ],
+          "render": [
+            0.09143875,
+            0.089597625,
+            0.088766875,
+            0.0880090625,
+            0.0900325,
+            0.0929439375,
+            0.0879153125,
+            0.0875455625,
+            0.087899625,
+            0.0900455,
+            0.087806
+          ],
+          "compute4": [
+            0.01272375,
+            0.01693975,
+            0.0128488125,
+            0.0187289375,
+            0.0188330625,
+            0.01941375,
+            0.015939875,
+            0.0137549375,
+            0.0134815,
+            0.0154971875,
+            0.011963375
+          ],
+          "compute6": [
+            0.0098410625,
+            0.0104243125,
+            0.010025875,
+            0.0099946875,
+            0.01637475,
+            0.0122471875,
+            0.0104920625,
+            0.011294125,
+            0.0105310625,
+            0.0094269375,
+            0.009333125
+          ]
+        }
+      },
+      {
+        "width": 1024,
+        "height": 1024,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "passes": {
+          "render": 10,
+          "compute4": 3,
+          "compute6": 2
+        },
+        "gpuMs": {
+          "render": 0.11588112499999999,
+          "compute4": 0.019945062500000003,
+          "compute6": 0.016122187500000003
+        },
+        "markerMs": 0.0005520625,
+        "samples": {
+          "marker": [
+            0.0018698125,
+            0.000984375,
+            0.000833375,
+            0.0008176875,
+            0.000578125,
+            0.000533875,
+            0.0005260625,
+            0.000523375,
+            0.0005416875,
+            0.0005520625,
+            0.000546875
+          ],
+          "render": [
+            0.1913355625,
+            0.1654401875,
+            0.1342349375,
+            0.128446,
+            0.1159618125,
+            0.1283704375,
+            0.116227375,
+            0.1150945625,
+            0.1155711875,
+            0.11457375,
+            0.1164331875
+          ],
+          "compute4": [
+            0.09555325,
+            0.08491275,
+            0.03889525,
+            0.0209059375,
+            0.021942375,
+            0.019866875,
+            0.020116875,
+            0.020241875,
+            0.0199268125,
+            0.020497125,
+            0.019791375
+          ],
+          "compute6": [
+            0.0680405625,
+            0.03504375,
+            0.028950125,
+            0.029788625,
+            0.0152289375,
+            0.015465875,
+            0.01667425,
+            0.0148773125,
+            0.0154815,
+            0.0155361875,
+            0.01688775
+          ]
+        }
+      },
+      {
+        "width": 2048,
+        "height": 2048,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "passes": {
+          "render": 11,
+          "compute4": 3,
+          "compute6": 2
+        },
+        "gpuMs": {
+          "render": 0.136883375,
+          "compute4": 0.061949624999999994,
+          "compute6": 0.060423625
+        },
+        "markerMs": 0.000572875,
+        "samples": {
+          "marker": [
+            0.002145875,
+            0.000546875,
+            0.000578125,
+            0.000565,
+            0.000585875,
+            0.000572875,
+            0.0005025625,
+            0.00059375,
+            0.0005729375,
+            0.000515625,
+            0.000541625
+          ],
+          "render": [
+            0.271415125,
+            0.1442269375,
+            0.1297845,
+            0.13745625,
+            0.1390864375,
+            0.1257689375,
+            0.139234875,
+            0.12992775,
+            0.1266465,
+            0.1262168125,
+            0.14183375
+          ],
+          "compute4": [
+            0.276373375,
+            0.1160841875,
+            0.0625953125,
+            0.064402625,
+            0.06246,
+            0.0605199375,
+            0.060543375,
+            0.0605095,
+            0.0641943125,
+            0.060613625,
+            0.0625225
+          ],
+          "compute6": [
+            0.17985925,
+            0.076175875,
+            0.058655375,
+            0.05994175,
+            0.0592360625,
+            0.0613740625,
+            0.0609965,
+            0.0596658125,
+            0.0692489375,
+            0.0621214375,
+            0.0591033125
+          ]
+        }
+      },
+      {
+        "width": 4096,
+        "height": 4096,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "passes": {
+          "render": 12,
+          "compute4": 3,
+          "compute6": 2
+        },
+        "gpuMs": {
+          "render": 0.4500895,
+          "compute4": 0.33607818749999996,
+          "compute6": 0.33710162499999996
+        },
+        "markerMs": 0.0006979375,
+        "samples": {
+          "marker": [
+            0.000747375,
+            0.0006953125,
+            0.0006953125,
+            0.0007109375,
+            0.00064325,
+            0.000877625,
+            0.000716125,
+            0.00069275,
+            0.0005546875,
+            0.000703125,
+            0.0006979375
+          ],
+          "render": [
+            0.461295125,
+            0.467373125,
+            0.457883625,
+            0.453144125,
+            0.4573888125,
+            0.4451104375,
+            0.4485165625,
+            0.4431234375,
+            0.4507874375,
+            0.4451546875,
+            0.442196375
+          ],
+          "compute4": [
+            0.343221375,
+            0.3335783125,
+            0.3375053125,
+            0.3321043125,
+            0.341453125,
+            0.336776125,
+            0.343617125,
+            0.3345105625,
+            0.3350938125,
+            0.34769525,
+            0.3347031875
+          ],
+          "compute6": [
+            0.3377995625,
+            0.3412083125,
+            0.3374923125,
+            0.3336798125,
+            0.33649225,
+            0.3450780625,
+            0.34243225,
+            0.3419530625,
+            0.3476353125,
+            0.333336125,
+            0.335132875
+          ]
+        }
+      },
+      {
+        "width": 1920,
+        "height": 1080,
+        "layers": 1,
+        "format": "rgba8unorm",
+        "passes": {
+          "render": 10,
+          "compute4": 7,
+          "compute6": 7
+        },
+        "gpuMs": {
+          "render": 0.1175763125,
+          "compute4": 0.0364811875,
+          "compute6": 0.0374134375
+        },
+        "markerMs": 0.0005729375,
+        "samples": {
+          "marker": [
+            0.0005885,
+            0.0005729375,
+            0.00056775,
+            0.000583375,
+            0.0005703125,
+            0.00058075,
+            0.00053125,
+            0.0005755,
+            0.0005625,
+            0.0005729375,
+            0.0005885625
+          ],
+          "render": [
+            0.162617375,
+            0.12670125,
+            0.1324589375,
+            0.115750875,
+            0.1141415,
+            0.1193366875,
+            0.118133625,
+            0.116451375,
+            0.146888375,
+            0.1172273125,
+            0.11814925
+          ],
+          "compute4": [
+            0.0372885,
+            0.0386061875,
+            0.036397875,
+            0.0366765,
+            0.0368093125,
+            0.037067125,
+            0.0370619375,
+            0.037054125,
+            0.04143425,
+            0.0367676875,
+            0.0363874375
+          ],
+          "compute6": [
+            0.0373301875,
+            0.039249375,
+            0.037986375,
+            0.0392103125,
+            0.0370176875,
+            0.040874375,
+            0.0363380625,
+            0.0380879375,
+            0.038822375,
+            0.0369343125,
+            0.0358745
+          ]
+        }
+      },
+      {
+        "width": 512,
+        "height": 512,
+        "layers": 6,
+        "format": "rgba8unorm",
+        "passes": {
+          "render": 54,
+          "compute4": 3,
+          "compute6": 2
+        },
+        "gpuMs": {
+          "render": 0.6336908125,
+          "compute4": 0.028752125,
+          "compute6": 0.0236089375
+        },
+        "markerMs": 0.00056775,
+        "samples": {
+          "marker": [
+            0.00056775,
+            0.000583375,
+            0.0005859375,
+            0.0005625,
+            0.0005234375,
+            0.0005625,
+            0.0005494375,
+            0.000559875,
+            0.0005806875,
+            0.000578125,
+            0.00058075
+          ],
+          "render": [
+            0.6703829375,
+            0.61481875,
+            0.6074386875,
+            0.6078474375,
+            0.6272248125,
+            0.641219375,
+            0.6342585625,
+            0.624836875,
+            0.6348783125,
+            0.637974625,
+            0.6497895625
+          ],
+          "compute4": [
+            0.028424,
+            0.0285906875,
+            0.029515125,
+            0.035614,
+            0.0304995,
+            0.03060625,
+            0.0275048125,
+            0.028431875,
+            0.030145375,
+            0.028234,
+            0.029319875
+          ],
+          "compute6": [
+            0.025530875,
+            0.0253694375,
+            0.0241766875,
+            0.0237131875,
+            0.0232679375,
+            0.02551525,
+            0.02234075,
+            0.02340325,
+            0.0251011875,
+            0.025221,
+            0.0223381875
+          ]
+        }
+      },
+      {
+        "width": 256,
+        "height": 256,
+        "layers": 1,
+        "format": "rgba16float",
+        "passes": {
+          "render": 8,
+          "compute4": 2,
+          "compute6": 2
+        },
+        "gpuMs": {
+          "render": 0.07893887499999999,
+          "compute4": 0.005755062500000001,
+          "compute6": 0.005677000000000001
+        },
+        "markerMs": 0.0005573125,
+        "samples": {
+          "marker": [
+            0.0020963125,
+            0.0005598125,
+            0.0005546875,
+            0.00056775,
+            0.0005729375,
+            0.00055725,
+            0.0005624375,
+            0.0005234375,
+            0.0005573125,
+            0.00055725,
+            0.0005546875
+          ],
+          "render": [
+            0.084496125,
+            0.083071625,
+            0.082652375,
+            0.0794961875,
+            0.079368625,
+            0.0793320625,
+            0.0799623125,
+            0.0779233125,
+            0.0782331875,
+            0.0805091875,
+            0.0786498125
+          ],
+          "compute4": [
+            0.0083670625,
+            0.0082863125,
+            0.006312375,
+            0.0062785,
+            0.0082316875,
+            0.0062785625,
+            0.006205625,
+            0.0062655625,
+            0.0082655,
+            0.0082446875,
+            0.0062265
+          ],
+          "compute6": [
+            0.0059321875,
+            0.0082525,
+            0.0062343125,
+            0.0062603125,
+            0.0062160625,
+            0.0063358125,
+            0.0082055625,
+            0.006210875,
+            0.0082004375,
+            0.0061848125,
+            0.006229125
+          ]
+        }
+      },
+      {
+        "width": 512,
+        "height": 512,
+        "layers": 1,
+        "format": "rgba16float",
+        "passes": {
+          "render": 9,
+          "compute4": 3,
+          "compute6": 2
+        },
+        "gpuMs": {
+          "render": 0.08664975,
+          "compute4": 0.009150937500000001,
+          "compute6": 0.007794125000000001
+        },
+        "markerMs": 0.0005546875,
+        "samples": {
+          "marker": [
+            0.00053125,
+            0.0005441875,
+            0.000591125,
+            0.0005755625,
+            0.0005390625,
+            0.000546875,
+            0.000708375,
+            0.0005833125,
+            0.0005546875,
+            0.0005286875,
+            0.0005546875
+          ],
+          "render": [
+            0.091595,
+            0.0887564375,
+            0.0860351875,
+            0.0880273125,
+            0.0860065,
+            0.0858919375,
+            0.0873268125,
+            0.0872044375,
+            0.0860924375,
+            0.086509125,
+            0.08907675
+          ],
+          "compute4": [
+            0.0099503125,
+            0.0097160625,
+            0.0096639375,
+            0.0175049375,
+            0.0096040625,
+            0.009645625,
+            0.009705625,
+            0.0099894375,
+            0.0096716875,
+            0.00963525,
+            0.009749875
+          ],
+          "compute6": [
+            0.0107108125,
+            0.008343625,
+            0.008338375,
+            0.007950375,
+            0.0083723125,
+            0.008294125,
+            0.008315,
+            0.010562375,
+            0.0083488125,
+            0.0103540625,
+            0.0102550625
+          ]
+        }
+      },
+      {
+        "width": 1024,
+        "height": 1024,
+        "layers": 1,
+        "format": "rgba16float",
+        "passes": {
+          "render": 10,
+          "compute4": 3,
+          "compute6": 2
+        },
+        "gpuMs": {
+          "render": 0.117784625,
+          "compute4": 0.0273303125,
+          "compute6": 0.026340812499999998
+        },
+        "markerMs": 0.0005676875,
+        "samples": {
+          "marker": [
+            0.0005676875,
+            0.0005884375,
+            0.000546875,
+            0.000578125,
+            0.000578125,
+            0.0005780625,
+            0.000552125,
+            0.000546875,
+            0.0005676875,
+            0.0004895625,
+            0.000502625
+          ],
+          "render": [
+            0.1259460625,
+            0.133883375,
+            0.1173393125,
+            0.1183523125,
+            0.11626125,
+            0.1281725625,
+            0.1495628125,
+            0.11772475,
+            0.1142378125,
+            0.1148549375,
+            0.1189981875
+          ],
+          "compute4": [
+            0.026593375,
+            0.0270335,
+            0.030796375,
+            0.0298328125,
+            0.0264918125,
+            0.028773,
+            0.027898,
+            0.029025625,
+            0.0263980625,
+            0.028773,
+            0.0265386875
+          ],
+          "compute6": [
+            0.0289683125,
+            0.0267835,
+            0.026437125,
+            0.028569875,
+            0.0269085,
+            0.0286818125,
+            0.026036125,
+            0.0270178125,
+            0.0267130625,
+            0.0304553125,
+            0.0268303125
+          ]
+        }
+      },
+      {
+        "width": 2048,
+        "height": 2048,
+        "layers": 1,
+        "format": "rgba16float",
+        "passes": {
+          "render": 11,
+          "compute4": 3,
+          "compute6": 2
+        },
+        "gpuMs": {
+          "render": 0.22439243749999999,
+          "compute4": 0.1605756875,
+          "compute6": 0.160474125
+        },
+        "markerMs": 0.00059375,
+        "samples": {
+          "marker": [
+            0.002109375,
+            0.0005859375,
+            0.0005311875,
+            0.0101145,
+            0.0005910625,
+            0.00059375,
+            0.00060675,
+            0.000622375,
+            0.00059375,
+            0.0005155625,
+            0.0006119375
+          ],
+          "render": [
+            0.229999125,
+            0.225754375,
+            0.2201659375,
+            0.2249861875,
+            0.2230226875,
+            0.2248090625,
+            0.2242491875,
+            0.24078275,
+            0.228181375,
+            0.22433775,
+            0.22642625
+          ],
+          "compute4": [
+            0.1676849375,
+            0.1613335,
+            0.1625835,
+            0.1630079375,
+            0.1599324375,
+            0.1594819375,
+            0.1713958125,
+            0.1611694375,
+            0.16006525,
+            0.15887525,
+            0.160192875
+          ],
+          "compute6": [
+            0.1587658125,
+            0.1631329375,
+            0.162586,
+            0.1580886875,
+            0.1673281875,
+            0.161067875,
+            0.159508,
+            0.157692875,
+            0.16826825,
+            0.159799625,
+            0.1762629375
+          ]
+        }
+      },
+      {
+        "width": 4096,
+        "height": 4096,
+        "layers": 1,
+        "format": "rgba16float",
+        "passes": {
+          "render": 12,
+          "compute4": 3,
+          "compute6": 2
+        },
+        "gpuMs": {
+          "render": 0.8341486874999999,
+          "compute4": 0.647672375,
+          "compute6": 0.6507505
+        },
+        "markerMs": 0.0006328125,
+        "samples": {
+          "marker": [
+            0.0006145625,
+            0.000671875,
+            0.0006640625,
+            0.0006328125,
+            0.0006561875,
+            0.000703125,
+            0.0005625,
+            0.000596375,
+            0.0006796875,
+            0.000627625,
+            0.0005963125
+          ],
+          "render": [
+            0.8392684375,
+            0.828273875,
+            0.826937875,
+            0.8347815,
+            0.8200968125,
+            0.845695375,
+            0.823964,
+            0.8348753125,
+            0.855416625,
+            0.850169375,
+            0.826898875
+          ],
+          "compute4": [
+            0.6695470625,
+            0.6406985,
+            0.7093668125,
+            0.6483051875,
+            0.64470375,
+            0.6479640625,
+            0.669367375,
+            0.6744585,
+            0.647425,
+            0.653930125,
+            0.645146375
+          ],
+          "compute6": [
+            0.65433375,
+            0.6754636875,
+            0.6414771875,
+            0.650729625,
+            0.6513833125,
+            0.64111525,
+            0.664068,
+            0.645518875,
+            0.6432454375,
+            0.654911875,
+            0.653492625
+          ]
+        }
+      },
+      {
+        "width": 1920,
+        "height": 1080,
+        "layers": 1,
+        "format": "rgba16float",
+        "passes": {
+          "render": 10,
+          "compute4": 7,
+          "compute6": 7
+        },
+        "gpuMs": {
+          "render": 0.122091875,
+          "compute4": 0.058879312499999996,
+          "compute6": 0.060681374999999996
+        },
+        "markerMs": 0.0005729375,
+        "samples": {
+          "marker": [
+            0.000515625,
+            0.0004765625,
+            0.0006066875,
+            0.0005624375,
+            0.0005599375,
+            0.0005729375,
+            0.000578125,
+            0.0005806875,
+            0.0005364375,
+            0.000578125,
+            0.00058075
+          ],
+          "render": [
+            0.1358806875,
+            0.1244199375,
+            0.12650325,
+            0.1187299375,
+            0.1203184375,
+            0.1226648125,
+            0.15635175,
+            0.1187690625,
+            0.118209125,
+            0.1475550625,
+            0.1207559375
+          ],
+          "compute4": [
+            0.065238625,
+            0.0633661875,
+            0.0674155625,
+            0.0590459375,
+            0.062835,
+            0.05945225,
+            0.05782725,
+            0.0576788125,
+            0.057962625,
+            0.060400125,
+            0.0584444375
+          ],
+          "compute6": [
+            0.0657855,
+            0.0612308125,
+            0.0633480625,
+            0.061488625,
+            0.0620276875,
+            0.0612543125,
+            0.058793375,
+            0.061585,
+            0.0587569375,
+            0.058921,
+            0.0589913125
+          ]
+        }
+      },
+      {
+        "width": 512,
+        "height": 512,
+        "layers": 6,
+        "format": "rgba16float",
+        "passes": {
+          "render": 54,
+          "compute4": 3,
+          "compute6": 2
+        },
+        "gpuMs": {
+          "render": 0.695007625,
+          "compute4": 0.036522875,
+          "compute6": 0.038124437500000004
+        },
+        "markerMs": 0.000578125,
+        "samples": {
+          "marker": [
+            0.0005885625,
+            0.0005520625,
+            0.0005703125,
+            0.000578125,
+            0.00058075,
+            0.0005859375,
+            0.0005859375,
+            0.0005625,
+            0.000552125,
+            0.0006015625,
+            0.0005285625
+          ],
+          "render": [
+            0.6286726875,
+            0.609527125,
+            0.7076558125,
+            0.7288039375,
+            0.660396125,
+            0.69558575,
+            0.6971169375,
+            0.7676184375,
+            0.6984164375,
+            0.685059875,
+            0.6225634375
+          ],
+          "compute4": [
+            0.03684575,
+            0.037101,
+            0.0446086875,
+            0.0388170625,
+            0.0365280625,
+            0.039002,
+            0.0385176875,
+            0.036723375,
+            0.0370280625,
+            0.03893175,
+            0.036335375
+          ],
+          "compute6": [
+            0.03699425,
+            0.045054,
+            0.0364395625,
+            0.039226,
+            0.0387025625,
+            0.037192125,
+            0.036509875,
+            0.0371375,
+            0.0388353125,
+            0.0390671875,
+            0.0387078125
+          ]
+        }
+      }
+    ]
+  },
+  "browserArgs": [
+    "--enable-unsafe-webgpu"
+  ]
+}

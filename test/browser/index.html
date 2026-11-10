@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>downsampler device lab</title>
+		<link rel="icon" href="data:,">
+		<style>
+			:root { color-scheme: light dark; font: 15px/1.45 system-ui, sans-serif; }
+			body { margin: 0 auto; padding: 16px; max-width: 960px; }
+			button { font: inherit; padding: 8px 14px; margin: 0 8px 8px 0; }
+			pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; background: rgba(127,127,127,.12); padding: 12px; border-radius: 6px; }
+			table { border-collapse: collapse; font-size: 13px; margin: 12px 0; display: block; overflow-x: auto; }
+			th, td { padding: 4px 10px; text-align: right; border-bottom: 1px solid rgba(127,127,127,.3); white-space: nowrap; }
+			th:first-child, td:first-child { text-align: left; }
+		</style>
+	</head>
+	<body>
+		<h1>downsampler device lab</h1>
+		<p>Runs the GPU validation suite and benchmark on this device and produces a JSON report. Close other GPU-heavy tabs for stable timings.</p>
+		<button id="validate">Validate</button>
+		<button id="quick">Quick validate</button>
+		<button id="bench">Validate + benchmark</button>
+		<button id="copy" disabled>Copy JSON report</button>
+		<div id="table"></div>
+		<pre id="status">Ready.</pre>
+		<script type="module">
+			import { requestDevice } from './gpu.js';
+			import { validate } from './validate.js';
+			import { benchmark } from '../bench/bench.js';
+
+			const status = document.getElementById( 'status' );
+			let report = null;
+
+			// Entry point for the headless runner (test/run.js) and the buttons below.
+			window.runSuite = async ( { bench = false, quick = false, sizes, rounds, repeats } = {} ) => {
+
+				const { device, adapter, userAgent } = await requestDevice();
+				const errors = [];
+				device.addEventListener( 'uncapturederror', event => errors.push( event.error.message ) );
+				device.lost.then( info => { if ( info.reason !== 'destroyed' ) errors.push( `device lost: ${ info.message }` ); } );
+				const progress = message => { status.textContent = typeof message === 'string' ? message : `${ message.width }x${ message.height }x${ message.layers } ${ message.format } done`; console.log( 'PROGRESS ' + status.textContent ); };
+
+				try {
+
+					const validation = await validate( device, { onProgress: progress, quick } );
+					const timing = bench ? await benchmark( device, { sizes, rounds, repeats, onProgress: progress } ) : null;
+					await device.queue.onSubmittedWorkDone();
+					if ( errors.length ) throw new Error( errors.join( '\n' ) );
+					return { date: new Date().toISOString(), adapter, userAgent, validation, timing };
+
+				} finally {
+
+					device.destroy();
+
+				}
+
+			};
+
+			function renderTable( timing ) {
+
+				if ( ! timing?.results.length ) return '';
+				const names = timing.strategies;
+				const rows = timing.results.map( row => `<tr><td>${ row.width }×${ row.height }×${ row.layers }</td><td>${ row.format }</td>${ names.map( name => `<td>${ row.gpuMs[ name ].toFixed( 4 ) }</td><td>${ row.passes[ name ] }</td>` ).join( '' ) }<td>${ ( row.gpuMs.render / row.gpuMs[ names[ names.length - 1 ] ] ).toFixed( 2 ) }×</td></tr>` );
+				return `<table><tr><th>size</th><th>format</th>${ names.map( name => `<th>${ name } ms</th><th>passes</th>` ).join( '' ) }<th>speedup</th></tr>${ rows.join( '' ) }</table>`;
+
+			}
+
+			for ( const id of [ 'validate', 'quick', 'bench' ] ) document.getElementById( id ).onclick = async () => {
+
+				document.querySelectorAll( 'button' ).forEach( button => button.disabled = true );
+
+				try {
+
+					report = await window.runSuite( { bench: id === 'bench', quick: id === 'quick' } );
+					const { results, ...summary } = report.validation;
+					status.textContent = JSON.stringify( { ...report, validation: summary, timing: report.timing && { ...report.timing, results: report.timing.results.map( ( { samples, ...row } ) => row ) } }, null, 2 );
+					document.getElementById( 'table' ).innerHTML = renderTable( report.timing );
+
+				} catch ( error ) {
+
+					status.textContent = `FAILED\n${ error.stack || error }`;
+
+				} finally {
+
+					document.querySelectorAll( 'button' ).forEach( button => button.disabled = false );
+					document.getElementById( 'copy' ).disabled = report === null;
+
+				}
+
+			};
+
+			document.getElementById( 'copy' ).onclick = () => navigator.clipboard.writeText( JSON.stringify( report, null, 2 ) );
+		</script>
+	</body>
+</html>

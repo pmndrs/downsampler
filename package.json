@@ -1,0 +1,39 @@
+{
+  "name": "downsampler",
+  "version": "0.0.0",
+  "description": "GPU texture downsampling: mip chains, reduction pyramids, Hi-Z and more. WebGPU first, engine agnostic.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pmndrs/downsampler.git"
+  },
+  "keywords": [ "webgpu", "mipmaps", "downsample", "hi-z", "spd", "three" ],
+  "sideEffects": false,
+  "files": [ "dist", "SPEC.md" ],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./webgpu": { "types": "./dist/webgpu/index.d.ts", "default": "./dist/webgpu/index.js" },
+    "./three": { "types": "./dist/three/index.d.ts", "default": "./dist/three/index.js" }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && npm run test:core && npm run test:gpu",
+    "test:core": "node --test test/core/*.test.js",
+    "test:gpu": "node test/run.js",
+    "bench": "npm run build && node test/run.js --bench",
+    "lab": "npm run build && node test/serve.js"
+  },
+  "peerDependencies": {
+    "three": ">=0.170.0"
+  },
+  "peerDependenciesMeta": {
+    "three": { "optional": true }
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.60",
+    "puppeteer": "^24.0.0",
+    "typescript": "^5.6.0"
+  }
+}
