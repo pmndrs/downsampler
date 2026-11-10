@@ -1,10 +1,10 @@
 # downsampler
 
-GPU texture downsampling: mip chains, min/max reduction pyramids and custom reductions, with Hi-Z from depth next. WebGPU first, engine-agnostic, zero dependencies. Adapters for three.js and others sit on top.
+GPU texture downsampling: mip chains, min/max reduction pyramids (Hi-Z from depth) and custom reductions. WebGPU first, engine-agnostic, zero dependencies. Adapters for three.js and others sit on top.
 
 A WGSL implementation of the ideas in AMD FidelityFX SPD: a 64×64 source tile reduced to six levels per workgroup in workgroup memory, with every level written once. It targets SPD's feature set. See [SPEC.md](SPEC.md) for the full design, parity table and roadmap.
 
-> Status: early (milestone 2 in progress). Supports `rgba8unorm` and `rgba16float`, 2D textures and array layers, and average, min, max, minmax and custom reductions. Not yet published to npm.
+> Status: early (milestone 2 in progress). Destinations `rgba8unorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`; any float-sampleable or depth source; 2D textures and array layers; average, min, max, minmax and custom reductions. Not yet published to npm.
 
 ## Two things to know first
 
@@ -33,6 +33,9 @@ downsampler.generate( texture, { reduction: 'minmax' } );  // r/b = min, g/a = m
 downsampler.generate( texture, { reduction: { wgsl: `
 	fn reduce( a: vec4f, b: vec4f ) -> vec4f { return max( a, b ); }  // associative, commutative, idempotent
 ` } } );
+
+// Hi-Z from a depth buffer: level 0 is a copy (same size) or the first reduction (half size).
+downsampler.generate( hiZ /* rg32float */, { source: { texture: depthTexture }, reduction: 'minmax' } );
 ```
 
 three.js (`WebGPURenderer`, texture allocated with storage usage, e.g. `StorageTexture`):

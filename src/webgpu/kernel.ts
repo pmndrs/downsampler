@@ -1,4 +1,4 @@
-import { formats, type SupportedFormat } from '../core/formats.js';
+import { formats, isSupportedFormat, sampledChannels, type SupportedFormat } from '../core/formats.js';
 import { tileSize, workgroupSide } from '../core/plan.js';
 import { isBuiltinReduction, reductionKey, type Reduction } from '../core/reduction.js';
 
@@ -21,6 +21,13 @@ export interface KernelOptions {
 	reduction?: Reduction;
 	/** Default 'sample' for 'average', otherwise 'load' (the only option for folds). */
 	access?: SourceAccess;
+	/**
+	 * Format of the texture the first output reads, when it isn't `format` (a
+	 * separate source, e.g. depth32float). Single-channel sources are splatted to
+	 * all four channels; unorm8 loads are rounded to exact integers only when the
+	 * source itself is unorm8.
+	 */
+	sourceFormat?: string;
 }
 
 /** Bind group layout entries matching {@link createKernel}. */
@@ -51,7 +58,7 @@ const builtinFolds = {
  * block measured ~30–45 % slower. Later levels are 2:1 reductions of the tile in
  * workgroup memory, with clamped reads for unit dimensions and partial tiles.
  */
-export function createKernel( { format, dimension, count, reduction = 'average', access }: KernelOptions ): string {
+export function createKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format }: KernelOptions ): string {
 
 	reductionKey( reduction );
 	const average = reduction === 'average';
@@ -62,6 +69,8 @@ export function createKernel( { format, dimension, count, reduction = 'average',
 	const suffix = array ? '_array' : '';
 	const layer = array ? ', i32(group.z)' : '';
 	const unorm8 = formats[ format ].quantization === 'unorm8';
+	const exactLoads = unorm8 && isSupportedFormat( sourceFormat ) && formats[ sourceFormat ].quantization === 'unorm8';
+	const splat = sampledChannels( sourceFormat ) === 1 ? '.xxxx' : '';
 	const tile = tileSize( count );
 	const side = workgroupSide( tile );
 	const samples = tile / side;
@@ -85,11 +94,14 @@ fn quantize(value: vec4f) -> vec4f {
 	let nearest = select(lower, lower + vec4f(1), fraction > vec4f(0.5));
 	return select(nearest, lower + vec4f(vec4u(lower) & vec4u(1)), fraction == vec4f(0.5));
 }
-` : `
+` : formats[ format ].quantization === 'float16' ? `
 const SCALE = 1.0;
 fn quantize(value: vec4f) -> vec4f {
 	return vec4f(unpack2x16float(pack2x16float(value.xy)), unpack2x16float(pack2x16float(value.zw)));
 }
+` : `
+const SCALE = 1.0;
+fn quantize(value: vec4f) -> vec4f { return value; }
 `;
 
 	if ( ! average ) {
@@ -105,8 +117,8 @@ fn quantize(value: vec4f) -> vec4f {
 		// unorm8 texels are rounded back to exact integers so later sums are exact.
 		code += `
 fn load(p: vec2u, layer: u32) -> vec4f {
-	let v = textureLoad(source, vec2i(p)${ array ? ', i32(layer)' : '' }, 0) * SCALE;
-	return ${ unorm8 ? 'round(v)' : 'v' };
+	let v = textureLoad(source, vec2i(p)${ array ? ', i32(layer)' : '' }, 0)${ splat } * SCALE;
+	return ${ exactLoads ? 'round(v)' : 'v' };
 }
 `;
 
@@ -119,20 +131,23 @@ fn first(pos: vec2u, size: vec2u, layer: u32) -> vec4f {
 	if ( access === 'sample' ) {
 
 		code += `	let uv = (vec2f(pos) + 0.5) / vec2f(size);
-	return quantize(textureSampleLevel(source, imageSampler, uv${ array ? ', i32(layer)' : '' }, 0.0) * SCALE);
+	return quantize(textureSampleLevel(source, imageSampler, uv${ array ? ', i32(layer)' : '' }, 0.0)${ splat } * SCALE);
 `;
 
 	} else if ( average ) {
 
 		// Bilinear weights at the output texel centre, as the sampler would apply
-		// them but without its fixed-point weight rounding.
+		// them but without its fixed-point weight rounding. The sample position
+		// (x + 0.5) * S / n - 0.5 is ((2x + 1) * S - n) / 2n: integer math keeps
+		// the base texel exact (float division isn't correctly rounded on GPUs),
+		// and gives weights of exactly 0 or 0.5 for copies and even sizes.
 		code += `	let sourceSize = textureDimensions(source);
 	let last = sourceSize - vec2u(1);
-	let s = (vec2f(pos) + 0.5) * vec2f(sourceSize) / vec2f(size) - 0.5;
-	let base = floor(s);
-	let f = s - base;
-	let lo = vec2u(clamp(vec2i(base), vec2i(0), vec2i(last)));
-	let hi = vec2u(clamp(vec2i(base) + 1, vec2i(0), vec2i(last)));
+	let numerator = (2u * pos + vec2u(1)) * sourceSize - size;
+	let denominator = 2u * size;
+	let lo = min(numerator / denominator, last);
+	let hi = min(lo + vec2u(1), last);
+	let f = vec2f(numerator % denominator) / vec2f(denominator);
 	let top = mix(load(lo, layer), load(vec2u(hi.x, lo.y), layer), f.x);
 	let bottom = mix(load(vec2u(lo.x, hi.y), layer), load(hi, layer), f.x);
 	return quantize(mix(top, bottom, f.y));
@@ -141,12 +156,15 @@ fn first(pos: vec2u, size: vec2u, layer: u32) -> vec4f {
 	} else {
 
 		// The footprint: 2x and 2x + 1, plus 2x + 2 along odd source dimensions.
+		// A same-size source (separate source copied into the first level) reads
+		// one texel per axis.
 		code += `	let sourceSize = textureDimensions(source);
 	let last = sourceSize - vec2u(1);
-	let lo = min(pos * 2u, last);
-	let hi = min(lo + vec2u(1), last);
+	let same = sourceSize == size;
+	let lo = select(min(pos * 2u, last), pos, same);
+	let hi = select(min(lo + vec2u(1), last), lo, same);
 	var v = fold(fold(load(lo, layer), load(vec2u(hi.x, lo.y), layer)), fold(load(vec2u(lo.x, hi.y), layer), load(hi, layer)));
-	let odd = ((sourceSize & vec2u(1)) == vec2u(1)) & (sourceSize > vec2u(1));
+	let odd = ((sourceSize & vec2u(1)) == vec2u(1)) & (sourceSize > vec2u(1)) & !same;
 	let far = min(lo + vec2u(2), last);
 	if (odd.x) { v = fold(v, fold(load(vec2u(far.x, lo.y), layer), load(vec2u(far.x, hi.y), layer))); }
 	if (odd.y) { v = fold(v, fold(load(vec2u(lo.x, far.y), layer), load(vec2u(hi.x, far.y), layer))); }

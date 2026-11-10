@@ -15,19 +15,26 @@ export type OddSizePolicy = 'exact';
 // SPEC.md and not implemented yet.
 
 export interface PlanOptions {
-	/** Source level. Outputs start at `baseMipLevel + 1`. */
+	/**
+	 * In place: the source level, with outputs from `baseMipLevel + 1`. With
+	 * `fromSource`: the first level written, read from the separate source.
+	 */
 	baseMipLevel?: number;
-	/** Number of levels involved, including the source level. */
+	/** Destination levels involved: in place this includes the source level. */
 	mipLevelCount: number;
 	/** Maximum output levels per dispatch (bounded by storage texture bindings). */
 	levelsPerDispatch: number;
 	oddSizes?: OddSizePolicy;
+	/** The first batch reads a separate source texture instead of a level of this one. */
+	fromSource?: boolean;
 }
 
 export interface Batch {
-	/** Level sampled by the first output of this batch. */
-	sourceMipLevel: number;
-	/** Number of output levels written: sourceMipLevel + 1 … sourceMipLevel + count. */
+	/** Level sampled by the first output, or null for the separate source. */
+	sourceMipLevel: number | null;
+	/** First level written. */
+	firstMipLevel: number;
+	/** Number of output levels written: firstMipLevel … firstMipLevel + count - 1. */
 	count: number;
 	/** Size of the first output level. */
 	outputWidth: number;
@@ -71,22 +78,21 @@ export function workgroupSide( tile: number ): number {
 
 export function planBatches( width: number, height: number, options: PlanOptions ): Batch[] {
 
-	const { baseMipLevel = 0, mipLevelCount, levelsPerDispatch, oddSizes = 'exact' } = options;
+	const { baseMipLevel = 0, mipLevelCount, levelsPerDispatch, oddSizes = 'exact', fromSource = false } = options;
 	if ( oddSizes !== 'exact' ) throw new Error( `downsampler: odd size policy "${ oddSizes }" is not implemented.` );
 	if ( ! Number.isInteger( levelsPerDispatch ) || levelsPerDispatch < 1 || levelsPerDispatch > 6 ) throw new Error( 'downsampler: levelsPerDispatch must be an integer from 1 to 6.' );
 
+	const firstLevel = fromSource ? baseMipLevel : baseMipLevel + 1;
 	const lastLevel = baseMipLevel + mipLevelCount - 1;
 	const batches: Batch[] = [];
-	let w = mipSize( width, baseMipLevel ), h = mipSize( height, baseMipLevel );
 
-	for ( let level = baseMipLevel; level < lastLevel; ) {
+	for ( let level = firstLevel; level <= lastLevel; ) {
 
-		const outputWidth = Math.max( 1, Math.floor( w / 2 ) );
-		const outputHeight = Math.max( 1, Math.floor( h / 2 ) );
+		const outputWidth = mipSize( width, level ), outputHeight = mipSize( height, level );
 		let count = 1, cw = outputWidth, ch = outputHeight;
 
 		// Continue in workgroup memory only while each non-unit dimension halves exactly.
-		while ( count < levelsPerDispatch && level + count < lastLevel &&
+		while ( count < levelsPerDispatch && level + count <= lastLevel &&
 			( cw === 1 || cw % 2 === 0 ) && ( ch === 1 || ch % 2 === 0 ) ) {
 
 			cw = Math.max( 1, cw / 2 );
@@ -97,12 +103,10 @@ export function planBatches( width: number, height: number, options: PlanOptions
 
 		const tile = tileSize( count );
 		batches.push( {
-			sourceMipLevel: level, count, outputWidth, outputHeight, tile,
+			sourceMipLevel: fromSource && level === firstLevel ? null : level - 1, firstMipLevel: level, count, outputWidth, outputHeight, tile,
 			groupsX: Math.ceil( outputWidth / tile ), groupsY: Math.ceil( outputHeight / tile )
 		} );
 
-		w = cw;
-		h = ch;
 		level += count;
 
 	}

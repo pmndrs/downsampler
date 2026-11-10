@@ -1,9 +1,9 @@
 // GPU correctness suite. Every texel of every generated level is checked against
 // the CPU reference, computed from the GPU's own previous level so permitted
 // rounding differences do not accumulate along the chain.
-import { formats, reduceReference, tolerance } from '/dist/index.js';
+import { copyReference, formats, reduceReference, sampledChannels, tolerance } from '/dist/index.js';
 import { Downsampler } from '/dist/webgpu/index.js';
-import { createTexture, makeData, poison, readMip, readMips, toFloats, upload } from './gpu.js';
+import { createDepthSource, createTexture, makeData, poison, readMip, readMips, toFloats, upload } from './gpu.js';
 
 // [ width, height, layers?, viewDimension? ]: 1×1, 1D tails, odd sizes, partial
 // workgroups, rectangles, layers, both 2D view variants, and multi-batch sizes.
@@ -33,21 +33,29 @@ const preferHigh = {
 // nothing about a fold, so folds skip it.
 export const variants = [
 	{ name: 'average', reduction: 'average', patterns },
-	{ name: 'average (load)', reduction: 'average', access: 'load', patterns },
+	// Unfilterable formats always load, so this is only distinct for filterable ones.
+	{ name: 'average (load)', reduction: 'average', access: 'load', patterns, filterableOnly: true },
 	{ name: 'min', reduction: 'min', patterns: patterns.slice( 1 ) },
 	{ name: 'max', reduction: 'max', patterns: patterns.slice( 1 ) },
 	{ name: 'minmax', reduction: 'minmax', patterns: patterns.slice( 1 ) },
 	{ name: 'custom', reduction: { wgsl: preferHigh.wgsl }, reference: preferHigh.reference, patterns: patterns.slice( 1 ) }
 ];
 
-function check( actual, expected, quantization, label, reduction = 'average' ) {
+/**
+ * Compares the stored channels of every texel; the rest are not written.
+ * `slack` is a relative allowance for levels read directly from a unorm source:
+ * unorm → float conversion needn't be correctly rounded (SwiftShader's
+ * depth16unorm differs from k / 65535 by an ulp), so even exact folds can see it.
+ */
+function check( actual, expected, quantization, label, reduction = 'average', channels = 4, slack = 0 ) {
 
 	let maxError = 0;
 
 	for ( let i = 0; i < expected.values.length; i ++ ) {
 
+		if ( i % 4 >= channels ) continue;
 		const error = Math.abs( actual[ i ] - expected.values[ i ] );
-		const limit = tolerance( expected.values[ i ], quantization, expected.filterTolerance[ i ], reduction );
+		const limit = tolerance( expected.values[ i ], quantization, expected.filterTolerance[ i ], reduction ) + Math.abs( expected.values[ i ] ) * slack;
 		if ( ! Number.isFinite( actual[ i ] ) || error > limit ) throw new Error( `${ label }: value ${ i }, actual ${ actual[ i ] }, expected ${ expected.values[ i ] }, error ${ error } > ${ limit }` );
 		maxError = Math.max( maxError, error );
 
@@ -83,7 +91,8 @@ export async function validate( device, { onProgress = () => {}, quick = false }
 
 		for ( const format of Object.keys( formats ) ) {
 
-			const { quantization } = formats[ format ];
+			const { quantization, channels, filterable } = formats[ format ];
+			const formatVariants = variants.filter( variant => filterable || ! variant.filterableOnly );
 
 			for ( const [ shapeIndex, [ width, height, layers = 1, dimension ] ] of cases.entries() ) {
 
@@ -94,7 +103,7 @@ export async function validate( device, { onProgress = () => {}, quick = false }
 
 				try {
 
-					for ( const { levels, ...byAccess } of downsamplers ) for ( const variant of variants ) {
+					for ( const { levels, ...byAccess } of downsamplers ) for ( const variant of formatVariants ) {
 
 						const downsampler = byAccess[ variant.access ?? 'sample' ];
 						const options = { reduction: variant.reduction };
@@ -125,7 +134,7 @@ export async function validate( device, { onProgress = () => {}, quick = false }
 								if ( expected === undefined ) expected = reduceReference( previous, w, h, layers, quantization, reference );
 								if ( level === 1 ) firstLevels.set( key, expected );
 								const actual = mips[ level - 1 ];
-								result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ width }x${ height }x${ layers } ${ format } ${ variant.name } ${ pattern } L${ levels } mip ${ level }`, reference ) );
+								result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ width }x${ height }x${ layers } ${ format } ${ variant.name } ${ pattern } L${ levels } mip ${ level }`, reference, channels ) );
 								previous = actual; w = expected.width; h = expected.height;
 
 							}
@@ -151,6 +160,7 @@ export async function validate( device, { onProgress = () => {}, quick = false }
 
 		}
 
+		results.push( ...await validateSource( device, { quick, onProgress } ) );
 		results.push( ...await validateOptions( device ) );
 		await device.queue.onSubmittedWorkDone();
 
@@ -162,6 +172,117 @@ export async function validate( device, { onProgress = () => {}, quick = false }
 	}
 
 	return { passed: true, cases: results.length, checks: runs, ms: Math.round( performance.now() - started ), results };
+
+}
+
+// Separate source → destination. 'same' copies the source into level 0, 'half'
+// reduces it once; either way every destination level is written and checked.
+export const sourceCases = [
+	{ source: 'depth32float', destination: 'r32float', relation: 'same', reductions: [ 'min', 'max' ] },
+	{ source: 'depth32float', destination: 'rg32float', relation: 'same', reductions: [ 'minmax' ] },
+	{ source: 'depth32float', destination: 'rg32float', relation: 'half', reductions: [ 'minmax', 'average' ] },
+	{ source: 'depth16unorm', destination: 'r32float', relation: 'half', reductions: [ 'max', 'average' ] },
+	{ source: 'r32float', destination: 'rg32float', relation: 'same', reductions: [ 'minmax' ] },
+	{ source: 'rgba8unorm', destination: 'rgba16float', relation: 'half', reductions: [ 'average', 'max' ] },
+	{ source: 'rgba16float', destination: 'rgba8unorm', relation: 'same', reductions: [ 'average' ] },
+	{ source: 'rgba16float', destination: 'rgba8unorm', relation: 'half', reductions: [ 'average', 'min' ] }
+];
+
+export const sourceShapes = [
+	[ 1, 1 ], [ 2, 2 ], [ 3, 7 ], [ 17, 9 ], [ 64, 64 ], [ 65, 129 ], [ 1, 128 ], [ 255, 257 ], [ 192, 108 ],
+	[ 64, 32, 3 ], [ 17, 11, 3 ], [ 2048, 2048 ], [ 1920, 1080 ]
+];
+
+async function makeSource( device, format, width, height, layers, pattern, seed ) {
+
+	if ( format.startsWith( 'depth' ) ) {
+
+		const values = makeData( width, height, layers, 'r32float', pattern, seed, { unit: true } );
+		return createDepthSource( device, { width, height, layers, format }, values );
+
+	}
+
+	const texture = createTexture( device, { width, height, layers, format, storage: false } );
+	const data = makeData( width, height, layers, format, pattern, seed );
+	upload( device, texture, data );
+	return { texture, floats: toFloats( data, format ) };
+
+}
+
+/** Single-channel sources are splatted by the kernel; the oracle sees the same. */
+function splat( floats ) {
+
+	const output = new Float32Array( floats.length );
+	for ( let i = 0; i < floats.length; i += 4 ) output.fill( floats[ i ], i, i + 4 );
+	return output;
+
+}
+
+async function validateSource( device, { quick, onProgress } ) {
+
+	const results = [];
+	const shapes = quick ? sourceShapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : sourceShapes;
+	const downsamplers = levelOptions( device ).map( levels => new Downsampler( device, { levelsPerDispatch: levels } ) );
+
+	for ( const { source: sourceFormat, destination: format, relation, reductions } of sourceCases ) {
+
+		const { quantization, channels } = formats[ format ];
+
+		for ( const [ shapeIndex, [ width, height, layers = 1 ] ] of shapes.entries() ) {
+
+			const dw = relation === 'same' ? width : Math.max( 1, width >> 1 ), dh = relation === 'same' ? height : Math.max( 1, height >> 1 );
+			const destination = createTexture( device, { width: dw, height: dh, layers, format } );
+
+			try {
+
+				for ( const pattern of [ 'random', 'edge', 'tiles' ] ) {
+
+					const source = await makeSource( device, sourceFormat, width, height, layers, pattern, pattern === 'tiles' ? shapeIndex + 3 : 1 );
+					const input = sampledChannels( sourceFormat ) === 1 ? splat( source.floats ) : source.floats;
+
+					try {
+
+						for ( const downsampler of downsamplers ) for ( const reduction of reductions ) {
+
+							poison( device, destination, 0 );
+							downsampler.generate( destination, { source: { texture: source.texture }, reduction } );
+							const mips = await readMips( device, destination, 0 );
+							const label = `${ sourceFormat } ${ width }x${ height }x${ layers } -> ${ format } ${ relation } ${ reduction } ${ pattern } L${ downsampler.levelsPerDispatch }`;
+							let previous = input, w = width, h = height;
+
+							for ( let level = 0; level < destination.mipLevelCount; level ++ ) {
+
+								const expected = level === 0 && dw === width && dh === height ? copyReference( previous, w, h, layers, quantization ) : reduceReference( previous, w, h, layers, quantization, reduction );
+								const slack = level === 0 && /unorm/.test( sourceFormat ) ? 2 ** - 21 : 0;
+								check( mips[ level ], expected, quantization, `${ label } mip ${ level }`, reduction, channels, slack );
+								previous = mips[ level ]; w = expected.width; h = expected.height;
+
+							}
+
+						}
+
+					} finally {
+
+						source.texture.destroy();
+
+					}
+
+				}
+
+				results.push( { source: sourceFormat, destination: format, relation, width, height, layers, reductions } );
+				onProgress( `validated source ${ sourceFormat } ${ width }×${ height }×${ layers } -> ${ format } (${ relation })` );
+
+			} finally {
+
+				destination.destroy();
+
+			}
+
+		}
+
+	}
+
+	return results;
 
 }
 
@@ -209,6 +330,49 @@ async function validateOptions( device ) {
 	}
 
 	results.push( { option: 'unsupported textures' } );
+
+	// Sources that can't feed a destination are rejected with a reason.
+	const destination = createTexture( device, { width: 32, height: 32, format: 'r32float' } );
+	const layered = createTexture( device, { width: 32, height: 32, layers: 2, format: 'r32float' } );
+	const renderOnly = device.createTexture( { size: [ 32, 32 ], format: 'depth32float', usage: GPUTextureUsage.RENDER_ATTACHMENT } );
+	const rejected = [
+		[ { texture: destination }, 'source is the destination' ],
+		[ { texture: createTexture( device, { width: 30, height: 32, format: 'r32float' } ) }, 'must be the source level' ],
+		[ { texture: layered }, 'layers' ],
+		[ { texture: renderOnly }, 'TEXTURE_BINDING' ],
+		[ { texture: layered, mipLevel: 9 }, 'mipLevel' ]
+	];
+	for ( const [ source, message ] of rejected ) {
+
+		const reason = downsampler.sourceUnsupportedReason( destination, source );
+		if ( reason === null || ! reason.includes( message ) ) throw new Error( `expected source rejection "${ message }", got ${ reason }` );
+		let threw = false;
+		try { downsampler.generate( destination, { source } ); } catch { threw = true; }
+		if ( ! threw ) throw new Error( `generate() accepted a source that should fail with "${ message }"` );
+
+	}
+
+	// A non-zero source level, and a new source texture with the same options
+	// (a depth buffer recreated on resize) replaces the cached plan.
+	const mipped = createTexture( device, { width: 64, height: 64, format: 'r32float' } );
+	const mippedData = makeData( 64, 64, 1, 'r32float', 'random', 5 );
+	upload( device, mipped, mippedData );
+	downsampler.generate( mipped );
+	const level1 = await readMip( device, mipped, 1 );
+	downsampler.generate( destination, { source: { texture: mipped, mipLevel: 1 }, reduction: 'max' } );
+	check( await readMip( device, destination, 0 ), copyReference( level1, 32, 32, 1, 'float32' ), 'float32', 'source mipLevel 1', 'max', 1 );
+
+	for ( const seed of [ 7, 8 ] ) {
+
+		const depth = await createDepthSource( device, { width: 64, height: 64 }, makeData( 64, 64, 1, 'r32float', 'random', seed, { unit: true } ) );
+		downsampler.generate( destination, { source: { texture: depth.texture }, reduction: 'max' } );
+		check( await readMip( device, destination, 0 ), reduceReference( splat( depth.floats ), 64, 64, 1, 'float32', 'max' ), 'float32', `replaced source ${ seed }`, 'max', 1 );
+		depth.texture.destroy();
+
+	}
+
+	for ( const texture of [ destination, layered, renderOnly, mipped, ...rejected.map( ( [ source ] ) => source.texture ) ] ) texture.destroy();
+	results.push( { option: 'source validation, mipLevel and replacement' } );
 	return results;
 
 }

@@ -2,7 +2,7 @@
 //   node test/run.js                     validation suite
 //   node test/run.js --quick             small shapes only
 //   node test/run.js --bench             validation + benchmark
-//   node test/run.js --bench --sizes=1024x1024,512x512x6 --rounds=11 --repeats=16
+//   node test/run.js --bench --sizes=1024x1024,512x512x6 --formats=rgba8unorm --rounds=11 --repeats=16
 //   node test/run.js --output=results/report.json --headful
 //   node test/run.js --adapter=swiftshader   software adapter (CI, no GPU)
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -14,6 +14,7 @@ const args = process.argv.slice( 2 );
 const value = name => args.find( arg => arg.startsWith( `--${ name }=` ) )?.split( '=' )[ 1 ];
 const options = { bench: args.includes( '--bench' ), quick: args.includes( '--quick' ) };
 if ( value( 'sizes' ) ) options.sizes = value( 'sizes' ).split( ',' ).map( size => size.split( 'x' ).map( Number ) );
+if ( value( 'formats' ) ) options.formats = value( 'formats' ).split( ',' );
 if ( value( 'rounds' ) ) options.rounds = Number( value( 'rounds' ) );
 if ( value( 'repeats' ) ) options.repeats = Number( value( 'repeats' ) );
 

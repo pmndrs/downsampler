@@ -4,13 +4,14 @@
  */
 
 /** How values are rounded between levels. */
-export type Quantization = 'unorm8' | 'float16';
+export type Quantization = 'unorm8' | 'float16' | 'float32';
 
 export interface FormatInfo {
 	quantization: Quantization;
 	/** Bytes per texel, for readback and planning. */
 	bytesPerTexel: number;
-	channels: 4;
+	/** Stored channels. Kernels work on vec4 and store the first `channels`. */
+	channels: 1 | 2 | 4;
 	/** Whether a filtering sampler can read it without optional features. */
 	filterable: boolean;
 }
@@ -18,7 +19,12 @@ export interface FormatInfo {
 /** Formats supported by the current kernels. See SPEC.md for the planned matrix. */
 export const formats = {
 	rgba8unorm: { quantization: 'unorm8', bytesPerTexel: 4, channels: 4, filterable: true },
-	rgba16float: { quantization: 'float16', bytesPerTexel: 8, channels: 4, filterable: true }
+	rgba16float: { quantization: 'float16', bytesPerTexel: 8, channels: 4, filterable: true },
+	// Filtering float32 needs the optional `float32-filterable` feature, so these
+	// always use the load path.
+	r32float: { quantization: 'float32', bytesPerTexel: 4, channels: 1, filterable: false },
+	rg32float: { quantization: 'float32', bytesPerTexel: 8, channels: 2, filterable: false },
+	rgba32float: { quantization: 'float32', bytesPerTexel: 16, channels: 4, filterable: false }
 } as const satisfies Record<string, FormatInfo>;
 
 export type SupportedFormat = keyof typeof formats;
@@ -92,6 +98,21 @@ export function fromHalf( bits: number ): number {
 export function quantize( value: number, quantization: Quantization ): number {
 
 	if ( quantization === 'unorm8' ) return roundHalfEven( Math.min( 1, Math.max( 0, value ) ) * 255 ) / 255;
+	if ( quantization === 'float32' ) return Math.fround( value );
 	return fromHalf( toHalf( value ) );
+
+}
+
+/**
+ * Channels a sampled texture of this format returns data in (the rest read as
+ * 0, 0, 1). Depth formats and r* formats have one. Used to splat single-channel
+ * sources so that, for example, minmax of depth yields (d, d).
+ */
+export function sampledChannels( format: string ): number {
+
+	if ( format.startsWith( 'depth' ) || format === 'stencil8' ) return 1;
+	// 'rgb10a2unorm' -> 'rgb10a2' -> r, g, b, a; 'rg11b10ufloat' -> r, g, b.
+	const layout = format.replace( /(unorm|snorm|uint|sint|ufloat|float)(-srgb)?$/, '' );
+	return layout.match( /[rgba]/g )?.length ?? 4;
 
 }

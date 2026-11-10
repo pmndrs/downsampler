@@ -90,14 +90,27 @@ export function reduceReference( source: Float32Array, width: number, height: nu
 }
 
 /**
+ * Reference for a same-size converting copy (a separate source whose level is
+ * the destination's first level): each value quantized to the destination.
+ */
+export function copyReference( source: Float32Array, width: number, height: number, layers: number, quantization: Quantization ): ReferenceLevel {
+
+	return { width, height, layers, values: source.map( value => quantize( value, quantization ) ), filterTolerance: new Float32Array( source.length ) };
+
+}
+
+/**
  * Declared comparison tolerance for one value: about two 8-bit steps for unorm8,
- * or max(0.002, 0.3 %) for float16, plus the reference's filter allowance. Fold
+ * or max(0.002, 0.3 %) for float16, or 1e-5 relative for float32, plus the reference's filter allowance. Fold
  * reductions select existing values, so they must match exactly. These are test
  * tolerances for the fixtures in this repository, not a formal error bound.
  */
 export function tolerance( expected: number, quantization: Quantization, filterTolerance = 0, reduction: ReferenceReduction = 'average' ): number {
 
 	if ( reduction !== 'average' ) return 0;
-	return ( quantization === 'unorm8' ? 2.01 / 255 : Math.max( 0.002, Math.abs( expected ) * 0.003 ) ) + filterTolerance;
+	if ( quantization === 'unorm8' ) return 2.01 / 255 + filterTolerance;
+	// float32 kernels compute in f32 and the reference in f64: a few ulps.
+	if ( quantization === 'float32' ) return Math.max( 1e-6, Math.abs( expected ) * 1e-5 ) + filterTolerance;
+	return Math.max( 0.002, Math.abs( expected ) * 0.003 ) + filterTolerance;
 
 }

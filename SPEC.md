@@ -1,6 +1,6 @@
 # downsampler — core specification
 
-Status: milestone 2 in progress (M2.1, reductions and the load path, done). This document is the source of truth for scope, design decisions, correctness requirements and the remaining plan. Update it when a decision changes.
+Status: milestone 2 in progress. M2.1 (reductions, load path) and M2.2 (separate source, float32 formats) are done. This document is the source of truth for scope, design decisions, correctness requirements and the remaining plan. Update it when a decision changes.
 
 ## 1. Purpose
 
@@ -77,10 +77,22 @@ A batch reads one source level and writes up to `levelsPerDispatch` consecutive 
   - **Units:** custom folds see normalized values. For unorm8 the kernel converts to and from its 0–255 working units around the call.
   - **Tolerance:** folds select existing values, so the GPU must match the oracle exactly.
 
+### Separate source
+
+- **Use:** a destination that can't be its own source, mainly a depth buffer feeding a Hi-Z pyramid (depth formats can't be storage textures), or a format conversion.
+- **Size rule:** destination level `baseMipLevel` must be the same size as the source level (a converting copy) or half of it (one reduction step). Every destination level in range is written, including `baseMipLevel`. `mipLevelCount` counts destination levels in both modes.
+- **Planning:** the first batch reads the source and every later batch reads the destination (`Batch.sourceMipLevel === null` marks the source batch). The copy is a runtime branch on equal sizes, uniform across the dispatch, so it needs no pipeline variant.
+- **Source formats:** anything float-sampleable, including depth (through the depth aspect, bound as `unfilterable-float`). Depth and 32-bit float sources always load.
+- **Splat:** single-channel sources (depth, `r*`) are read as `(v, v, v, v)`, so `'minmax'` of depth gives `(d, d)` with no special case.
+- **unorm8 rounding on load** applies only when the source is unorm8 itself. Rounding a 16- or 32-bit source to 8 bits before reducing would round twice.
+- **Caching:** a plan is cached per destination and option set, holding only the most recent source texture. Recreating a depth buffer on resize therefore replaces the entry instead of growing the cache.
+
 ### Source access
 
 - **`'sample'`:** one `textureSampleLevel`. `'average'` only, filterable formats only.
-- **`'load'`:** `textureLoad` of the footprint, bound as `unfilterable-float`. Required for folds, and for formats without filtering such as r32float without `float32-filterable` (M2.3). For `'average'` it computes the bilinear weights in the shader, without the sampler's fixed-point weight rounding. unorm8 texels are rounded back to exact integers on load, so even-size averages are exact.
+- **`'load'`:** `textureLoad` of the footprint, bound as `unfilterable-float`. Required for folds, depth, and float32 formats without `float32-filterable`. For `'average'` it computes the bilinear weights in the shader, without the sampler's fixed-point weight rounding.
+  - **Integer weights:** the position `(x + 0.5)·S/n − 0.5` is computed as `((2x+1)·S − n) / 2n`, giving an exact base texel and a weight of `remainder / 2n`. GPU float division isn't correctly rounded (WGSL allows 2.5 ulp). A float version computed 2.9999998 for an exact 3.0, so `floor` picked the wrong pair.
+  - **unorm8:** texels are rounded back to exact integers on load, so even-size averages are exact.
 - Bind group layouts are explicit, not `'auto'`, so layouts can be shared across reductions and the load path can declare `unfilterable-float`.
 - **`'average'` keeps the sampler by default.** Load against sample, same run with rotated order (Apple M5 Pro, Chrome 155, 2026-11-10, measured while the machine had a load average of ~18, so only the ratios are usable; `results/m5-pro-m2.1-under-load.json`):
 
@@ -145,13 +157,18 @@ generateMipmaps( renderer, texture );                    // false if not allocat
 import { planBatches, reduceReference, footprint } from 'downsampler'; // backend-neutral core
 ```
 
-The texture must have `TEXTURE_BINDING | STORAGE_BINDING` usage and format `rgba8unorm` or `rgba16float`. Its dimension must be `2d`, with `textureBindingViewDimension` either `2d` or `2d-array`.
+```ts
+// Separate source: depth → Hi-Z. Level 0 the same size (copy) or half (reduce).
+downsampler.encode( encoder, hiZ /* rg32float */, { source: { texture: depthTexture, mipLevel: 0 }, reduction: 'minmax' } );
+downsampler.sourceUnsupportedReason( destination, source, baseMipLevel ); // string | null
+```
+
+The destination must have `TEXTURE_BINDING | STORAGE_BINDING` usage and format `rgba8unorm`, `rgba16float`, `r32float`, `rg32float` or `rgba32float`. Its dimension must be `2d`, with `textureBindingViewDimension` either `2d` or `2d-array`.
 
 ### Planned
 
 ```ts
 downsampler.encode( encoder, destination, {
-	source: { texture, mipLevel },      // separate source, e.g. depth32float → r32float Hi-Z
 	layers: [ first, count ],
 	rect: { x, y, width, height },      // SPD rectInfo
 	oddSizes: 'exact' | 'fast',
@@ -167,7 +184,7 @@ downsampler.encode( encoder, destination, {
 | Single dispatch | ❌ by design | §2.2 |
 | Custom reduction (`SpdReduce4`) | ✅ | average/min/max/minmax + custom WGSL `reduce(a, b)` fold (§4 Reductions). A weighted custom reduction (SPD's `SpdReduce4` used for averages) isn't offered: under `'exact'` it has no defined odd-size meaning. Transforms around an average (premultiply, sRGB) are planned as load/store hooks with §6.1. |
 | Load vs. linear-sampler source | ✅ | `textureLoad` path (§4 Source access). `textureGather` for single-channel Hi-Z is an M3 candidate: one gather replaces four loads. |
-| Separate source/destination | ❌ | enables depth → Hi-Z (depth formats cannot be storage textures) |
+| Separate source/destination | ✅ | `source: { texture, mipLevel }`, same size (copy) or half (§4 Separate source). Depth sources supported. |
 | Texture arrays | ✅ all layers | add a layer range; cube maps as 6 layers (2d-array view; not available in compatibility mode) |
 | Sub-rectangle (`rectInfo`) | ❌ | offset/size uniform; output tile offset |
 | Custom load/store (format conversion) | 2 formats | see §6.1 |
@@ -184,7 +201,8 @@ Probed in Chrome 155 on Apple/Metal:
 | Format | Storage | Status / plan |
 |---|---|---|
 | rgba8unorm, rgba16float | core | ✅ |
-| rgba32float, r32float, rg32float | core | add quantization `float32`. A filtering sampler needs `float32-filterable`; otherwise use the load path. |
+| rgba32float, r32float, rg32float | core | ✅ quantization `float32` (identity). Always the load path; with `float32-filterable` an average from a float32 *source* may sample. Fewer-channel formats keep the vec4 working value and store their own channels. |
+| depth16unorm, depth24plus, depth32float (+ stencil variants) | never storage | ✅ as a separate source only (depth aspect, `unfilterable-float`) |
 | r8unorm, rg8unorm, r16float, rg16float, rgb10a2unorm, rg11b10ufloat, 16-bit norm formats | `texture-formats-tier1` | add per-format quantization and channel count |
 | rgba8snorm | core | add `snorm8` quantization |
 | rgba8unorm-srgb, bgra8unorm-srgb | **never storage**: Dawn rejects STORAGE_BINDING even with a non-sRGB view format | reduce in linear space, write sRGB-encoded values to an `rgba8unorm` scratch, then `copyTextureToTexture` (copies between formats that differ only in sRGB-ness are allowed: verified) |
@@ -197,13 +215,15 @@ Probed in Chrome 155 on Apple/Metal:
 **Tolerance.** Declared test tolerances for these fixtures, not a formal error bound:
 - unorm8: 2.01 steps.
 - float16: `max(0.002, 0.3 % of the reference value)`.
+- float32: `max(1e-6, 1e-5 relative)`.
 - Plus a filter allowance where bilinear weights aren't exactly representable with 8 fractional bits.
+- Folds: exact. The one exception is a level read straight from a unorm source, which allows 2⁻²¹ relative, because unorm → float conversion needn't be correctly rounded (SwiftShader's depth16unorm differs from k/65535 by an ulp).
 
 **Required matrix.** Every change must pass all of it.
 
 - **Shapes:** 1×1, 1D tails (1×128, 128×1, 128×8), odd and prime sizes, partial workgroups, rectangles, NPOT (192×108, 255×257, 1920×1080), layers (×3), both 2D view variants, and multi-batch sizes (2048², 96×4096).
 - **Kernel widths:** 1, 4, 5 and 6 levels per dispatch, filtered by the device limit.
-- **Formats:** all supported formats.
+- **Formats:** all supported destination formats. float32 formats skip the 'average (load)' variant, since they always load.
 - **Patterns:**
   - constant (weights)
   - random, including HDR values in [−4, 12] for float formats
@@ -215,9 +235,10 @@ Probed in Chrome 155 on Apple/Metal:
 - **GPU validation errors and device loss fail the run.**
 
 - **Reductions:** every shape × width × format case runs `'average'` through the sampler and through loads, plus `'min'`, `'max'`, `'minmax'` and a custom fold. The custom fold depends on the value domain, so it catches unit mix-ups. Folds skip the constant pattern and must match exactly. The `edge` pattern on odd shapes exercises the `2x+2` footprint.
+- **Separate source:** 8 source → destination pairs (depth32float/depth16unorm/r32float → r32float/rg32float Hi-Z, rgba8 ↔ rgba16f conversions), each in copy or half relation. 13 shapes (odd, 1D, NPOT, layers, 2048², 1920×1080), all kernel widths, random/edge/tiles patterns, and the destination poisoned from level 0. The oracle's source values are read back from the source texture, not taken from the fill data. Options cover rejected sources, `source.mipLevel`, and replacing the source texture with the same options.
 - **Oracle independence:** a core test checks that max chains are conservative: every texel bounds each base texel its normalized area touches, without using `footprint()`.
 
-New features add their own oracle first: sRGB, the source/destination split, rect, layer range, and `'fast'` with its clamped reference.
+New features add their own oracle first: sRGB, rect, layer range, and `'fast'` with its clamped reference.
 
 ## 8. Performance methodology
 
@@ -269,8 +290,8 @@ three.js does not take runtime dependencies for core features. The plan:
 1. **M1 (done):** port the kernel, Downsampler, three adapter, core unit tests, GPU suite, device lab, benchmark and CI.
 2. **M2 (parity), in this order:**
    1. ✅ load path + reductions (min/max/minmax/custom)
-   2. separate source/destination (Hi-Z)
-   3. format table + sRGB via scratch
+   2. ✅ separate source/destination (Hi-Z), plus the float32 formats it needs (moved up from 3)
+   3. rest of the format table + sRGB via scratch
    4. layer range + rect
    5. `'fast'` odd sizes
 3. **M3 (coverage and tuning):** device lab runs (§9). Try fp16 and subgroup paths only where the data shows headroom.

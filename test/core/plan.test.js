@@ -49,3 +49,14 @@ test( 'invalid options throw', () => {
 	assert.throws( () => planBatches( 8, 8, { mipLevelCount: 4, levelsPerDispatch: 6, oddSizes: 'fast' } ) );
 
 } );
+
+test( 'a separate source writes every destination level, starting at baseMipLevel', () => {
+
+	const batches = planBatches( 1024, 1024, { mipLevelCount: 11, levelsPerDispatch: 6, fromSource: true } );
+	assert.deepEqual( batches.map( batch => [ batch.sourceMipLevel, batch.firstMipLevel, batch.count, batch.outputWidth ] ), [ [ null, 0, 6, 1024 ], [ 5, 6, 5, 16 ] ] );
+	// In place, the same range writes one level fewer.
+	assert.equal( planBatches( 1024, 1024, { mipLevelCount: 11, levelsPerDispatch: 6 } ).reduce( ( sum, batch ) => sum + batch.count, 0 ), 10 );
+	// A single destination level: one copy or reduction from the source.
+	assert.deepEqual( planBatches( 7, 3, { baseMipLevel: 1, mipLevelCount: 1, levelsPerDispatch: 6, fromSource: true } ).map( batch => [ batch.sourceMipLevel, batch.firstMipLevel, batch.count ] ), [ [ null, 1, 1 ] ] );
+
+} );

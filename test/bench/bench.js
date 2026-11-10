@@ -1,7 +1,6 @@
 // Benchmark: render-pass baseline vs the downsampler at each kernel width, plus
 // 'average' read with textureLoad instead of the sampler, and a 'max' fold.
 // Results are medians over rotating-order rounds; marker cost is subtracted.
-import { formats } from '/dist/index.js';
 import { Downsampler } from '/dist/webgpu/index.js';
 import { createTexture, makeData, median, readMip, upload } from '../browser/gpu.js';
 import { createRenderBaseline } from './render-baseline.js';
@@ -9,7 +8,10 @@ import { timeGpu } from './timing.js';
 
 export const defaultSizes = [ [ 256, 256 ], [ 512, 512 ], [ 1024, 1024 ], [ 2048, 2048 ], [ 4096, 4096 ], [ 1920, 1080 ], [ 512, 512, 6 ] ];
 
-export async function benchmark( device, { sizes = defaultSizes, rounds = 11, repeats = 16, onProgress = () => {} } = {} ) {
+// The render baseline filters linearly, so it needs filterable formats.
+export const defaultFormats = [ 'rgba8unorm', 'rgba16float' ];
+
+export async function benchmark( device, { sizes = defaultSizes, formats: benchFormats = defaultFormats, rounds = 11, repeats = 16, onProgress = () => {} } = {} ) {
 
 	if ( ! device.features.has( 'timestamp-query' ) ) return { timestamps: false, results: [] };
 	const limit = Math.min( 6, device.limits.maxStorageTexturesPerShaderStage );
@@ -32,7 +34,7 @@ export async function benchmark( device, { sizes = defaultSizes, rounds = 11, re
 
 	try {
 
-		for ( const format of Object.keys( formats ) ) for ( const [ width, height, layers = 1 ] of sizes ) {
+		for ( const format of benchFormats ) for ( const [ width, height, layers = 1 ] of sizes ) {
 
 			const textures = Object.fromEntries( names.map( name => [ name, createTexture( device, { width, height, layers, format } ) ] ) );
 
