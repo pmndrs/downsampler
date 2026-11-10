@@ -10,12 +10,19 @@ Feature target: parity with AMD FidelityFX SPD, implemented independently in WGS
 
 ## 2. Two decisions to know up front
 
-### 2.1 Odd sizes: `'exact'` (default) vs `'fast'` (planned)
+### 2.1 Odd sizes: `'exact'` (default), `'box'` (planned), no `'fast'`
 
-A 2:1 reduction is only exact when a dimension halves cleanly. For odd, non-unit sizes there are two reasonable behaviours:
+A 2:1 reduction is only exact when a dimension halves cleanly. For odd, non-unit sizes (decided 2026-11-10):
 
-- **`'exact'` (default, implemented).** An odd size ends the current batch. The next level is re-sampled from the stored level with normalized-coordinate bilinear filtering. Results match render-pass and WebGL mipmaps (the CPU reference in §7), so engines can switch to it without visual change. Cost: more dispatches on sizes like 1920×1080 (7 instead of 2).
-- **`'fast'` (planned, opt-in).** Keep reducing in workgroup memory through odd sizes with SPD-style clamped 2×2 reads. That drops the last row or column at each odd step. Fewer dispatches, but edge weights differ from render-pass mipmaps, so outputs are not interchangeable with the reference. Its tests must use a separate reference that models the clamping.
+- **`'exact'` (default, implemented).** An odd size ends the current batch, and the next level is re-sampled from the stored level with normalized-coordinate bilinear filtering.
+  - Results match render-pass and WebGL mipmaps (the CPU reference in §7), so engines can switch without visual change.
+  - Min/max use the conservative `2x … 2x+2` footprint, so Hi-Z is correct.
+  - Cost: more dispatches on sizes like 1920×1080 (7 today). The planned tail kernel (§13) targets about 3–4 with unchanged results.
+- **`'box'` (planned, opt-in).** Area-weighted odd sizes, as in nvpro_pyramid: per axis, 3 taps with weights `(n−x, n, x+1)/(2n+1)` for size `2n+1`. Every source texel contributes in proportion to its overlap, which fixes the unrepresentative 1×1 of render-pass mipmaps on sizes like 31×31.
+  - Same dispatch structure and footprint as the folds, so no extra cost.
+  - Recommended for quality-sensitive content: GI, irradiance and roughness chains, UI.
+  - Needs its own oracle.
+- **No `'fast'` (dropped).** SPD-style clamped reduction through odd sizes drops the last row or column. That is lower quality, and it makes Hi-Z non-conservative. Its only benefit is fewer dispatches, which the tail kernel delivers for every mode without changing results. Revisit only if the tail kernel fails its measurement.
 
 ### 2.2 No single-dispatch mode
 
@@ -171,7 +178,7 @@ The destination must have `TEXTURE_BINDING | STORAGE_BINDING` usage and format `
 downsampler.encode( encoder, destination, {
 	layers: [ first, count ],
 	rect: { x, y, width, height },      // SPD rectInfo
-	oddSizes: 'exact' | 'fast',
+	oddSizes: 'exact' | 'box',
 	scratch: GPUTexture,                 // optional reusable scratch for sRGB destinations
 } );
 ```
@@ -196,7 +203,7 @@ downsampler.encode( encoder, destination, {
 | LDS layout (one float4 array vs per channel) | ❌ | M3 candidate; measure first |
 | Packed fp16 math | ❌ | optional `shader-f16`; keep only if measurably faster |
 | Wave/subgroup ops | ❌ | optional `subgroups` (Chrome, Safari 27.3; workgroup-memory fallback for Firefox). WGSL defines no quad↔`local_invocation_index` mapping in compute, so derive positions from `subgroup_id`/`subgroup_invocation_id` and use `subgroupShuffleXor`. Upper-bound test first (§13 Subgroups); current kernels are near bandwidth-bound at ≥2048². |
-| Odd sizes | ✅ `'exact'` | add `'fast'` (§2.1) |
+| Odd sizes | ✅ `'exact'` | SPD drops the last row/column; we match render passes. Area-weighted `'box'` planned; SPD-style `'fast'` dropped (§2.1) |
 
 Beyond SPD: sizes over 4096², render-pass-matching odd sizes, conservative min/max at odd edges (SPD drops the last row/column, and unclamped loads read zeros past the edge), and automatic fallback to the 4-storage-texture limit.
 
@@ -281,7 +288,7 @@ Optimisation: with `float32-filterable`, float32 formats may take the sample pat
 - **Separate source:** 8 source → destination pairs (depth32float/depth16unorm/r32float → r32float/rg32float Hi-Z, rgba8 ↔ rgba16f conversions), each in copy or half relation. 13 shapes (odd, 1D, NPOT, layers, 512² for multi-batch, 1920×1080), all kernel widths, random/edge/tiles patterns, and the destination poisoned from level 0. The oracle's source values are read back from the source texture, not taken from the fill data. Options cover rejected sources, `source.mipLevel`, and replacing the source texture with the same options.
 - **Oracle independence:** a core test checks that max chains are conservative: every texel bounds each base texel its normalized area touches, without using `footprint()`.
 
-New features add their own oracle first: sRGB, rect, layer range, and `'fast'` with its clamped reference.
+New features add their own oracle first: each new format family, sRGB, rect, layer range, and `'box'`.
 
 ## 8. Performance methodology
 
@@ -330,21 +337,37 @@ three.js does not take runtime dependencies for core features. The plan:
 
 ## 11. Milestones
 
+Build first, benchmark once coverage is broad (decided 2026-11-10). Live status is in [PROGRESS.md](PROGRESS.md).
+
 1. **M1 (done):** port the kernel, Downsampler, three adapter, core unit tests, GPU suite, device lab, benchmark and CI.
-2. **M2 (parity), in this order:**
+2. **M2 (features), in this order:**
    1. ✅ load path + reductions (min/max/minmax/custom)
-   2. ✅ separate source/destination (Hi-Z), plus the float32 formats it needs (moved up from 3)
-   3. rest of the format table + sRGB via scratch
+   2. ✅ separate source/destination (Hi-Z), plus the float32 formats it needs
+   3. formats, in the §6.1 order:
+      1. fewer-channel unorm8/float16 + bgra8unorm
+      2. snorm8, unorm16, snorm16
+      3. rgb10a2unorm
+      4. buffer output path + rgb9e5ufloat
+      5. sRGB + load/store transform hooks
+      6. rg11b10ufloat
+      7. integers
    4. layer range + rect
-   5. `'fast'` odd sizes
-3. **M3 (coverage and tuning):** device lab runs (§9). Try fp16 and subgroup paths only where the data shows headroom.
-4. **M4:** three.js in-tree PR (§10). Publish `downsampler` to npm.
+   5. odd sizes: `'box'`, then the exact tail kernel (§2.1, §13)
+3. **M3 (dial in: coverage and tuning):**
+   - per-frame throughput benchmark alongside timestamps (§13)
+   - device lab runs across vendors (§9)
+   - `STORAGE_BINDING` sampling cost
+   - sampler vs load for float32 with `float32-filterable`
+   - subgroup kernel with the workgroup-memory fallback, only if the upper-bound test shows ≥5 %
+   - fp16
+4. **M4 (examples and docs):** usage docs, notes for SPD users (§13), examples (mip chain, Hi-Z from depth, custom reduction, three.js).
+5. **M5:** three.js in-tree PR (§10), npm publish, the sibling upscaler as a consumer, and the data-backed gpuweb#5253 comment.
 
 ## 12. Open questions
 
 - Publish as bare `downsampler` or `@pmndrs/downsampler`? (`package.json` currently uses `downsampler`.)
 - Cube maps in compatibility mode: they can't be viewed as 2d-array, so either per-face views or the render fallback.
-- Whether `'fast'` should be the default for Hi-Z. Under `'exact'`, min/max already use the conservative odd footprint (§4 Reductions), so `'exact'` Hi-Z is correct. `'fast'` would need the same rule in workgroup memory, where the `2x+2` texel can sit in the neighbouring tile (a one-texel halo). Decide with M2.5 and a measurement.
+- `'box'` for `'minmax'` and other folds is meaningless (they already use the full footprint). Should `'box'` simply be ignored there, or rejected?
 
 ## 13. Research (2026-11-10)
 
@@ -364,7 +387,7 @@ Reference material, mostly for after M2–M3: prior art and the standards discus
 - **Cross-vendor performance is the open question.** `greggman` found a compute generator slower than render passes on NVIDIA/D3D12, up to 10× for SPD-style ports. `toji` reported an internal partner seeing the same and suggested drivers may fast-path the render-pass pattern. `greggman` also found timestamp-query unreliable and measured work per frame instead. `aleino-nv` (NVIDIA) asked for NVIDIA numbers. **Every number in §8 is Apple-only and timestamp-based, so no general speed claim can be made yet.**
 - **Other requirements raised:** wrap vs clamp edges, alpha-coverage preservation, out-of-bounds texels contributing nothing, cube maps (compute needs a 2d-array view; compatibility mode can't provide one), and the unmeasured cost of adding `STORAGE_BINDING` to sampled textures (`Kangz`). The last matters for §10, where three.js would add the usage.
 - **Evidence for §2.2:** [webgpu-spd#7](https://github.com/JolifantoBambla/webgpu-spd/issues/7) fixed missing mips on M1 by adding a `storageBarrier`. In WGSL that barrier is workgroup-scoped, so the fix isn't guaranteed.
-- **Video:** there's no zero-copy way to put an external texture into level 0 (`kainino0x`). A separate source plus `copyExternalImageToTexture` is the current path. [This jsfiddle](https://jsfiddle.net/1w9L6u07/) samples level 1 from a `texture_external` and uses quad/subgroup ops in compute. That layout is undefined behaviour in WGSL (§6 subgroup row), and its odd sizes behave like our `'fast'`.
+- **Video:** there's no zero-copy way to put an external texture into level 0 (`kainino0x`). A separate source plus `copyExternalImageToTexture` is the current path. [This jsfiddle](https://jsfiddle.net/1w9L6u07/) samples level 1 from a `texture_external` and uses quad/subgroup ops in compute. That layout is undefined behaviour in WGSL (§6 subgroup row), and its odd sizes drop the last row/column (SPD-style, the dropped `'fast'` of §2.1).
 
 ### nvpro_pyramid ([vk_compute_mipmaps](https://github.com/nvpro-samples/vk_compute_mipmaps), [strategy](https://nvpro-samples.github.io/vk_compute_mipmaps/docs/strategy.md.html))
 

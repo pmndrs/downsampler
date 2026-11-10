@@ -8,7 +8,7 @@ A WGSL implementation of the ideas in AMD FidelityFX SPD: a 64×64 source tile r
 
 ## Two things to know first
 
-**Odd sizes default to `'exact'`.** Where a level has an odd, non-unit dimension, the next level is re-sampled with normalized-coordinate bilinear filtering. Output matches render-pass and WebGL mipmaps, so you can switch without visual change. A planned `'fast'` mode will reduce straight through odd sizes the way SPD does. That means fewer dispatches (2 instead of 7 for 1920×1080) but slightly different edge weights. It is opt-in.
+**Odd sizes default to `'exact'`.** Where a level has an odd, non-unit dimension, the next level is re-sampled with normalized-coordinate bilinear filtering. Output matches render-pass and WebGL mipmaps, so you can switch without visual change, and min/max pyramids stay conservative at odd edges. An opt-in area-weighted `'box'` mode is planned for quality-sensitive content. There is deliberately no SPD-style mode that drops the last row/column. See [SPEC.md §2.1](SPEC.md#21-odd-sizes-exact-default-box-planned-no-fast).
 
 **There is no single-dispatch mode.** SPD's final levels are written by "the last workgroup to finish", detected with an atomic counter. In WGSL that handoff isn't guaranteed: barriers are workgroup-scoped and atomics are relaxed, so seeing the counter doesn't guarantee seeing other workgroups' results. We built and measured it anyway, and it was also slower. The atomic tail added ~20 µs, versus ~1–2 µs for the dispatch boundary it saves. So chains up to 4096² use two dispatches instead. Details and numbers are in [SPEC.md §2.2](SPEC.md#22-no-single-dispatch-mode).
 

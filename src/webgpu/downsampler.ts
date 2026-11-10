@@ -51,8 +51,8 @@ export interface EncodeOptions {
 	/**
 	 * 'exact' (default): odd, non-unit sizes end a batch and the next level is
 	 * re-sampled with normalized coordinates, matching render-pass/WebGL mipmaps.
-	 * 'fast' (planned): SPD-style clamped reduction through odd sizes, fewer
-	 * dispatches but different edge weights. See SPEC.md.
+	 * 'box' (planned): area-weighted odd sizes. SPD-style 'fast' was dropped
+	 * because it loses the last row/column. See SPEC.md §2.1.
 	 */
 	oddSizes?: OddSizePolicy;
 	/**

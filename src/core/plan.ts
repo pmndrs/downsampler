@@ -11,8 +11,8 @@
 
 /** How odd, non-unit dimensions are handled. */
 export type OddSizePolicy = 'exact';
-// 'fast' (SPD-style clamped 2x2 reduction through odd sizes) is specified in
-// SPEC.md and not implemented yet.
+// 'box' (area-weighted odd sizes) is planned; SPD-style 'fast' was dropped.
+// See SPEC.md §2.1.
 
 export interface PlanOptions {
 	/**

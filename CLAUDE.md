@@ -1,6 +1,8 @@
 # downsampler — working notes for agents
 
-Read SPEC.md first. It holds the scope, design decisions (odd sizes default to `'exact'`; no single-dispatch mode, and why), the SPD parity table, the correctness matrix and milestones. Update it when a decision changes.
+Read SPEC.md first. It holds the scope, design decisions (odd sizes default to `'exact'`; no single-dispatch mode, and why), the SPD parity table, the correctness matrix, milestones and research notes (§13). Update it when a decision changes.
+
+Then read PROGRESS.md, the live status board. Keep it current: move a task to *Now* when you start it; when you finish, tick it with its commit and log the verification run (device, suite, case count). Put questions for the owner under *Waiting on owner*, not only in chat.
 
 ## Commands
 
