@@ -4,6 +4,8 @@ Read SPEC.md first. It holds the scope, design decisions (odd sizes default to `
 
 Then read PROGRESS.md, the live status board. Keep it current: move a task to *Now* when you start it; when you finish, tick it with its commit and log the verification run (device, suite, case count). Put questions for the owner under *Waiting on owner*, not only in chat.
 
+DIVERGES.md lists every place we differ from SPD, nvpro and the WebGPU community, with the reason and the cost of converging. When a change adds, removes or resolves a divergence, update it (and `docs/diverges.html`, its readable copy).
+
 ## Commands
 
 - `npm run build`: tsc to `dist/` (tests import from `dist/`, so build first).

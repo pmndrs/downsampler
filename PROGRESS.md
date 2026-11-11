@@ -4,7 +4,7 @@ Live status board. SPEC.md holds the design and the reasons behind it; this file
 
 **For agents:** read this after SPEC.md. When you start a task, move it to *Now* with your branch. When you finish, tick it, add the commit, and log the verification run. Keep entries to one line and link SPEC sections instead of restating them. Anything that needs the owner goes under *Waiting on owner*.
 
-Last updated: 2026-11-10 · Branch: `m2-reductions`
+Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Now
 
@@ -27,6 +27,7 @@ Last updated: 2026-11-10 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] DIVERGES.md: 21 divergences from SPD, nvpro and the WebGPU community, with effort and impact; readable copy at `docs/diverges.html` (published as an artifact)
 - [x] M1: kernel, Downsampler, three adapter, tests, device lab, benchmark, CI (`f0f684c`)
 - [x] M2.1: min/max/minmax/custom reductions, textureLoad path, explicit layouts (`9cf50f2`)
 - [x] Test suite 8× faster: 341 s → 42 s (`dfc3fa5`)

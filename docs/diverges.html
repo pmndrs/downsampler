@@ -1,0 +1,430 @@
+<title>Downsampler Divergences</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; a 1080p mip strip as the opener, then a filterable ledger, then entry cards. */
+:root {
+	--bg: #f6f7f9;
+	--surface: #ffffff;
+	--fg: #17202b;
+	--muted: #5a6675;
+	--line: #dde2e8;
+	--accent: #1f6feb;
+	--keep: #5b5fc7;
+	--planned: #1f7a5a;
+	--candidate: #a86400;
+	--risk: #c0392b;
+	--keep-bg: #ecedfb;
+	--planned-bg: #e3f3ec;
+	--candidate-bg: #fbf0dc;
+	--risk-bg: #fbe5e2;
+	--display: "Space Grotesk", "Inter", system-ui, sans-serif;
+	--body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+	--mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		--bg: #0f141a; --surface: #161d25; --fg: #e4e9ef; --muted: #96a2b0; --line: #29323d; --accent: #6ea8ff;
+		--keep: #a5a8f5; --planned: #5fd0a2; --candidate: #f0b45a; --risk: #f08374;
+		--keep-bg: #23254a; --planned-bg: #15352a; --candidate-bg: #3a2b12; --risk-bg: #3d1d19;
+		color-scheme: dark;
+	}
+}
+:root[data-theme="dark"] {
+	--bg: #0f141a; --surface: #161d25; --fg: #e4e9ef; --muted: #96a2b0; --line: #29323d; --accent: #6ea8ff;
+	--keep: #a5a8f5; --planned: #5fd0a2; --candidate: #f0b45a; --risk: #f08374;
+	--keep-bg: #23254a; --planned-bg: #15352a; --candidate-bg: #3a2b12; --risk-bg: #3d1d19;
+	color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1060px; margin: 0 auto; padding-block: 40px 80px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 40px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; line-height: 1.2; }
+h1 { font-size: clamp(28px, 4.4vw, 40px); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 22px; font-weight: 600; }
+h3 { font-size: 18px; font-weight: 600; }
+p { margin: 0; }
+code, .mono { font-family: var(--mono); font-size: 0.88em; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+header { display: grid; gap: 14px; }
+header p { max-width: 68ch; color: var(--muted); }
+header p strong { color: var(--fg); font-weight: 600; }
+
+/* mip strip */
+.strip { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: grid; gap: 14px; }
+.strip-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; align-items: baseline; }
+.strip-head p { color: var(--muted); font-size: 13.5px; max-width: 62ch; }
+.chain { overflow-x: auto; padding-bottom: 4px; }
+.chain-row { display: flex; gap: 6px; align-items: flex-end; min-width: 720px; }
+.batch { display: grid; gap: 6px; }
+.batch-levels { display: flex; gap: 4px; align-items: flex-end; }
+.lvl { display: grid; justify-items: center; gap: 4px; }
+.lvl .box { background: var(--accent); opacity: 0.85; border-radius: 2px; }
+.lvl.odd .box { background: var(--candidate); }
+.lvl .dim { font-family: var(--mono); font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.batch-bar { height: 4px; border-radius: 2px; background: var(--line); }
+.batch-label { font-family: var(--mono); font-size: 10.5px; color: var(--muted); text-align: center; }
+.strip-key { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12.5px; color: var(--muted); }
+.strip-key span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+/* controls */
+.controls { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; }
+.group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.group .eyebrow { margin-right: 4px; }
+.chip { font: 500 13px var(--body); border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 999px; padding: 5px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.chip:hover { border-color: var(--muted); }
+.chip:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chip[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.chip .n { font-family: var(--mono); font-size: 11.5px; opacity: 0.7; }
+
+/* verdict pill */
+.pill { font: 600 11.5px var(--mono); letter-spacing: 0.04em; text-transform: uppercase; border-radius: 4px; padding: 2px 7px; white-space: nowrap; display: inline-block; }
+.v-keep { color: var(--keep); background: var(--keep-bg); }
+.v-planned { color: var(--planned); background: var(--planned-bg); }
+.v-candidate { color: var(--candidate); background: var(--candidate-bg); }
+.v-risk { color: var(--risk); background: var(--risk-bg); }
+.effort { font: 500 12px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+
+/* ledger table */
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; min-width: 860px; font-size: 13.5px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 500 11.5px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--surface); position: sticky; top: 0; }
+tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; width: 36px; }
+td a { color: var(--fg); text-decoration: none; font-weight: 500; }
+td a:hover { color: var(--accent); text-decoration: underline; }
+.src { color: var(--muted); }
+.perf-kind { font: 500 10.5px var(--mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); display: block; }
+.perf-kind.measured { color: var(--planned); }
+.perf-kind.risky { color: var(--risk); }
+
+/* cards */
+.cards { display: grid; gap: 14px; }
+.section-title { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.section-title p { color: var(--muted); font-size: 13.5px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 8px; padding: 18px 20px; display: grid; gap: 12px; scroll-margin-top: 16px; }
+.card.keep { border-left-color: var(--keep); }
+.card.planned { border-left-color: var(--planned); }
+.card.candidate { border-left-color: var(--candidate); }
+.card.risk { border-left-color: var(--risk); }
+.card-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.card-head .num { font-family: var(--mono); color: var(--muted); font-size: 13px; }
+.card-head h3 { flex: 1 1 320px; min-width: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.facts { display: grid; grid-template-columns: 120px 1fr; gap: 6px 16px; margin: 0; }
+.facts dt { font: 500 11.5px var(--mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding-top: 3px; }
+.facts dd { margin: 0; min-width: 0; max-width: 72ch; }
+.impact { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.impact div { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font-size: 13.5px; min-width: 0; }
+.impact .k { font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); display: block; margin-bottom: 2px; }
+.empty { color: var(--muted); padding: 20px; text-align: center; }
+footer { color: var(--muted); font-size: 13px; display: grid; gap: 6px; max-width: 72ch; }
+@media (max-width: 560px) {
+	.facts { grid-template-columns: 1fr; gap: 2px; }
+	.facts dd { margin-bottom: 8px; }
+}
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+<div class="wrap">
+	<header>
+		<span class="eyebrow">downsampler · research ledger · 2026-11-11</span>
+		<h1>Where we diverge from SPD, nvpro and the WebGPU community</h1>
+		<p>Every place this library does something different from AMD FidelityFX SPD, nvpro_pyramid, the WebGPU community ports and the gpuweb #386 / #5253 requests. Each entry gives the reason, the effort to converge, and the quality and performance effect.</p>
+		<p><strong>Performance labels:</strong> <em>measured</em> means Apple M5 Pro runs from SPEC §2.2, §4 and §8. Nothing has been measured on NVIDIA, AMD or Intel yet, so everything else is an <em>estimate</em> or <em>unknown</em>.</p>
+	</header>
+
+	<section class="strip" aria-labelledby="strip-title">
+		<div class="strip-head">
+			<h2 id="strip-title">1920×1080, as we batch it today</h2>
+			<p>A batch ends wherever the next 2:1 reduction is inexact. This chain takes 7 dispatches. SPD would take 1 by dropping edges, nvpro would carry odd levels in pairs with a halo, and our planned tail kernel targets 3–4 with unchanged results (entry 2).</p>
+		</div>
+		<div class="chain"><div class="chain-row" id="chain"></div></div>
+		<div class="strip-key">
+			<span><i class="sw" style="background:var(--accent)"></i>even level (exact 2:1 below it)</span>
+			<span><i class="sw" style="background:var(--candidate)"></i>odd dimension: the batch ends here</span>
+		</div>
+	</section>
+
+	<section style="display:grid;gap:14px" aria-labelledby="ledger-title">
+		<div class="section-title">
+			<h2 id="ledger-title">Ledger</h2>
+			<p id="count"></p>
+		</div>
+		<div class="controls">
+			<div class="group" role="group" aria-label="Filter by verdict" id="verdicts"><span class="eyebrow">Verdict</span></div>
+			<div class="group" role="group" aria-label="Filter by source" id="sources"><span class="eyebrow">Source</span></div>
+		</div>
+		<div class="table-wrap">
+			<table>
+				<thead><tr><th>#</th><th>Divergence</th><th>Source</th><th>Verdict</th><th>Effort</th><th>Quality</th><th>Performance</th></tr></thead>
+				<tbody id="rows"></tbody>
+			</table>
+		</div>
+	</section>
+
+	<section style="display:grid;gap:14px" aria-labelledby="detail-title">
+		<div class="section-title">
+			<h2 id="detail-title">Entries</h2>
+			<p>Effort: S under a day · M a few days including oracle and GPU cases · L a week or more</p>
+		</div>
+		<div class="cards" id="cards"></div>
+	</section>
+
+	<footer>
+		<p>Source of truth: <code>DIVERGES.md</code> in the repo, alongside SPEC.md §13 (research) and PROGRESS.md (status). Verdicts: <strong>keep</strong> is deliberate with no plan to converge, <strong>planned</strong> is on the milestone list, <strong>candidate</strong> is worth doing but unscheduled, <strong>risk</strong> is an open question that could change a default.</p>
+	</footer>
+</div>
+
+<script>
+const V = { keep: 'Keep', planned: 'Planned', candidate: 'Candidate', risk: 'Risk' };
+const SOURCES = { spd: 'SPD', nvpro: 'nvpro', community: 'WebGPU ports', gpuweb: 'gpuweb' };
+
+const entries = [
+	{ n: 1, title: 'No single dispatch or atomic handoff', src: [ 'spd', 'community' ], srcText: 'SPD, webgpu-spd', verdict: 'keep', effort: 'S',
+		they: 'SPD and webgpu-spd write every level in one dispatch; the last workgroup, found with a global atomic counter, reduces the final levels.',
+		we: 'One dispatch per batch of up to 6 levels: two dispatches up to 4096².',
+		why: 'WGSL atomics are relaxed and barriers are workgroup-scoped, so the handoff is not guaranteed (SPEC §2.2). webgpu-spd#7 patched missing mips on M1 with a storageBarrier that WGSL does not guarantee either. Our prototype was also slower.',
+		converge: 'S. The prototype lives in the three.js webgpu-spd-audit branch.',
+		quality: 'Converging risks stale or missing levels on hardware that reorders.',
+		perfKind: 'measured', perf: 'Ours 1.5–2.4× faster: 0.0068 vs 0.0099 ms at 256², 0.0151 vs 0.0305 at 1024², 0.0246 vs 0.0592 at 1024² rgba16f. The atomic tail costs ~20 µs; a dispatch boundary 1–2 µs.',
+		perfShort: 'Ours 1.5–2.4× faster at ≤1024²',
+		qualityShort: 'Converging risks missing mips',
+		note: 'Revisit only if WGSL gains device-scope acquire/release.' },
+	{ n: 2, title: 'A batch ends at every odd size', src: [ 'spd', 'nvpro' ], srcText: 'SPD, nvpro', verdict: 'planned', effort: 'M',
+		they: 'SPD carries every level through odd sizes by dropping the last row or column. nvpro carries 2 levels per dispatch through odd sizes with a 1-texel halo.',
+		we: 'End the batch where the next reduction is inexact: 7 dispatches for 1920×1080.',
+		why: 'The simplest structure that keeps results identical to render passes.',
+		converge: 'Tail kernel, M (M2.5): once a level fits one workgroup, reduce every remaining level there with exact weights; target 3–4 dispatches at 1080p. Halo batches, M–L (candidate): our odd taps share nvpro\'s 2x…2x+2 support.',
+		quality: 'None: results unchanged by design.',
+		perfKind: 'estimate', perf: '3–4 fewer boundaries × 1–2 µs ≈ 3–8 µs on a 0.037 ms 1080p chain. Must be measured.',
+		perfShort: 'A few µs at 1080p', qualityShort: 'None' },
+	{ n: 3, title: 'Odd sizes match render passes', src: [ 'spd', 'nvpro' ], srcText: 'SPD, nvpro', verdict: 'keep', effort: 'M',
+		they: 'SPD drops the last row or column. nvpro weights by area, (n−x, n, x+1)/(2n+1), so 3→1 averages all three texels.',
+		we: '\'exact\' by default (normalized-coordinate bilinear, identical to render-pass and WebGL mipmaps). \'box\' with nvpro\'s weights is a planned opt-in. SPD\'s behaviour (\'fast\') was dropped.',
+		why: 'Engines such as three.js can switch to us with no visual change, and Hi-Z stays conservative.',
+		converge: 'M, already planned as \'box\' in M2.5, with its own oracle.',
+		quality: '\'exact\' keeps the render-pass flaw: 31×31 can reduce to an unrepresentative 1×1. \'box\' is area-correct; recommend it for GI, irradiance and roughness. SPD loses edge data.',
+		perfKind: 'estimate', perf: '\'box\' shares the folds\' dispatch structure and footprint: a few ALU ops at most.',
+		perfShort: '~None', qualityShort: '\'box\' fixes the 31×31 case', note: 'Default kept; \'box\' planned (M2.5).' },
+	{ n: 4, title: 'Conservative min/max footprint at odd edges', src: [ 'spd' ], srcText: 'SPD', verdict: 'keep', effort: 'S',
+		they: 'SPD\'s min/max skip the last row or column at odd sizes.',
+		we: 'Each fold covers texels 2x…2x+2 along an odd dimension: the smallest conservative footprint.',
+		why: 'Hi-Z occlusion culling needs it; a non-conservative max can cull visible objects.',
+		converge: 'S, but it would reintroduce the bug.',
+		quality: 'SPD\'s Hi-Z can false-cull at odd edges.',
+		perfKind: 'unknown', perf: 'One extra load per output texel along odd edges, first output of a batch only. Not measured separately.',
+		perfShort: 'One extra load per odd edge texel', qualityShort: 'SPD\'s Hi-Z can false-cull' },
+	{ n: 5, title: 'Clamped edges, no zero reads', src: [ 'spd' ], srcText: 'SPD', verdict: 'keep', effort: 'S',
+		they: 'Unclamped loads read zeros past the edge unless the texture is padded.',
+		we: 'Every read is clamped inside the texture.',
+		why: 'Out-of-bounds texels should contribute nothing (also a gpuweb#5253 requirement).',
+		converge: 'S.',
+		quality: 'No darkened borders, no zero depth leaking into Hi-Z.',
+		perfKind: 'estimate', perf: '~None.', perfShort: '~None', qualityShort: 'No dark or zero borders' },
+	{ n: 6, title: 'No wrap edge mode', src: [ 'gpuweb' ], srcText: 'gpuweb#5253', verdict: 'candidate', effort: 'S–M',
+		they: 'gpuweb#5253 asked for wrap or clamp edge handling.',
+		we: 'Clamp only.',
+		why: 'Even sizes never read past an edge; wrap only changes odd-size footprints at the border.',
+		converge: 'S for folds and \'box\'. Under \'exact\' it would break render-pass parity, so offer it only with \'box\'.',
+		quality: 'Tiling textures with odd sizes get a faint seam at the border.',
+		perfKind: 'estimate', perf: '~None.', perfShort: '~None', qualityShort: 'Seams on odd-size tiling textures', note: 'Add to SPEC §12 if a user asks.' },
+	{ n: 7, title: 'Every level rounded as stored', src: [ 'spd' ], srcText: 'SPD', verdict: 'keep', effort: 'S',
+		they: 'SPD keeps unrounded values in workgroup memory between levels and rounds once on store.',
+		we: 'Quantize each level exactly as stored; 8- and 16-bit normalized formats use exact integer units with ties to even.',
+		why: 'A chain equals level-by-level generation, so results match render passes and stay deterministic across batch sizes and devices.',
+		converge: 'S, as an opt-in that skips intermediate quantization, plus an oracle mode.',
+		quality: 'SPD lands closer to a true box average of the base on deep 8-bit chains. Ours matches every render-pass generator and does not depend on batch layout.',
+		perfKind: 'unknown', perf: 'A few ALU ops per texel; likely noise at bandwidth-bound sizes.',
+		perfShort: 'Unknown, likely noise', qualityShort: 'Equals level-by-level generation', note: 'Unrounded opt-in is a candidate.' },
+	{ n: 8, title: 'Binary semilattice fold, not SpdReduce4', src: [ 'spd' ], srcText: 'SPD', verdict: 'candidate', effort: 'M',
+		they: 'SpdReduce4(a, b, c, d) is arbitrary: weighted averages, sums, counts.',
+		we: 'Custom reductions are fn reduce(a, b): associative, commutative and idempotent.',
+		why: 'Idempotence makes clamped duplicate reads and overlapping odd footprints harmless. A weighted 4-way reduction has no defined odd-size meaning under \'exact\'.',
+		converge: 'M. \'box\' gives every texel a defined weight, so a weighted reduce4 could ship with \'box\' or for even sizes only.',
+		quality: 'No sums, counts or custom weighted averages today. Premultiplied alpha and sRGB come from the planned load/store hooks instead.',
+		perfKind: 'estimate', perf: 'None.', perfShort: 'None', qualityShort: 'No sums, counts or weighted reductions', note: 'After \'box\'.' },
+	{ n: 9, title: 'No alpha-coverage preservation', src: [ 'gpuweb' ], srcText: 'gpuweb#5253', verdict: 'candidate', effort: 'M',
+		they: 'Listed in gpuweb#5253 as a requirement for a core API.',
+		we: 'Not offered.',
+		why: 'Not yet scheduled.',
+		converge: 'M. Each level searches for the alpha scale that keeps the base level\'s coverage at a cutoff: an extra pass or per-level reduction.',
+		quality: 'Alpha-tested foliage and fences thin out in the distance.',
+		perfKind: 'estimate', perf: 'One extra pass if added.', perfShort: 'One extra pass if added', qualityShort: 'Cutout foliage thins out', note: 'Natural fit for the transform hooks; after M4.' },
+	{ n: 10, title: 'No subgroup / wave operations', src: [ 'spd', 'nvpro', 'community' ], srcText: 'SPD, nvpro, fiddle', verdict: 'planned', effort: 'L',
+		they: 'SPD uses wave ops with a fixed quad layout (ARmpRed8x8, WaveReadLaneAt). nvpro uses subgroupShuffleXor assuming lane = local index. The fiddle uses quad ops in compute.',
+		we: 'Workgroup memory only.',
+		why: 'WGSL defines quads only in fragment shaders and no lane ↔ local_invocation_index mapping, so those layouts are undefined behaviour. Firefox lacks subgroups (Chrome and Safari 27.3 have them).',
+		converge: 'L. Portable scheme from SPEC §13: a linear id from subgroup_id and subgroupShuffleXor, shipped with the workgroup-memory fallback.',
+		quality: 'Butterfly order pairs sums as (a+b)+(c+d): irrelevant for integer units, but the float oracle must pair the same way.',
+		perfKind: 'unknown', perf: 'Barriers 10 → 1–2, workgroup memory 16 KiB → ~1 KiB. Plausible gain at ≤512² (latency-bound), little at 4096² (bandwidth-bound).',
+		perfShort: 'Unknown; plausible at ≤512² only', qualityShort: 'Float sum order changes', note: 'M3, behind an upper-bound test: build only if it shows ≥5 %.' },
+	{ n: 11, title: 'No packed fp16 math', src: [ 'spd' ], srcText: 'SPD', verdict: 'planned', effort: 'M',
+		they: 'SPD has a packed half-precision path.',
+		we: 'Compute in f32.',
+		why: 'Not yet measured.',
+		converge: 'M: a shader-f16 kernel variant and oracle pairing.',
+		quality: 'f16 math is slightly less precise.',
+		perfKind: 'unknown', perf: 'nvpro saw no gain from f16 shared memory on an RTX 3090.',
+		perfShort: 'Unknown; nvpro saw no gain', qualityShort: 'Slightly less precise', note: 'M3; keep only if measurably faster.' },
+	{ n: 12, title: 'One vec4f workgroup array, not per channel', src: [ 'spd' ], srcText: 'SPD', verdict: 'planned', effort: 'S',
+		they: 'SPD stores intermediates in separate per-channel arrays.',
+		we: 'One array<vec4f>.',
+		why: 'Simplest layout; not yet compared.',
+		converge: 'S.',
+		quality: 'None.',
+		perfKind: 'unknown', perf: 'Bank behaviour differs by vendor.', perfShort: 'Unknown, vendor-dependent', qualityShort: 'None', note: 'M3; measure it.' },
+	{ n: 13, title: 'float32 formats load instead of sampling', src: [ 'nvpro' ], srcText: 'nvpro', verdict: 'planned', effort: 'S',
+		they: 'nvpro measured the bilinear sampler 26–32 % faster than loads (NVIDIA).',
+		we: 'Load float32 formats, since sampling them needs float32-filterable.',
+		why: 'Works on every device without the optional feature.',
+		converge: 'S: take the sample path when the device has float32-filterable.',
+		quality: 'None.',
+		perfKind: 'measured', perf: 'For rgba8 our own load path measured 12–50 % slower than sampling (Apple, machine under load); float32 likely similar where filterable.',
+		perfShort: 'nvpro: sampler 26–32 % faster', qualityShort: 'None', note: 'M3.' },
+	{ n: 14, title: 'No texture_external source', src: [ 'community' ], srcText: 'fiddle', verdict: 'candidate', effort: 'M',
+		they: 'The fiddle samples level 1 straight from a video frame\'s texture_external.',
+		we: 'Need copyExternalImageToTexture first, into level 0 or a separate source texture.',
+		why: 'Not yet scheduled.',
+		converge: 'M: a source-batch variant binding texture_external on the sample path (levels 1+, no level 0).',
+		quality: 'None.',
+		perfKind: 'estimate', perf: 'Saves one full-frame write and read per frame for video pyramids.',
+		perfShort: 'Saves a full-frame copy per frame', qualityShort: 'None', note: 'Matters for video, the upscaler and ML preprocessing.' },
+	{ n: 15, title: 'No sub-rectangle yet', src: [ 'spd' ], srcText: 'SPD', verdict: 'planned', effort: 'M',
+		they: 'SPD\'s rectInfo snaps to 64-texel source tiles and recomputes levels below 64×64 for the whole texture.',
+		we: 'Not yet: M2.4.',
+		why: 'Scheduled after formats.',
+		converge: 'M. Matching SPD\'s snapping is simplest; a tighter rect saves more work but needs per-level rounding rules.',
+		quality: 'Depends on the snapping decision.',
+		perfKind: 'estimate', perf: 'Saves work on partial updates.', perfShort: 'Saves work on partial updates', qualityShort: 'Depends on snapping', note: 'Decide snapping in M2.4.' },
+	{ n: 16, title: 'sRGB through a scratch copy or buffer', src: [ 'spd' ], srcText: 'SPD', verdict: 'planned', effort: 'M',
+		they: 'SPD samples an sRGB view and writes a UNORM alias of the same texture.',
+		we: 'WebGPU forbids sRGB storage even through a view, so reduce in linear, write rgba8unorm scratch or a buffer, then copy.',
+		why: 'The alias is not allowed in WebGPU.',
+		converge: 'M (M2.3.5).',
+		quality: 'Same results.',
+		perfKind: 'estimate', perf: 'One extra copy of levels 1+, about a third of the base level\'s bytes.',
+		perfShort: 'Extra copy of levels 1+', qualityShort: 'Same results', note: 'Choose scratch texture vs buffer by measurement.' },
+	{ n: 17, title: 'Compute only, no per-device render fallback', src: [ 'community', 'gpuweb' ], srcText: 'greggman, toji', verdict: 'risk', effort: 'M',
+		they: 'greggman found compute generators slower than render passes on NVIDIA/D3D12 (up to 10× for SPD-style ports); toji reported a partner seeing the same. The community default is render passes.',
+		we: 'Compute only. The three.js adapter falls back to render passes only for textures we cannot handle.',
+		why: 'Measured faster on Apple; no other vendor data yet.',
+		converge: 'M: cross-vendor data (M3), then per-device path selection in adapters, or a render-pass backend here (SPEC §3 leaves room).',
+		quality: 'None.',
+		perfKind: 'risky', perf: 'Apple: 1.3–27× faster than render passes. NVIDIA, AMD, Intel: unknown.',
+		perfShort: 'Unknown on NVIDIA/D3D12 (reported up to 10× slower)', qualityShort: 'None', note: 'The biggest open question; it decides the three.js default.' },
+	{ n: 18, title: 'Textures need STORAGE_BINDING', src: [ 'gpuweb' ], srcText: 'gpuweb#5253 (Kangz)', verdict: 'risk', effort: '—',
+		they: 'Render-pass generators need only RENDER_ATTACHMENT. Kangz flagged an unmeasured cost of storage usage on sampled textures.',
+		we: 'Every destination needs STORAGE_BINDING; the three.js integration would add it automatically.',
+		why: 'Compute writes need storage textures.',
+		converge: 'Measure in M3. Avoiding it entirely would mean the buffer output path for every format.',
+		quality: 'None.',
+		perfKind: 'risky', perf: 'Unknown. Some drivers may disable compression on storage textures.',
+		perfShort: 'Unknown sampling cost', qualityShort: 'None', note: 'M3.' },
+	{ n: 19, title: 'Timestamp benchmark only', src: [ 'community', 'nvpro' ], srcText: 'greggman, nvpro', verdict: 'planned', effort: 'S–M',
+		they: 'greggman measures work per frame because timestamp queries were unreliable. nvpro interleaves alternatives, takes min and median over 256 batches and compares to a speed-of-light kernel.',
+		we: 'Timestamps bracketing 16 repeats, medians of 11 rotated rounds.',
+		why: 'Fine for same-device ratios on Apple; not enough for cross-vendor claims.',
+		converge: 'S–M: a throughput mode and a speed-of-light copy kernel (M3).',
+		quality: '—',
+		perfKind: 'unknown', perf: 'Every cross-vendor claim depends on it.', perfShort: 'Credibility of every claim', qualityShort: '—', note: 'M3.' },
+	{ n: 20, title: 'Mip count, levels written, no counter buffer', src: [ 'spd' ], srcText: 'SPD', verdict: 'keep', effort: 'S',
+		they: 'SPD counts mips excluding the source level, always halves, and needs an atomic counter buffer allocated and reset.',
+		we: 'In place, mipLevelCount includes the source level (SPD mips = N is N + 1 here). With a separate source, destination baseMipLevel is written at the same size or half. No counter buffer.',
+		why: 'Matches WebGPU\'s own mipLevelCount convention.',
+		converge: 'S: docs only (M4 notes for SPD users).',
+		quality: '—', perfKind: 'unknown', perf: '—', perfShort: '—', qualityShort: '—' },
+	{ n: 21, title: 'No size or level cap', src: [ 'spd' ], srcText: 'SPD', verdict: 'keep', effort: '—',
+		they: 'SPD handles at most 4096² and 12 levels.',
+		we: 'Any size, by chaining batches.',
+		why: 'Chaining is free once dispatches are separate.',
+		converge: '—', quality: '—', perfKind: 'unknown', perf: '—', perfShort: '—', qualityShort: '—' },
+];
+
+const esc = s => String( s ).replace( /[&<>"]/g, c => ( { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } )[ c ] );
+const kindLabel = { measured: 'measured', estimate: 'estimate', unknown: 'unknown', risky: 'unknown' };
+
+// mip strip
+( function () {
+	const levels = [];
+	let w = 1920, h = 1080;
+	while ( true ) { levels.push( [ w, h ] ); if ( w === 1 && h === 1 ) break; w = Math.max( 1, w >> 1 ); h = Math.max( 1, h >> 1 ); }
+	const odd = ( [ a, b ] ) => ( a > 1 && a & 1 ) || ( b > 1 && b & 1 );
+	const batches = [ [ 0 ] ];
+	let current = [];
+	for ( let i = 1; i < levels.length; i ++ ) {
+		current.push( i );
+		if ( odd( levels[ i ] ) || i === levels.length - 1 ) { batches.push( current ); current = []; }
+	}
+	const scale = v => Math.max( 4, Math.round( Math.sqrt( v ) * 1.25 ) );
+	const html = batches.map( ( b, bi ) => {
+		const cells = b.map( i => {
+			const [ lw, lh ] = levels[ i ];
+			return `<div class="lvl${ odd( levels[ i ] ) ? ' odd' : '' }"><div class="box" style="width:${ scale( lw ) }px;height:${ scale( lh ) }px"></div><span class="dim">${ lw }×${ lh }</span></div>`;
+		} ).join( '' );
+		const label = bi === 0 ? 'level 0' : `dispatch ${ bi }`;
+		return `<div class="batch"><div class="batch-levels">${ cells }</div><div class="batch-bar" style="${ bi ? 'background:var(--accent);opacity:.35' : '' }"></div><div class="batch-label">${ label }</div></div>`;
+	} ).join( '' );
+	document.getElementById( 'chain' ).innerHTML = html;
+} )();
+
+// filters
+const state = { verdict: null, source: null };
+function chips( id, map, key, counter ) {
+	const host = document.getElementById( id );
+	const make = ( value, label ) => {
+		const b = document.createElement( 'button' );
+		b.className = 'chip'; b.type = 'button'; b.id = `f-${ key }-${ value || 'all' }`;
+		b.setAttribute( 'aria-pressed', value === state[ key ] ? 'true' : 'false' );
+		b.innerHTML = `${ esc( label ) }<span class="n">${ counter( value ) }</span>`;
+		b.addEventListener( 'click', () => {
+			state[ key ] = value;
+			host.querySelectorAll( '.chip' ).forEach( c => c.setAttribute( 'aria-pressed', c === b ? 'true' : 'false' ) );
+			render();
+		} );
+		host.appendChild( b );
+	};
+	make( null, 'All' );
+	for ( const [ value, label ] of Object.entries( map ) ) make( value, label );
+}
+chips( 'verdicts', V, 'verdict', v => entries.filter( e => ! v || e.verdict === v ).length );
+chips( 'sources', SOURCES, 'source', s => entries.filter( e => ! s || e.src.includes( s ) ).length );
+
+function render() {
+	const list = entries.filter( e => ( ! state.verdict || e.verdict === state.verdict ) && ( ! state.source || e.src.includes( state.source ) ) );
+	document.getElementById( 'count' ).textContent = `${ list.length } of ${ entries.length } divergences`;
+	document.getElementById( 'rows' ).innerHTML = list.length ? list.map( e => `
+		<tr>
+			<td class="num">${ e.n }</td>
+			<td><a href="#d${ e.n }">${ esc( e.title ) }</a></td>
+			<td class="src">${ esc( e.srcText ) }</td>
+			<td><span class="pill v-${ e.verdict }">${ V[ e.verdict ] }</span></td>
+			<td><span class="effort">${ esc( e.effort ) }</span></td>
+			<td>${ esc( e.qualityShort ) }</td>
+			<td><span class="perf-kind ${ e.perfKind === 'measured' ? 'measured' : e.perfKind === 'risky' ? 'risky' : '' }">${ kindLabel[ e.perfKind ] }</span>${ esc( e.perfShort ) }</td>
+		</tr>` ).join( '' ) : `<tr><td colspan="7" class="empty">No divergences match both filters.</td></tr>`;
+	document.getElementById( 'cards' ).innerHTML = list.map( e => `
+		<article class="card ${ e.verdict }" id="d${ e.n }">
+			<div class="card-head">
+				<span class="num">${ String( e.n ).padStart( 2, '0' ) }</span>
+				<h3>${ esc( e.title ) }</h3>
+				<div class="meta"><span class="pill v-${ e.verdict }">${ V[ e.verdict ] }</span><span class="effort">effort ${ esc( e.effort ) }</span></div>
+			</div>
+			<dl class="facts">
+				<dt>${ esc( e.srcText ) }</dt><dd>${ esc( e.they ) }</dd>
+				<dt>We</dt><dd>${ esc( e.we ) }</dd>
+				<dt>Why</dt><dd>${ esc( e.why ) }</dd>
+				<dt>To converge</dt><dd>${ esc( e.converge ) }</dd>
+			</dl>
+			<div class="impact">
+				<div><span class="k">Quality</span>${ esc( e.quality ) }</div>
+				<div><span class="k">Performance · ${ kindLabel[ e.perfKind ] }</span>${ esc( e.perf ) }</div>
+				${ e.note ? `<div><span class="k">Verdict</span>${ esc( e.note ) }</div>` : '' }
+			</div>
+		</article>` ).join( '' );
+}
+render();
+</script>
