@@ -8,7 +8,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Now
 
-- [ ] M2T.4 SPD-style mode + comparison (agent, branch `m2t-spd`)
+- [ ] M2T.4: `oddSizes: 'spd'`, exact tail kernel (opt-in), atomic probe, measured (`b4ef2dc`…`55caad2`, branch `m2t-spd`); merge after `m2-gi-formats`
 - [ ] M2.3.4 buffer output + rgb9e5ufloat, M2.3.6 rg11b10ufloat: built and tested (`9d6b00d`, `213cb23`); agent merging `m2-reductions` into `m2-gi-formats` (26 hunks), then I merge back
 - [ ] CI: confirm the three parallel SwiftShader jobs fit in 45 min on GitHub runners (first push); if `reducer` doesn't, trim its quick shapes on SwiftShader only
 
@@ -70,6 +70,8 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Waiting on owner
 
+- `'spd'` odd sizes: 0.47–0.66× of `'exact'` time at render sizes (rgba8 average) but drifting footprints and broken Hi-Z (up to 52 % violations on noise). Public opt-in (average only?) or test-only?
+- Exact tail kernel: 1080p 7 → 4 dispatches but ~0.85–1.07× time; keep opt-in until an idle-machine run shows ≥5 %?
 - Payload folds break key ties by the smaller payload (order-independent); OK, or build in position-based ties?
 - Upscaler shading change: 8-channel version ties from 1280×720 up but is 8–14 % slower at 1129×635 than the sign-bit trick; which to keep?
 - How should pmndrs/upscaler consume the library before npm publish: vendored generated WGSL, a git dependency, or wait for publish?
