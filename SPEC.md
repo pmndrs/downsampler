@@ -8,23 +8,97 @@ Generate texture pyramids on the GPU: mip chains first, then min/max reduction p
 
 Feature target: parity with AMD FidelityFX SPD, implemented independently in WGSL. SPD is the reference for what a downsampler should offer, not code to port. See §6.
 
-**Primary users (decided 2026-11-11):** our own tools: the upscaler (pmndrs/upscaler, based on FSR 3), the denoiser and GI. three.js mipmaps benefit from the same work but don't drive it. Those tools use SPD for fused passes: a custom per-texel load from several inputs, a few levels reduced inside a tile, and a custom store, all in the tool's own dispatch. So the main product is a WGSL reduction generator that tools embed or dispatch themselves; `Downsampler` (mip chains, Hi-Z) is one user of it. Speed at render resolutions, which are rarely powers of two, is a first-class goal. A single dispatch is not, because WGSL can't make SPD's handoff safe (§2.2): chains of up to 6 levels already take one dispatch, and full chains take two.
+**Primary users (decided 2026-11-11):** our own tools: the upscaler (pmndrs/upscaler, based on FSR 3), the denoiser and GI. three.js mipmaps benefit from the same work but don't drive it. Those tools use SPD for fused passes: a custom per-texel load from several inputs, a few levels reduced inside a tile, and a custom store, all in the tool's own dispatch. So the main product is a WGSL reduction generator that tools embed or dispatch themselves; `Downsampler` (mip chains, Hi-Z) is one user of it. Speed at render resolutions, which are rarely powers of two, is a first-class goal. A single dispatch is not, because WGSL can't make SPD's handoff safe and it measured slower than two dispatches (§2.2). Chains of up to 6 levels already take one dispatch. Full chains take two at powers of two and under `oddSizes: 'spd'`, and 5–9 under `'exact'` at render sizes (§2.1).
 
 ## 2. Two decisions to know up front
 
-### 2.1 Odd sizes: `'exact'` (default), `'box'` (planned), no `'fast'`
+### 2.1 Odd sizes: `'exact'` (default), `'spd'` (opt-in, measured), `'box'` (planned)
 
-A 2:1 reduction is only exact when a dimension halves cleanly. For odd, non-unit sizes (decided 2026-11-10):
+A 2:1 reduction is only exact when a dimension halves cleanly. For odd, non-unit sizes (decided 2026-11-10; `'spd'` built and measured 2026-11-11, M2T.4):
 
 - **`'exact'` (default, implemented).** An odd size ends the current batch, and the next level is re-sampled from the stored level with normalized-coordinate bilinear filtering.
   - Results match render-pass and WebGL mipmaps (the CPU reference in §7), so engines can switch without visual change.
   - Min/max use the conservative `2x … 2x+2` footprint, so Hi-Z is correct.
-  - Cost: more dispatches on sizes like 1920×1080 (7 today). The planned tail kernel (§13) targets about 3–4 with unchanged results.
+  - Cost: more dispatches at render sizes, 5–9 instead of 2 (1920×1080: 7). The exact tail kernel (`new Downsampler( device, { tail: true } )`, opt-in, M2T.4) cuts that to 3–6 with the same rule, but recovers little time (measurements below).
 - **`'box'` (planned, opt-in).** Area-weighted odd sizes, as in nvpro_pyramid: per axis, 3 taps with weights `(n−x, n, x+1)/(2n+1)` for size `2n+1`. Every source texel contributes in proportion to its overlap, which fixes the unrepresentative 1×1 of render-pass mipmaps on sizes like 31×31.
   - Same dispatch structure and footprint as the folds, so no extra cost.
   - Recommended for quality-sensitive content: GI, irradiance and roughness chains, UI.
   - Needs its own oracle.
-- **No `'fast'` (dropped).** SPD-style clamped reduction through odd sizes drops the last row or column. That is lower quality, and it makes Hi-Z non-conservative. Its only benefit is fewer dispatches, which the tail kernel delivers for every mode without changing results. Revisit only if the tail kernel fails its measurement.
+- **`'spd'` (implemented 2026-11-11, opt-in; replaces the dropped `'fast'`).** AMD SPD's semantics. Each batch is the `Reducer`'s `'clamp'` tile kernel emitting every level: clamped loads, `⌊n/2⌋` sizes, the last odd row or column dropped, and no rounding between the levels of a batch. The next batch reads the last stored level. Any size takes `⌈levels / levelsPerDispatch⌉` dispatches: 2 up to 4096² at 6 levels per dispatch, 3 at the default limit of 4. For filterable formats, averages take one bilinear sample at the 2×2 corner, as SPD does. A same-size separate source is copied by a 1-level `'exact'` batch first. Oracle: `spdReference` (core), checked per batch from the GPU's own source level.
+  - **Min/max under `'spd'` are not a conservative Hi-Z.** A dropped row or column belongs to no texel, so a max pyramid misses it. Use `'exact'` for any occlusion pyramid.
+  - **Measured, not made the default.** It is faster at render sizes. The price is quality and Hi-Z correctness, for tens of µs per chain (below).
+
+**M2T.4 measurements.** Apple M5 Pro, Metal, Chrome 148 headless, 2026-11-11; `npm run bench -- --compare=spd`, `results/spd/m5-pro-compare-{1…7}.json`.
+- **Load:** other agents' GPU suites ran throughout, with load averages of 8–110 over the seven runs. Absolute times are inflated, so only same-run ratios mean anything.
+- **Method:** each cell is the median over the 7 runs of each run's median paired per-round ratio. Order rotates; 11 rounds × 16 repeats; marker cost subtracted.
+- **Reading the table:** ratios are to `'exact'` at 6 levels per dispatch, on the same input; under 1 is faster. Dispatches are in brackets. "Atomic" is the single-dispatch probe of §2.2, texture-ready.
+
+| Size | Format | `'exact'` ms | tail | `'spd'` | atomic | render passes |
+|---|---|---:|---:|---:|---:|---:|
+| 960×540 | rgba8 | 0.024 [7] | 0.85 [4] | **0.47** [2] | 1.02 [2] | 6.7 |
+| 1129×635 | rgba8 | 0.031 [6] | 1.07 [5] | **0.52** [2] | 1.05 [3] | 5.7 |
+| 1280×720 | rgba8 | 0.051 [5] | 0.94 [3] | **0.50** [2] | 0.97 [3] | 2.5 |
+| 1477×831 | rgba8 | 0.043 [9] | 0.97 [6] | **0.50** [2] | 0.88 [3] | 3.6 |
+| 1707×960 | rgba8 | 0.071 [8] | 0.90 [4] | **0.60** [2] | 0.90 [3] | 2.5 |
+| 1920×1080 | rgba8 | 0.050 [7] | 0.99 [4] | **0.66** [2] | 0.91 [3] | 2.4 |
+| 2560×1440 | rgba8 | 0.077 [5] | 1.02 [3] | **0.73** [2] | 0.88 [4] | 2.1 |
+| 3840×2160 | rgba8 | 0.193 [7] | 1.00 [4] | 0.91 [2] | 0.96 [4] | 1.3 |
+| 1024² | rgba8 | 0.020 [2] | 1.00 [2] | 0.81 [2] | 1.54 [3] | 7.6 |
+| 2048² | rgba8 | 0.075 [2] | 0.98 [2] | 0.93 [2] | 1.07 [4] | 2.0 |
+| 4096² | rgba8 | 0.384 [2] | 1.00 [2] | 1.00 [2] | 1.02 [5] | 1.4 |
+| 960×540 | rgba16f | 0.037 [7] | 0.83 [4] | **0.64** [2] | 1.42 [2] | 3.2 |
+| 1129×635 | rgba16f | 0.033 [6] | 1.02 [5] | **0.68** [2] | 1.36 [3] | 3.4 |
+| 1280×720 | rgba16f | 0.042 [5] | 0.91 [3] | 0.83 [2] | 1.60 [3] | 2.6 |
+| 1477×831 | rgba16f | 0.052 [9] | 0.93 [6] | **0.62** [2] | 1.00 [3] | 2.9 |
+| 1707×960 | rgba16f | 0.059 [8] | 0.90 [4] | **0.69** [2] | 1.06 [3] | 2.4 |
+| 1920×1080 | rgba16f | 0.100 [7] | 0.97 [4] | 0.84 [2] | 1.05 [3] | 2.0 |
+| 2560×1440 | rgba16f | 0.189 [5] | 0.99 [3] | 0.94 [2] | 1.06 [4] | 1.4 |
+| 3840×2160 | rgba16f | 0.368 [7] | 0.99 [4] | 0.97 [2] | 1.01 [4] | 1.3 |
+| 1024² | rgba16f | 0.038 [2] | 0.98 [2] | 0.97 [2] | 1.64 [3] | 3.1 |
+| 2048² | rgba16f | 0.184 [2] | 1.00 [2] | 0.99 [2] | 1.08 [4] | 1.4 |
+| 4096² | rgba16f | 0.715 [2] | 1.02 [2] | 0.99 [2] | 1.01 [5] | 1.5 |
+
+- **`'max'`**, as ratios to `'exact'` max at render sizes up to 1080p: `'spd'` 0.30–0.56 for rgba8 (also at 1440p) and 0.37–0.78 for rgba16f; 0.92–0.97 at 4K. The tail is 0.72–1.08.
+- **The atomic probe's brackets** count its one dispatch plus a copy per tail level past the 8-storage-texture limit. Without the copies ("kernel only") it is 0.73–0.88 for rgba8 and 0.90–1.50 for rgba16f at render sizes.
+
+What the numbers say:
+- **`'spd'` is 1.4–2.1× faster than `'exact'` at render sizes up to 1440p in rgba8, and 1.2–1.6× in rgba16f up to 1080p.** At 4K, and at powers of two from 2048², it is within 3–9 %: those chains are bandwidth-bound and already take 2 dispatches.
+- **The saving is the chain of dependent dispatches, not pass overhead.** Recording every batch into one compute pass (`encodePass`) instead of one pass per batch measured 0.94–1.03× (runs 4–7).
+- **Part of it is kernel arithmetic.** At 1024² rgba8, with 2 dispatches each, `'spd'` is 0.81× (0.63× for max). The exact kernel's integer tie rounding and odd-footprint branches cost there; that is worth optimizing in `'exact'` by itself.
+- **The tail kernel doesn't close the gap.** It removes 1–4 trailing dispatches, but those are cheap. The time goes to the breaks at the large levels: 1477×831 ends a batch at every level down to 46×25, and 1129×635 at level 1.
+  - The tail measured 0.83–1.07×: a gain at 960×540 (0.83–0.85), about 0.90–0.97 elsewhere, often inside the noise.
+  - The `'exact'`-preserving fix for the large-level breaks is halo batches (§13). Their upside is bounded by the `'spd'` column.
+- **The absolute stakes are small.** On this loaded machine, `'spd'` saves 13–29 µs per render-size chain up to 1080p. On an idle M5 Pro the whole `'exact'` 1080p chain took 0.037 ms (§8).
+
+**Quality of `'spd'` against `'exact'`** (`npm run bench -- --quality`, `results/spd/m5-pro-quality.json`).
+- **Images:** two per size. "Scene" has smooth gradients and waves, a bright one-texel line every 97 texels and on the last row and column, and sparse highlights (HDR ×2, highlights of 16 in rgba16f). "Noise" is uniform per-texel noise.
+- **Ideal:** the exact area-weighted mean of the base texels under each texel's normalized footprint.
+- **Units:** normalized (1.0 is full scale for rgba8). Means are texel-weighted over all levels.
+
+| Size | rgba8 scene: max / mean \|spd − exact\| | rgba8 scene, levels ≥ 4: mean \|· − ideal\|, exact / spd | rgba16f scene: max \|spd − exact\| | Hi-Z: `'spd'` max texels below a base texel in their footprint (scene; noise) | Same for `'exact'` and the tail |
+|---|---:|---:|---:|---:|---:|
+| 960×540 | 0.25 / 0.0011 | 0.004 / 0.026 | 0.65 | 0.34 %; 1.2 % | 0 |
+| 1129×635 | 0.64 / 0.0103 | 0.007 / 0.027 | 10.9 | 15 %; 51 % | 0 |
+| 1280×720 | 0.36 / 0.0005 | 0.002 / 0.006 | 0.74 | 0.06 %; 0.02 % | 0 |
+| 1477×831 | 0.64 / 0.0097 | 0.007 / 0.024 | 10.0 | 13 %; 52 % | 0 |
+| 1707×960 | 0.47 / 0.0046 | 0.005 / 0.006 | 4.0 | 12 %; 32 % | 0 |
+| 1920×1080 | 0.24 / 0.0006 | 0.004 / 0.011 | 0.52 | 0.10 %; 0.18 % | 0 |
+| 2560×1440 | 0.37 / 0.0004 | 0.001 / 0.002 | 0.73 | 0.01 %; 0 | 0 |
+| 3840×2160 | 0.24 / 0.0004 | 0.002 / 0.003 | 0.51 | 0.03 %; 0.02 % | 0 |
+| 1024², 2048², 4096² | 0.004 / ≤ 0.0006 | equal | 0.002 | 0 | 0 |
+
+- **Where sizes halve cleanly, the modes agree to one 8-bit step.** The only difference there is that `'spd'` doesn't round between levels. Every odd size changes the result from that level down: at 1920×1080, levels 1–3 agree to 0.004, and levels 4–10 differ by up to 0.24 (mean 0.008–0.047 per level).
+- **The first odd size decides how bad it gets.** When level 0 or 1 is odd (1129×635, 1477×831, 1707×960), `'spd'`'s level-1 texels drift by up to one texel from their normalized footprint towards the far edge. Every level is then off: up to 0.64 in rgba8, and 11 on HDR highlights.
+- **On the scene image, `'exact'` is closer to the area-weighted ideal:** 1.3–7× at levels ≥ 4, and up to 10× on single levels (1920×1080 level 6: 0.004 against 0.039). On uniform noise `'spd'` is closer, because a 2×2 box averages away more noise than a 2-tap bilinear. So it is not worse everywhere; `'box'` beats both by construction.
+- **Hi-Z:** for `'max'`, `'spd'` leaves 0.01–15 % of texels smaller than some base texel inside their footprint on the scene image. On noise it is up to 52 %, and up to 94 % on smooth rgba16f gradients, where the partly covered third texel is always the larger one. `'exact'` and the tail have no violations at any size, which is the property Hi-Z culling needs.
+- **The tail kernel matches `'exact'`** within one rgba8 step (0.004), and within 0.008 in rgba16f, where its shader bilinear weights replace the sampler's 8-bit ones.
+
+**Decision (unchanged): `'exact'` stays the default; `'spd'` ships as an opt-in.** The data supports the default. `'spd'`'s speed comes with footprints that drift at odd sizes, deep levels several times further from the area-weighted ideal, and a non-conservative Hi-Z, for tens of µs per chain.
+
+**Recommendations for the owner (to confirm):**
+1. Keep `oddSizes: 'spd'` public as an opt-in for SPD parity and speed-first average chains that tolerate dropped edges, such as bloom or exposure-style pyramids. Document it as never for Hi-Z. The alternative is to keep it test-only.
+2. Keep the tail kernel opt-in (`tail: false` by default). Make it the default only if an idle-machine run shows ≥ 5 % at render sizes; on this loaded machine it measured 0.83–1.07×.
+3. If `'exact'` must get closer to `'spd'` at render sizes, the levers are halo batches for the large-level breaks (§13) and a cheaper exact kernel (integer rounding, fold footprint branches). Measure on NVIDIA, AMD and Intel first (§9): the cost of a dependent dispatch there is unknown.
 
 ### 2.2 No single-dispatch mode
 
@@ -47,6 +121,12 @@ SPD writes every level in one dispatch. The last workgroup to finish, detected w
    | 1024² | rgba16f | 0.0689 | 0.0592 | **0.0246** |
 
    The atomic tail costs a near-constant ~20 µs. The last workgroup issues dozens of serially dependent atomic loads, and packing the payload reduced but did not remove that. The dispatch boundary it saves costs about 1–2 µs. The prototype lives in the three.js experiment branch (`webgpu-spd-audit`).
+
+3. **Re-measured at render sizes (M2T.4, 2026-11-11): it still loses to two dispatches.** `test/bench/atomic-spd.js` is a measurement-only probe, not an API. It relies on the handoff WGSL doesn't guarantee, and says so in its header.
+   - **Construction:** phase 1 is the library's 6-level `'clamp'` tile kernel, so `oddSizes: 'spd'` semantics at any size up to 4096². Each workgroup publishes its level-6 texel with `atomicStore` (packed: 1 word for rgba8, 2 for rgba16f), runs `storageBarrier()` and takes a ticket. The last workgroup resets the self-resetting counter and reduces the remaining ≤ 6 levels from the payloads with the same tile kernel and `atomicLoad`. Tail levels past the 8-storage-texture limit go to a packed buffer and are copied into the texture.
+   - **Checks before timing:** it must reproduce `'spd'` on 4 changing inputs, with levels 1–6 bit for bit and the tail within the format tolerance, and leave the counter at 0. It passed at all 22 size/format pairs on the M5 Pro. That is evidence for one device, not a proof.
+   - **Result:** against the same kernel split into 2 dispatches (`'spd'`), it is slower at every size measured except 4096², where the two tie within 2 %. Texture-ready, it is 0.88–1.05× of `'exact'` for rgba8 at render sizes, where `'spd'` is 0.47–0.73×, and 1.00–1.60× for rgba16f, where `'spd'` is 0.62–0.94×. At 1024² it is 1.5–1.6×. Without its copies it is still behind `'spd'` (§2.1 table).
+   - **Why (likely):** the boundary it removes is cheap, and what it adds isn't. Every workgroup pays a storage barrier and an atomic, and the elected workgroup reads mip 6 through serially dependent atomic loads. A second dispatch reads it with plain texture loads, and the API guarantees their visibility.
 
 If WGSL gains device-scope release/acquire, revisit with a measurement first.
 
@@ -73,7 +153,7 @@ A batch reads one source level and writes up to `levelsPerDispatch` consecutive 
 
 - **First output:** a hardware bilinear sample at each texel centre, using normalized coordinates. That is an exact 2×2 box for even sizes. For odd sizes it reproduces render-pass and WebGL mipmaps, which is **not** area-correct: 3→1 takes only the centre texel, so a 31×31 texture can reduce to an unrepresentative 1×1 (`greggman`'s example in gpuweb#5253). Area-weighted odd sizes are a candidate opt-in (§13).
 - **Later levels in the batch:** exact 2:1 reductions in workgroup memory, with clamped reads for unit dimensions and partial tiles.
-- **Batch boundaries:** a batch ends at `levelsPerDispatch`, or where the next reduction is inexact under `'exact'`.
+- **Batch boundaries:** a batch ends at `levelsPerDispatch`, or where the next reduction is inexact under `'exact'`. With `tail: true`, a first output of at most 32×32 starts a tail batch that finishes the chain (up to `levelsPerDispatch` levels) in one workgroup by the same rule. Under `'spd'`, batches end only at `levelsPerDispatch` (§2.1).
 - **Layers:** workgroup z selects the array layer, so all layers go in one dispatch.
 
 ### Reductions
@@ -177,11 +257,11 @@ Every intermediate level is quantized exactly as stored, so a chain equals level
 import { Downsampler } from 'downsampler/webgpu';
 
 const device = await adapter.requestDevice( { requiredLimits: Downsampler.requiredLimits( adapter ) } );
-const downsampler = new Downsampler( device );          // { levelsPerDispatch?, averageAccess? }
+const downsampler = new Downsampler( device );          // { levelsPerDispatch?, averageAccess?, tail? }
 downsampler.supports( texture );                         // boolean
 downsampler.unsupportedReason( texture );                // string | null
 downsampler.encode( encoder, texture, {
-	baseMipLevel, mipLevelCount, oddSizes: 'exact',
+	baseMipLevel, mipLevelCount, oddSizes: 'exact' | 'spd',   // 'spd': SPD semantics, ⌈levels/6⌉ dispatches (§2.1)
 	reduction: 'average' | 'min' | 'max' | 'minmax' | { wgsl: 'fn reduce(a: vec4f, b: vec4f) -> vec4f { … }' },
 } );
 downsampler.generate( texture );                         // encode + submit
@@ -191,7 +271,7 @@ downsampler.prepare( texture );                          // planned dispatches (
 import { generateMipmaps, requiredLimits } from 'downsampler/three';
 generateMipmaps( renderer, texture );                    // false if not allocated/supported
 
-import { planBatches, reduceReference, footprint } from 'downsampler'; // backend-neutral core
+import { planBatches, reduceReference, footprint, spdReference, maxViolations } from 'downsampler'; // backend-neutral core
 ```
 
 ```ts
@@ -257,7 +337,7 @@ The destination must have `TEXTURE_BINDING | STORAGE_BINDING` usage and a format
 downsampler.encode( encoder, destination, {
 	layers: [ first, count ],
 	rect: { x, y, width, height },      // SPD rectInfo
-	oddSizes: 'exact' | 'box',
+	oddSizes: 'exact' | 'spd' | 'box',
 	scratch: GPUTexture,                 // optional reusable scratch for sRGB destinations
 } );
 ```
@@ -267,7 +347,7 @@ downsampler.encode( encoder, destination, {
 | SPD feature | Status | Plan / notes |
 |---|---|---|
 | Up to 12 levels from ≤4096² | ✅ | any size, by chaining (2 dispatches up to 4096²) |
-| Single dispatch | ❌ by design | §2.2 |
+| Single dispatch | ❌ by design | §2.2; a measurement-only atomic probe (`test/bench/atomic-spd.js`) lost to two dispatches at render sizes and 1024², tied at 4096² |
 | Custom reduction (`SpdReduce4`) | ✅ | average/min/max/minmax + custom WGSL `reduce(a, b)` fold (§4 Reductions). A weighted custom reduction (SPD's `SpdReduce4` used for averages) isn't offered under `'exact'`, where it has no defined odd-size meaning; tile kernels (`Reducer`, §14.1) add sums, weighted means and custom sums under `'zero-weight'` and `'clamp'`. Transforms around an average (premultiply, sRGB) are planned as load/store hooks with §6.1. |
 | Load vs. linear-sampler source | ✅ | `textureLoad` path (§4 Source access). `textureGather` for single-channel Hi-Z is an M3 candidate: one gather replaces four loads. |
 | Separate source/destination | ✅ | `source: { texture, mipLevel }`, same size (copy) or half (§4 Separate source). Depth sources supported. |
@@ -282,7 +362,7 @@ downsampler.encode( encoder, destination, {
 | LDS layout (one float4 array vs per channel) | ❌ | M3 candidate; measure first |
 | Packed fp16 math | ❌ | optional `shader-f16`; keep only if measurably faster |
 | Wave/subgroup ops | ❌ | optional `subgroups` (Chrome, Safari 27.3; workgroup-memory fallback for Firefox). WGSL defines no quad↔`local_invocation_index` mapping in compute, so derive positions from `subgroup_id`/`subgroup_invocation_id` and use `subgroupShuffleXor`. Upper-bound test first (§13 Subgroups); current kernels are near bandwidth-bound at ≥2048². |
-| Odd sizes | ✅ `'exact'` | SPD drops the last row/column; we match render passes. Area-weighted `'box'` planned; SPD-style `'fast'` dropped (§2.1) |
+| Odd sizes | ✅ `'exact'`, `'spd'` | SPD drops the last row/column; `'exact'` (default) matches render passes. `oddSizes: 'spd'` reproduces SPD's semantics in ⌈levels/6⌉ dispatches (M2T.4, §2.1). Area-weighted `'box'` planned |
 
 Beyond SPD: sizes over 4096², render-pass-matching odd sizes, conservative min/max at odd edges (SPD drops the last row/column, and unclamped loads read zeros past the edge), and automatic fallback to the 4-storage-texture limit.
 
@@ -366,6 +446,7 @@ Optimisation: with `float32-filterable`, float32 formats may take the sample pat
 
 - **Reductions:** every shape × width × format case runs `'average'` through the sampler and through loads, plus `'min'`, `'max'`, `'minmax'` and a custom fold. The custom fold depends on the value domain, so it catches unit mix-ups. Folds skip the constant pattern and must match exactly. The `edge` pattern on odd shapes exercises the `2x+2` footprint.
 - **Separate source:** 8 source → destination pairs (depth32float/depth16unorm/r32float → r32float/rg32float Hi-Z, rgba8 ↔ rgba16f conversions), each in copy or half relation. 13 shapes (odd, 1D, NPOT, layers, 512² for multi-batch, 1920×1080), all kernel widths, random/edge/tiles patterns, and the destination poisoned from level 0. The oracle's source values are read back from the source texture, not taken from the fill data. Options cover rejected sources, `source.mipLevel`, and replacing the source texture with the same options.
+- **Odd-size modes (M2T.4):** every shape × width × format case also runs `oddSizes: 'spd'` (average through the sampler and through loads, max, minmax, the custom fold), each batch checked against `spdReference` from the GPU's own batch source level; float sums get `pyramidTolerance` on top of the format tolerance, folds are exact. The exact tail kernel (`tail: true`) runs average (sample, load), max, minmax and the custom fold wherever the plan has a tail batch, against the same per-level `'exact'` oracle; normalized formats must match bit for bit except at a batch's first output and the tail's odd steps. Separate sources run `'exact'`, `'spd'` (a same-size source is a 1-level exact copy batch, then clamp batches) and the tail. `encodePass` equals `encode` for both modes; unknown policies are rejected. A core test shows `'spd'` max is not a conservative Hi-Z while `'exact'` is (`maxViolations`).
 - **Tile reductions (`Reducer`, §14.1):** both edge policies × kernel widths 1, 4, 5, 6 (all on SwiftShader too: the hook path needs no storage textures) × 17 shapes × four reductions: sum/average/min/max channels, weighted with a weight channel (a third of the texels weigh 0), a custom fold and a custom sum that counts its combines. Each runs through the texture path (source texture → output textures at exact level sizes) and the hook path (load from a storage buffer, store into an atlas), with complementary level selections, so every level of every width is checked and unemitted levels must stay poisoned. Tolerance: `4e-6 × Σ|terms|` (exact for min/max and folds). Plus the FSR 3.1 shading-change shape (clamp, levels 1–3 into half-resolution rgba16float mips, 1920×1080 and 1917×1077), the denoiser weighted mean (zero-weight, sky weight 0, atlas, sky-only blocks emit 0), and the API: encode, encodePass, self-dispatch and size hook produce identical bits; two sizes in one pass; rejected outputs and options.
 - **Oracle independence:** a core test checks that max chains are conservative: every texel bounds each base texel its normalized area touches, without using `footprint()`.
 
@@ -377,6 +458,8 @@ New features add their own oracle first: each new format family, sRGB, rect, lay
 - **Marker cost** is measured as an empty batch and subtracted (about 0.0006 ms per chain on M5 Pro).
 - **Results:** medians of 11 rounds, rotating order across strategies, warmed, with a parity check before timing.
 - **Baseline:** one render pass per level and layer, linear sampler. This is the common approach and what three.js does today.
+
+**Odd-size strategies** (`npm run bench -- --compare=spd --skip-validation`, M2T.4) time `'exact'`, the tail kernel, `'spd'`, the atomic probe (texture-ready and kernel only) and render passes, for average and max, at the render sizes plus 1024²/2048²/4096². `encodePass` variants separate pass overhead from dispatch structure. The device requests the adapter's storage texture limit for the probe. Before timing, the probe must reproduce `'spd'`, and `'spd'` its oracle. `--quality` measures `'spd'` against `'exact'` and the area-weighted ideal per level, and Hi-Z violations (§2.1). `run.js` records load averages before and after.
 
 **Tool fixtures** (`npm run tools`, `test/tools/`) time compute passes with their own `timestampWrites` around 16 repeats (never empty), 11 rotated rounds, median.
 
@@ -428,8 +511,8 @@ Build first, benchmark once coverage is broad (decided 2026-11-10). Live status 
    1. WGSL reduction generator: tool-supplied `load` with its own bindings, per-channel reductions including sums, choice of emitted levels, outputs (texture, buffer, WGSL `store` hook), edge policy. Done: `Reducer` (§14.1); buffer output waits for §6.1.
    2. Reduce-to-scalar in 2 dispatches with an epilogue hook.
    3. Proof on the upscaler's FSR 3.1 passes as bench fixtures, against an oracle, timed on M5 and by the owner on RTX 3060 / Intel UHD. Done on M5 (§14, M2T.3); RTX 3060 / Intel UHD pending.
-   4. Deferred until 1–3 clear: an SPD-style mode, built at least as a measured comparison that justifies, or not, its not being the primary method.
-   Then: buffer output + rgb9e5ufloat and rg11b10ufloat (GI formats); layer range + rect; `'box'`, power-of-two destination from a separate source, and the exact tail kernel.
+   4. An SPD-style mode, built at least as a measured comparison that justifies, or not, its not being the primary method. Done (2026-11-11): `oddSizes: 'spd'` (opt-in), the exact tail kernel (opt-in) and an atomic single-dispatch probe, measured at render sizes; `'exact'` stays the default (§2.1, §2.2).
+   Then: buffer output + rgb9e5ufloat and rg11b10ufloat (GI formats); layer range + rect; `'box'`, power-of-two destination from a separate source, and the tail kernel's default (idle re-measure, §2.1).
    Deferred, three.js-driven: rgb10a2unorm, sRGB, integer formats.
 3. **M3 (dial in: coverage and tuning):**
    - per-frame throughput benchmark alongside timestamps (§13)
@@ -511,8 +594,8 @@ The rows are folded into §6. Differences SPD users must be told about: mip coun
    - Get NVIDIA/D3D12, AMD and Intel numbers from the device lab.
    - Measure `STORAGE_BINDING` sampling cost.
    - If compute loses on a vendor, adapters must choose the path per device.
-2. **Exact tail kernel** (candidate). Once a level fits one workgroup's memory, reduce every remaining level there through any parity, with exact `'exact'` weights (no halo needed). 1920×1080 would drop from 7 dispatches to about 3–4. Measure it: a boundary costs ~1–2 µs (§2.2).
-3. **Halo batches under `'exact'`** (candidate). Our odd bilinear taps also fall in 2x … 2x+2, so nvpro's halo structure carries one odd step per dispatch without changing results.
+2. **Exact tail kernel** (built and measured, M2T.4; opt-in `tail: true`). Once a first output fits one 32×32 workgroup, that workgroup reduces every remaining level through any parity with exact `'exact'` weights (no halo needed). 1920×1080 drops from 7 dispatches to 4, and render sizes from 5–9 to 3–6. The time saved is small, 0.83–1.07× on a loaded M5 Pro, because the trailing dispatches it removes are cheap (§2.1).
+3. **Halo batches under `'exact'`** (candidate). Our odd bilinear taps also fall in 2x … 2x+2, so nvpro's halo structure carries one odd step per dispatch without changing results. This is now the lever for the large-level breaks that the tail can't reach. Its upside is bounded by `'spd'`: 0.47–0.73× of `'exact'` at render sizes in rgba8 on the M5 Pro.
 4. **Area-weighted odd sizes** (candidate opt-in, e.g. `oddSizes: 'box'`). This is the quality fix for the 31×31 case, and a defined meaning for weighted reductions at odd sizes. It needs its own oracle.
 5. **Engagement:** one data-backed comment in #5253 (method, named devices, device-lab link), and a comment on webgpu-spd#7 citing the memory model. Both only after the cross-vendor data exists.
 

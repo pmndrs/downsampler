@@ -9,7 +9,7 @@
 // than some base texel inside their footprint (`maxViolations`), per mode.
 // The tail kernel's outputs are compared with 'exact' too (same rule; only
 // shader vs sampler bilinear weights differ).
-import { maxViolations, toHalf } from '/dist/index.js';
+import { fromHalf, maxViolations, toHalf } from '/dist/index.js';
 import { Downsampler } from '/dist/webgpu/index.js';
 import { createTexture, readMips } from '../browser/gpu.js';
 
@@ -106,7 +106,8 @@ export async function quality( device, { sizes = qualitySizes, formats = [ 'rgba
 
 				const floats = image( width, height, pattern, format === 'rgba16float' );
 				const data = encode( floats, format );
-				const base = format === 'rgba8unorm' ? Float32Array.from( data, v => v / 255 ) : floats.map( v => Math.fround( v ) );
+				// The base level as stored (8-bit or float16), which both modes read.
+				const base = format === 'rgba8unorm' ? Float32Array.from( data, v => v / 255 ) : Float32Array.from( data, fromHalf );
 				const chains = {};
 				for ( const [ name, [ downsampler, options ] ] of Object.entries( runs ) ) {
 

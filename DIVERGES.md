@@ -12,15 +12,15 @@ Each entry says what they do, what we do, why, what it would take to converge, a
 
 Effort: **S** is under a day, **M** a few days including oracle and GPU cases, **L** a week or more.
 
-Last updated: 2026-11-11 (M2T.1)
+Last updated: 2026-11-11 (M2T.4: entries 1–3 measured)
 
 ## Summary
 
 | # | Divergence | Source | Verdict | Effort to converge | Quality | Performance |
 |---|---|---|---|---|---|---|
-| 1 | No single dispatch / atomic handoff | SPD, webgpu-spd | Keep | S (prototype exists) | Converging risks missing mips | Measured: ours 1.5–2.4× faster at ≤1024² |
-| 2 | Batch ends at every odd size | SPD, nvpro | Planned (tail kernel); halo batches candidate | M / M–L | None | Estimate: a few µs at 1080p |
-| 3 | Odd sizes match render passes, not area-weighted or dropped | SPD, nvpro | Keep default; `'box'` planned | M | `'box'` fixes the 31×31 case | ~None |
+| 1 | No single dispatch / atomic handoff | SPD, webgpu-spd | Keep | S (probe exists) | Converging risks missing mips | Measured: 2 dispatches beat the atomic probe, 1.1–2.2× at render sizes up to 1440p; tie at 4096² |
+| 2 | Batch ends at every odd size | SPD, nvpro | Tail kernel built (opt-in); halo batches candidate | — / M–L | None | Measured: tail 0.83–1.07×; `'spd'` structure 0.47–0.73× |
+| 3 | Odd sizes match render passes, not area-weighted or dropped | SPD, nvpro | Keep default; `'spd'` opt-in; `'box'` planned | Done for SPD / M for `'box'` | `'spd'`: drifting footprints, non-conservative Hi-Z | `'spd'` 1.4–2.1× faster at render sizes (rgba8) |
 | 4 | Conservative min/max footprint at odd edges | SPD | Keep | S (but wrong) | SPD's Hi-Z can false-cull | One extra load per odd edge texel |
 | 5 | Clamp at edges, no zero reads | SPD | Keep | S | Ours: no dark or zero borders | ~None |
 | 6 | Clamp only, no wrap edges | gpuweb#5253 | Candidate | S–M | Seams on tiling textures at odd sizes | ~None |
@@ -44,31 +44,38 @@ Last updated: 2026-11-11 (M2T.1)
 
 ### 1. No single dispatch or atomic handoff
 - **They:** SPD and webgpu-spd write every level in one dispatch. The last workgroup to finish, found with a global atomic counter, reduces the final levels.
-- **We:** use one dispatch per batch of up to 6 levels, so two dispatches up to 4096².
+- **We:** use one dispatch per batch of up to 6 levels: two dispatches up to 4096² at powers of two and under `oddSizes: 'spd'`.
 - **Why:**
   - The WGSL memory model doesn't guarantee the handoff: atomics are relaxed and barriers are workgroup-scoped (SPEC §2.2).
   - webgpu-spd#7 saw missing mips on M1 and "fixed" it with a `storageBarrier`, which isn't guaranteed in WGSL either.
-  - Our own prototype was slower.
-- **Effort to converge:** S. The prototype is in the three.js `webgpu-spd-audit` branch.
-- **Quality:** converging could produce stale or missing levels on hardware that reorders.
-- **Performance (measured):** single dispatch vs ours, in ms per chain:
-  - 256² rgba8: 0.0099 vs 0.0068.
-  - 1024² rgba8: 0.0305 vs 0.0151.
-  - 1024² rgba16f: 0.0592 vs 0.0246.
-  - The atomic tail costs about 20 µs. The dispatch boundary it replaces costs 1–2 µs.
-- **Verdict:** keep. Revisit only if WGSL gains device-scope acquire/release.
+  - It is slower, measured twice (below).
+- **Effort to converge:** S. A measurement-only probe is in this repo: `test/bench/atomic-spd.js` (M2T.4). It is the library's 6-level `'clamp'` tile kernel plus an atomic level-6 payload, a self-resetting ticket and a tail reduced by the last workgroup.
+- **Quality:** converging could produce stale or missing levels on hardware that reorders. On the M5 Pro, the probe reproduced `'spd'` on 4 changing inputs at all 22 size/format pairs, with its counter reset. That is evidence for one device, not a proof.
+- **Performance (measured):**
+  - **2026-11-10, three.js prototype, ≤ 1024²:** single dispatch vs ours, in ms per chain: 0.0099 vs 0.0068 at 256² rgba8, 0.0305 vs 0.0151 at 1024² rgba8, 0.0592 vs 0.0246 at 1024² rgba16f. The atomic tail cost about 20 µs; the dispatch boundary it replaces 1–2 µs.
+  - **2026-11-11, M2T.4 probe, render sizes** (M5 Pro under heavy load, 7 runs, same-run ratios to `'exact'`; SPEC §2.1):
+    - rgba8 at 960×540 … 2560×1440: atomic 0.88–1.05×, against 0.47–0.73× for the same kernel in two dispatches (`'spd'`).
+    - rgba16f: atomic 1.00–1.60×, against 0.62–0.94×.
+    - 1024²: atomic 1.5–1.6×, against 0.81–0.97×. 4096²: 1.01–1.02×, against 0.99–1.00×.
+    - Without copying its tail levels into the texture, it is still behind `'spd'`: 0.73–0.88× for rgba8, 0.90–1.50× for rgba16f.
+- **Verdict:** keep. Revisit only if WGSL gains device-scope acquire/release, and measure first.
 
 ### 2. A batch ends at every odd size
 - **They:**
   - SPD carries every level through odd sizes in one pass by dropping the last row or column.
   - nvpro carries 2 levels per dispatch through odd sizes, recomputing a 1-texel halo.
-- **We:** end the batch where the next reduction is inexact, so 1920×1080 takes 7 dispatches.
+- **We:** end the batch where the next reduction is inexact: 5–9 dispatches at render sizes (1920×1080: 7).
 - **Why:** it is the simplest structure that keeps `'exact'` results identical to render passes.
 - **Effort to converge:**
-  - Tail kernel, M (planned for M2.5): once a level fits one workgroup's memory, reduce every remaining level there with exact weights. Target: 3–4 dispatches at 1080p.
-  - Halo batches, M–L (candidate): our odd taps fall in `2x … 2x+2`, the same support as nvpro's, so their halo structure would work without changing results.
-- **Quality:** none. Results are unchanged by design.
-- **Performance (estimate):** 3–4 fewer boundaries at 1–2 µs each, so about 3–8 µs on a 0.037 ms 1080p chain. Must be measured.
+  - **Tail kernel: built (M2T.4), opt-in** with `new Downsampler( device, { tail: true } )`. Once a first output fits one 32×32 workgroup, that workgroup finishes the chain with exact weights. Render sizes drop to 3–6 dispatches (1920×1080: 4; 1477×831: 6, since 46×25 doesn't fit).
+  - **Halo batches, M–L (candidate):** our odd taps fall in `2x … 2x+2`, the same support as nvpro's, so their halo structure would work without changing results. This is what's left: the breaks at the large levels.
+- **Quality:** none. The tail matches `'exact'` within one 8-bit step (its shader bilinear weights replace the sampler's 8-bit ones). It passed the full GPU matrix against the `'exact'` oracle.
+- **Performance (measured, M5 Pro, loaded; SPEC §2.1):**
+  - The tail is 0.83–1.07× of `'exact'`: a gain at 960×540 (0.83–0.85), and about 0.90–0.97 elsewhere, often inside the noise. The trailing dispatches it removes are cheap.
+  - The gap is real, though. The `'spd'` structure, 2 dispatches with no batch ends, is 0.47–0.73× for rgba8 and 0.62–0.94× for rgba16f at render sizes up to 1440p.
+  - It isn't pass overhead: one compute pass for all batches (`encodePass`) measured 0.94–1.03×.
+  - Part of it is the exact kernel's arithmetic: `'spd'` is 0.81× at 1024² rgba8 with the same 2 dispatches, and 0.63× for max.
+  - In absolute terms, `'spd'` saves 13–29 µs per render-size chain up to 1080p on the loaded machine.
 
 ## Odd sizes and edges
 
@@ -76,14 +83,19 @@ Last updated: 2026-11-11 (M2T.1)
 - **They:**
   - SPD drops the last row or column.
   - nvpro weights by area, `(n−x, n, x+1)/(2n+1)` for size `2n+1`, so 3→1 averages all three texels.
-- **We:** `'exact'` by default: normalized-coordinate bilinear, identical to render-pass and WebGL mipmaps. `'box'` (nvpro's weights) is a planned opt-in. SPD's behaviour (`'fast'`) was dropped.
-- **Why:** three.js and other engines can switch to us without any visual change. Hi-Z stays conservative.
-- **Effort to converge on nvpro:** M, already planned as `'box'` in M2.5. It needs its own oracle.
-- **Quality:**
-  - `'exact'` shares the render-pass flaw: a 31×31 texture can reduce to an unrepresentative 1×1.
-  - `'box'` is area-correct; recommend it for GI, irradiance and roughness chains.
-  - SPD's mode loses edge data.
-- **Performance (estimate):** `'box'` has the same dispatch structure and footprint as the folds, so it adds a few ALU ops at most.
+- **We:** `'exact'` by default: normalized-coordinate bilinear, identical to render-pass and WebGL mipmaps.
+  - **`oddSizes: 'spd'` (M2T.4, opt-in):** SPD's semantics, built from the `Reducer`'s `'clamp'` tile kernel. It has its own oracle (`spdReference`) and runs in the full GPU matrix.
+  - **`'box'`** (nvpro's weights) is a planned opt-in.
+- **Why:** three.js and other engines can switch to us without any visual change, and Hi-Z stays conservative.
+- **Effort to converge:** done for SPD, as an opt-in. M for nvpro, planned as `'box'` in M2.5 with its own oracle.
+- **Quality (measured, `results/spd/m5-pro-quality.json`; SPEC §2.1):**
+  - `'exact'` shares the render-pass flaw: a 31×31 texture can reduce to an unrepresentative 1×1. `'box'` is area-correct; recommend it for GI, irradiance and roughness chains.
+  - **`'spd'` against `'exact'`:** the two agree to one 8-bit step until the first odd size, then differ. On the scene image the largest difference is 0.24–0.64 (rgba8) over the render sizes, with texel-weighted means of 0.0004–0.010.
+  - **Drift:** when level 0 or 1 is odd (1129×635, 1477×831, 1707×960), `'spd'`'s footprints drift by up to a texel towards the far edge, and every level is off.
+  - **Against the area-weighted ideal** (scene, levels ≥ 4), `'exact'` is 1.3–7× closer than `'spd'`. On uniform noise `'spd'` is closer, because a box averages away more noise than a 2-tap bilinear.
+  - **Hi-Z:** `'spd'` max leaves 0.01–15 % of texels below a base texel in their footprint (scene), up to 52 % on noise. `'exact'` and the tail have none.
+- **Performance (measured, M5 Pro, loaded):** `'spd'` is 1.4–2.1× faster than `'exact'` at render sizes up to 1440p in rgba8, 1.2–1.6× in rgba16f up to 1080p, within 3–9 % at 4K and at powers of two from 2048². `'box'` would share the folds' dispatch structure and footprint: a few ALU ops at most (estimate).
+- **Verdict:** keep `'exact'` as the default. `'spd'` stays opt-in and is never for Hi-Z; the owner is to confirm whether it stays public (SPEC §2.1).
 
 ### 4. Conservative min/max footprint at odd edges
 - **They:** SPD's min/max skip the last row or column at odd sizes.

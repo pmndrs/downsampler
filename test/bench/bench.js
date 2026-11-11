@@ -28,7 +28,24 @@ function compareStrategies( device ) {
 		const run = ( downsampler, options ) => ( { passes: texture => downsampler.prepare( texture, options ).length, encode: ( encoder, texture ) => downsampler.encode( encoder, texture, options ) } );
 		strategies[ `exact${ suffix }` ] = { ...run( exact, { reduction } ), parity: reduction === 'average' };
 		strategies[ `tail${ suffix }` ] = { ...run( tail, { reduction } ), parity: reduction === 'average' };
-		strategies[ `spd${ suffix }` ] = { ...run( exact, { reduction, oddSizes: 'spd' } ), parity: false, spd: { reduction, options: { reduction, oddSizes: 'spd' } } };
+		strategies[ `spd${ suffix }` ] = { ...run( exact, { reduction, oddSizes: 'spd' } ), parity: false };
+		if ( reduction === 'average' ) {
+
+			// All batches in one compute pass (encodePass), as a tool records them:
+			// separates per-pass overhead from the dispatch structure itself.
+			const inPass = ( downsampler, options ) => ( { passes: texture => downsampler.prepare( texture, options ).length, encode: ( encoder, texture ) => {
+
+				const pass = encoder.beginComputePass();
+				downsampler.encodePass( pass, texture, options );
+				pass.end();
+
+			} } );
+			strategies.exactPass = { ...inPass( exact, {} ), parity: true };
+			strategies.tailPass = { ...inPass( tail, {} ), parity: true };
+			strategies.spdPass = { ...inPass( exact, { oddSizes: 'spd' } ), parity: false };
+
+		}
+
 		const atomic = new AtomicSpd( device, { reduction } );
 		strategies[ `atomic${ suffix }` ] = { passes: texture => atomic.passes( texture ), encode: ( encoder, texture ) => atomic.encode( encoder, texture ), parity: false, atomic, reduction };
 		// Kernel only: packed tail levels stay in the buffer (not texture-ready).
