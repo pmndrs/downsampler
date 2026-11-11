@@ -71,6 +71,8 @@ export interface PlanOptions {
 	 * remaining levels. Default false.
 	 */
 	tail?: boolean;
+	/** Largest tail tile (8, 16 or 32): 8 where a workgroup has fewer than 256 invocations. Default 32. */
+	tailMaxTile?: number;
 }
 
 export interface Batch {
@@ -124,7 +126,7 @@ export function workgroupSide( tile: number ): number {
 
 export function planBatches( width: number, height: number, options: PlanOptions ): Batch[] {
 
-	const { baseMipLevel = 0, mipLevelCount, levelsPerDispatch, oddSizes = 'exact', fromSource = false, copySource = false, tail = false } = options;
+	const { baseMipLevel = 0, mipLevelCount, levelsPerDispatch, oddSizes = 'exact', fromSource = false, copySource = false, tail = false, tailMaxTile = tailTile } = options;
 	if ( oddSizes !== 'exact' && oddSizes !== 'spd' ) throw new Error( `downsampler: odd size policy "${ oddSizes }" is not implemented.` );
 	if ( ! Number.isInteger( levelsPerDispatch ) || levelsPerDispatch < 1 || levelsPerDispatch > 6 ) throw new Error( 'downsampler: levelsPerDispatch must be an integer from 1 to 6.' );
 	if ( oddSizes === 'spd' && tail ) throw new Error( 'downsampler: the tail kernel is an \'exact\' plan; \'spd\' chains never end a batch at odd sizes.' );
@@ -176,7 +178,7 @@ export function planBatches( width: number, height: number, options: PlanOptions
 
 		// The tail: one workgroup finishes what would otherwise take more batches.
 		const tailCount = Math.min( levelsPerDispatch, lastLevel - level + 1 );
-		if ( tail && count < tailCount && outputWidth <= tailTile && outputHeight <= tailTile ) {
+		if ( tail && count < tailCount && outputWidth <= tailMaxTile && outputHeight <= tailMaxTile ) {
 
 			batches.push( { kernel: 'tail', sourceMipLevel: sourceOf( level ), firstMipLevel: level, count: tailCount, outputWidth, outputHeight, tile: tailTileFor( outputWidth, outputHeight ), groupsX: 1, groupsY: 1 } );
 			level += tailCount;
@@ -195,5 +197,37 @@ export function planBatches( width: number, height: number, options: PlanOptions
 	}
 
 	return batches;
+
+}
+
+/** One level's region of a buffer-output batch (SPEC.md §6.1 Buffer output path). */
+export interface BufferLevel {
+	width: number;
+	height: number;
+	/** Byte offset of the level's first row, a multiple of 256. */
+	offset: number;
+	/** Row pitch, a multiple of 256 (`copyBufferToTexture` needs it). */
+	bytesPerRow: number;
+	/** Rows per array layer: the level's height. */
+	rowsPerImage: number;
+}
+
+/**
+ * Layout of the buffer a batch writes on the buffer output path: each level at
+ * its own 256-byte-aligned offset, each layer `rowsPerImage` rows after the
+ * previous one, rows padded to 256 bytes. `size` is the buffer size in bytes.
+ */
+export function outputBufferLayout( sizes: readonly ( readonly [ number, number ] )[], layers: number, bytesPerTexel: number ): { levels: BufferLevel[]; size: number } {
+
+	let size = 0;
+	const levels = sizes.map( ( [ width, height ] ) => {
+
+		const bytesPerRow = Math.ceil( width * bytesPerTexel / 256 ) * 256;
+		const level = { width, height, offset: size, bytesPerRow, rowsPerImage: height };
+		size += bytesPerRow * height * layers;
+		return level;
+
+	} );
+	return { levels, size };
 
 }

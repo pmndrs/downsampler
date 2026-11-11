@@ -1,6 +1,6 @@
 # downsampler — core specification
 
-Status: milestone 2 in progress, refocused on our tools (M2T, §11). M2.1 (reductions, load path), M2.2 (separate source, float32 formats) and format steps 1–2 are done. This document is the source of truth for scope, design decisions, correctness requirements and the remaining plan. Update it when a decision changes.
+Status: milestone 2 in progress, refocused on our tools (M2T, §11). M2.1 (reductions, load path), M2.2 (separate source, float32 formats), format steps 1–2 and the GI formats (buffer output path, rgb9e5ufloat, rg11b10ufloat) are done. This document is the source of truth for scope, design decisions, correctness requirements and the remaining plan. Update it when a decision changes.
 
 ## 1. Purpose
 
@@ -25,7 +25,8 @@ A 2:1 reduction is only exact when a dimension halves cleanly. For odd, non-unit
   - Recommended for quality-sensitive content: GI, irradiance and roughness chains, UI.
   - Needs its own oracle.
 - **`'spd'` (implemented 2026-11-11, opt-in; replaces the dropped `'fast'`).** AMD SPD's semantics. Each batch is the `Reducer`'s `'clamp'` tile kernel emitting every level: clamped loads, `⌊n/2⌋` sizes, the last odd row or column dropped, and no rounding between the levels of a batch. The next batch reads the last stored level. Any size takes `⌈levels / levelsPerDispatch⌉` dispatches: 2 up to 4096² at 6 levels per dispatch, 3 at the default limit of 4. For filterable formats, averages take one bilinear sample at the 2×2 corner, as SPD does. A same-size separate source is copied by a 1-level `'exact'` batch first. Oracle: `spdReference` (core), checked per batch from the GPU's own source level.
-  - **Min/max under `'spd'` are not a conservative Hi-Z.** A dropped row or column belongs to no texel, so a max pyramid misses it. Use `'exact'` for any occlusion pyramid.
+  - **`'average'` only (decided 2026-11-11, coordinator; owner can overrule).** Min/max under SPD's semantics are not a conservative Hi-Z: a dropped row or column belongs to no texel, so a max pyramid misses it. `Downsampler` therefore rejects `'min'`, `'max'`, `'minmax'` and custom folds under `'spd'`, and the error points to `'exact'` or to a `Reducer` with `'zero-weight'` edges. The measurements below include max chains timed before that decision.
+  - **Composes with the buffer output path and with compatibility mode.** On the buffer path the `'clamp'` tile kernel writes packed texels (`bufferOutputWgsl`, normalized), and the same layout uniform and copies follow each batch. In compatibility mode the batches write scratch levels and the per-level copy dispatches move them, as for `'exact'`. Both are tested: bit-identical to the storage path (rgba16float, where both round with `pack2x16float`) and to the direct path, plus the oracle on the buffer path's subset shapes.
   - **Measured, not made the default.** It is faster at render sizes. The price is quality and Hi-Z correctness, for tens of µs per chain (below).
 
 **M2T.4 measurements.** Apple M5 Pro, Metal, Chrome 148 headless, 2026-11-11; `npm run bench -- --compare=spd`, `results/spd/m5-pro-compare-{1…7}.json`.
@@ -95,10 +96,13 @@ What the numbers say:
 
 **Decision (unchanged): `'exact'` stays the default; `'spd'` ships as an opt-in.** The data supports the default. `'spd'`'s speed comes with footprints that drift at odd sizes, deep levels several times further from the area-weighted ideal, and a non-conservative Hi-Z, for tens of µs per chain.
 
-**Recommendations for the owner (to confirm):**
-1. Keep `oddSizes: 'spd'` public as an opt-in for SPD parity and speed-first average chains that tolerate dropped edges, such as bloom or exposure-style pyramids. Document it as never for Hi-Z. The alternative is to keep it test-only.
-2. Keep the tail kernel opt-in (`tail: false` by default). Make it the default only if an idle-machine run shows ≥ 5 % at render sizes; on this loaded machine it measured 0.83–1.07×.
-3. If `'exact'` must get closer to `'spd'` at render sizes, the levers are halo batches for the large-level breaks (§13) and a cheaper exact kernel (integer rounding, fold footprint branches). Measure on NVIDIA, AMD and Intel first (§9): the cost of a dependent dispatch there is unknown.
+**Decided (coordinator, 2026-11-11; owner can overrule):**
+1. `oddSizes: 'spd'` stays a public opt-in, for 'average' only: SPD parity and speed-first average chains that tolerate dropped edges, such as bloom or exposure-style pyramids. Folds are rejected under it.
+2. The atomic probe stays test-only (`test/bench/atomic-spd.js`).
+3. The tail kernel stays opt-in (`tail: false` by default). Make it the default only if an idle-machine run shows ≥ 5 % at render sizes; on this loaded machine it measured 0.83–1.07×. It composes with both output paths and with compatibility mode, where devices with fewer than 256 invocations per workgroup cap tail tiles at 8×8.
+
+**Still for the owner:**
+- If `'exact'` must get closer to `'spd'` at render sizes, the levers are halo batches for the large-level breaks (§13) and a cheaper exact kernel (integer rounding, fold footprint branches). Measure on NVIDIA, AMD and Intel first (§9): the cost of a dependent dispatch there is unknown.
 
 ### 2.2 No single-dispatch mode
 
@@ -153,7 +157,7 @@ A batch reads one source level and writes up to `levelsPerDispatch` consecutive 
 
 - **First output:** a hardware bilinear sample at each texel centre, using normalized coordinates. That is an exact 2×2 box for even sizes. For odd sizes it reproduces render-pass and WebGL mipmaps, which is **not** area-correct: 3→1 takes only the centre texel, so a 31×31 texture can reduce to an unrepresentative 1×1 (`greggman`'s example in gpuweb#5253). Area-weighted odd sizes are a candidate opt-in (§13).
 - **Later levels in the batch:** exact 2:1 reductions in workgroup memory, with clamped reads for unit dimensions and partial tiles.
-- **Batch boundaries:** a batch ends at `levelsPerDispatch`, or where the next reduction is inexact under `'exact'`. With `tail: true`, a first output of at most 32×32 starts a tail batch that finishes the chain (up to `levelsPerDispatch` levels) in one workgroup by the same rule. Under `'spd'`, batches end only at `levelsPerDispatch` (§2.1).
+- **Batch boundaries:** a batch ends at `levelsPerDispatch`, or where the next reduction is inexact under `'exact'`. With `tail: true`, a first output of at most 32×32 (8×8 below 256 invocations per workgroup) starts a tail batch that finishes the chain (up to `levelsPerDispatch` levels) in one workgroup by the same rule. Under `'spd'`, batches end only at `levelsPerDispatch` (§2.1).
 - **Layers:** workgroup z selects the array layer, so all layers go in one dispatch.
 
 ### Reductions
@@ -218,12 +222,29 @@ Every intermediate level is quantized exactly as stored, so a chain equals level
 
 - **rgba8:** values stay in integer 0–255 units in workgroup memory. Sums are exact and ties round to even. With `k/255` floats, float error turned ties into round-ups. A 1×128 tail drifted 3 steps by mip 5: half of all 1D texels are ties.
 - **rgba16float:** values go through `pack2x16float` / `unpack2x16float`.
+- **rgb9e5ufloat, rg11b10ufloat:** whole texels go through our encoder and back (`ds_pack9e5` / `ds_pack11_11_10` in WGSL, `quantizeTexel` in core; rules in §6.1); alpha reads 1. The rg11b10 storage path stores already-quantized values, so the GPU's own f32 → 11/10-bit conversion never rounds anything.
 
 ### Caching
 
 - Pipelines are cached per `Downsampler` (per device) and per reduction; bind group layouts per format, view dimension, width and access.
 - Bind groups are cached per texture and options in a `WeakMap`.
 - `release(texture)` drops a texture's entries early.
+
+### Compatibility mode (2026-11-11, reflections D4100)
+
+WebGPU compatibility mode is a device without `'core-features-and-limits'` (`requestAdapter( { featureLevel: 'compatibility' } )`; three r187 falls back to it). The rules that touch us, from the WebGPU spec (checked against the editor's draft, 2026-11-11):
+- **One view per texture per dispatch.** "All bindings referring to the same GPUTexture must have compatible GPUTextureViews": equal `baseMipLevel`, `mipLevelCount`, `aspect` and swizzle, across all bind groups of a draw or dispatch (dispatch validation). An in-place chain reads level n and writes n+1 … in one dispatch, so it fails there. That is D4100.
+- **View dimension is fixed at creation.** Texture and storage views must have the texture's `textureBindingViewDimension` (bind group creation). A `'cube'` texture can't be written at all (WGSL has no cube storage); a 6-layer `'2d-array'` one can.
+- **Whole textures only:** bound views have `baseArrayLayer` 0 and every layer.
+- **Limits:** 4 storage textures, 128 invocations per workgroup and 128 along x by default (the 5- and 6-level kernels and `ScalarReduction` need 256). `rg32float` has no storage (probed on Chrome 148 compat; every other format in §6.1 has it).
+
+**What `Downsampler` does.** With `compatibility: 'auto'` (default) a texture takes the compatibility path when its device lacks `'core-features-and-limits'` and the texture has a `textureBindingViewDimension` (that attribute exists only on compatibility-mode devices, so older implementations that don't know the feature name stay on the direct path). `true` and `false` force it.
+- Each batch writes its levels to scratch textures, one per level at that level's size (created on first use, kept per destination, destroyed by `release( texture )`). The batch reads the destination only at its source level, or a scratch level, or the separate source. Then one dispatch per level copies the scratch into the destination: the 1-level fold kernel on a same-size source, which reads one texel per output, so the copy is exact (an average with weight 0 would turn an Inf neighbour into NaN). Every dispatch binds one view of each texture.
+- Batches, odd-size planning and results are unchanged: bit-identical to the direct path (GPU-tested on a core device with the path forced, in place, sub-range, depth source and layers, through `encodePass`). `prepare()` lists the copies with `copy: true`.
+- Cost: one extra write and read of every written level (about a third of the base level's bytes) and a dispatch per level. It needs only `STORAGE_BINDING` and `TEXTURE_BINDING`, no copy usages, and it works in a caller-owned pass, which reflections' bake uses.
+- `unsupportedReason` names `rg32float` in compatibility mode. `requiredLimits( adapter )` also asks for 256 invocations and 256 along x where the adapter has them (compat adapters on Chrome report 1024), and the default `levelsPerDispatch` stays at 4 when a device allows fewer than 256 invocations.
+- **`Reducer`** writes only the outputs it's given: in compatibility mode it rejects a source or outputs that share a texture (e.g. FSR-style mips of one texture), with that reason; separate textures or a store hook work. Tile and scalar kernels needing 256 invocations name the limit if the device lacks it.
+- **Verified** on a real compatibility-mode device: headless Chrome 148 on M5 Pro, `featureLevel: 'compatibility'`, device without `'core-features-and-limits'`, with `requiredLimits` (`npm run test:gpu -- --compat`). The full matrix passes there (rg32float reported as skipped). Before the change (the direct path forced), the first case failed with "must not have different views in a single draw/dispatch command" (D4100).
 
 ### Scalar reductions
 
@@ -250,7 +271,13 @@ Every intermediate level is quantized exactly as stored, so a chain equals level
 - **Oracle (§7 style).** `scalarReference` combines in exactly the GPU's order with float32 rounding after every operation, and also returns the exact float64 result and the bound above. GPU tests require |GPU − exact| ≤ bound (plus a declared input error: 2⁻²¹ relative for unorm sources, and for the exposure hook's `log`, 2⁻²⁰ absolute plus 2⁻²¹ relative). Bit-for-bit pairing isn't required: FMA contraction of `w·v + …` and WGSL's 2.5-ulp division are allowed. On M5 Pro, 889 of 1044 float results matched the pairing bit for bit, and the worst error was 15 % of the bound. Integer-valued cases (procedural hooks returning counts, hash bits and coordinates below 2²⁴) and min/max must match exactly.
 - **Recording:** `encode( encoder, run )` (two passes), `encodePass( pass, run )`, and `prepare( run )` → pipelines, our `@group(0)` bind group, the tool's group 1 and both workgroup counts, for tools that dispatch it themselves. `kernel( { dimension, splat } )` returns the WGSL, layout and pipelines; `createScalarKernel` and `scalarLayoutEntries` are the pure generator. Generator identifiers start with `ds_`.
 - **Caching:** pipelines per source view dimension and splat. Per run shape, a plan holds a uniform buffer (size, first layer, partial count) and the partials buffer, cached per source texture, or else per output buffer or reduction, with at most 4 shapes per owner (resizes evict the oldest). `release( resource )` drops them.
-- **Refactor note:** the `@group(1)` plumbing (`ToolBindings`, hook checks) duplicates what the M2T.1 generator in `kernel.ts` needs. Merge them once both land.
+- **Combine-only runs (2026-11-11).** A run with `partials: { buffer, offset?, count }` records the combine dispatch alone, over `count` accumulations per layer that the tool wrote (one `vec4f` each, layer after layer). The usual source is a `Reducer`'s deepest level through its store hook, so "Reducer levels + a scalar of the same source" takes 2 dispatches with one read of the source (3 before).
+  - **Partials are accumulations:** sum-like channels hold sums (a `'weighted'` channel Σ w·v, the `'weight'` channel Σ w), min/max channels the min/max. A Reducer emits these with `'sum'`, `'min'`, `'max'` channels; its `'average'` and `'weighted'` channels are normalised, so a tool feeding a scalar uses `'sum'` and forms w·v in its load hook.
+  - **`texels`** is the texel count behind the partials: the divisor of `'average'` channels and the weight passed on without a `'weight'` channel. A run needs it in those cases.
+  - **Group 0** of the combine-only pipeline has no source texture (`combineKernel()`). The tool's buffer is bound read-write at binding 1, so the run's group 1 must not bind it too (aliased writable bindings fail validation). In the FSR fixture the Reducer's group 1 holds the partials and the scalar's is FSR's own.
+  - **Offset** must be a multiple of `minStorageBufferOffsetAlignment`. The WGSL is unchanged: the combine entry point of the same module.
+  - **Oracle:** `scalarCombineReference( partials, count, layers, reduce, { texels, partialDepth, magnitude } )` pairs in the combine pass's order; the bound uses depth `partialDepth` + ⌈N/256⌉ − 1 + 8 (a Reducer's level l adds 2l roundings).
+- **Shared tool plumbing (2026-11-11):** `src/webgpu/tool.ts` holds `ToolBindings`, hook validation (`checkHook`, `hookArity`), the tool's group-1 layout, the `[ group 0, group 1 ]` pipeline layout and the bind-group checks, for `Reducer` and `ScalarReduction` both. WGSL and layouts were unchanged by the move (5620 option sets compared byte for byte).
 
 ## 5. API
 
@@ -260,15 +287,16 @@ Every intermediate level is quantized exactly as stored, so a chain equals level
 import { Downsampler } from 'downsampler/webgpu';
 
 const device = await adapter.requestDevice( { requiredLimits: Downsampler.requiredLimits( adapter ) } );
-const downsampler = new Downsampler( device );          // { levelsPerDispatch?, averageAccess?, tail? }
+const downsampler = new Downsampler( device );          // { levelsPerDispatch?, averageAccess?, output?: 'auto' | 'storage' | 'buffer' (§6.1), compatibility?: 'auto' | boolean (§4), tail? (§2.1) }
 downsampler.supports( texture );                         // boolean
 downsampler.unsupportedReason( texture );                // string | null
+downsampler.outputPath( texture );                       // 'storage' | 'buffer' | null (§6.1 Buffer output path)
 downsampler.encode( encoder, texture, {
 	baseMipLevel, mipLevelCount, oddSizes: 'exact' | 'spd',   // 'spd': SPD semantics, ⌈levels/6⌉ dispatches (§2.1)
 	reduction: 'average' | 'min' | 'max' | 'minmax' | { wgsl: 'fn reduce(a: vec4f, b: vec4f) -> vec4f { … }' },
 } );
 downsampler.generate( texture );                         // encode + submit
-downsampler.encodePass( pass, texture, options );        // into a compute pass you own (one timestamp pair)
+downsampler.encodePass( pass, texture, options );        // into a compute pass you own (one timestamp pair; storage path only)
 downsampler.prepare( texture );                          // planned dispatches (inspection/testing)
 
 import { generateMipmaps, requiredLimits } from 'downsampler/three';
@@ -298,7 +326,13 @@ exposure.prepare( run );        // pipelines, group 0 bind group, workgroup coun
 exposure.kernel();              // { wgsl, layout, partials, combine }
 exposure.unsupportedReason( run );
 
-import { scalarReference } from 'downsampler'; // oracle: GPU pairing in f32, exact f64 result, error bound
+// Combine only: partials a tool wrote (e.g. a Reducer's level 6 via its store hook), one dispatch.
+const mean = new ScalarReduction( device, { reduce: [ 'weighted', 'weighted', 'max', 'weight' ], finish, bindings } );
+reducer.encodePass( pass, dispatch );                                         // stores Σ terms per 64² tile
+mean.encodePass( pass, { partials: { buffer, count: tiles }, bindGroup } );   // also `texels` for 'average'
+mean.combineKernel();           // { wgsl, layout, combine } for self-dispatch
+
+import { scalarReference, scalarCombineReference } from 'downsampler'; // oracles: GPU pairing in f32, exact f64 result, error bound
 ```
 
 ```ts
@@ -327,12 +361,24 @@ shadingChange.encodePass( pass, {                        // or encode( encoder, 
 	outputs: [ 0, 1, 2 ].map( mipLevel => ( { texture: spdMips, mipLevel } ) ),
 } );
 // Self-dispatch: shadingChange.wgsl, .entryPoint, .layout, .pipeline, .bindGroup( dispatch ), .workgroups( w, h, layers ).
+// 8 channels (§14.1 Wide accumulators): reduction: [ 'sum', 'sum', 'sum', 'sum', 'max', … ] (or channels: 8);
+// hooks then use DsWide { lo: vec4f, hi: vec4f }: fn load( … ) -> DsWide, fn store( …, value: DsWide ).
+// Payload folds (§14.1): [ 'argmin', 'payload', 'payload', 'payload' ] = min depth + the normal of that texel;
+// ties go to the smaller payload (put a texel index first for row-major ties). Also in ScalarReduction.
 // Without a load hook: { source: texture | { texture, mipLevel } }. Output textures must be at least each level's size.
 
 import { reducePyramid, levelSize } from 'downsampler';  // the CPU oracle and level sizes
 ```
 
-The destination must have `TEXTURE_BINDING | STORAGE_BINDING` usage and a format from `formats`: `rgba8unorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, plus `bgra8unorm` (needs `bgra8unorm-storage`) and `r8unorm`, `rg8unorm`, `r16float`, `rg16float` (need `texture-formats-tier1`). `unsupportedReason` names a missing feature. Its dimension must be `2d`, with `textureBindingViewDimension` either `2d` or `2d-array`.
+The destination must have `TEXTURE_BINDING` usage, plus `STORAGE_BINDING` (storage path) or `COPY_DST` (buffer path, §6.1), and a format from `formats`: `rgba8unorm`, `rgba16float`, `rgba8snorm`, `r32float`, `rg32float`, `rgba32float`, `rgb9e5ufloat` (buffer path only), plus `bgra8unorm` (storage needs `bgra8unorm-storage`), `rg11b10ufloat` (storage needs `texture-formats-tier1`; else the buffer path) and `r8unorm`, `rg8unorm`, `r8snorm`, `rg8snorm`, `r16float`, `rg16float` and the 16-bit normalized formats (need `texture-formats-tier1`). `unsupportedReason` names a missing feature or usage. Its dimension must be `2d`, with `textureBindingViewDimension` either `2d` or `2d-array`.
+
+```ts
+// GI formats (§6.1): rgb9e5ufloat is never a storage texture, so it takes the buffer path.
+const irradiance = device.createTexture( { format: 'rgb9e5ufloat', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST, … } );
+downsampler.generate( irradiance );                      // 6 levels per dispatch at any storage texture limit
+new Reducer( device, { levels: [ 1, 2, 3 ], format: 'rgb9e5ufloat', … } ); // output 'buffer' by default for it
+reducer.encodePass( pass, dispatch ); pass.end(); reducer.encodeCopies( encoder, dispatch ); // buffer outputs
+```
 
 ### Planned
 
@@ -381,24 +427,44 @@ Beyond SPD: sizes over 4096², render-pass-matching odd sizes, conservative min/
 | snorm8 | rgba8snorm (core), r8snorm, rg8snorm (tier1) | mixed | ✅ `snorm8`: integer units ×127, clamped to [−127, 127] (−128 and −127 both decode to −1); tie parity in `i32` (negative float → `u32` is undefined) |
 | 16-bit norm | r16unorm, rg16unorm, rgba16unorm, and the snorm versions | tier1 | ✅ `unorm16`/`snorm16`: integer units ×65535 / ×32767; four-texel sums stay exact in f32 (< 2²⁴). They sample as `unfilterable-float` on Dawn/Apple, so they always load |
 | Packed | rgb10a2unorm | tier1 | per-channel scale `(1023, 1023, 1023, 3)` |
-| Packed float | rg11b10ufloat | tier1 | `ufloat11/10` quantization (no sign, 6/5-bit mantissa, negatives clamp to 0, round to nearest even); no WGSL pack builtin, so encode in the shader and in core |
+| Packed float | rg11b10ufloat | tier1 for storage; the buffer path without it | ✅ (M2.3.6) `rg11b10ufloat`: unsigned floats, 5-bit exponent, 6/6/5-bit mantissas; round to nearest even, negatives and −Inf → 0, finite overflow → the largest finite value (65024 / 64512), +Inf and NaN kept. No WGSL pack builtin, so `ds_ufloat` encodes in the shader and `toUfloat` in core. Storage path with tier1, buffer path without it (or without STORAGE_BINDING usage); both quantize with our encoder, so they write identical bits |
 | Integer | r32uint, rg32uint, rgba32uint, rgba8uint, rgba16uint, r32sint, rgba8sint (core); r8/r16/rg8/rg16 uint/sint (tier1) | mixed | separate `u32`/`i32` kernel (`texture_2d<u32>`, `vec4u`). Folds only at first (min, max, bitwise custom: ID, visibility and occupancy pyramids); `'average'` would need a declared rounding rule |
 | sRGB | rgba8unorm-srgb, bgra8unorm-srgb | **never** (even with a non-sRGB view format) | reduce linear values, then write sRGB-encoded values to an rgba8unorm (or bgra8unorm, which needs `bgra8unorm-storage`) scratch and `copyTextureToTexture` each level (verified allowed: formats differing only in sRGB-ness). Needs load/store transform hooks; quantize-as-stored is `decode(round(encode(v)·255)/255)` |
-| Shared exponent | rgb9e5ufloat (32-bit HDR, common for GI and irradiance) | **never** storage or renderable, so render-pass mipmaps can't produce it either | **buffer output path** (below): pack in the shader, `copyBufferToTexture` into the level. Verified on Chrome 148 / M5 Pro: packed texels round-trip exactly through the copy and a sampled read |
+| Shared exponent | rgb9e5ufloat (32-bit HDR, common for GI and irradiance) | **never** storage or renderable, so render-pass mipmaps can't produce it either | ✅ (M2.3.4) **buffer output path** (below): pack in the shader, `copyBufferToTexture` into the level. Filterable, so later batches sample it as usual |
 | Out of scope | BC/ETC2/ASTC (generate before compression); depth as destination (use r32float, §4 Separate source) | — | — |
 
-**Buffer output path.** WebGPU allows `copyBufferToTexture` into formats that are neither storage nor renderable, so a kernel can write texels to a storage buffer and copy them into each level.
-- **Layout:** one buffer per batch, with each level and layer at its own offset and rows padded to 256 bytes. That is a single binding, so this path isn't bound by `maxStorageTexturesPerShaderStage`: 6 levels per dispatch even at the default limit of 4.
-- **Cost:** one extra write and read of the written levels (the levels below 0, about a third of the base texture's bytes), plus the copies.
+**Buffer output path** (built 2026-11-11, M2.3.4). WebGPU allows `copyBufferToTexture` into formats that are neither storage nor renderable, so a kernel can write texels to a storage buffer and copy them into each level.
+- **Layout** (`outputBufferLayout` in core): each level of a batch, and each layer of a level, at its own offset of one buffer, with rows padded to 256 bytes and level offsets on 256 bytes. The kernel finds it in a 112-byte uniform (binding 9: first-output size, then per level its offset and row stride in u32 words and its rows per layer) and writes packed words to binding 10 with `ds_put( level, texel, layer, value )` (`bufferOutputWgsl`). That is a single binding, so this path isn't bound by `maxStorageTexturesPerShaderStage`: 6 levels per dispatch even at the default limit of 4 (tested on a default-limit device).
+- **Recording:** after each batch's pass, `encode` records one `copyBufferToTexture` per level (all layers in one copy). The next batch reads the destination texture as usual. One scratch buffer, sized for the largest batch, serves every batch of a plan: commands in an encoder are ordered, so each batch's copies finish before the next dispatch writes the buffer. `release( texture )` destroys it. `encodePass` throws on this path: a compute pass can't record copies, and later batches need them.
+- **Which path (`DownsamplerOptions.output`):** `'auto'` (default) writes storage textures whenever the device can write the format there (the texture then needs STORAGE_BINDING; decided 2026-11-12), and takes the buffer path only for formats it can't: rgb9e5ufloat, rg11b10ufloat without tier1, rg32float in compatibility mode. `'storage'` or `'buffer'` forces one; `outputPath( texture )` says which applies. On the buffer path `levelsPerDispatch` defaults to 6 at any storage texture limit (4 where workgroups are limited to 128 invocations, as in compatibility mode by default).
+- **Compatibility mode (§4):** the buffer path needs none of its scratch textures or copy dispatches: a batch binds one level of the texture (its source) and writes a buffer, and copies, which aren't dispatches, write the levels. So on the buffer path the compatibility path is skipped (`usesCompatibility` still reports the device), and it is how rg32float gets mips in compatibility mode. The `Reducer`'s compatibility check (one view of a texture per dispatch) ignores buffer outputs, which aren't bound. Formats: any whose texels are whole 32-bit words (not the 1- and 2-byte r8/rg8/r16 formats). Normalized formats pack their integer units, bgra8unorm in its byte order. `unsupportedReason` names both paths' requirements.
+- **Reducer:** the same buffer, uniform and `ds_put` in tile kernels (`ReducerOptions.output`; default buffer when the format can't be a storage texture on the device). Emitted levels are packed once (WGSL `pack4x8unorm`, `pack2x16float`, … or our encoders) and copied into the output textures, which need COPY_DST. `encode` records the copies; after `encodePass` or a self-dispatch, call `encodeCopies( encoder, dispatch )` once the pass has ended. 8-channel accumulators (`DsWide`) need a store hook, so they never meet output textures or the buffer output (rejected with an error); payload folds store their `vec4f` like any reduction.
+- **Limits:** the buffer of the largest batch must fit `maxStorageBufferBindingSize` (128 MiB by default), else `prepare` throws and names the limit. 4096² rgba32float fits (85 MiB); larger first batches need raised limits (or a split first batch, not built).
+- **Cost:** one extra write and read of the written levels (the levels below 0, about a third of the base texture's bytes), plus the copies. In bytes that predicts about 1.5× the storage path where bandwidth-bound. Measured (`npm run bench`, `buffer6` against `compute6`, same batches; Apple M5 Pro, Chrome 148, 11 rotated rounds × 16 repeats, 2026-11-11; two runs, load average 65–94 then ~14 from other agents' suites, so only same-run ratios count; `results/m5-pro-gi-buffer-path-loaded.json`, `results/m5-pro-gi-buffer-path.json`):
+
+  | buffer ÷ storage | 256² | 1024² | 2048² | 4096² | 1920×1080 | 512²×6 |
+  |---|---:|---:|---:|---:|---:|---:|
+  | rg11b10ufloat | 2.3 / 4.1 | 2.0 / 3.5 | 1.7 / 2.4 | 1.9 / 1.9 | 2.3 / 2.1 | 1.6 / 2.1 |
+  | rgba16float | 2.1 / 6.4 | 2.2 / 1.7 | 1.4 / 1.6 | 1.7 / 1.6 | 2.8 / 1.8 | 2.6 / 2.3 |
+
+  - Small textures pay a fixed ~0.03–0.06 ms, about 4 µs per `copyBufferToTexture` (one per level; Metal blits). Large ones pay 1.6–1.9×, a little above the byte estimate.
+  - So the storage path stays the default wherever it exists. The buffer path is for formats and devices without it, and against render-pass mipmaps (impossible for rgb9e5 anyway) it wins only where dispatch count dominates: 1.1–4.8× faster at 256²–2048², 10–13× at 512²×6, a tie at 1920×1080 for rgba16float (1.03–1.04×) and 4096² (0.94–1.01×), and slower for rg11b10ufloat at 1920×1080 (0.66–0.74×) and 4096² (0.73–0.84×). So `'auto'` doesn't send storable formats to the buffer path (a texture without STORAGE_BINDING is rejected; callers with a render fallback, like the three adapter, keep it); `output: 'buffer'` opts in.
+  - rg11b10ufloat's own storage path is ALU-heavy: the integer encoder runs twice per texel and level (store, then quantize for the next level), and at 1024² it measured 1.2–3.4× rgba16float's storage time (noisy under load). A cheaper encoder (e.g. via `pack2x16float` and a mantissa round) is an M3 candidate; measure on an idle machine first.
+  - Not done: copy fewer, larger regions (a level's layers already share one copy), or skip the buffer for the last batch's tiny levels.
 - **Uses:**
   - rgb9e5ufloat, the only GPU route to its mips in WebGPU.
-  - An alternative to the sRGB scratch texture: `copyBufferToTexture` into rgba8unorm-srgb is allowed.
-  - A fallback for bgra8unorm and rg11b10ufloat on devices without `bgra8unorm-storage` or tier1.
-- **rgb9e5 packing:**
-  - Shared exponent `e = max(−16, ⌊log2 max(r,g,b)⌋) + 16`; mantissas `round(c / 2^(e−24))`, bumping `e` when the largest rounds to 512 (EXT_texture_shared_exponent).
-  - Take ⌊log2⌋ from the float's exponent bits, not `log2()`, which isn't exact near powers of two.
-  - Quantize-as-stored is pack → unpack, mirrored in core with exhaustive tests.
-  - Probe kernel: `results/probes/rgb9e5-buffer-copy.mjs`.
+  - rg11b10ufloat without tier1 (SwiftShader has none).
+  - Six levels per dispatch at the default storage texture limit, for any 32-bit-word format.
+  - An alternative to the sRGB scratch texture: `copyBufferToTexture` into rgba8unorm-srgb is allowed (not built).
+  - A fallback for bgra8unorm without `bgra8unorm-storage` (works; untested without the feature).
+- **rgb9e5 packing** (`packRgb9e5` in core, `ds_pack9e5` in WGSL), per EXT_texture_shared_exponent (Vulkan's E5B9G9R9):
+  - Clamp each channel to [0, 65408] (511/512 · 2¹⁶); NaN and negatives → 0, +Inf → 65408.
+  - Shared exponent `e = max(−16, ⌊log2 max(r,g,b)⌋) + 16`, taking ⌊log2⌋ from the float's exponent bits, not `log2()`, which isn't exact near powers of two. Scales are powers of two built from bits too (`exp2` isn't exact either).
+  - Mantissas `⌊c / 2^(e−24) + 0.5⌋`: **round half up**, as the extension specifies, not to even (WGSL `round()` would be). Bump `e` when the largest mantissa rounds to 512.
+  - Quantize-as-stored is pack → unpack (`quantizeTexel`), per texel: the shared exponent can flush a small channel next to a large one (1000 and 0.01 store as 1000 and 0), so min/max of rgb9e5 is not conservative per channel.
+  - Probe kernel: `results/probes/rgb9e5-buffer-copy.mjs` (its `log2`/`round` packing predates this and is not the shipped one).
+- **Mutation checks** (M5 Pro, `--only=packed --quick`, 2026-11-11): 12 of 14 caught. Caught: no 512 bump, rgb9e5 rounding half to even (`round()`), rg11b10 ties rounding up, rg11b10 truncation, rg11b10 overflow to Inf and a wrong subnormal decode (both by the codec check only: fixtures never overflow), no intermediate quantization, unpadded rows and unaligned level offsets (validation errors), a kernel row stride that ignores the padding, layers sharing one region, and copying only a batch's first level. Survived, as equivalent on this GPU: **⌊log2⌋ from `log2()`** (an exponent off by one is absorbed by the bump: one too low rounds the largest mantissa to exactly 512 and bumps; one too high needs a `log2` error above ~2⁻⁹ to change a mantissa) and **NaN not cleared** before `clamp` (Metal's `clamp` already returns 0 for NaN; WGSL leaves it undefined, so the guard stays). The bit-based exponent stays: it costs nothing and doesn't depend on `log2` accuracy.
+- **Finding (M5 Pro, Chrome 148):** `textureStore` to rgba16float truncates f32 → f16, where `pack2x16float` rounds to nearest even (`results/probes/f16-store-rounding.mjs`). `Downsampler` is unaffected: it quantizes with `pack2x16float` before every store. `Reducer` float16 texture outputs are now quantized with `pack2x16float` before `textureStore` too (2026-11-12), so both its paths round to nearest even; a GPU case with values ¼, ½ and ¾ of a step above a half catches truncation. Packed floats are quantized by our encoder on both paths.
 
 Optimisation: with `float32-filterable`, float32 formats may take the sample path; measure first (nvpro measured the sampler 26–32 % faster on NVIDIA, §13).
 
@@ -415,9 +481,9 @@ Optimisation: with `float32-filterable`, float32 formats may take the sample pat
 1. fewer-channel unorm8/float16 + bgra8unorm (table only)
 2. snorm8, unorm16, snorm16
 3. rgb10a2unorm
-4. buffer output path + rgb9e5ufloat
+4. buffer output path + rgb9e5ufloat ✅
 5. sRGB + transform hooks (the three.js PR needs this), choosing between scratch texture and buffer output by measurement
-6. rg11b10ufloat
+6. rg11b10ufloat ✅
 7. integers
 
 ## 7. Correctness specification
@@ -449,9 +515,15 @@ Optimisation: with `float32-filterable`, float32 formats may take the sample pat
 
 - **Reductions:** every shape × width × format case runs `'average'` through the sampler and through loads, plus `'min'`, `'max'`, `'minmax'` and a custom fold. The custom fold depends on the value domain, so it catches unit mix-ups. Folds skip the constant pattern and must match exactly. The `edge` pattern on odd shapes exercises the `2x+2` footprint.
 - **Separate source:** 8 source → destination pairs (depth32float/depth16unorm/r32float → r32float/rg32float Hi-Z, rgba8 ↔ rgba16f conversions), each in copy or half relation. 13 shapes (odd, 1D, NPOT, layers, 512² for multi-batch, 1920×1080), all kernel widths, random/edge/tiles patterns, and the destination poisoned from level 0. The oracle's source values are read back from the source texture, not taken from the fill data. Options cover rejected sources, `source.mipLevel`, and replacing the source texture with the same options.
-- **Odd-size modes (M2T.4):** every shape × width × format case also runs `oddSizes: 'spd'` (average through the sampler and through loads, max, minmax, the custom fold), each batch checked against `spdReference` from the GPU's own batch source level; float sums get `pyramidTolerance` on top of the format tolerance, folds are exact. The exact tail kernel (`tail: true`) runs average (sample, load), max, minmax and the custom fold wherever the plan has a tail batch, against the same per-level `'exact'` oracle; normalized formats must match bit for bit except at a batch's first output and the tail's odd steps. Separate sources run `'exact'`, `'spd'` (a same-size source is a 1-level exact copy batch, then clamp batches) and the tail. `encodePass` equals `encode` for both modes; unknown policies are rejected. `--quick` (the SwiftShader CI run) trims these to the family formats for `'spd'` and to rgba8unorm and rgba16float for the tail, with two patterns, and leaves the tail out of the separate-source cases; the full matrix runs them all. A core test shows `'spd'` max is not a conservative Hi-Z while `'exact'` is (`maxViolations`).
+- **Odd-size modes (M2T.4, `--only=downsampler`):** every shape × width × format case, on the storage path and on the buffer path's shapes, also runs `oddSizes: 'spd'` (average through the sampler and through loads; folds are rejected), each batch checked against `spdReference` from the GPU's own batch source level; float sums get `pyramidTolerance` on top of the format tolerance, folds are exact. The exact tail kernel (`tail: true`) runs average (sample, load), max, minmax and the custom fold wherever the plan has a tail batch, against the same per-level `'exact'` oracle; normalized formats must match bit for bit except at a batch's first output and the tail's odd steps. Separate sources run `'exact'`, `'spd'` (averages; a same-size source is a 1-level exact copy batch, then clamp batches) and the tail. `encodePass`, the buffer output path and the compatibility-mode path give the same bits as `encode` for both modes; unknown policies and folds under `'spd'` are rejected; tail tiles are 8×8 below 256 invocations per workgroup. `--quick` (the SwiftShader CI run) trims these to the family formats for `'spd'` and to rgba8unorm and rgba16float for the tail, with two patterns, skips 32×32-tile tails (SwiftShader takes minutes to compile each), and leaves the tail out of the separate-source cases; the full matrix runs them all. A core test shows `'spd'` max is not a conservative Hi-Z while `'exact'` is (`maxViolations`).
 - **Tile reductions (`Reducer`, §14.1):** both edge policies × kernel widths 1, 4, 5, 6 (all on SwiftShader too: the hook path needs no storage textures) × 17 shapes × four reductions: sum/average/min/max channels, weighted with a weight channel (a third of the texels weigh 0), a custom fold and a custom sum that counts its combines. Each runs through the texture path (source texture → output textures at exact level sizes) and the hook path (load from a storage buffer, store into an atlas), with complementary level selections, so every level of every width is checked and unemitted levels must stay poisoned. Tolerance: `4e-6 × Σ|terms|` (exact for min/max and folds). Plus the FSR 3.1 shading-change shape (clamp, levels 1–3 into half-resolution rgba16float mips, 1920×1080 and 1917×1077), the denoiser weighted mean (zero-weight, sky weight 0, atlas, sky-only blocks emit 0), and the API: encode, encodePass, self-dispatch and size hook produce identical bits; two sizes in one pass; rejected outputs and options.
+- **8-channel accumulators (`validate-wide.js`):** 13 shapes × both edges × 4 reductions (channel ops with weights, minmax, a custom fold and a counting custom sum on `DsWide`) × 5 level sets through hooks, unemitted levels poisoned; scalar image and combine-only runs; rejections (no hooks, 6 levels over the workgroup-memory limit).
+- **Payload folds (`validate-payload.js`):** argmin/argmax variants with tie-heavy keys × 13 shapes × both edges × 4 level sets (texture path), ssgiDev's G-buffer downsample against its own loop, scalar image and combine-only runs; selections exact.
+- **Combine-only scalar runs (`validate-scalar.js`):** tool-written partials at 1 … 8161 per layer, layers at an offset; a Reducer's level 4 or 6 combined in the same pass against the whole image's exact result.
+- **Compatibility mode:** the whole matrix also runs on a compatibility-mode device (`--compat`), and the compatibility path forced on a core device must match the direct path bit for bit.
 - **Oracle independence:** a core test checks that max chains are conservative: every texel bounds each base texel its normalized area touches, without using `footprint()`.
+
+- **Packed float formats and the buffer path (§6.1):** rgb9e5ufloat and rg11b10ufloat are families of their own and run every shape: rgb9e5 on the buffer path, rg11b10 on the storage path with tier1 and on the buffer path (subset shapes; every shape without tier1). The buffer path runs widths 1, 4, 5 and 6 on any device, and the subset shapes for each family's 4-channel format plus bgra8unorm, rg16float, r32float and rg32float (not with `--quick`, where only the packed formats take the buffer path, on the subset shapes at widths 1, 4 and 6, and the extra checks below use smaller shapes: the packed encoders are slow on SwiftShader, and quick runs with the full additions hit the runner's 30-minute protocol timeout before CI split the suite). In the CI partition, the matrix, codec and Downsampler buffer-path checks run in `downsampler`, the Reducer buffer-output and float16-rounding checks in `reducer`. In compatibility mode rg32float has no storage, so it runs the buffer path's subset instead. Fixtures pack r, g, b with the core encoder: HDR values in [−4, 12) mixed with channels spread over 2⁻¹⁴ … 2¹⁰, so texels mix small and large channels. Tolerance on a batch's first output: two steps of the stored value (rgb9e5: of the texel's shared exponent). In-tile levels are exact, against `reduceReference( …, { pairing: 'float32' } )`, which sums the 2×2 block in float32 in the kernel's order (packed sums aren't always exact in f32). Plus: the WGSL codecs against core bit for bit (every 11- and 10-bit code decoded; every rounding midpoint and its neighbouring floats, specials and 20000 random values encoded; rgb9e5 decoded for every exponent × mantissa and encoded at bump, tie, power-of-two and clamp boundaries plus 30000 random texels); buffer path bit-identical to storage path (rgba16float, rg11b10ufloat, rgba8unorm, rgba32float; average and max); a default-limit device without features (6-level batches, rg11b10 falls back to the buffer path); separate sources into both formats; `Reducer` buffer outputs against `reducePyramid` and bit-identical to its storage outputs (rgba32float; rg11b10ufloat), `encodePass` + `encodeCopies` equal to `encode`; API reasons. Core tests: decode → encode identity for every 11-/10-bit code, value identity for every rgb9e5 (exponent, mantissa, mantissa) and 300000 random codes, every 11-/10-bit rounding boundary, and random values against independent oracles (nearest-value search; a log2-free restatement of the extension).
 
 New features add their own oracle first: each new format family, sRGB, rect, layer range, and `'box'`.
 
@@ -511,11 +583,11 @@ Build first, benchmark once coverage is broad (decided 2026-11-10). Live status 
 1. **M1 (done):** port the kernel, Downsampler, three adapter, core unit tests, GPU suite, device lab, benchmark and CI.
 2. **M2 (features).** Done: load path and reductions; separate source (Hi-Z) with the float32 formats; formats steps 1–2 (fewer-channel unorm8/float16, bgra8unorm, snorm8, unorm16, snorm16).
    **M2T (tools first, 2026-11-11)**, in this order (details in §14 once the survey lands):
-   1. WGSL reduction generator: tool-supplied `load` with its own bindings, per-channel reductions including sums, choice of emitted levels, outputs (texture, buffer, WGSL `store` hook), edge policy. Done: `Reducer` (§14.1); buffer output waits for §6.1.
+   1. WGSL reduction generator: tool-supplied `load` with its own bindings, per-channel reductions including sums, choice of emitted levels, outputs (texture, buffer, WGSL `store` hook), edge policy. Done: `Reducer` (§14.1), with buffer output into textures (§6.1, `output: 'buffer'`).
    2. Reduce-to-scalar in 2 dispatches with an epilogue hook.
    3. Proof on the upscaler's FSR 3.1 passes as bench fixtures, against an oracle, timed on M5 and by the owner on RTX 3060 / Intel UHD. Done on M5 (§14, M2T.3); RTX 3060 / Intel UHD pending.
-   4. An SPD-style mode, built at least as a measured comparison that justifies, or not, its not being the primary method. Done (2026-11-11): `oddSizes: 'spd'` (opt-in), the exact tail kernel (opt-in) and an atomic single-dispatch probe, measured at render sizes; `'exact'` stays the default (§2.1, §2.2).
-   Then: buffer output + rgb9e5ufloat and rg11b10ufloat (GI formats); layer range + rect; `'box'`, power-of-two destination from a separate source, and the tail kernel's default (idle re-measure, §2.1).
+   4. An SPD-style mode, built at least as a measured comparison that justifies, or not, its not being the primary method. Done (2026-11-11): `oddSizes: 'spd'` (opt-in, 'average' only), the exact tail kernel (opt-in) and an atomic single-dispatch probe (test-only), measured at render sizes; `'exact'` stays the default (§2.1, §2.2).
+   Then: buffer output + rgb9e5ufloat and rg11b10ufloat (GI formats; done 2026-11-11, §6.1); layer range + rect; `'box'`, power-of-two destination from a separate source, and the tail kernel's default (idle re-measure, §2.1).
    Deferred, three.js-driven: rgb10a2unorm, sRGB, integer formats.
 3. **M3 (dial in: coverage and tuning):**
    - per-frame throughput benchmark alongside timestamps (§13)
@@ -530,7 +602,8 @@ Build first, benchmark once coverage is broad (decided 2026-11-10). Live status 
 ## 12. Open questions
 
 - Publish as bare `downsampler` or `@pmndrs/downsampler`? (`package.json` currently uses `downsampler`.)
-- Cube maps in compatibility mode: they can't be viewed as 2d-array, so either per-face views or the render fallback.
+- ~~Buffer output path (§6.1): should `output: 'auto'` take the buffer path for textures without STORAGE_BINDING?~~ Decided (owner, 2026-11-12): no. `'auto'` takes it only for formats the device can't store; a missing STORAGE_BINDING usage is an error, and the buffer path for storable formats is opt-in (`output: 'buffer'`). ~~Should `Reducer` round rgba16float outputs before the store?~~ Yes: it quantizes with `pack2x16float` first, like `Downsampler`.
+- Cube maps in compatibility mode: they can't be viewed as 2d-array, so either per-face views or the render fallback. (2026-11-11: per-face views don't help either; compatibility mode binds whole textures only, and a `'cube'` texture has no storage view. A 6-layer `'2d-array'` texture works, which is what reflections bakes into, then copies to a cube; §4 Compatibility mode.)
 - `'box'` for `'minmax'` and other folds is meaningless (they already use the full footprint). Should `'box'` simply be ignored there, or rejected?
 
 ## 13. Research (2026-11-10)
@@ -641,13 +714,13 @@ pmndrs/upscaler replaced both passes because no downsampler existed:
   - **Upscaler shading change** as a `Reducer` (its load, levels [2, 3], block memory and response as the store hook): **0.95–1.02×** the hand-fused pass, a tie within noise, and 0.39–0.52× FSR's pyramid + consumer. Four profiling attempts changed nothing beyond noise: exposure texels hoisted, 16×16 workgroups, and one barrier fewer (a kernel patch). The pass is bound by its loads.
   - **Upscaler exposure** as a `ScalarReduction`: 0.33–0.60× the single-invocation loop over every texel, and 0.22–0.32× over the same 1024 taps (same values).
   - **FSR shading-change pyramid** (FSR's hooks, `'clamp'` [1, 2, 3]): 0.74–0.86× the SPD port.
-  - **FSR luma pyramid:** every texel with one source read (`Reducer` [1, 6] sums → `ScalarReduction` of the tile partials), 0.89–1.15× FSR's every-texel pass. Every texel with two reads, ~1.4×. AMD parity, 1.09–1.31× AMD's pass at 3 dispatches. AMD's top-left `2^mips` window, its zero reads and its f16 mip 6 are reproduced by a `ScalarReduction` over the window of mip 6, to ≤ 1.1e-7. That needs no option, and isn't worth one (§14 above).
+  - **FSR luma pyramid:** every texel with one source read (`Reducer` [1, 6] sums → `ScalarReduction` of the tile partials), 0.89–1.15× FSR's every-texel pass (3 dispatches; 2 since combine-only runs, below). Every texel with two reads, ~1.4×. AMD parity, 1.09–1.31× AMD's pass at 3 dispatches. AMD's top-left `2^mips` window, its zero reads and its f16 mip 6 are reproduced by a `ScalarReduction` over the window of mip 6, to ≤ 1.1e-7. That needs no option, and isn't worth one (§14 above).
 - **API gaps found (M2T.3)**, none blocking:
-  - **Five values per texel.** The upscaler's block statistics are 4 sums plus a max flag, and the kernel carries one `vec4f`. The flag rides in the sign of a non-negative sum, through a custom `'sum'` reduction. Wider accumulators are the clean fix if a second tool needs them.
+  - **Five values per texel.** The upscaler's block statistics are 4 sums plus a max flag, and the kernel carries one `vec4f`. The flag rides in the sign of a non-negative sum, through a custom `'sum'` reduction. Wider accumulators are the clean fix if a second tool needs them. **Done (2026-11-11):** 8-channel accumulators (§14.1 Wide accumulators); the fixture uses them, at 0.86–1.01× the sign-bit version's speed.
   - **An epilogue that needs two levels at once** (signal = max(4×4, 8×8) at the 2×2 resolution). Expressible: store hooks keep workgroup state across levels. That is now a documented guarantee with a GPU test (§14.1 Hooks); no kernel change.
   - **Clamped loads with ⌈n/2^l⌉ blocks.** Expressed with `'clamp'` at a padded size (§14.1 Edges); no option added.
   - **Per-texel side outputs from the load hook** (the upscaler's luma history). This is safe when every texel is loaded exactly once: `'clamp'` at whole source tiles (§14.1 Hooks).
-  - **A Reducer feeding a scalar.** Here it goes through a tool partials buffer and a `ScalarReduction` with a load hook, 3 dispatches. A combine-only entry point that takes external partials would save one tiny dispatch.
+  - **A Reducer feeding a scalar.** ~~Here it goes through a tool partials buffer and a `ScalarReduction` with a load hook, 3 dispatches.~~ **Done (2026-11-11):** combine-only runs (§4 Scalar reductions) take the Reducer's tile partials directly, 2 dispatches. `generator/luma-pyramid-fused` uses them: the 3-dispatch version takes 1.11–1.23× its time at 4 of 5 sizes in each of two same-run comparisons (M5 Pro, load average ~6 on 18 CPUs; 1920×1080 was noisy, 0.92× and 1.11×). Against `fsr/luma-pyramid-correct` it is now 0.74–0.92×.
   - **No per-invocation prologue hook.** Hoisting the exposure texels measured 0.98–0.99×, so it isn't needed on Apple.
 
 ### Our other tools
@@ -655,7 +728,7 @@ pmndrs/upscaler replaced both passes because no downsampler existed:
 | Tool | Pyramid / reduction | Shape | Built today |
 |---|---|---|---|
 | reflections (SSSR port) | Hi-Z from depth, min (max for reverse-Z), r32float, ≤7 levels; `textureLoad` traversal | full chain, separate source | **on downsampler** via `encodePass` (branch `reflections-integration`): 1080p 0.23 → 0.15 ms (M5 Pro) |
-| reflections | probe prefilter source chain, rgba16float cube (6 layers), average; `textureSampleLevel` | full chain | on downsampler; **fails in compatibility mode** (one texture read and written in one dispatch) |
+| reflections | probe prefilter source chain, rgba16float cube (6 layers), average; `textureSampleLevel` | full chain | on downsampler; ~~fails in compatibility mode~~ compatibility path since 2026-11-11 (§4 Compatibility mode; reflections' own compat check not re-run here) |
 | ssgiDev | depth min pyramid, 5 levels, one dispatch per level brute force; optional max pyramid; light pyramid (average rgba16f); G-buffer downsample (min depth, normal of the min texel, mean light) | Hi-Z, chain, fold with payload | hand-written |
 | Denoiser | OIDN auto-exposure: log-mean luma → scalar (f32 buffer); FFX reflections 8×8 luma-weighted radiance mean fused into reproject; ReBLUR-style history-fix mips 1–3 in one LDS dispatch, sum ÷ non-sky count, off-image weight 0, ceil sizes, atlas layout | scalar, fused block stats | hand-written |
 | webgpu-ddgi | material store: alpha-weighted 2×2 average, 9 levels of 256² layers, sRGB via buffer + `copyBufferToTexture`; sky SH 19 sums → scalar (subgroups); radiance cache: r32uint "first valid of 2×2" probe mask (~8 levels), hash-grid tile sums `(rgb·n, n)` 4 levels | chain, scalar, uint fold, block stats | hand-written, one dispatch per level |
@@ -667,7 +740,7 @@ pmndrs/upscaler replaced both passes because no downsampler existed:
 2. **Average colour chains:** cubes and arrays, sometimes alpha-weighted, sometimes with sRGB output. Mostly covered; sRGB and weighting are missing.
 3. **Fused block statistics:** 2–4 levels in one tile, from a custom load. This is the most common shape and the biggest gap.
    - The reductions are sums or weighted means with a carried weight channel, and off-image texels get weight 0.
-   - Some carry a payload, such as the normal of the min-depth texel.
+   - Some carry a payload, such as the normal of the min-depth texel (payload folds, §14.1, 2026-11-11).
    - None of them are semilattice folds.
 4. **Scalar 1×1:** exposure, SH and statistics, usually into a buffer, with an epilogue.
 5. **uint folds:** "first valid", or max over a packed key.
@@ -675,7 +748,7 @@ pmndrs/upscaler replaced both passes because no downsampler existed:
 **Generator requirements (M2T.1–2).**
 - **Hooks:**
   - **load:** WGSL with the tool's own bindings, returning `vec4f` (later also `vec4u`).
-  - **reduce:** per channel, one of sum, average, weighted average (a channel holds the weight), min, max, or a custom fold. Plus argmin/argmax with a payload.
+  - **reduce:** per channel, one of sum, average, weighted average (a channel holds the weight), min, max, or a custom fold. Plus argmin/argmax with a payload (done: §14.1 Payload folds).
   - **store or epilogue:** WGSL per emitted level.
 - **Level selection:** which levels to emit, and where: texture mips, an atlas, a buffer, or nothing.
 - **Edge policy:** `exact`, `box` (area), `zero-weight` (off-image texels contribute nothing; ceil sizes), and `clamp` (FSR/SPD-compatible, for parity tests).
@@ -683,7 +756,7 @@ pmndrs/upscaler replaced both passes because no downsampler existed:
   - Into a caller-owned pass (`encodePass`), so one timestamp pair covers the chain.
   - Dispatches only, so a tool can embed the kernel in its own pass order.
 - **Scalar:** partial results per workgroup, then a final dispatch with the epilogue. It writes to a buffer or a texel.
-- **Compatibility mode:** split the read and write views of one texture across dispatches, or use the buffer path.
+- **Compatibility mode:** split the read and write views of one texture across dispatches, or use the buffer path. **Done (2026-11-11)** for `Downsampler` with scratch levels and copy dispatches (§4 Compatibility mode).
 
 The fold contract in §4 (idempotent only) stays for folds. Sums and weighted means become reductions in their own right, each with its own oracle. They are defined at odd sizes only under `box` and `zero-weight`.
 
@@ -704,6 +777,7 @@ Group 0 of a tile kernel holds only what it needs:
 | 1 | source texture, `unfilterable-float`, `textureLoad` | no `load` hook |
 | 2 … 2+k−1 | write-only storage texture per emitted level, in `levels` order | no `store` hook |
 | 8 | uniform `{ size: vec2u }` | a `load` hook and no `size` hook |
+| 9, 10 | buffer output: layout uniform (112 bytes) and `array<u32>` storage buffer, instead of 2… | `output: 'buffer'` (§6.1) |
 
 **Hooks** are WGSL strings. Each must define the named function and may define helpers. Identifiers starting with `ds_`, the entry point `main` and the hook names are reserved.
 - `fn load( texel: vec2i, layer: u32 ) -> vec4f`: the value of one source texel. Coordinates are always in bounds: the kernel clamps them, and under `'zero-weight'` it then leaves the clamped duplicates out. So a hook can be called more than once for an edge texel, and must not have side effects. Without a hook, the generator reads the source texture, splatting single-channel formats (`sourceFormat`).
@@ -717,10 +791,27 @@ Group 0 of a tile kernel holds only what it needs:
 - `'sum'`, `'average'`, `'min'`, `'max'`
 - `'weight'`: this channel carries a weight. Under `'weighted'`, the other channels are `Σ wᵢ·vᵢ / Σ wᵢ` when emitted, and the weight channel is emitted as `Σ wᵢ`.
 - `'weighted'`: `Σ wᵢ·vᵢ / Σ wᵢ`, and `0` where `Σ wᵢ = 0` (an all-sky block).
+- `'argmin'`, `'argmax'`, `'payload'`: a payload fold (Payload folds below).
 
 Validation: at most one `'weight'` channel, and `'weighted'` needs one. Builtins expand per channel: `'average'`, `'min'` and `'max'` to four of the same, `'minmax'` to min, max, min, max, and the shorthand `'sum'` to four sums. A custom `{ wgsl, kind }` applies to the whole `vec4`:
 - `kind: 'fold'` (default) must be idempotent.
 - `kind: 'sum'` is combined exactly once per counted texel and emitted as is.
+
+**Wide accumulators (8 channels, 2026-11-11).** `channels: 8` (or eight channel ops) carries two `vec4f` per texel, in `Reducer` and `ScalarReduction` alike.
+- **WGSL contract:** the generator declares `struct DsWide { lo: vec4f, hi: vec4f }`, channels 0–3 in `lo` and 4–7 in `hi`. With 8 channels the hooks use it in place of `vec4f`: `fn load( texel, layer ) -> DsWide`, `fn store( level, texel, layer, value: DsWide )`, `fn finish( value: DsWide, weight: f32 )`, and a custom `fn reduce( a: DsWide, b: DsWide ) -> DsWide`. Chosen over two out-parameters or an `array<f32, 8>`: a struct is one value through every hook, the halves stay `vec4f` (so per-half `select`, `min`, `max` and arithmetic stay vector ops), and the shape matches two `rgba` texels or 32 bytes of buffer.
+- **Ops:** any per-channel op on any of the 8 channels, still at most one `'weight'`. Builtins and `'minmax'` expand to 8 with `channels: 8`.
+- **Sources and outputs:** a texture has at most 4 channels, so an 8-channel `Reducer` needs both a load and a store hook. An 8-channel `ScalarReduction` needs a load hook to read an image; without one it only takes combine-only runs (partials of 32 bytes). Output results are `{ value: DsWide, weight: f32 }`, 48 bytes per layer (`resultBytes`, `scalarResultSize( 8 )`).
+- **Cost when unused: none.** Every 4-channel kernel is byte-identical to before (5620 option sets compared).
+- **Workgroup memory doubles:** a 5-level tile takes 8 KiB, a 6-level tile 32 KiB, above the default 16 KiB `maxComputeWorkgroupStorageSize`. The Reducer rejects a tile the device can't hold, naming the limit. The scalar's 256 slots take 8 KiB.
+- **Measured on the upscaler's shading change** (5 values: 4 sums and a max flag, which used to ride in a sign bit through a custom sum). `generator/upscaler-shading-change` now uses `[ 'sum' ×4, 'max' ×4 ]`; the sign-bit version is `experiment/shading-signbit`. Sign-bit ÷ wide, two same-run comparisons on M5 Pro (load average ~9): 0.93 / 0.99 at 960×540, 1.01 / 1.01 at 1280×720, 0.86 / 0.92 at 1129×635, 1.01 / 1.00 at 1707×960, 1.00 / 1.01 at 1920×1080. So the wide kernel ties from 1280×720 up and costs up to ~8–14 % at the small odd size, where its doubled workgroup traffic is not hidden behind the loads. Against the upscaler's hand-fused pass it is 0.89–1.03×.
+- **Oracles:** `reducePyramid( …, { channels: 8 } )`, `scalarReference` and `scalarCombineReference` take 8-channel data (8 floats per texel or partial); core tests check that an 8-channel result equals the two 4-channel halves.
+
+**Payload folds (argmin / argmax, 2026-11-11).** Channel ops `'argmin'` and `'argmax'` mark a key; the `'payload'` channels right after it carry the values of the texel whose key wins. ssgiDev's G-buffer downsample (min depth, the normal of the min-depth texel, mean light) is `[ 'argmin', 'payload' ×4, 'average' ×3 ]` with 8 channels.
+- **Rule (decided):** the fold is the lexicographic min of (key, payload₁, payload₂, …) for `'argmin'`; for `'argmax'` the largest key, then the smallest payload. Ties on the key go to the smaller first payload, then the next. That is a total order, so the fold is associative, commutative and idempotent: the result is the same at every tree shape, kernel width, edge policy and in the scalar's different pairing, and the oracles need no model of the GPU's order. Position-based ties are the tool's choice: a texel index as the first payload breaks ties by row-major position, which reproduces ssgiDev's strict-`<` scan exactly (GPU-tested, including its `minD = 1.0` start for all-sky blocks).
+- **Validation:** a `'payload'` must follow a key or another payload of it. Several folds can share one value (`[ 'argmin', 'payload', 'argmax', 'payload' ]`), next to sums, averages and weights. Keys and payloads must not be NaN (comparisons with NaN are false, so the winner would depend on the order); −0 and +0 tie, and either may be returned.
+- **WGSL:** `ds_winsN( a, b ) -> bool` per fold (key compare, then each payload), and `ds_combine` selects the fold's channels from the winner. Payload and key channels are selections: not zeroed off-image in the scalar, not normalised on emission. Kernels without payload ops are byte-identical.
+- **Where:** `Reducer` (texture or hook paths, 4 or 8 channels) and `ScalarReduction` (image and combine-only runs). `Downsampler` rejects them, like other channel ops.
+- **Oracles:** `reducePyramid`, `scalarReference` and `scalarCombineReference` apply the same rule (`payloadWins`, `payloadGroups` in core); a core test checks them against a sort of each block. GPU: 4 variants (argmin and argmax with 3 payloads, two folds in one value, a fold next to an average and a min) × 13 shapes × both edges × 4 level sets, keys in {0…3} and the first payload in {0, 1, 2}, so most texels are decided by ties; the ssgiDev G-buffer shape against its own loop; scalar image and combine-only runs. Everything selected matches exactly.
 
 **Accumulation.** Workgroup memory holds unnormalised accumulations: sums, weighted sums `Σ w·v`, min/max, or the custom combine. A level is normalised only when it is emitted.
 - The count that divides an `'average'` is analytic, not stored: the in-bounds part of the block under `'zero-weight'`, `4^l` under `'clamp'`.
@@ -744,7 +835,7 @@ Validation: at most one `'weight'` channel, and `'weighted'` needs one. Builtins
 - Output textures must be at least the level's size, and the Reducer checks this. A mip of the source-sized texture is one texel short at odd sizes, so it is rejected with that explanation, rather than silently losing the last row or column.
 - Use separate textures, or an atlas or buffer through the `store` hook (the denoiser's layout).
 - `'clamp'` sizes equal mip sizes, so FSR-style outputs can be the mips of one half-resolution texture.
-- A built-in buffer output waits for §6.1's buffer path.
+- Built-in buffer output (§6.1): `output: 'buffer'` packs emitted levels into a buffer the Reducer owns and copies them into output textures (any 32-bit-word format, including rgb9e5ufloat). Writing into a tool's own buffer is still the store hook's job.
 
 **Recording:**
 - `encode( encoder, dispatch )` opens its own pass.
@@ -754,4 +845,4 @@ Validation: at most one `'weight'` channel, and `'weighted'` needs one. Builtins
 
 **Verification** (§7): every emitted level of every kernel width (1, 4, 5, 6) is checked against `reducePyramid`, which computes each level straight from the source in f64. The matrix covers both edge policies; channel ops including weights with sky texels; a custom fold and a custom sum; texture and hook paths; 17 shapes (unit, odd, 1D, partial tiles, layers, `2d-array`, 1920×1080); and unemitted levels left poisoned. Two tool shapes (FSR shading change, denoiser weighted mean), the cross-level store state above (levels [ 2, 3 ], [ 1, 4 ], [ 2, 5 ], both edge policies, 4 shapes) and API checks run alongside. A core test checks the oracle against iterated 2×2 reductions of the padded image.
 
-**Scalar** (`reduceToScalar`): one dispatch writes per-workgroup partials into a storage buffer; a second, single-workgroup dispatch combines them and calls `finish`. That is 2 dispatches at any size, and every texel is counted.
+**Scalar** (`reduceToScalar`): one dispatch writes per-workgroup partials into a storage buffer; a second, single-workgroup dispatch combines them and calls `finish`. That is 2 dispatches at any size, and every texel is counted. A combine-only run (`partials`) takes partials a tool wrote, e.g. a Reducer's deepest level from its store hook, and records the second dispatch alone (§4 Scalar reductions).

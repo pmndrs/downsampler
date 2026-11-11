@@ -16,7 +16,7 @@
  * kernel's structure.
  */
 import { tileSize, workgroupSide } from './plan.js';
-import { resolveReduction, type ChannelOp, type PyramidReferenceReduction, type TileEdgePolicy } from './reduction.js';
+import { payloadGroups, payloadWins, resolveReduction, type ChannelOp, type PyramidReferenceReduction, type TileEdgePolicy } from './reduction.js';
 
 /** Most levels one tile dispatch reduces (a 64×64 source tile, as in SPD). */
 export const maxTileLevels = 6;
@@ -71,6 +71,8 @@ export interface PyramidReferenceOptions {
 	reduction: PyramidReferenceReduction;
 	levels: readonly number[];
 	edges: TileEdgePolicy;
+	/** Channels per texel, 4 or 8 (set by channel ops' length). Default 4. */
+	channels?: number;
 }
 
 export interface PyramidLevel {
@@ -78,7 +80,7 @@ export interface PyramidLevel {
 	width: number;
 	height: number;
 	layers: number;
-	/** RGBA values, layer-major then row-major, as emitted (normalised). */
+	/** Values (`channels` per texel), layer-major then row-major, as emitted (normalised). */
 	values: Float64Array;
 	/**
 	 * Per value, the magnitude of the terms behind it, normalised like the value
@@ -89,21 +91,25 @@ export interface PyramidLevel {
 }
 
 /**
- * Reference for a tile reduction of `source` (RGBA, layer-major then row-major)
- * at each level of `levels`.
+ * Reference for a tile reduction of `source` (`channels` values per texel,
+ * layer-major then row-major) at each level of `levels`.
  */
-export function reducePyramid( source: ArrayLike<number>, width: number, height: number, layers: number, { reduction, levels, edges }: PyramidReferenceOptions ): PyramidLevel[] {
+export function reducePyramid( source: ArrayLike<number>, width: number, height: number, layers: number, { reduction, levels, edges, channels }: PyramidReferenceOptions ): PyramidLevel[] {
 
 	checkLevels( levels );
-	const resolved = resolveReduction( reduction );
-	const ops: readonly ( ChannelOp | 'fold' | 'custom-sum' )[] = resolved.ops ?? Array( 4 ).fill( resolved.custom === 'sum' ? 'custom-sum' : 'fold' );
+	const resolved = resolveReduction( reduction, channels );
+	const n = resolved.channels;
+	const ops: readonly ( ChannelOp | 'fold' | 'custom-sum' )[] = resolved.ops ?? Array( n ).fill( resolved.custom === 'sum' ? 'custom-sum' : 'fold' );
 	const custom = typeof reduction === 'object' && ! Array.isArray( reduction ) ? ( reduction as { reference: ( a: number, b: number, channel: number ) => number } ).reference : null;
 	const weightChannel = ops.indexOf( 'weight' );
+	const groups = resolved.ops === undefined ? [] : payloadGroups( resolved.ops );
+	// Channel → its payload group's index, for the argmin/argmax/payload channels.
+	const groupOf = new Map( groups.flatMap( ( group, g ) => [ group.key, ...group.payload ].map( c => [ c, g ] as [ number, number ] ) ) );
 
 	return levels.map( level => {
 
 		const w = levelSize( width, level, edges ), h = levelSize( height, level, edges ), block = 2 ** level;
-		const values = new Float64Array( w * h * layers * 4 ), magnitude = new Float64Array( values.length );
+		const values = new Float64Array( w * h * layers * n ), magnitude = new Float64Array( values.length );
 		// Source coordinates of a block along one axis, per the edge policy.
 		const span = ( x: number, size: number ) => {
 
@@ -124,19 +130,34 @@ export function reducePyramid( source: ArrayLike<number>, width: number, height:
 
 		for ( let layer = 0; layer < layers; layer ++ ) for ( let y = 0; y < h; y ++ ) for ( let x = 0; x < w; x ++ ) {
 
-			const index = ( ( layer * h + y ) * w + x ) * 4;
-			const n = spansX[ x ].length * spansY[ y ].length;
+			const index = ( ( layer * h + y ) * w + x ) * n;
+			const texels = spansX[ x ].length * spansY[ y ].length;
 			let weight = 0;
-			if ( weightChannel >= 0 ) for ( const sy of spansY[ y ] ) for ( const sx of spansX[ x ] ) weight += source[ ( ( layer * height + sy ) * width + sx ) * 4 + weightChannel ];
+			if ( weightChannel >= 0 ) for ( const sy of spansY[ y ] ) for ( const sx of spansX[ x ] ) weight += source[ ( ( layer * height + sy ) * width + sx ) * n + weightChannel ];
+			// Payload folds: the base offset of each group's winning texel in the block.
+			const winners = groups.map( group => {
 
-			for ( let c = 0; c < 4; c ++ ) {
+				let best = - 1;
+				for ( const sy of spansY[ y ] ) for ( const sx of spansX[ x ] ) {
+
+					const base = ( ( layer * height + sy ) * width + sx ) * n;
+					if ( best < 0 || ! payloadWins( group, ( v, c ) => source[ ( v === 'a' ? best : base ) + c ] ) ) best = base;
+
+				}
+
+				return best;
+
+			} );
+
+			for ( let c = 0; c < n; c ++ ) {
 
 				const op = ops[ c ];
+				if ( groupOf.has( c ) ) { values[ index + c ] = source[ winners[ groupOf.get( c )! ] + c ]; continue; }
 				let value = NaN, total = 0, first = true;
 
 				for ( const sy of spansY[ y ] ) for ( const sx of spansX[ x ] ) {
 
-					const base = ( ( layer * height + sy ) * width + sx ) * 4;
+					const base = ( ( layer * height + sy ) * width + sx ) * n;
 					const v = op === 'weighted' ? source[ base + c ] * source[ base + weightChannel ] : source[ base + c ];
 					total += Math.abs( v );
 					if ( first ) { value = v; first = false; continue; }
@@ -148,10 +169,10 @@ export function reducePyramid( source: ArrayLike<number>, width: number, height:
 				}
 
 				let scale = 0;
-				if ( op === 'average' ) { value /= n; scale = total / n; }
+				if ( op === 'average' ) { value /= texels; scale = total / texels; }
 				else if ( op === 'weighted' ) { value = weight === 0 ? 0 : value / weight; scale = weight === 0 ? 0 : total / Math.abs( weight ); }
 				else if ( op === 'sum' || op === 'weight' ) scale = total;
-				else if ( op === 'custom-sum' ) scale = total + n;
+				else if ( op === 'custom-sum' ) scale = total + texels;
 				values[ index + c ] = value;
 				magnitude[ index + c ] = scale;
 

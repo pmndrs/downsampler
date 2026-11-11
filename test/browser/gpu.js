@@ -1,12 +1,15 @@
 // Shared browser-side helpers for the GPU suite, benchmark and device lab.
-import { formats, fromHalf, integerDomains, isIntegerDomain, toHalf } from '/dist/index.js';
+import { formats, fromHalf, integerDomains, isIntegerDomain, isPackedQuantization, isSupportedFormat, packTexel, storageWritable, toHalf, unpackTexel } from '/dist/index.js';
 import { Downsampler } from '/dist/webgpu/index.js';
 
-/** `maxStorageTextures`: request the adapter's storage texture limit (the atomic probe's tail levels), not just six. */
-export async function requestDevice( { maxStorageTextures = false } = {} ) {
+/**
+ * `compat`: a compatibility-mode device (featureLevel 'compatibility', without 'core-features-and-limits').
+ * `maxStorageTextures`: request the adapter's storage texture limit (the atomic probe's tail levels), not just six.
+ */
+export async function requestDevice( { compat = false, maxStorageTextures = false } = {} ) {
 
 	if ( ! navigator.gpu ) throw new Error( 'WebGPU is not available in this browser.' );
-	const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance' } );
+	const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance', ...( compat ? { featureLevel: 'compatibility' } : {} ) } );
 	if ( ! adapter ) throw new Error( 'No WebGPU adapter.' );
 	const timestamps = adapter.features.has( 'timestamp-query' );
 	// Format features are requested when available; float32-filterable is not,
@@ -16,12 +19,13 @@ export async function requestDevice( { maxStorageTextures = false } = {} ) {
 		requiredFeatures: [ ...optional, ...( timestamps ? [ 'timestamp-query' ] : [] ) ],
 		requiredLimits: maxStorageTextures ? { maxStorageTexturesPerShaderStage: adapter.limits.maxStorageTexturesPerShaderStage } : Downsampler.requiredLimits( adapter )
 	} );
+	if ( compat && device.features.has( 'core-features-and-limits' ) ) throw new Error( 'compat: the browser gave a core device (it cannot enforce compatibility-mode validation).' );
 	const info = adapter.info || {};
 	return {
 		device,
 		adapter: {
 			vendor: info.vendor, architecture: info.architecture, device: info.device, description: info.description,
-			isFallbackAdapter: info.isFallbackAdapter, timestamps, features: optional,
+			isFallbackAdapter: info.isFallbackAdapter, timestamps, features: optional, compatibility: ! device.features.has( 'core-features-and-limits' ),
 			maxStorageTexturesPerShaderStage: device.limits.maxStorageTexturesPerShaderStage,
 			subgroupMinSize: info.subgroupMinSize, subgroupMaxSize: info.subgroupMaxSize
 		},
@@ -36,8 +40,11 @@ export function mipLevels( width, height ) {
 
 }
 
-/** `render` adds RENDER_ATTACHMENT (the benchmark's baseline and markers need it; not every format is renderable). */
-export function createTexture( device, { width, height, layers = 1, format, dimension = layers > 1 ? '2d-array' : '2d', storage = true, render = false } ) {
+/**
+ * `render` adds RENDER_ATTACHMENT (the benchmark's baseline and markers need it; not every format is renderable).
+ * `storage` defaults to whether the device can write the format as a storage texture (not rgb9e5ufloat, nor rg11b10ufloat without tier1, nor rg32float in compatibility mode).
+ */
+export function createTexture( device, { width, height, layers = 1, format, dimension = layers > 1 ? '2d-array' : '2d', storage = ! isSupportedFormat( format ) || ( storageWritable( format, device.features ) && ! ( formats[ format ].coreStorage && ! device.features.has( 'core-features-and-limits' ) ) ), render = false } ) {
 
 	return device.createTexture( {
 		label: `test ${ width }x${ height }x${ layers } ${ format }`,
@@ -47,10 +54,11 @@ export function createTexture( device, { width, height, layers = 1, format, dime
 
 }
 
-/** Stored values per texel and the typed array that holds them. */
+/** Stored values per texel and the typed array that holds them (packed formats: one u32 word per texel). */
 function storage( format ) {
 
 	const { quantization, channels } = formats[ format ];
+	if ( isPackedQuantization( quantization ) ) return { channels: 1, Array: Uint32Array, quantization, packed: true };
 	const arrays = { unorm8: Uint8Array, snorm8: Int8Array, unorm16: Uint16Array, snorm16: Int16Array, float16: Uint16Array, float32: Float32Array };
 	return { channels, Array: arrays[ quantization ], quantization };
 
@@ -85,7 +93,8 @@ function decode( stored, quantization ) {
  */
 export function makeData( width, height, layers, format, pattern = 'random', seed = 1, { unit = false } = {} ) {
 
-	const { channels, Array, quantization } = storage( format );
+	const { channels, Array, quantization, packed } = storage( format );
+	if ( packed ) return makePackedData( width, height, layers, quantization, pattern, seed );
 	const data = new Array( width * height * layers * channels );
 	let state = seed;
 
@@ -109,10 +118,50 @@ export function makeData( width, height, layers, format, pattern = 'random', see
 
 }
 
+/**
+ * Packed float fixtures (rgb9e5ufloat, rg11b10ufloat): r, g, b per texel, packed
+ * with the core encoder. 'random' mixes HDR values in [−4, 12) (negatives clamp
+ * to 0) with values spread over 2^−14 … 2^10 per channel, so texels mix small
+ * and large channels (shared-exponent flushing, subnormal 11/10-bit values).
+ * The other patterns are as in `makeData`.
+ */
+function makePackedData( width, height, layers, quantization, pattern, seed ) {
+
+	const data = new Uint32Array( width * height * layers );
+	let state = seed;
+	const next = () => ( state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0 );
+	for ( let layer = 0; layer < layers; layer ++ ) for ( let y = 0; y < height; y ++ ) for ( let x = 0; x < width; x ++ ) {
+
+		const wide = ( next() >>> 31 ) === 1;
+		const rgb = [ 0, 1, 2 ].map( c => {
+
+			const bits = next();
+			let value = wide ? ( ( bits & 0xffff ) / 65536 + 1 ) * 2 ** ( ( bits >>> 24 ) % 25 - 14 ) : ( ( bits >>> 24 ) - 64 ) / 16;
+			if ( pattern === 'edge' ) value = x === width - 1 || y === height - 1 ? ( c + layer + 1 ) / ( layers + 4 ) : 0;
+			if ( pattern === 'constant' ) value = ( c + layer + 1 ) / ( layers + 4 );
+			if ( pattern === 'tiles' ) value = ( ( ( x >> 6 ) * 53 + ( y >> 6 ) * 29 + seed * 97 + c * 37 + layer * 11 ) % 256 ) / 32;
+			return value;
+
+		} );
+		data[ ( layer * height + y ) * width + x ] = packTexel( ...rgb, quantization );
+
+	}
+
+	return data;
+
+}
+
 /** Stored values to RGBA floats, as a texture read returns them (missing channels read 0, 0, 1). */
 export function toFloats( data, format ) {
 
-	const { channels, quantization } = storage( format );
+	const { channels, quantization, packed } = storage( format );
+	if ( packed ) {
+
+		const output = new Float32Array( data.length * 4 );
+		for ( let i = 0; i < data.length; i ++ ) output.set( [ ...unpackTexel( data[ i ], quantization ), 1 ], i * 4 );
+		return output;
+
+	}
 	const texels = data.length / channels;
 	const output = new Float32Array( texels * 4 );
 	for ( let i = 0; i < texels; i ++ ) for ( let c = 0; c < 4; c ++ ) {
@@ -140,8 +189,8 @@ export function upload( device, texture, data ) {
  */
 export function poison( device, texture, fromLevel = 1 ) {
 
-	const { channels, Array, quantization } = storage( texture.format );
-	const colour = [ 0.9, 0.1, 0.7, 0.3 ].slice( 0, channels ).map( value => encode( value, quantization ) );
+	const { channels, Array, quantization, packed } = storage( texture.format );
+	const colour = packed ? [ packTexel( 0.9, 0.1, 0.7, quantization ) ] : [ 0.9, 0.1, 0.7, 0.3 ].slice( 0, channels ).map( value => encode( value, quantization ) );
 
 	for ( let level = fromLevel; level < texture.mipLevelCount; level ++ ) {
 
@@ -214,8 +263,14 @@ export async function createDepthSource( device, { width, height, layers = 1, fo
 
 	} else {
 
-		const staging = device.createTexture( { size: [ width, height, layers ], format: 'r32float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST } );
-		device.queue.writeTexture( { texture: staging }, values, { bytesPerRow: width * 4, rowsPerImage: height }, [ width, height, layers ] );
+		// One staging texture per layer: compatibility mode binds whole textures only.
+		const stagings = Array.from( { length: layers }, ( _, layer ) => {
+
+			const staging = device.createTexture( { size: [ width, height ], format: 'r32float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST } );
+			device.queue.writeTexture( { texture: staging }, values.subarray( layer * width * height, ( layer + 1 ) * width * height ), { bytesPerRow: width * 4, rowsPerImage: height }, [ width, height ] );
+			return staging;
+
+		} );
 		const module = device.createShaderModule( { code: `
 @group(0) @binding(0) var image: texture_2d<f32>;
 @vertex fn vs(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
@@ -227,7 +282,7 @@ export async function createDepthSource( device, { width, height, layers = 1, fo
 
 		for ( let layer = 0; layer < layers; layer ++ ) {
 
-			const layerView = staging.createView( { dimension: '2d', baseArrayLayer: layer, arrayLayerCount: 1 } );
+			const layerView = stagings[ layer ].createView();
 			const pass = encoder.beginRenderPass( { colorAttachments: [], depthStencilAttachment: {
 				view: depth.createView( { dimension: '2d', baseArrayLayer: layer, arrayLayerCount: 1 } ), depthLoadOp: 'clear', depthClearValue: 0.5, depthStoreOp: 'store'
 			} } );
@@ -239,7 +294,7 @@ export async function createDepthSource( device, { width, height, layers = 1, fo
 		}
 
 		device.queue.submit( [ encoder.finish() ] );
-		staging.destroy();
+		for ( const staging of stagings ) staging.destroy();
 
 	}
 

@@ -95,7 +95,7 @@ Last updated: 2026-11-11 (M2T.4: entries 1–3 measured)
   - **Against the area-weighted ideal** (scene, levels ≥ 4), `'exact'` is 1.3–7× closer than `'spd'`. On uniform noise `'spd'` is closer, because a box averages away more noise than a 2-tap bilinear.
   - **Hi-Z:** `'spd'` max leaves 0.01–15 % of texels below a base texel in their footprint (scene), up to 52 % on noise. `'exact'` and the tail have none.
 - **Performance (measured, M5 Pro, loaded):** `'spd'` is 1.4–2.1× faster than `'exact'` at render sizes up to 1440p in rgba8, 1.2–1.6× in rgba16f up to 1080p, within 3–9 % at 4K and at powers of two from 2048². `'box'` would share the folds' dispatch structure and footprint: a few ALU ops at most (estimate).
-- **Verdict:** keep `'exact'` as the default. `'spd'` stays opt-in and is never for Hi-Z; the owner is to confirm whether it stays public (SPEC §2.1).
+- **Verdict:** keep `'exact'` as the default. `'spd'` stays a public opt-in for `'average'` only; folds under it are rejected, with an error pointing to `'exact'` or a `Reducer` with `'zero-weight'` edges (coordinator, 2026-11-11; the owner can overrule). It works on the buffer output path and in compatibility mode (SPEC §2.1).
 
 ### 4. Conservative min/max footprint at odd edges
 - **They:** SPD's min/max skip the last row or column at odd sizes.

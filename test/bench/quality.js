@@ -9,7 +9,7 @@
 // than some base texel inside their footprint (`maxViolations`), per mode.
 // The tail kernel's outputs are compared with 'exact' too (same rule; only
 // shader vs sampler bilinear weights differ).
-import { fromHalf, maxViolations, toHalf } from '/dist/index.js';
+import { fromHalf, maxViolations, spdChainReference, toHalf } from '/dist/index.js';
 import { Downsampler } from '/dist/webgpu/index.js';
 import { createTexture, readMips } from '../browser/gpu.js';
 
@@ -114,6 +114,15 @@ export async function quality( device, { sizes = qualitySizes, formats = [ 'rgba
 					device.queue.writeTexture( { texture }, data, { bytesPerRow: width * ( format === 'rgba8unorm' ? 4 : 8 ) }, [ width, height ] );
 					downsampler.generate( texture, options );
 					chains[ name ] = await readMips( device, texture, 1 );
+					// Downsampler rejects folds under 'spd'; its max chain comes from the oracle,
+					// which the GPU 'clamp' tile kernel matches exactly for folds.
+					if ( name === 'spd' ) {
+
+						chains.spdMax = spdChainReference( base, width, height, 1, format === 'rgba8unorm' ? 'unorm8' : 'float16', 'max', texture.mipLevelCount - 1, downsampler.levelsPerDispatch ).map( level => level.values );
+						continue;
+
+					}
+
 					downsampler.generate( texture, { ...options, reduction: 'max' } );
 					chains[ `${ name }Max` ] = await readMips( device, texture, 1 );
 

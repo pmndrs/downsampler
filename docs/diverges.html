@@ -210,7 +210,7 @@ const entries = [
 		converge: 'Done for SPD (opt-in). M for \'box\' (M2.5), with its own oracle.',
 		quality: '\'spd\' agrees with \'exact\' to one 8-bit step until the first odd size, then differs by up to 0.24–0.64 (rgba8 scene). When level 0 or 1 is odd, its footprints drift by up to a texel. At levels ≥ 4, \'exact\' is 1.3–7× closer to the area-weighted ideal on a scene image; \'spd\' is closer on uniform noise. \'spd\' max leaves 0.01–15 % of texels below a base texel in their footprint (up to 52 % on noise); \'exact\' none. \'exact\' keeps the render-pass 31×31 flaw, which \'box\' fixes.',
 		perfKind: 'measured', perf: '\'spd\' is 1.4–2.1× faster than \'exact\' at render sizes up to 1440p in rgba8, 1.2–1.6× in rgba16f up to 1080p, within 3–9 % at 4K and at powers of two from 2048² (M5 Pro under load). \'box\' would share the folds\' structure (estimate).',
-		perfShort: '\'spd\' 1.4–2.1× faster (rgba8)', qualityShort: '\'spd\': drifting footprints, non-conservative Hi-Z', note: 'Default kept; \'spd\' opt-in, never for Hi-Z; \'box\' planned (M2.5).' },
+		perfShort: '\'spd\' 1.4–2.1× faster (rgba8)', qualityShort: '\'spd\': drifting footprints, non-conservative Hi-Z', note: 'Default kept; \'spd\' is a public opt-in for \'average\' only (folds rejected); \'box\' planned (M2.5).' },
 	{ n: 4, title: 'Conservative min/max footprint at odd edges', src: [ 'spd' ], srcText: 'SPD', verdict: 'keep', effort: 'S',
 		they: 'SPD\'s min/max skip the last row or column at odd sizes.',
 		we: 'Each fold covers texels 2x…2x+2 along an odd dimension: the smallest conservative footprint.',

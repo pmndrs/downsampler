@@ -11,8 +11,10 @@
  *
  * Min/max under these semantics are NOT conservative: a dropped row or column
  * is in no texel's block, so a max pyramid can miss it (Hi-Z false culling).
+ * `Downsampler` therefore takes 'spd' for 'average' only; the reference keeps
+ * folds for measuring that (`maxViolations`).
  */
-import { quantize, type Quantization } from './formats.js';
+import { quantizeTexel, type Quantization } from './formats.js';
 import { pyramidTolerance, reducePyramid } from './pyramid.js';
 import type { PyramidReferenceReduction, ReferenceReduction } from './reduction.js';
 import type { ReferenceLevel } from './reference.js';
@@ -34,11 +36,14 @@ function tileReduction( reduction: ReferenceReduction ): PyramidReferenceReducti
 export function spdReference( source: ArrayLike<number>, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction = 'average', count = 1 ): ReferenceLevel[] {
 
 	const levels = Array.from( { length: count }, ( _, i ) => i + 1 );
-	return reducePyramid( source, width, height, layers, { reduction: tileReduction( reduction ), levels, edges: 'clamp' } ).map( level => ( {
-		width: level.width, height: level.height, layers,
-		values: Float32Array.from( level.values, value => quantize( value, quantization ) ),
-		filterTolerance: Float32Array.from( level.magnitude, pyramidTolerance )
-	} ) );
+	return reducePyramid( source, width, height, layers, { reduction: tileReduction( reduction ), levels, edges: 'clamp' } ).map( level => {
+
+		// Per texel: packed formats (rgb9e5ufloat) share an exponent across channels.
+		const values = Float32Array.from( level.values );
+		for ( let i = 0; i < values.length; i += 4 ) quantizeTexel( values, i, quantization );
+		return { width: level.width, height: level.height, layers, values, filterTolerance: Float32Array.from( level.magnitude, pyramidTolerance ) };
+
+	} );
 
 }
 

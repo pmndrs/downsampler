@@ -35,9 +35,9 @@
 
 			// Entry point for the headless runner (test/run.js) and the buttons below.
 			// `compare: 'spd'` times the odd-size strategies (M2T.4); `quality` measures 'spd' against 'exact'.
-			window.runSuite = async ( { bench = false, quick = false, only, sizes, formats, rounds, repeats, compare, quality: measureQuality = false, skipValidation = false } = {} ) => {
+			window.runSuite = async ( { bench = false, quick = false, only, sizes, formats, rounds, repeats, compat = false, compare, quality: measureQuality = false, skipValidation = false } = {} ) => {
 
-				const { device, adapter, userAgent } = await requestDevice( { maxStorageTextures: compare === 'spd' } );
+				const { device, adapter, userAgent } = await requestDevice( { compat, maxStorageTextures: compare === 'spd' } );
 				const errors = [];
 				device.addEventListener( 'uncapturederror', event => errors.push( event.error.message ) );
 				device.lost.then( info => { if ( info.reason !== 'destroyed' ) errors.push( `device lost: ${ info.message }` ); } );

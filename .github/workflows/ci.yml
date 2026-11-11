@@ -18,6 +18,24 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm run test:core
-      # Software WebGPU (SwiftShader, 4 storage textures): covers the 1- and
-      # 4-level kernels. 5/6-level kernels and timing need real GPUs (device lab).
-      - run: node test/run.js --quick --adapter=swiftshader
+
+  # Software WebGPU (SwiftShader, 4 storage textures): covers the 1- and
+  # 4-level texture kernels (the Reducer's store-hook path runs 5 and 6 too).
+  # Timing and the full matrix need real GPUs (device lab, local runs).
+  # The quick suite is split into its three parts, run in parallel.
+  gpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [ downsampler, reducer, scalar ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node test/run.js --quick --adapter=swiftshader --only=${{ matrix.part }}

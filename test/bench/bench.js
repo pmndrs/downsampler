@@ -18,7 +18,7 @@ export const defaultFormats = [ 'rgba8unorm', 'rgba16float' ];
 
 export const compareSizes = [ [ 960, 540 ], [ 1129, 635 ], [ 1280, 720 ], [ 1477, 831 ], [ 1707, 960 ], [ 1920, 1080 ], [ 2560, 1440 ], [ 3840, 2160 ], [ 1024, 1024 ], [ 2048, 2048 ], [ 4096, 4096 ] ];
 
-/** M2T.4 strategies: each mode for average and max, plus the render baseline. */
+/** M2T.4 strategies: exact and tail for average and max, spd and the atomic probe for average, and the render baseline. */
 function compareStrategies( device ) {
 
 	const exact = new Downsampler( device ), tail = new Downsampler( device, { tail: true } );
@@ -28,8 +28,12 @@ function compareStrategies( device ) {
 		const run = ( downsampler, options ) => ( { passes: texture => downsampler.prepare( texture, options ).length, encode: ( encoder, texture ) => downsampler.encode( encoder, texture, options ) } );
 		strategies[ `exact${ suffix }` ] = { ...run( exact, { reduction } ), parity: reduction === 'average' };
 		strategies[ `tail${ suffix }` ] = { ...run( tail, { reduction } ), parity: reduction === 'average' };
-		strategies[ `spd${ suffix }` ] = { ...run( exact, { reduction, oddSizes: 'spd' } ), parity: false };
-		if ( reduction === 'average' ) {
+		// 'spd' (and the probe, which reproduces it) is 'average' only: Downsampler
+		// rejects folds under 'spd'. The 2026-11-11 runs in results/spd/ predate that
+		// and also timed spdMax and atomicMax.
+		if ( reduction !== 'average' ) continue;
+		strategies.spd = { ...run( exact, { reduction, oddSizes: 'spd' } ), parity: false };
+		{
 
 			// All batches in one compute pass (encodePass), as a tool records them:
 			// separates per-pass overhead from the dispatch structure itself.
@@ -47,9 +51,9 @@ function compareStrategies( device ) {
 		}
 
 		const atomic = new AtomicSpd( device, { reduction } );
-		strategies[ `atomic${ suffix }` ] = { passes: texture => atomic.passes( texture ), encode: ( encoder, texture ) => atomic.encode( encoder, texture ), parity: false, atomic, reduction };
+		strategies.atomic = { passes: texture => atomic.passes( texture ), encode: ( encoder, texture ) => atomic.encode( encoder, texture ), parity: false, atomic, reduction };
 		// Kernel only: packed tail levels stay in the buffer (not texture-ready).
-		strategies[ `atomicKernel${ suffix }` ] = { passes: () => 1, encode: ( encoder, texture ) => atomic.encode( encoder, texture, { materialize: false } ), parity: false, kernelOnly: atomic };
+		strategies.atomicKernel = { passes: () => 1, encode: ( encoder, texture ) => atomic.encode( encoder, texture, { materialize: false } ), parity: false, kernelOnly: atomic };
 
 	}
 
@@ -144,6 +148,10 @@ export async function benchmark( device, { sizes, formats: benchFormats = defaul
 	strategies[ `load${ limit }` ] = { passes: texture => load.prepare( texture ).length, encode: ( encoder, texture ) => load.encode( encoder, texture ) };
 	const max = new Downsampler( device, { levelsPerDispatch: limit } );
 	strategies[ `max${ limit }` ] = { parity: false, passes: texture => max.prepare( texture, { reduction: 'max' } ).length, encode: ( encoder, texture ) => max.encode( encoder, texture, { reduction: 'max' } ) };
+	// The buffer output path (SPEC §6.1): packed texels into a buffer, then a copy per level.
+	// Six levels per dispatch at any storage texture limit.
+	const buffer = new Downsampler( device, { output: 'buffer' } );
+	strategies.buffer6 = { passes: texture => buffer.prepare( texture ).length, encode: ( encoder, texture ) => buffer.encode( encoder, texture ) };
 	return measure( device, { strategies }, { sizes, benchFormats, rounds, repeats, onProgress } );
 
 }
@@ -186,7 +194,10 @@ async function measure( device, { strategies, exact }, { sizes, benchFormats, ro
 
 					const actual = await readMip( device, textures[ name ], last );
 					const error = Math.max( ...actual.map( ( value, i ) => Math.abs( value - baseline[ i ] ) ) );
-					if ( ! ( error < 0.05 ) ) throw new Error( `${ name } ${ width }x${ height } differs from baseline by ${ error }` );
+					// Packed floats have 6- or 9-bit mantissas over HDR fixtures, and render passes
+					// round each level their own way (Apple truncates), so allow 10 % of the range.
+					const limit = format === 'rg11b10ufloat' || format === 'rgb9e5ufloat' ? 0.1 * Math.max( 1, ...baseline.map( Math.abs ) ) : 0.05;
+					if ( ! ( error < limit ) ) throw new Error( `${ name } ${ width }x${ height } differs from baseline by ${ error }` );
 
 				}
 
