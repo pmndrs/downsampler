@@ -27,6 +27,10 @@ export async function benchmark( device, { sizes = defaultSizes, formats: benchF
 	strategies[ `load${ limit }` ] = { passes: texture => load.prepare( texture ).length, encode: ( encoder, texture ) => load.encode( encoder, texture ) };
 	const max = new Downsampler( device, { levelsPerDispatch: limit } );
 	strategies[ `max${ limit }` ] = { parity: false, passes: texture => max.prepare( texture, { reduction: 'max' } ).length, encode: ( encoder, texture ) => max.encode( encoder, texture, { reduction: 'max' } ) };
+	// The buffer output path (SPEC §6.1): packed texels into a buffer, then a copy per level.
+	// Six levels per dispatch at any storage texture limit.
+	const buffer = new Downsampler( device, { output: 'buffer' } );
+	strategies.buffer6 = { passes: texture => buffer.prepare( texture ).length, encode: ( encoder, texture ) => buffer.encode( encoder, texture ) };
 
 	const names = Object.keys( strategies );
 	const results = [];
@@ -60,7 +64,10 @@ export async function benchmark( device, { sizes = defaultSizes, formats: benchF
 
 					const actual = await readMip( device, textures[ name ], last );
 					const error = Math.max( ...actual.map( ( value, i ) => Math.abs( value - baseline[ i ] ) ) );
-					if ( ! ( error < 0.05 ) ) throw new Error( `${ name } ${ width }x${ height } differs from baseline by ${ error }` );
+					// Packed floats have 6- or 9-bit mantissas over HDR fixtures, and render passes
+					// round each level their own way (Apple truncates), so allow 10 % of the range.
+					const limit = format === 'rg11b10ufloat' || format === 'rgb9e5ufloat' ? 0.1 * Math.max( 1, ...baseline.map( Math.abs ) ) : 0.05;
+					if ( ! ( error < limit ) ) throw new Error( `${ name } ${ width }x${ height } differs from baseline by ${ error }` );
 
 				}
 

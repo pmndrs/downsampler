@@ -5,7 +5,7 @@
  * reductions (min, max, minmax, custom) combine every source texel the output
  * covers (see `footprint`). Results are quantized to the storage format.
  */
-import { integerDomains, isIntegerDomain, quantize, roundHalfEven, type Quantization } from './formats.js';
+import { integerDomains, isIntegerDomain, isPackedQuantization, packedStep, quantize, quantizeTexel, roundHalfEven, type Quantization } from './formats.js';
 import { foldChannel, footprint, type ReferenceReduction } from './reduction.js';
 
 export interface ReferenceLevel {
@@ -30,13 +30,31 @@ export interface ReferenceOptions {
 	 * way. False for a separate source of another format.
 	 */
 	quantizedInput?: boolean;
+	/**
+	 * 'float32': compute an exact 2:1 average (each dimension even or 1) as the
+	 * kernels do in workgroup memory, `(((a + b) + c) + d) · 0.25` with float32
+	 * rounding after every add, so the result can be required to match bit for
+	 * bit (packed float formats, whose sums aren't always exact in f32). Other
+	 * sizes and integer formats ignore it. Default: exact (f64) arithmetic.
+	 */
+	pairing?: 'float32';
 }
 
-export function reduceReference( source: Float32Array, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction = 'average', { quantizedInput = true }: ReferenceOptions = {} ): ReferenceLevel {
+export function reduceReference( source: Float32Array, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction = 'average', { quantizedInput = true, pairing }: ReferenceOptions = {} ): ReferenceLevel {
 
 	const w = Math.max( 1, Math.floor( width / 2 ) ), h = Math.max( 1, Math.floor( height / 2 ) );
 	const values = new Float32Array( w * h * layers * 4 );
 	const filterTolerance = new Float32Array( values.length );
+	// Packed formats quantize whole texels once all four values are known.
+	const packed = isPackedQuantization( quantization );
+	const perValue = ( value: number ) => packed ? value : quantize( value, quantization );
+	const finish = () => {
+
+		if ( packed ) for ( let i = 0; i < values.length; i += 4 ) quantizeTexel( values, i, quantization );
+		return { width: w, height: h, layers, values, filterTolerance };
+
+	};
+
 	if ( reduction !== 'average' ) {
 
 		const fold = typeof reduction === 'function' ? reduction : ( a: number, b: number, c: number ) => foldChannel( reduction, a, b, c );
@@ -47,13 +65,32 @@ export function reduceReference( source: Float32Array, width: number, height: nu
 
 				let value = source[ ( ( layer * height + y0 ) * width + x0 ) * 4 + c ];
 				for ( let sy = y0; sy <= y1; sy ++ ) for ( let sx = x0; sx <= x1; sx ++ ) value = fold( value, source[ ( ( layer * height + sy ) * width + sx ) * 4 + c ], c );
-				values[ ( ( layer * h + y ) * w + x ) * 4 + c ] = quantize( value, quantization );
+				values[ ( ( layer * h + y ) * w + x ) * 4 + c ] = perValue( value );
 
 			}
 
 		}
 
-		return { width: w, height: h, layers, values, filterTolerance };
+		return finish();
+
+	}
+
+	const domainOf = isIntegerDomain( quantization ) ? integerDomains[ quantization ] : null;
+	const halves = ( n: number ) => n === 1 || n % 2 === 0;
+	if ( pairing === 'float32' && domainOf === null && halves( width ) && halves( height ) ) {
+
+		// The kernels' in-tile reduction: clamped 2×2 reads, summed left to right in f32.
+		const f = Math.fround;
+		for ( let layer = 0; layer < layers; layer ++ ) for ( let y = 0; y < h; y ++ ) for ( let x = 0; x < w; x ++ ) {
+
+			const y0 = Math.min( 2 * y, height - 1 ), y1 = Math.min( 2 * y + 1, height - 1 );
+			const x0 = Math.min( 2 * x, width - 1 ), x1 = Math.min( 2 * x + 1, width - 1 );
+			const at = ( sx: number, sy: number, c: number ) => source[ ( ( layer * height + sy ) * width + sx ) * 4 + c ];
+			for ( let c = 0; c < 4; c ++ ) values[ ( ( layer * h + y ) * w + x ) * 4 + c ] = perValue( f( f( f( at( x0, y0, c ) + at( x1, y0, c ) ) + at( x0, y1, c ) ) + at( x1, y1, c ) ) * 0.25 );
+
+		}
+
+		return finish();
 
 	}
 
@@ -90,7 +127,7 @@ export function reduceReference( source: Float32Array, width: number, height: nu
 					const gy = Math.max( Math.abs( d - a ), Math.abs( e - b ) );
 					filterTolerance[ index ] = ( ( exactX ? 0 : gx / 256 ) + ( exactY ? 0 : gy / 256 ) ) / scale;
 					const value = top * ( 1 - fy ) + bottom * fy;
-					values[ index ] = domain ? roundHalfEven( Math.min( domain.max, Math.max( domain.min, value ) ) ) / scale : quantize( value, quantization );
+					values[ index ] = domain ? roundHalfEven( Math.min( domain.max, Math.max( domain.min, value ) ) ) / scale : perValue( value );
 
 				}
 
@@ -100,29 +137,48 @@ export function reduceReference( source: Float32Array, width: number, height: nu
 
 	}
 
-	return { width: w, height: h, layers, values, filterTolerance };
+	return finish();
 
 }
 
 /**
  * Reference for a same-size converting copy (a separate source whose level is
- * the destination's first level): each value quantized to the destination.
+ * the destination's first level): each value (packed formats: each texel) quantized to the destination.
  */
 export function copyReference( source: Float32Array, width: number, height: number, layers: number, quantization: Quantization ): ReferenceLevel {
 
-	return { width, height, layers, values: source.map( value => quantize( value, quantization ) ), filterTolerance: new Float32Array( source.length ) };
+	const values = Float32Array.from( source );
+	for ( let i = 0; i < values.length; i += 4 ) quantizeTexel( values, i, quantization );
+	return { width, height, layers, values, filterTolerance: new Float32Array( source.length ) };
 
+}
+
+export interface ToleranceTexel {
+	/** Channel of the value (rg11b10ufloat: 2 is the 10-bit one). */
+	channel: number;
+	/** Largest of the texel's r, g, b (rgb9e5ufloat: sets the shared exponent). */
+	texelMax: number;
 }
 
 /**
  * Declared comparison tolerance for one value: about two steps for normalized formats,
- * or max(0.002, 0.3 %) for float16, or 1e-5 relative for float32, plus the reference's filter allowance. Fold
+ * or max(0.002, 0.3 %) for float16, or 1e-5 relative for float32, or two steps of
+ * the stored value plus 2^-13 for the packed float formats (rgb9e5ufloat: steps of the texel's
+ * shared exponent, so `texel` is required), plus the reference's filter allowance. Fold
  * reductions select existing values, so they must match exactly. These are test
  * tolerances for the fixtures in this repository, not a formal error bound.
  */
-export function tolerance( expected: number, quantization: Quantization, filterTolerance = 0, reduction: ReferenceReduction = 'average' ): number {
+export function tolerance( expected: number, quantization: Quantization, filterTolerance = 0, reduction: ReferenceReduction = 'average', texel?: ToleranceTexel ): number {
 
 	if ( reduction !== 'average' ) return 0;
+	if ( isPackedQuantization( quantization ) ) {
+
+		if ( texel === undefined ) throw new Error( `downsampler: ${ quantization } tolerances need the texel (channel and largest value).` );
+		// Plus 2^-13 absolute for filtering arithmetic near 0, where a sampled HDR source can cancel to a
+		// few subnormal steps (SwiftShader: 1.4e-5 for an rgba16float source whose exact average is 0).
+		return 2 * packedStep( quantization, expected, texel.channel, texel.texelMax ) + 2 ** - 13 + filterTolerance;
+
+	}
 	if ( isIntegerDomain( quantization ) ) return 2.01 / integerDomains[ quantization ].scale + filterTolerance;
 	// float32 kernels compute in f32 and the reference in f64: a few ulps.
 	if ( quantization === 'float32' ) return Math.max( 1e-6, Math.abs( expected ) * 1e-5 ) + filterTolerance;

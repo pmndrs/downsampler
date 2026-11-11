@@ -4,7 +4,7 @@ GPU texture downsampling: mip chains, min/max reduction pyramids (Hi-Z from dept
 
 A WGSL implementation of the ideas in AMD FidelityFX SPD: a 64×64 source tile reduced to six levels per workgroup in workgroup memory, with every level written once. It targets SPD's feature set. See [SPEC.md](SPEC.md) for the full design, parity table and roadmap.
 
-> Status: early (milestone 2 in progress). Destinations `rgba8unorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, `rgba8snorm`, and with optional features `bgra8unorm`, `r8unorm`, `rg8unorm`, `r8snorm`, `rg8snorm`, `r16float`, `rg16float` and the 16-bit normalized formats; any float-sampleable or depth source; 2D textures and array layers; average, min, max, minmax and custom reductions. Not yet published to npm.
+> Status: early (milestone 2 in progress). Destinations `rgba8unorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, `rgba8snorm`, the GI formats `rgb9e5ufloat` and `rg11b10ufloat`, and with optional features `bgra8unorm`, `r8unorm`, `rg8unorm`, `r8snorm`, `rg8snorm`, `r16float`, `rg16float` and the 16-bit normalized formats; any float-sampleable or depth source; 2D textures and array layers; average, min, max, minmax and custom reductions. Not yet published to npm.
 
 ## Two things to know first
 
@@ -22,7 +22,7 @@ const adapter = await navigator.gpu.requestAdapter();
 const device = await adapter.requestDevice( { requiredLimits: Downsampler.requiredLimits( adapter ) } );
 const downsampler = new Downsampler( device );
 
-// The texture needs TEXTURE_BINDING | STORAGE_BINDING usage.
+// The texture needs TEXTURE_BINDING usage, plus STORAGE_BINDING (or COPY_DST: the buffer output path, below).
 downsampler.generate( texture );                    // encode + submit
 downsampler.encode( encoder, texture );             // or record into your own encoder
 downsampler.encode( encoder, texture, { baseMipLevel: 2, mipLevelCount: 4 } );
@@ -36,6 +36,13 @@ downsampler.generate( texture, { reduction: { wgsl: `
 
 // Hi-Z from a depth buffer: level 0 is a copy (same size) or the first reduction (half size).
 downsampler.generate( hiZ /* rg32float */, { source: { texture: depthTexture }, reduction: 'minmax' } );
+
+// GI formats. rgb9e5ufloat can't be a storage texture, so its levels are packed into a
+// buffer and copied in (the texture needs COPY_DST instead of STORAGE_BINDING). The same
+// buffer output path writes rg11b10ufloat without texture-formats-tier1, and any texture
+// without STORAGE_BINDING usage, six levels per dispatch at any storage texture limit.
+downsampler.generate( irradiance /* rgb9e5ufloat */ );
+downsampler.outputPath( irradiance );                // 'buffer'; force one with new Downsampler( device, { output } )
 ```
 
 three.js (`WebGPURenderer`, texture allocated with storage usage, e.g. `StorageTexture`):

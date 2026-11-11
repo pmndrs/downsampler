@@ -4,8 +4,10 @@
  * Typed structurally so `three` stays an optional peer dependency. The texture
  * must already be allocated on the GPU (rendered to, uploaded or initialized via
  * `renderer.initTexture`) with STORAGE_BINDING usage — in current three.js that
- * means a `StorageTexture` (or `StorageArrayTexture`). Native integration for all
- * textures is planned as an in-tree three.js option; see SPEC.md.
+ * means a `StorageTexture` (or `StorageArrayTexture`) — or with COPY_DST usage
+ * in a format the buffer output path writes (SPEC.md §6.1), which is how
+ * rgb9e5ufloat textures are supported. Native integration for all textures is
+ * planned as an in-tree three.js option; see SPEC.md.
  */
 import { Downsampler, type EncodeOptions } from '../webgpu/downsampler.js';
 

@@ -1,9 +1,9 @@
 export { Downsampler } from './downsampler.js';
-export type { DownsamplerOptions, EncodeOptions, PreparedBatch, SourceOptions } from './downsampler.js';
+export type { BufferCopy, DownsamplerOptions, EncodeOptions, PreparedBatch, SourceOptions } from './downsampler.js';
 export { Reducer } from './reducer.js';
 export type { ReducerDispatch, ReducerOptions, TextureLevel, ToolBindings } from './reducer.js';
-export { createKernel, kernelLayoutEntries, sizeBinding } from './kernel.js';
-export type { KernelOptions, SourceAccess, ViewDimension } from './kernel.js';
+export { bufferOutputWgsl, createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, packedFloatWgsl, sizeBinding } from './kernel.js';
+export type { KernelOptions, OutputPath, SourceAccess, ViewDimension } from './kernel.js';
 export type { Reduction, CustomReduction, BuiltinReduction, ChannelOp, ChannelOps, EdgePolicy, TileEdgePolicy } from '../core/reduction.js';
 export { ScalarReduction, createScalarKernel, scalarLayoutEntries, scalarResultBytes } from './scalar.js';
 export type { PreparedScalar, ScalarKernel, ScalarKernelOptions, ScalarReductionOptions, ScalarRun } from './scalar.js';

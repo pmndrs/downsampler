@@ -1,11 +1,11 @@
 // Backend-neutral core. Backends live in `downsampler/webgpu` (and later others);
 // the three.js adapter lives in `downsampler/three`.
-export { planBatches, mipSize, mipLevelCountFor, tileSize, workgroupSide } from './core/plan.js';
-export type { Batch, PlanOptions, OddSizePolicy } from './core/plan.js';
-export { formats, integerDomains, isIntegerDomain, isSupportedFormat, quantize, roundHalfEven, sampledChannels, toHalf, fromHalf } from './core/formats.js';
-export type { FormatInfo, IntegerQuantization, Quantization, SupportedFormat } from './core/formats.js';
+export { outputBufferLayout, planBatches, mipSize, mipLevelCountFor, tileSize, workgroupSide } from './core/plan.js';
+export type { Batch, BufferLevel, PlanOptions, OddSizePolicy } from './core/plan.js';
+export { bufferWritable, formats, fromHalf, fromUfloat, integerDomains, isIntegerDomain, isPackedQuantization, isSupportedFormat, packedStep, packRg11b10, packRgb9e5, packTexel, quantize, quantizeTexel, rg11b10Max, rgb9e5Max, roundHalfEven, sampledChannels, storageWritable, toHalf, toUfloat, unpackRg11b10, unpackRgb9e5, unpackTexel } from './core/formats.js';
+export type { FormatInfo, IntegerQuantization, PackedQuantization, Quantization, SupportedFormat } from './core/formats.js';
 export { copyReference, reduceReference, tolerance } from './core/reference.js';
-export type { ReferenceLevel, ReferenceOptions } from './core/reference.js';
+export type { ReferenceLevel, ReferenceOptions, ToleranceTexel } from './core/reference.js';
 export { footprint, foldChannel, isBuiltinReduction, isChannelOps, needsTileEdges, reductionKey, resolveReduction } from './core/reduction.js';
 export type { BuiltinReduction, ChannelOp, ChannelOps, CustomReduction, EdgePolicy, PyramidReferenceReduction, Reduction, ReferenceReduction, ResolvedReduction, TileEdgePolicy } from './core/reduction.js';
 export { checkLevels, levelSize, maxTileLevels, pyramidTolerance, reducePyramid, tileDispatch } from './core/pyramid.js';
