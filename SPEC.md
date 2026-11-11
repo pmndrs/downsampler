@@ -142,6 +142,33 @@ Every intermediate level is quantized exactly as stored, so a chain equals level
 - Bind groups are cached per texture and options in a `WeakMap`.
 - `release(texture)` drops a texture's entries early.
 
+### Scalar reductions
+
+`ScalarReduction` (`src/webgpu/scalar.ts`, oracle in `src/core/scalar.ts`) reduces an image to one `vec4f` and a weight per layer in two dispatches, as §14.1 asks. Built 2026-11-11 (M2T.2).
+
+- **Input:** a source texture read with `textureLoad` (any float-sampleable 2D format at one mip level; depth through its depth aspect; single-channel formats splatted to `(v, v, v, v)` as in §4 Separate source), or a `load` hook alone with an explicit `size`, reading the tool's `@group(1)`. The hook form lets a tool reduce something computed from several of its own textures. A hook and a source texture together are rejected; a hook replaces the source read.
+- **Layers (decided):** each layer in `layers: [ first, count ]` is reduced separately, to its own result. Workgroup z selects the layer in both dispatches, so all layers still take two dispatches. Array slices and cube faces are independent images; a value across layers is a sum of results, or one hook that loops over layers.
+- **Ops:** per channel `'sum' | 'average' | 'min' | 'max' | 'weight' | 'weighted'` (§14.1). At most one `'weight'` channel; `'weighted'` needs one. Emitted: sums, averages (÷ texel count), weighted means (÷ Σ w, and 0 when Σ w = 0), Σ w, min, max. The weight passed on is Σ w with a weight channel, else the texel count. Custom `{ wgsl, kind }` reductions aren't offered yet.
+- **Output:** `finish( value: vec4f, weight: f32 )`, run once per layer by invocation 0 of the combine workgroup, with an optional third parameter `layer: u32` (an extension of §14.1 for multi-layer runs). Without `finish`, results go to `output: { buffer, offset }` as `struct { value: vec4f, weight: f32 }`, 32 bytes per layer, at a 256-byte-aligned offset.
+- **Every texel counted once.** Pass 1 covers the image with `⌈w/64⌉ × ⌈h/64⌉` tiles. Off-image reads in partial tiles are clamped to the edge, then zeroed for sum-like channels; min and max see a duplicate in-image texel, which is harmless. No edge row or column is dropped (SPD), and nothing is limited to a top-left `2ⁿ` square (FSR 3 exposure covers 1024×1024 of 1080p, §14).
+- **Pass 1 (partials):** 16×16 invocations. Each reads 4×4 texels 16 apart, so adjacent invocations read adjacent texels, and combines them as a tree. The workgroup combines its 256 values in workgroup memory with a stride-halving tree (`slot[i] ∘= slot[i + s]`, s = 128 … 1) and writes one `vec4f` per tile and layer to a storage buffer the reduction owns.
+- **Pass 2 (combine):** one 256-invocation workgroup per layer. Invocation t folds partials t, t + 256, … in sequence, then the same tree. It normalises and calls `finish` or writes the output.
+- **Tile size (measured):** 4×4 texels per invocation (64×64 tile). Ratios to it, rgba16float `'average'`, Apple M5 Pro, Chrome, compute-pass timestamps, 32 repeats, medians of 11 rotated rounds, 2026-11-11. Other agents were running GPU suites at the same time, so only the ratios mean anything:
+
+  | Texels per invocation (tile) | 960×540 | 1920×1080 | 3840×2160 |
+  |---|---:|---:|---:|
+  | 1×1 (16²) | 2.67 | 2.51 | 1.52 |
+  | 2×2 (32²) | 1.22 | 1.02 | 1.03 |
+  | **4×4 (64²)** | **1.00** | **1.00** | **1.00** |
+  | 8×8 (128²) | 3.10 | 2.84 | 1.62 |
+
+  Small tiles pay for more partials and barriers. At 8×8, 64 loads unrolled per invocation cost occupancy. `block` (1, 2, 4, 8) stays an option for re-measuring on other vendors.
+- **Precision.** Each term passes through at most D roundings: log₂16 in the invocation, 8 in the workgroup, ⌈N/256⌉ − 1 in the sequential fold over N partials, and 8 in the final tree. That gives D = 20 up to 1024² (N ≤ 256), 21 at 1920×1080 and 27 at 3840×2160. The standard bound for a summation tree (Higham §4.2) is |ŝ − s| ≤ γ_D·Σ|xᵢ|, with γ_D = D·u/(1 − D·u) and u = 2⁻²⁴. At 4K that is 1.6·10⁻⁶ of Σ|x|, so an average is good to 1.6·10⁻⁶ of the mean magnitude. A serial f32 sum over 1080p has a bound of n·u ≈ 0.12 and in practice misses it (core test). Averages add one rounding for the division; weighted means add one for the product, plus the error of Σ w. `scalarReference` documents the bound per op and returns it.
+- **Oracle (§7 style).** `scalarReference` combines in exactly the GPU's order with float32 rounding after every operation, and also returns the exact float64 result and the bound above. GPU tests require |GPU − exact| ≤ bound (plus a declared input error: 2⁻²¹ relative for unorm sources, and for the exposure hook's `log`, 2⁻²⁰ absolute plus 2⁻²¹ relative). Bit-for-bit pairing isn't required: FMA contraction of `w·v + …` and WGSL's 2.5-ulp division are allowed. On M5 Pro, 889 of 1044 float results matched the pairing bit for bit, and the worst error was 15 % of the bound. Integer-valued cases (procedural hooks returning counts, hash bits and coordinates below 2²⁴) and min/max must match exactly.
+- **Recording:** `encode( encoder, run )` (two passes), `encodePass( pass, run )`, and `prepare( run )` → pipelines, our `@group(0)` bind group, the tool's group 1 and both workgroup counts, for tools that dispatch it themselves. `kernel( { dimension, splat } )` returns the WGSL, layout and pipelines; `createScalarKernel` and `scalarLayoutEntries` are the pure generator. Generator identifiers start with `ds_`.
+- **Caching:** pipelines per source view dimension and splat. Per run shape, a plan holds a uniform buffer (size, first layer, partial count) and the partials buffer, cached per source texture, or else per output buffer or reduction, with at most 4 shapes per owner (resizes evict the oldest). `release( resource )` drops them.
+- **Refactor note:** the `@group(1)` plumbing (`ToolBindings`, hook checks) duplicates what the M2T.1 generator in `kernel.ts` needs. Merge them once both land.
+
 ## 5. API
 
 ### Implemented
@@ -171,6 +198,24 @@ import { planBatches, reduceReference, footprint } from 'downsampler'; // backen
 // Separate source: depth → Hi-Z. Level 0 the same size (copy) or half (reduce).
 downsampler.encode( encoder, hiZ /* rg32float */, { source: { texture: depthTexture, mipLevel: 0 }, reduction: 'minmax' } );
 downsampler.sourceUnsupportedReason( destination, source, baseMipLevel ); // string | null
+```
+
+```ts
+// Scalar reductions (§4 Scalar reductions): one vec4f + weight per layer, 2 dispatches.
+import { ScalarReduction } from 'downsampler/webgpu';
+const range = new ScalarReduction( device, { reduce: [ 'min', 'max', 'min', 'max' ] } ); // or 'average', [ 'weighted', …, 'weight' ]
+range.encode( encoder, { texture: depth, output: { buffer, offset: 0 } } ); // { value: vec4f, weight: f32 } per layer
+const exposure = new ScalarReduction( device, {
+	bindings: { wgsl: '@group(1) @binding(0) var colour: texture_2d<f32>; …', entries }, // the tool's group 1
+	load: 'fn load( texel: vec2i, layer: u32 ) -> vec4f { … log( max( luma, 6.1e-5 ) ) … }',
+	finish: 'fn finish( value: vec4f, weight: f32 ) { … temporal smoothing, store … }',
+} );
+exposure.encodePass( pass, { size: [ width, height ], bindGroup } ); // also { layers: [ first, count ], mipLevel }
+exposure.prepare( run );        // pipelines, group 0 bind group, workgroup counts (dispatch it yourself)
+exposure.kernel();              // { wgsl, layout, partials, combine }
+exposure.unsupportedReason( run );
+
+import { scalarReference } from 'downsampler'; // oracle: GPU pairing in f32, exact f64 result, error bound
 ```
 
 The destination must have `TEXTURE_BINDING | STORAGE_BINDING` usage and a format from `formats`: `rgba8unorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, plus `bgra8unorm` (needs `bgra8unorm-storage`) and `r8unorm`, `rg8unorm`, `r16float`, `rg16float` (need `texture-formats-tier1`). `unsupportedReason` names a missing feature. Its dimension must be `2d`, with `textureBindingViewDimension` either `2d` or `2d-array`.
