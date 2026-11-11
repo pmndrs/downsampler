@@ -10,7 +10,6 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 - [ ] M2T.1: reduction generator per SPEC §14.1 (agent, branch `m2t-generator`)
 - [ ] M2T.3: plug the generator and `ScalarReduction` into `test/tools/generator.js` (3 pending plug-ins) and compare
-- [ ] Upscaler: parallel exposure, same 1024 taps (agent, upscaler branch `perf/exposure-parallel`, not pushed)
 
 ## Next (M2T, tools first: SPEC §11)
 
@@ -37,6 +36,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] Upscaler: parallel exposure, same 1024 taps, 6–10× faster on M5 Pro, output bit-identical on 1440 bench frames (exposure channel); upscaler branch `perf/exposure-parallel` (`22468ae`…`4715027`, not pushed)
 - [x] M2T.3 groundwork: FSR 3.1.6 luma and shading-change pyramids (AMD-exact and every-texel), upscaler passes verbatim, oracles, `npm run tools` (`f67a2a3`)
 - [x] M2T.2: `ScalarReduction`: any size to one value per layer in 2 dispatches, every texel counted; load/finish hooks; 18/18 mutations caught (`50c6368`, `cb6ce7b`)
 - [x] `encodePass()`: record the chain into a caller-owned compute pass, for @pmndrs/reflections (branch `reflections-integration`, `a996cc4`)
@@ -68,6 +68,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 - Scalar `finish` gained an optional `layer: u32` third parameter for multi-layer runs (not in §14.1): keep?
 - Upscaler exposure: a parallel reduction averages every texel instead of 1024 samples (or FSR's top-left 2^mips square), so values change. Accept for the upscaler, or match one of them for the comparison?
+- Review/merge upscaler `perf/exposure-parallel` (based on its `origin/main`); Windows commands are in its `docs/windows-followups.md`
 - M2T.3 cross-device runs: RTX 3060 laptop and Intel UHD timings of the bench fixtures and the upscaler exposure branch (owner, 2026-11-12)
 - Cross-vendor hardware for M3: which NVIDIA/AMD/Intel (Windows) and Android devices are available?
 - Package name: `downsampler` or `@pmndrs/downsampler` (SPEC §12)
