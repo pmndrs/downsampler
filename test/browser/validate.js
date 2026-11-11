@@ -1,9 +1,10 @@
 // GPU correctness suite. Every texel of every generated level is checked against
 // the CPU reference, computed from the GPU's own previous level so permitted
 // rounding differences do not accumulate along the chain.
-import { copyReference, formats, fromHalf, isIntegerDomain, levelSize, pyramidTolerance, quantize, reducePyramid, reduceReference, sampledChannels, toHalf, tolerance } from '/dist/index.js';
+import { copyReference, formats, fromHalf, isIntegerDomain, isPackedQuantization, levelSize, pyramidTolerance, quantize, reducePyramid, reduceReference, sampledChannels, storageWritable, toHalf, tolerance } from '/dist/index.js';
 import { Downsampler, Reducer } from '/dist/webgpu/index.js';
 import { createDepthSource, createTexture, makeData, poison, readMip, readMips, toFloats, upload } from './gpu.js';
+import { validatePacked } from './validate-packed.js';
 import { validateScalar } from './validate-scalar.js';
 import { validatePayload } from './validate-payload.js';
 import { validateWide } from './validate-wide.js';
@@ -26,6 +27,11 @@ export const subsetShapes = [
 	[ 1, 1 ], [ 3, 7 ], [ 17, 9 ], [ 31, 33 ], [ 65, 129 ], [ 1, 128 ], [ 128, 8 ], [ 192, 108 ], [ 512, 32 ],
 	[ 17, 11, 3 ], [ 17, 9, 1, '2d-array' ]
 ];
+
+// Formats whose buffer output path (SPEC §6.1) runs the subset shapes besides the packed
+// float formats: each family's 4-channel format, plus distinct word layouts (bgra byte
+// order, two 16-bit floats in one word, one and two float32 words).
+export const bufferFormats = [ ...familyFormats, 'bgra8unorm', 'rg16float', 'r32float', 'rg32float' ];
 
 const patterns = [ 'constant', 'random', 'edge', 'tiles' ];
 
@@ -60,15 +66,19 @@ export const variants = [
  * unorm → float conversion needn't be correctly rounded (SwiftShader's
  * depth16unorm differs from k / 65535 by an ulp), so even exact folds can see it.
  */
-function check( actual, expected, quantization, label, reduction = 'average', channels = 4, slack = 0, exact = false ) {
+export function check( actual, expected, quantization, label, reduction = 'average', channels = 4, slack = 0, exact = false ) {
 
 	let maxError = 0;
+	const packed = isPackedQuantization( quantization );
 
 	for ( let i = 0; i < expected.values.length; i ++ ) {
 
 		if ( i % 4 >= channels ) continue;
 		const error = Math.abs( actual[ i ] - expected.values[ i ] );
-		const limit = exact ? 0 : tolerance( expected.values[ i ], quantization, expected.filterTolerance[ i ], reduction ) + Math.abs( expected.values[ i ] ) * slack;
+		// Packed formats: the step depends on the texel (rgb9e5's shared exponent) or the channel (rg11b10's 10-bit b).
+		const t = i - i % 4;
+		const texel = packed ? { channel: i % 4, texelMax: Math.max( expected.values[ t ], expected.values[ t + 1 ], expected.values[ t + 2 ] ) } : undefined;
+		const limit = exact ? 0 : tolerance( expected.values[ i ], quantization, expected.filterTolerance[ i ], reduction, texel ) + Math.abs( expected.values[ i ] ) * slack;
 		if ( ! Number.isFinite( actual[ i ] ) || error > limit ) throw new Error( `${ label }: value ${ i }, actual ${ actual[ i ] }, expected ${ expected.values[ i ] }, error ${ error } > ${ limit }` );
 		maxError = Math.max( maxError, error );
 
@@ -91,7 +101,8 @@ export const compatibility = device => ! device.features.has( 'core-features-and
 
 /**
  * `only`: run one part of the suite; default all. The parts 'downsampler', 'reducer' and 'scalar' partition it
- * (CI runs them as parallel jobs); 'mips' is 'downsampler' plus 'reducer'.
+ * (CI runs them as parallel jobs); 'mips' is 'downsampler' plus 'reducer'. 'packed' runs the packed float
+ * formats and the buffer output path ('packed-source' and 'packed-api' one piece of it, for debugging).
  */
 export async function validate( device, { onProgress = () => {}, quick = false, only } = {} ) {
 
@@ -105,39 +116,60 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 	try {
 
-		const downsamplers = levelOptions( device ).map( levels => ( {
-			levels,
-			sample: new Downsampler( device, { levelsPerDispatch: levels } ),
-			load: new Downsampler( device, { levelsPerDispatch: levels, averageAccess: 'load' } )
-		} ) );
+		// Storage path: kernel widths up to the device's storage texture limit. Buffer
+		// path: every width the workgroup size allows (5 and 6 levels take 256
+		// invocations), since it binds one buffer however many levels it writes.
+		const downsamplerSet = ( levels, output ) => ( {
+			levels, output,
+			sample: new Downsampler( device, { levelsPerDispatch: levels, output } ),
+			load: new Downsampler( device, { levelsPerDispatch: levels, averageAccess: 'load', output } )
+		} );
+		const storageSets = levelOptions( device ).map( levels => downsamplerSet( levels, 'storage' ) );
+		const bufferSets = [ 1, 4, 5, 6 ].filter( levels => levels <= 4 || device.limits.maxComputeInvocationsPerWorkgroup >= 256 ).map( levels => downsamplerSet( levels, 'buffer' ) );
+		const subset = subsetShapes.filter( shape => cases.some( c => c.join() === shape.join() ) );
 
 		for ( const format of Object.keys( formats ) ) {
 
 			const { quantization, channels, filterable, feature, coreStorage } = formats[ format ];
-			if ( feature !== undefined && ! device.features.has( feature ) ) {
+			const packed = isPackedQuantization( quantization );
+			if ( only?.startsWith( 'packed' ) && ( ! packed || only !== 'packed' ) ) continue;
+			const compatNoStorage = coreStorage === true && compatibility( device );
+			const storagePath = storageWritable( format, device.features ) && ! compatNoStorage;
+			// Without storage, packed formats (and rg32float in compatibility mode) fall back to the
+			// buffer path, with output 'buffer'; the rest are skipped.
+			const fallback = packed || compatNoStorage;
+			if ( compatNoStorage ) {
 
-				skipped.push( `${ format } (needs ${ feature })` );
-				continue;
-
-			}
-
-			if ( coreStorage && compatibility( device ) ) {
-
-				skipped.push( `${ format } (no storage in compatibility mode)` );
+				skipped.push( `${ format } storage path (no storage in compatibility mode)` );
 				// The Downsampler names the reason (a texture without storage usage can still be created).
 				const probe = device.createTexture( { size: [ 1, 1 ], format, usage: GPUTextureUsage.TEXTURE_BINDING } );
 				if ( ! new Downsampler( device ).unsupportedReason( probe )?.includes( 'compatibility mode' ) ) throw new Error( `compat: Downsampler does not reject ${ format }, which has no storage in compatibility mode` );
 				probe.destroy();
-				continue;
+
+			} else if ( ! storagePath ) {
+
+				if ( formats[ format ].storage !== false ) skipped.push( `${ format }${ fallback ? ' storage path' : '' } (needs ${ feature })` );
+				if ( ! fallback ) continue;
 
 			}
 
 			const formatVariants = variants.filter( variant => filterable || ! variant.filterableOnly );
+			const family = familyFormats.includes( format ) || packed;
+			const storageShapes = ! storagePath ? [] : family ? cases : subset;
+			// The buffer path runs every shape when it is a packed format's only path (rgb9e5ufloat;
+			// rg11b10ufloat without tier1), else the subset, for each family format plus a few
+			// others with a distinct word layout (bgra byte order, two 16-bit channels, 1–2 float words).
+			// --quick (CI, SwiftShader, where the packed encoders are slow): the buffer path runs
+			// the subset shapes at widths 1, 4 and 6, for the fallback formats only.
+			const bufferShapes = packed && ! storagePath && ! quick ? cases : fallback || ( bufferFormats.includes( format ) && ! quick ) ? subset : [];
+			const formatBufferSets = quick ? bufferSets.filter( set => set.levels !== 5 ) : bufferSets;
+			const formatCases = storageShapes === cases || bufferShapes === cases ? cases : subset;
+			for ( const [ shapeIndex, shape ] of formatCases.entries() ) {
 
-			const formatCases = familyFormats.includes( format ) ? cases : subsetShapes.filter( shape => cases.some( c => c.join() === shape.join() ) );
-
-			for ( const [ shapeIndex, [ width, height, layers = 1, dimension ] ] of formatCases.entries() ) {
-
+				const [ width, height, layers = 1, dimension ] = shape;
+				const onShape = shapes => shapes.some( s => s.join() === shape.join() );
+				const sets = [ ...( onShape( storageShapes ) ? storageSets : [] ), ...( onShape( bufferShapes ) ? formatBufferSets : [] ) ];
+				if ( sets.length === 0 ) continue;
 				const texture = createTexture( device, { width, height, layers, format, dimension } );
 				// Inputs and first-level references depend only on shape, format,
 				// pattern and reduction, so they are shared across kernel widths.
@@ -145,12 +177,12 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 				try {
 
-					for ( const { levels, ...byAccess } of downsamplers ) for ( const variant of formatVariants ) {
+					for ( const { levels, output, ...byAccess } of sets ) for ( const variant of formatVariants ) {
 
 						const downsampler = byAccess[ variant.access ?? 'sample' ];
 						const options = { reduction: variant.reduction };
 						const reference = variant.reference ?? variant.reduction;
-						const result = { width, height, layers, format, levelsPerDispatch: levels, reduction: variant.name, dispatches: 0, maxError: 0 };
+						const result = { width, height, layers, format, output, levelsPerDispatch: levels, reduction: variant.name, dispatches: 0, maxError: 0 };
 
 						// Reusing one texture with changing input exercises the cached plans.
 						for ( const pattern of variant.patterns ) {
@@ -170,18 +202,21 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 							// Levels reduced in workgroup memory use exact integer math in
 							// normalized formats: they must match the oracle bit for bit,
 							// which is what tests tie rounding. Only a batch's first output
-							// (sampler or float weights) gets the tolerance.
+							// (sampler or float weights) gets the tolerance. Packed float
+							// formats are exact there too, against an oracle that sums in
+							// float32 in the kernel's order (their sums aren't always exact).
 							const firstOutputs = new Set( downsampler.prepare( texture, options ).filter( batch => ! batch.copy ).map( batch => batch.firstMipLevel ) );
 							let previous = input.floats, w = width, h = height;
 
 							for ( let level = 1; level < texture.mipLevelCount; level ++ ) {
 
 								const key = `${ variant.name }:${ pattern }`;
+								const inTile = ! firstOutputs.has( level );
 								let expected = level === 1 ? firstLevels.get( key ) : undefined;
-								if ( expected === undefined ) expected = reduceReference( previous, w, h, layers, quantization, reference );
+								if ( expected === undefined ) expected = reduceReference( previous, w, h, layers, quantization, reference, packed && inTile ? { pairing: 'float32' } : {} );
 								if ( level === 1 ) firstLevels.set( key, expected );
 								const actual = mips[ level - 1 ];
-								result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ width }x${ height }x${ layers } ${ format } ${ variant.name } ${ pattern } L${ levels } mip ${ level }`, reference, channels, 0, isIntegerDomain( quantization ) && ! firstOutputs.has( level ) ) );
+								result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ width }x${ height }x${ layers } ${ format } ${ output } ${ variant.name } ${ pattern } L${ levels } mip ${ level }`, reference, channels, 0, ( isIntegerDomain( quantization ) || packed ) && inTile ) );
 								previous = actual; w = expected.width; h = expected.height;
 
 							}
@@ -207,12 +242,19 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 		}
 
-		if ( only !== 'scalar' ) {
+		if ( only?.startsWith( 'packed' ) ) {
+
+			// 'packed-source' and 'packed-api' run one part (for debugging).
+			if ( only !== 'packed-api' ) results.push( ...await validateSource( device, { quick, onProgress, packedOnly: true } ) );
+			if ( only !== 'packed-source' ) results.push( ...await validatePacked( device, { quick, onProgress } ) );
+
+		} else if ( only !== 'scalar' ) {
 
 			if ( only !== 'reducer' ) {
 
 				results.push( ...await validateSource( device, { quick, onProgress } ) );
 				results.push( ...await validateOptions( device ) );
+				results.push( ...await validatePacked( device, { quick, onProgress, part: 'downsampler' } ) );
 
 			}
 
@@ -225,12 +267,13 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 				results.push( ...await validateReducerOptions( device ) );
 				results.push( ...await validateWide( device, { quick, onProgress } ) );
 				results.push( ...await validatePayload( device, { quick, onProgress } ) );
+				results.push( ...await validatePacked( device, { quick, onProgress, part: 'reducer' } ) );
 
 			}
 
 		}
 
-		if ( only !== 'mips' && only !== 'reducer' && only !== 'downsampler' ) {
+		if ( only !== 'mips' && only !== 'reducer' && only !== 'downsampler' && ! only?.startsWith( 'packed' ) ) {
 
 			const scalar = await validateScalar( device, { quick, onProgress } );
 			results.push( ...scalar.results );
@@ -263,7 +306,11 @@ export const sourceCases = [
 	{ source: 'r32float', destination: 'rg32float', relation: 'same', reductions: [ 'minmax' ] },
 	{ source: 'rgba8unorm', destination: 'rgba16float', relation: 'half', reductions: [ 'average', 'max' ] },
 	{ source: 'rgba16float', destination: 'rgba8unorm', relation: 'same', reductions: [ 'average' ] },
-	{ source: 'rgba16float', destination: 'rgba8unorm', relation: 'half', reductions: [ 'average', 'min' ] }
+	{ source: 'rgba16float', destination: 'rgba8unorm', relation: 'half', reductions: [ 'average', 'min' ] },
+	// HDR into the GI formats, on the buffer path (rg11b10ufloat: storage when tier1 is available).
+	{ source: 'rgba16float', destination: 'rgb9e5ufloat', relation: 'half', reductions: [ 'average', 'max' ] },
+	{ source: 'rgba32float', destination: 'rgb9e5ufloat', relation: 'same', reductions: [ 'average' ] },
+	{ source: 'rgba16float', destination: 'rg11b10ufloat', relation: 'half', reductions: [ 'average', 'min' ] }
 ];
 
 // After the source batch, every batch is the in-place code the main matrix covers
@@ -298,7 +345,7 @@ function splat( floats ) {
 
 }
 
-async function validateSource( device, { quick, onProgress } ) {
+async function validateSource( device, { quick, onProgress, packedOnly = false } ) {
 
 	const results = [];
 	const shapes = quick ? sourceShapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : sourceShapes;
@@ -306,6 +353,7 @@ async function validateSource( device, { quick, onProgress } ) {
 
 	for ( const { source: sourceFormat, destination: format, relation, reductions } of sourceCases ) {
 
+		if ( packedOnly && ! isPackedQuantization( formats[ format ].quantization ) ) continue;
 		if ( formats[ format ].coreStorage && compatibility( device ) ) continue;
 
 		const { quantization, channels } = formats[ format ];
@@ -561,7 +609,7 @@ export const reducerVariants = [
  * only on the last row and column, 'weights' rgb in [0, 4) with a weight in
  * alpha that is 0 for about a third of the texels (sky).
  */
-function reducerData( width, height, layers, pattern, seed = 1 ) {
+export function reducerData( width, height, layers, pattern, seed = 1 ) {
 
 	const data = new Float32Array( width * height * layers * 4 );
 	let state = seed;
@@ -579,7 +627,7 @@ function reducerData( width, height, layers, pattern, seed = 1 ) {
 
 }
 
-function checkPyramid( actual, expected, label, { slack = 0, quantization = null } = {} ) {
+export function checkPyramid( actual, expected, label, { slack = 0, quantization = null } = {} ) {
 
 	let maxError = 0;
 	for ( let i = 0; i < expected.values.length; i ++ ) {

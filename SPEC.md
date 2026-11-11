@@ -1,6 +1,6 @@
 # downsampler — core specification
 
-Status: milestone 2 in progress, refocused on our tools (M2T, §11). M2.1 (reductions, load path), M2.2 (separate source, float32 formats) and format steps 1–2 are done. This document is the source of truth for scope, design decisions, correctness requirements and the remaining plan. Update it when a decision changes.
+Status: milestone 2 in progress, refocused on our tools (M2T, §11). M2.1 (reductions, load path), M2.2 (separate source, float32 formats), format steps 1–2 and the GI formats (buffer output path, rgb9e5ufloat, rg11b10ufloat) are done. This document is the source of truth for scope, design decisions, correctness requirements and the remaining plan. Update it when a decision changes.
 
 ## 1. Purpose
 
@@ -135,6 +135,7 @@ Every intermediate level is quantized exactly as stored, so a chain equals level
 
 - **rgba8:** values stay in integer 0–255 units in workgroup memory. Sums are exact and ties round to even. With `k/255` floats, float error turned ties into round-ups. A 1×128 tail drifted 3 steps by mip 5: half of all 1D texels are ties.
 - **rgba16float:** values go through `pack2x16float` / `unpack2x16float`.
+- **rgb9e5ufloat, rg11b10ufloat:** whole texels go through our encoder and back (`ds_pack9e5` / `ds_pack11_11_10` in WGSL, `quantizeTexel` in core; rules in §6.1); alpha reads 1. The rg11b10 storage path stores already-quantized values, so the GPU's own f32 → 11/10-bit conversion never rounds anything.
 
 ### Caching
 
@@ -199,15 +200,16 @@ WebGPU compatibility mode is a device without `'core-features-and-limits'` (`req
 import { Downsampler } from 'downsampler/webgpu';
 
 const device = await adapter.requestDevice( { requiredLimits: Downsampler.requiredLimits( adapter ) } );
-const downsampler = new Downsampler( device );          // { levelsPerDispatch?, averageAccess?, compatibility?: 'auto' | boolean } (§4 Compatibility mode)
+const downsampler = new Downsampler( device );          // { levelsPerDispatch?, averageAccess?, output?: 'auto' | 'storage' | 'buffer' (§6.1), compatibility?: 'auto' | boolean (§4) }
 downsampler.supports( texture );                         // boolean
 downsampler.unsupportedReason( texture );                // string | null
+downsampler.outputPath( texture );                       // 'storage' | 'buffer' | null (§6.1 Buffer output path)
 downsampler.encode( encoder, texture, {
 	baseMipLevel, mipLevelCount, oddSizes: 'exact',
 	reduction: 'average' | 'min' | 'max' | 'minmax' | { wgsl: 'fn reduce(a: vec4f, b: vec4f) -> vec4f { … }' },
 } );
 downsampler.generate( texture );                         // encode + submit
-downsampler.encodePass( pass, texture, options );        // into a compute pass you own (one timestamp pair)
+downsampler.encodePass( pass, texture, options );        // into a compute pass you own (one timestamp pair; storage path only)
 downsampler.prepare( texture );                          // planned dispatches (inspection/testing)
 
 import { generateMipmaps, requiredLimits } from 'downsampler/three';
@@ -281,7 +283,15 @@ shadingChange.encodePass( pass, {                        // or encode( encoder, 
 import { reducePyramid, levelSize } from 'downsampler';  // the CPU oracle and level sizes
 ```
 
-The destination must have `TEXTURE_BINDING | STORAGE_BINDING` usage and a format from `formats`: `rgba8unorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, plus `bgra8unorm` (needs `bgra8unorm-storage`) and `r8unorm`, `rg8unorm`, `r16float`, `rg16float` (need `texture-formats-tier1`). `unsupportedReason` names a missing feature. Its dimension must be `2d`, with `textureBindingViewDimension` either `2d` or `2d-array`.
+The destination must have `TEXTURE_BINDING` usage, plus `STORAGE_BINDING` (storage path) or `COPY_DST` (buffer path, §6.1), and a format from `formats`: `rgba8unorm`, `rgba16float`, `rgba8snorm`, `r32float`, `rg32float`, `rgba32float`, `rgb9e5ufloat` (buffer path only), plus `bgra8unorm` (storage needs `bgra8unorm-storage`), `rg11b10ufloat` (storage needs `texture-formats-tier1`; else the buffer path) and `r8unorm`, `rg8unorm`, `r8snorm`, `rg8snorm`, `r16float`, `rg16float` and the 16-bit normalized formats (need `texture-formats-tier1`). `unsupportedReason` names a missing feature or usage. Its dimension must be `2d`, with `textureBindingViewDimension` either `2d` or `2d-array`.
+
+```ts
+// GI formats (§6.1): rgb9e5ufloat is never a storage texture, so it takes the buffer path.
+const irradiance = device.createTexture( { format: 'rgb9e5ufloat', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST, … } );
+downsampler.generate( irradiance );                      // 6 levels per dispatch at any storage texture limit
+new Reducer( device, { levels: [ 1, 2, 3 ], format: 'rgb9e5ufloat', … } ); // output 'buffer' by default for it
+reducer.encodePass( pass, dispatch ); pass.end(); reducer.encodeCopies( encoder, dispatch ); // buffer outputs
+```
 
 ### Planned
 
@@ -330,24 +340,44 @@ Beyond SPD: sizes over 4096², render-pass-matching odd sizes, conservative min/
 | snorm8 | rgba8snorm (core), r8snorm, rg8snorm (tier1) | mixed | ✅ `snorm8`: integer units ×127, clamped to [−127, 127] (−128 and −127 both decode to −1); tie parity in `i32` (negative float → `u32` is undefined) |
 | 16-bit norm | r16unorm, rg16unorm, rgba16unorm, and the snorm versions | tier1 | ✅ `unorm16`/`snorm16`: integer units ×65535 / ×32767; four-texel sums stay exact in f32 (< 2²⁴). They sample as `unfilterable-float` on Dawn/Apple, so they always load |
 | Packed | rgb10a2unorm | tier1 | per-channel scale `(1023, 1023, 1023, 3)` |
-| Packed float | rg11b10ufloat | tier1 | `ufloat11/10` quantization (no sign, 6/5-bit mantissa, negatives clamp to 0, round to nearest even); no WGSL pack builtin, so encode in the shader and in core |
+| Packed float | rg11b10ufloat | tier1 for storage; the buffer path without it | ✅ (M2.3.6) `rg11b10ufloat`: unsigned floats, 5-bit exponent, 6/6/5-bit mantissas; round to nearest even, negatives and −Inf → 0, finite overflow → the largest finite value (65024 / 64512), +Inf and NaN kept. No WGSL pack builtin, so `ds_ufloat` encodes in the shader and `toUfloat` in core. Storage path with tier1, buffer path without it (or without STORAGE_BINDING usage); both quantize with our encoder, so they write identical bits |
 | Integer | r32uint, rg32uint, rgba32uint, rgba8uint, rgba16uint, r32sint, rgba8sint (core); r8/r16/rg8/rg16 uint/sint (tier1) | mixed | separate `u32`/`i32` kernel (`texture_2d<u32>`, `vec4u`). Folds only at first (min, max, bitwise custom: ID, visibility and occupancy pyramids); `'average'` would need a declared rounding rule |
 | sRGB | rgba8unorm-srgb, bgra8unorm-srgb | **never** (even with a non-sRGB view format) | reduce linear values, then write sRGB-encoded values to an rgba8unorm (or bgra8unorm, which needs `bgra8unorm-storage`) scratch and `copyTextureToTexture` each level (verified allowed: formats differing only in sRGB-ness). Needs load/store transform hooks; quantize-as-stored is `decode(round(encode(v)·255)/255)` |
-| Shared exponent | rgb9e5ufloat (32-bit HDR, common for GI and irradiance) | **never** storage or renderable, so render-pass mipmaps can't produce it either | **buffer output path** (below): pack in the shader, `copyBufferToTexture` into the level. Verified on Chrome 148 / M5 Pro: packed texels round-trip exactly through the copy and a sampled read |
+| Shared exponent | rgb9e5ufloat (32-bit HDR, common for GI and irradiance) | **never** storage or renderable, so render-pass mipmaps can't produce it either | ✅ (M2.3.4) **buffer output path** (below): pack in the shader, `copyBufferToTexture` into the level. Filterable, so later batches sample it as usual |
 | Out of scope | BC/ETC2/ASTC (generate before compression); depth as destination (use r32float, §4 Separate source) | — | — |
 
-**Buffer output path.** WebGPU allows `copyBufferToTexture` into formats that are neither storage nor renderable, so a kernel can write texels to a storage buffer and copy them into each level.
-- **Layout:** one buffer per batch, with each level and layer at its own offset and rows padded to 256 bytes. That is a single binding, so this path isn't bound by `maxStorageTexturesPerShaderStage`: 6 levels per dispatch even at the default limit of 4.
-- **Cost:** one extra write and read of the written levels (the levels below 0, about a third of the base texture's bytes), plus the copies.
+**Buffer output path** (built 2026-11-11, M2.3.4). WebGPU allows `copyBufferToTexture` into formats that are neither storage nor renderable, so a kernel can write texels to a storage buffer and copy them into each level.
+- **Layout** (`outputBufferLayout` in core): each level of a batch, and each layer of a level, at its own offset of one buffer, with rows padded to 256 bytes and level offsets on 256 bytes. The kernel finds it in a 112-byte uniform (binding 9: first-output size, then per level its offset and row stride in u32 words and its rows per layer) and writes packed words to binding 10 with `ds_put( level, texel, layer, value )` (`bufferOutputWgsl`). That is a single binding, so this path isn't bound by `maxStorageTexturesPerShaderStage`: 6 levels per dispatch even at the default limit of 4 (tested on a default-limit device).
+- **Recording:** after each batch's pass, `encode` records one `copyBufferToTexture` per level (all layers in one copy). The next batch reads the destination texture as usual. One scratch buffer, sized for the largest batch, serves every batch of a plan: commands in an encoder are ordered, so each batch's copies finish before the next dispatch writes the buffer. `release( texture )` destroys it. `encodePass` throws on this path: a compute pass can't record copies, and later batches need them.
+- **Which path (`DownsamplerOptions.output`):** `'auto'` (default) writes storage textures whenever the device can write the format there (the texture then needs STORAGE_BINDING; decided 2026-11-12), and takes the buffer path only for formats it can't: rgb9e5ufloat, rg11b10ufloat without tier1, rg32float in compatibility mode. `'storage'` or `'buffer'` forces one; `outputPath( texture )` says which applies. On the buffer path `levelsPerDispatch` defaults to 6 at any storage texture limit (4 where workgroups are limited to 128 invocations, as in compatibility mode by default).
+- **Compatibility mode (§4):** the buffer path needs none of its scratch textures or copy dispatches: a batch binds one level of the texture (its source) and writes a buffer, and copies, which aren't dispatches, write the levels. So on the buffer path the compatibility path is skipped (`usesCompatibility` still reports the device), and it is how rg32float gets mips in compatibility mode. The `Reducer`'s compatibility check (one view of a texture per dispatch) ignores buffer outputs, which aren't bound. Formats: any whose texels are whole 32-bit words (not the 1- and 2-byte r8/rg8/r16 formats). Normalized formats pack their integer units, bgra8unorm in its byte order. `unsupportedReason` names both paths' requirements.
+- **Reducer:** the same buffer, uniform and `ds_put` in tile kernels (`ReducerOptions.output`; default buffer when the format can't be a storage texture on the device). Emitted levels are packed once (WGSL `pack4x8unorm`, `pack2x16float`, … or our encoders) and copied into the output textures, which need COPY_DST. `encode` records the copies; after `encodePass` or a self-dispatch, call `encodeCopies( encoder, dispatch )` once the pass has ended. 8-channel accumulators (`DsWide`) need a store hook, so they never meet output textures or the buffer output (rejected with an error); payload folds store their `vec4f` like any reduction.
+- **Limits:** the buffer of the largest batch must fit `maxStorageBufferBindingSize` (128 MiB by default), else `prepare` throws and names the limit. 4096² rgba32float fits (85 MiB); larger first batches need raised limits (or a split first batch, not built).
+- **Cost:** one extra write and read of the written levels (the levels below 0, about a third of the base texture's bytes), plus the copies. In bytes that predicts about 1.5× the storage path where bandwidth-bound. Measured (`npm run bench`, `buffer6` against `compute6`, same batches; Apple M5 Pro, Chrome 148, 11 rotated rounds × 16 repeats, 2026-11-11; two runs, load average 65–94 then ~14 from other agents' suites, so only same-run ratios count; `results/m5-pro-gi-buffer-path-loaded.json`, `results/m5-pro-gi-buffer-path.json`):
+
+  | buffer ÷ storage | 256² | 1024² | 2048² | 4096² | 1920×1080 | 512²×6 |
+  |---|---:|---:|---:|---:|---:|---:|
+  | rg11b10ufloat | 2.3 / 4.1 | 2.0 / 3.5 | 1.7 / 2.4 | 1.9 / 1.9 | 2.3 / 2.1 | 1.6 / 2.1 |
+  | rgba16float | 2.1 / 6.4 | 2.2 / 1.7 | 1.4 / 1.6 | 1.7 / 1.6 | 2.8 / 1.8 | 2.6 / 2.3 |
+
+  - Small textures pay a fixed ~0.03–0.06 ms, about 4 µs per `copyBufferToTexture` (one per level; Metal blits). Large ones pay 1.6–1.9×, a little above the byte estimate.
+  - So the storage path stays the default wherever it exists. The buffer path is for formats and devices without it, and against render-pass mipmaps (impossible for rgb9e5 anyway) it wins only where dispatch count dominates: 1.1–4.8× faster at 256²–2048², 10–13× at 512²×6, a tie at 1920×1080 for rgba16float (1.03–1.04×) and 4096² (0.94–1.01×), and slower for rg11b10ufloat at 1920×1080 (0.66–0.74×) and 4096² (0.73–0.84×). So `'auto'` doesn't send storable formats to the buffer path (a texture without STORAGE_BINDING is rejected; callers with a render fallback, like the three adapter, keep it); `output: 'buffer'` opts in.
+  - rg11b10ufloat's own storage path is ALU-heavy: the integer encoder runs twice per texel and level (store, then quantize for the next level), and at 1024² it measured 1.2–3.4× rgba16float's storage time (noisy under load). A cheaper encoder (e.g. via `pack2x16float` and a mantissa round) is an M3 candidate; measure on an idle machine first.
+  - Not done: copy fewer, larger regions (a level's layers already share one copy), or skip the buffer for the last batch's tiny levels.
 - **Uses:**
   - rgb9e5ufloat, the only GPU route to its mips in WebGPU.
-  - An alternative to the sRGB scratch texture: `copyBufferToTexture` into rgba8unorm-srgb is allowed.
-  - A fallback for bgra8unorm and rg11b10ufloat on devices without `bgra8unorm-storage` or tier1.
-- **rgb9e5 packing:**
-  - Shared exponent `e = max(−16, ⌊log2 max(r,g,b)⌋) + 16`; mantissas `round(c / 2^(e−24))`, bumping `e` when the largest rounds to 512 (EXT_texture_shared_exponent).
-  - Take ⌊log2⌋ from the float's exponent bits, not `log2()`, which isn't exact near powers of two.
-  - Quantize-as-stored is pack → unpack, mirrored in core with exhaustive tests.
-  - Probe kernel: `results/probes/rgb9e5-buffer-copy.mjs`.
+  - rg11b10ufloat without tier1 (SwiftShader has none).
+  - Six levels per dispatch at the default storage texture limit, for any 32-bit-word format.
+  - An alternative to the sRGB scratch texture: `copyBufferToTexture` into rgba8unorm-srgb is allowed (not built).
+  - A fallback for bgra8unorm without `bgra8unorm-storage` (works; untested without the feature).
+- **rgb9e5 packing** (`packRgb9e5` in core, `ds_pack9e5` in WGSL), per EXT_texture_shared_exponent (Vulkan's E5B9G9R9):
+  - Clamp each channel to [0, 65408] (511/512 · 2¹⁶); NaN and negatives → 0, +Inf → 65408.
+  - Shared exponent `e = max(−16, ⌊log2 max(r,g,b)⌋) + 16`, taking ⌊log2⌋ from the float's exponent bits, not `log2()`, which isn't exact near powers of two. Scales are powers of two built from bits too (`exp2` isn't exact either).
+  - Mantissas `⌊c / 2^(e−24) + 0.5⌋`: **round half up**, as the extension specifies, not to even (WGSL `round()` would be). Bump `e` when the largest mantissa rounds to 512.
+  - Quantize-as-stored is pack → unpack (`quantizeTexel`), per texel: the shared exponent can flush a small channel next to a large one (1000 and 0.01 store as 1000 and 0), so min/max of rgb9e5 is not conservative per channel.
+  - Probe kernel: `results/probes/rgb9e5-buffer-copy.mjs` (its `log2`/`round` packing predates this and is not the shipped one).
+- **Mutation checks** (M5 Pro, `--only=packed --quick`, 2026-11-11): 12 of 14 caught. Caught: no 512 bump, rgb9e5 rounding half to even (`round()`), rg11b10 ties rounding up, rg11b10 truncation, rg11b10 overflow to Inf and a wrong subnormal decode (both by the codec check only: fixtures never overflow), no intermediate quantization, unpadded rows and unaligned level offsets (validation errors), a kernel row stride that ignores the padding, layers sharing one region, and copying only a batch's first level. Survived, as equivalent on this GPU: **⌊log2⌋ from `log2()`** (an exponent off by one is absorbed by the bump: one too low rounds the largest mantissa to exactly 512 and bumps; one too high needs a `log2` error above ~2⁻⁹ to change a mantissa) and **NaN not cleared** before `clamp` (Metal's `clamp` already returns 0 for NaN; WGSL leaves it undefined, so the guard stays). The bit-based exponent stays: it costs nothing and doesn't depend on `log2` accuracy.
+- **Finding (M5 Pro, Chrome 148):** `textureStore` to rgba16float truncates f32 → f16, where `pack2x16float` rounds to nearest even (`results/probes/f16-store-rounding.mjs`). `Downsampler` is unaffected: it quantizes with `pack2x16float` before every store. `Reducer` float16 texture outputs are now quantized with `pack2x16float` before `textureStore` too (2026-11-12), so both its paths round to nearest even; a GPU case with values ¼, ½ and ¾ of a step above a half catches truncation. Packed floats are quantized by our encoder on both paths.
 
 Optimisation: with `float32-filterable`, float32 formats may take the sample path; measure first (nvpro measured the sampler 26–32 % faster on NVIDIA, §13).
 
@@ -364,9 +394,9 @@ Optimisation: with `float32-filterable`, float32 formats may take the sample pat
 1. fewer-channel unorm8/float16 + bgra8unorm (table only)
 2. snorm8, unorm16, snorm16
 3. rgb10a2unorm
-4. buffer output path + rgb9e5ufloat
+4. buffer output path + rgb9e5ufloat ✅
 5. sRGB + transform hooks (the three.js PR needs this), choosing between scratch texture and buffer output by measurement
-6. rg11b10ufloat
+6. rg11b10ufloat ✅
 7. integers
 
 ## 7. Correctness specification
@@ -404,6 +434,8 @@ Optimisation: with `float32-filterable`, float32 formats may take the sample pat
 - **Combine-only scalar runs (`validate-scalar.js`):** tool-written partials at 1 … 8161 per layer, layers at an offset; a Reducer's level 4 or 6 combined in the same pass against the whole image's exact result.
 - **Compatibility mode:** the whole matrix also runs on a compatibility-mode device (`--compat`), and the compatibility path forced on a core device must match the direct path bit for bit.
 - **Oracle independence:** a core test checks that max chains are conservative: every texel bounds each base texel its normalized area touches, without using `footprint()`.
+
+- **Packed float formats and the buffer path (§6.1):** rgb9e5ufloat and rg11b10ufloat are families of their own and run every shape: rgb9e5 on the buffer path, rg11b10 on the storage path with tier1 and on the buffer path (subset shapes; every shape without tier1). The buffer path runs widths 1, 4, 5 and 6 on any device, and the subset shapes for each family's 4-channel format plus bgra8unorm, rg16float, r32float and rg32float (not with `--quick`, where only the packed formats take the buffer path, on the subset shapes at widths 1, 4 and 6, and the extra checks below use smaller shapes: the packed encoders are slow on SwiftShader, and quick runs with the full additions hit the runner's 30-minute protocol timeout before CI split the suite). In the CI partition, the matrix, codec and Downsampler buffer-path checks run in `downsampler`, the Reducer buffer-output and float16-rounding checks in `reducer`. In compatibility mode rg32float has no storage, so it runs the buffer path's subset instead. Fixtures pack r, g, b with the core encoder: HDR values in [−4, 12) mixed with channels spread over 2⁻¹⁴ … 2¹⁰, so texels mix small and large channels. Tolerance on a batch's first output: two steps of the stored value (rgb9e5: of the texel's shared exponent). In-tile levels are exact, against `reduceReference( …, { pairing: 'float32' } )`, which sums the 2×2 block in float32 in the kernel's order (packed sums aren't always exact in f32). Plus: the WGSL codecs against core bit for bit (every 11- and 10-bit code decoded; every rounding midpoint and its neighbouring floats, specials and 20000 random values encoded; rgb9e5 decoded for every exponent × mantissa and encoded at bump, tie, power-of-two and clamp boundaries plus 30000 random texels); buffer path bit-identical to storage path (rgba16float, rg11b10ufloat, rgba8unorm, rgba32float; average and max); a default-limit device without features (6-level batches, rg11b10 falls back to the buffer path); separate sources into both formats; `Reducer` buffer outputs against `reducePyramid` and bit-identical to its storage outputs (rgba32float; rg11b10ufloat), `encodePass` + `encodeCopies` equal to `encode`; API reasons. Core tests: decode → encode identity for every 11-/10-bit code, value identity for every rgb9e5 (exponent, mantissa, mantissa) and 300000 random codes, every 11-/10-bit rounding boundary, and random values against independent oracles (nearest-value search; a log2-free restatement of the extension).
 
 New features add their own oracle first: each new format family, sRGB, rect, layer range, and `'box'`.
 
@@ -461,11 +493,11 @@ Build first, benchmark once coverage is broad (decided 2026-11-10). Live status 
 1. **M1 (done):** port the kernel, Downsampler, three adapter, core unit tests, GPU suite, device lab, benchmark and CI.
 2. **M2 (features).** Done: load path and reductions; separate source (Hi-Z) with the float32 formats; formats steps 1–2 (fewer-channel unorm8/float16, bgra8unorm, snorm8, unorm16, snorm16).
    **M2T (tools first, 2026-11-11)**, in this order (details in §14 once the survey lands):
-   1. WGSL reduction generator: tool-supplied `load` with its own bindings, per-channel reductions including sums, choice of emitted levels, outputs (texture, buffer, WGSL `store` hook), edge policy. Done: `Reducer` (§14.1); buffer output waits for §6.1.
+   1. WGSL reduction generator: tool-supplied `load` with its own bindings, per-channel reductions including sums, choice of emitted levels, outputs (texture, buffer, WGSL `store` hook), edge policy. Done: `Reducer` (§14.1), with buffer output into textures (§6.1, `output: 'buffer'`).
    2. Reduce-to-scalar in 2 dispatches with an epilogue hook.
    3. Proof on the upscaler's FSR 3.1 passes as bench fixtures, against an oracle, timed on M5 and by the owner on RTX 3060 / Intel UHD. Done on M5 (§14, M2T.3); RTX 3060 / Intel UHD pending.
    4. Deferred until 1–3 clear: an SPD-style mode, built at least as a measured comparison that justifies, or not, its not being the primary method.
-   Then: buffer output + rgb9e5ufloat and rg11b10ufloat (GI formats); layer range + rect; `'box'`, power-of-two destination from a separate source, and the exact tail kernel.
+   Then: buffer output + rgb9e5ufloat and rg11b10ufloat (GI formats; done 2026-11-11, §6.1); layer range + rect; `'box'`, power-of-two destination from a separate source, and the exact tail kernel.
    Deferred, three.js-driven: rgb10a2unorm, sRGB, integer formats.
 3. **M3 (dial in: coverage and tuning):**
    - per-frame throughput benchmark alongside timestamps (§13)
@@ -480,6 +512,7 @@ Build first, benchmark once coverage is broad (decided 2026-11-10). Live status 
 ## 12. Open questions
 
 - Publish as bare `downsampler` or `@pmndrs/downsampler`? (`package.json` currently uses `downsampler`.)
+- ~~Buffer output path (§6.1): should `output: 'auto'` take the buffer path for textures without STORAGE_BINDING?~~ Decided (owner, 2026-11-12): no. `'auto'` takes it only for formats the device can't store; a missing STORAGE_BINDING usage is an error, and the buffer path for storable formats is opt-in (`output: 'buffer'`). ~~Should `Reducer` round rgba16float outputs before the store?~~ Yes: it quantizes with `pack2x16float` first, like `Downsampler`.
 - Cube maps in compatibility mode: they can't be viewed as 2d-array, so either per-face views or the render fallback. (2026-11-11: per-face views don't help either; compatibility mode binds whole textures only, and a `'cube'` texture has no storage view. A 6-layer `'2d-array'` texture works, which is what reflections bakes into, then copies to a cube; §4 Compatibility mode.)
 - `'box'` for `'minmax'` and other folds is meaningless (they already use the full footprint). Should `'box'` simply be ignored there, or rejected?
 
@@ -654,6 +687,7 @@ Group 0 of a tile kernel holds only what it needs:
 | 1 | source texture, `unfilterable-float`, `textureLoad` | no `load` hook |
 | 2 … 2+k−1 | write-only storage texture per emitted level, in `levels` order | no `store` hook |
 | 8 | uniform `{ size: vec2u }` | a `load` hook and no `size` hook |
+| 9, 10 | buffer output: layout uniform (112 bytes) and `array<u32>` storage buffer, instead of 2… | `output: 'buffer'` (§6.1) |
 
 **Hooks** are WGSL strings. Each must define the named function and may define helpers. Identifiers starting with `ds_`, the entry point `main` and the hook names are reserved.
 - `fn load( texel: vec2i, layer: u32 ) -> vec4f`: the value of one source texel. Coordinates are always in bounds: the kernel clamps them, and under `'zero-weight'` it then leaves the clamped duplicates out. So a hook can be called more than once for an edge texel, and must not have side effects. Without a hook, the generator reads the source texture, splatting single-channel formats (`sourceFormat`).
@@ -711,7 +745,7 @@ Validation: at most one `'weight'` channel, and `'weighted'` needs one. Builtins
 - Output textures must be at least the level's size, and the Reducer checks this. A mip of the source-sized texture is one texel short at odd sizes, so it is rejected with that explanation, rather than silently losing the last row or column.
 - Use separate textures, or an atlas or buffer through the `store` hook (the denoiser's layout).
 - `'clamp'` sizes equal mip sizes, so FSR-style outputs can be the mips of one half-resolution texture.
-- A built-in buffer output waits for §6.1's buffer path.
+- Built-in buffer output (§6.1): `output: 'buffer'` packs emitted levels into a buffer the Reducer owns and copies them into output textures (any 32-bit-word format, including rgb9e5ufloat). Writing into a tool's own buffer is still the store hook's job.
 
 **Recording:**
 - `encode( encoder, dispatch )` opens its own pass.

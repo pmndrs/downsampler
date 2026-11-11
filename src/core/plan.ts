@@ -114,3 +114,35 @@ export function planBatches( width: number, height: number, options: PlanOptions
 	return batches;
 
 }
+
+/** One level's region of a buffer-output batch (SPEC.md §6.1 Buffer output path). */
+export interface BufferLevel {
+	width: number;
+	height: number;
+	/** Byte offset of the level's first row, a multiple of 256. */
+	offset: number;
+	/** Row pitch, a multiple of 256 (`copyBufferToTexture` needs it). */
+	bytesPerRow: number;
+	/** Rows per array layer: the level's height. */
+	rowsPerImage: number;
+}
+
+/**
+ * Layout of the buffer a batch writes on the buffer output path: each level at
+ * its own 256-byte-aligned offset, each layer `rowsPerImage` rows after the
+ * previous one, rows padded to 256 bytes. `size` is the buffer size in bytes.
+ */
+export function outputBufferLayout( sizes: readonly ( readonly [ number, number ] )[], layers: number, bytesPerTexel: number ): { levels: BufferLevel[]; size: number } {
+
+	let size = 0;
+	const levels = sizes.map( ( [ width, height ] ) => {
+
+		const bytesPerRow = Math.ceil( width * bytesPerTexel / 256 ) * 256;
+		const level = { width, height, offset: size, bytesPerRow, rowsPerImage: height };
+		size += bytesPerRow * height * layers;
+		return level;
+
+	} );
+	return { levels, size };
+
+}

@@ -1,16 +1,32 @@
-import { formats, isSupportedFormat, type FormatInfo, type SupportedFormat } from '../core/formats.js';
-import { planBatches, type Batch, type OddSizePolicy } from '../core/plan.js';
+import { bufferWritable, formats, isSupportedFormat, type FormatInfo, type SupportedFormat } from '../core/formats.js';
+import { outputBufferLayout, planBatches, type Batch, type OddSizePolicy } from '../core/plan.js';
 import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
 import { isCompatibilityTexture } from './compat.js';
-import { createKernel, kernelLayoutEntries, type SourceAccess, type ViewDimension } from './kernel.js';
+import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
 
 export interface DownsamplerOptions {
 	/**
-	 * Output levels per dispatch. Defaults to the most the device allows:
-	 * min(6, maxStorageTexturesPerShaderStage). Six needs a device created with a
-	 * raised limit — see {@link Downsampler.requiredLimits}.
+	 * Output levels per dispatch. Defaults to the most the path allows: on the
+	 * storage path min(6, maxStorageTexturesPerShaderStage) (six needs a device
+	 * created with a raised limit — see {@link Downsampler.requiredLimits}); on
+	 * the buffer path 6 at any storage texture limit. 5 and 6 levels also need
+	 * 256 invocations per workgroup (compatibility mode defaults to 128). Above
+	 * the storage limit only with output 'buffer'.
 	 */
 	levelsPerDispatch?: number;
+	/**
+	 * How levels are written (SPEC.md §6.1 Buffer output path):
+	 * - 'storage': write-only storage textures, one binding per level.
+	 * - 'buffer': packed texels into one storage buffer, then `copyBufferToTexture`
+	 *   per level. Needs COPY_DST usage and a format with 4-byte-multiple texels;
+	 *   writes formats that can't be storage textures, and isn't limited by
+	 *   maxStorageTexturesPerShaderStage. Can't record into a caller's compute pass.
+	 * - 'auto' (default): storage whenever the device can write the format as a
+	 *   storage texture (the texture then needs STORAGE_BINDING); the buffer path
+	 *   only for formats it can't: rgb9e5ufloat, rg11b10ufloat without
+	 *   texture-formats-tier1, rg32float in compatibility mode.
+	 */
+	output?: 'auto' | OutputPath;
 	/**
 	 * How 'average' reads the source level of each batch: one hardware bilinear
 	 * sample, or four `textureLoad`s with weights computed in the shader. Default
@@ -23,7 +39,9 @@ export interface DownsamplerOptions {
 	 * batch writes per-level scratch textures, and a copy dispatch per level moves
 	 * them into the destination. 'auto' (default) takes it for textures of a
 	 * device without 'core-features-and-limits' (their `textureBindingViewDimension`
-	 * is defined only there); true always; false never.
+	 * is defined only there); true always; false never. It applies to the storage
+	 * path only: the buffer path already reads one level per dispatch and writes
+	 * through copies, so it needs no scratch textures.
 	 */
 	compatibility?: boolean | 'auto';
 }
@@ -76,12 +94,28 @@ export interface EncodeOptions {
 	reduction?: Reduction;
 }
 
+/** A `copyBufferToTexture` of one level, after a buffer-path batch. */
+export interface BufferCopy {
+	mipLevel: number;
+	/** Byte offset in the batch's buffer, a multiple of 256. */
+	offset: number;
+	bytesPerRow: number;
+	rowsPerImage: number;
+	width: number;
+	height: number;
+}
+
 export interface PreparedBatch extends Batch {
 	pipeline: GPUComputePipeline;
 	bindGroup: GPUBindGroup;
+	/** How the batch writes its levels. */
+	output: OutputPath;
+	/** Buffer path: the buffer the dispatch writes, and the copies that follow it. */
+	buffer?: GPUBuffer;
+	copies?: readonly BufferCopy[];
 	/**
-	 * Compatibility-mode path only: this dispatch copies level `firstMipLevel`
-	 * from its scratch texture into the destination (no reduction).
+	 * Compatibility-mode storage path only: this dispatch copies level
+	 * `firstMipLevel` from its scratch texture into the destination (no reduction).
 	 */
 	copy?: boolean;
 }
@@ -89,6 +123,8 @@ export interface PreparedBatch extends Batch {
 interface CachedPlan {
 	source: GPUTexture | undefined;
 	batches: PreparedBatch[];
+	/** Buffer path: the scratch buffer and layout uniforms, destroyed on release. */
+	buffers: GPUBuffer[];
 }
 
 const mipSize = ( size: number, level: number ) => Math.max( 1, size >> level );
@@ -104,7 +140,11 @@ const mipSize = ( size: number, level: number ) => Math.max( 1, size >> level );
 export class Downsampler {
 
 	readonly device: GPUDevice;
+	/** Levels per dispatch on the storage path (and on every path with output 'buffer'). */
 	readonly levelsPerDispatch: number;
+	/** Levels per dispatch on the buffer path: `levelsPerDispatch` if given, else 6 (4 below 256 invocations per workgroup). */
+	readonly bufferLevelsPerDispatch: number;
+	readonly output: 'auto' | OutputPath;
 	readonly averageAccess: SourceAccess | undefined;
 	readonly compatibility: boolean | 'auto';
 	private readonly scratch = new WeakMap<GPUTexture, Map<number, GPUTexture>>();
@@ -130,12 +170,17 @@ export class Downsampler {
 
 	constructor( device: GPUDevice, options: DownsamplerOptions = {} ) {
 
+		const output = options.output ?? 'auto';
+		if ( output !== 'auto' && output !== 'storage' && output !== 'buffer' ) throw new Error( 'downsampler: output must be "auto", "storage" or "buffer".' );
 		// 5 and 6 levels take 16 × 16 invocations; compatibility mode defaults to 128.
-		const limit = Math.min( device.limits.maxComputeInvocationsPerWorkgroup >= 256 ? 6 : 4, device.limits.maxStorageTexturesPerShaderStage );
+		const invocations = device.limits.maxComputeInvocationsPerWorkgroup >= 256 ? 6 : 4;
+		const limit = output === 'buffer' ? invocations : Math.min( invocations, device.limits.maxStorageTexturesPerShaderStage );
 		const levels = options.levelsPerDispatch ?? limit;
-		if ( ! Number.isInteger( levels ) || levels < 1 || levels > limit ) throw new Error( `downsampler: levelsPerDispatch must be an integer from 1 to ${ limit } on this device.` );
+		if ( ! Number.isInteger( levels ) || levels < 1 || levels > limit ) throw new Error( `downsampler: levelsPerDispatch must be an integer from 1 to ${ limit } on this device${ output === 'buffer' || limit === invocations ? '' : ` (up to ${ invocations } with output 'buffer')` }.` );
 		this.device = device;
 		this.levelsPerDispatch = levels;
+		this.bufferLevelsPerDispatch = options.levelsPerDispatch ?? invocations;
+		this.output = output;
 		if ( options.averageAccess !== undefined && options.averageAccess !== 'sample' && options.averageAccess !== 'load' ) throw new Error( 'downsampler: averageAccess must be "sample" or "load".' );
 		this.averageAccess = options.averageAccess;
 		const compatibility = options.compatibility ?? 'auto';
@@ -149,15 +194,54 @@ export class Downsampler {
 	unsupportedReason( texture: GPUTexture ): string | null {
 
 		if ( ! isSupportedFormat( texture.format ) ) return `format ${ texture.format } is not supported`;
-		const feature: string | undefined = ( formats[ texture.format ] as FormatInfo ).feature;
-		if ( feature !== undefined && ! this.device.features.has( feature ) ) return `format ${ texture.format } needs the "${ feature }" device feature`;
-		if ( ( formats[ texture.format ] as FormatInfo ).coreStorage && this.usesCompatibility( texture ) ) return `format ${ texture.format } has no storage in compatibility mode (it needs "core-features-and-limits")`;
 		if ( texture.dimension !== '2d' ) return `dimension ${ texture.dimension } is not supported`;
 		if ( texture.sampleCount !== 1 ) return 'multisampled textures are not supported';
-		if ( ( texture.usage & GPUTextureUsage.STORAGE_BINDING ) === 0 ) return 'texture needs STORAGE_BINDING usage';
 		if ( ( texture.usage & GPUTextureUsage.TEXTURE_BINDING ) === 0 ) return 'texture needs TEXTURE_BINDING usage';
 		const viewDimension = ( texture as GPUTexture & { textureBindingViewDimension?: string } ).textureBindingViewDimension;
 		if ( viewDimension !== undefined && viewDimension !== '2d' && viewDimension !== '2d-array' ) return `textureBindingViewDimension ${ viewDimension } is not supported`;
+		if ( this.outputPath( texture ) !== null ) return null;
+
+		// Why no path applies.
+		const format = texture.format;
+		const info: FormatInfo = formats[ format ];
+		const formatReason = this.storageFormatReason( texture );
+		const storageReason = formatReason ?? 'texture needs STORAGE_BINDING usage';
+		const bufferReason = ! bufferWritable( format ) ? `format ${ format } has ${ info.bytesPerTexel }-byte texels, and the buffer output path writes 4-byte words` : 'texture needs COPY_DST usage for the buffer output path';
+		if ( this.output === 'storage' ) return storageReason;
+		if ( this.output === 'buffer' ) return bufferReason;
+		// 'auto' takes the buffer path only for formats the device can't store.
+		if ( formatReason === null ) return bufferWritable( format ) ? `${ storageReason } (or COPY_DST usage with output 'buffer')` : storageReason;
+		return bufferWritable( format ) ? `${ storageReason }, so it takes the buffer output path, and the ${ bufferReason.replace( 'texture needs ', 'texture needs ' ) }` : storageReason;
+
+	}
+
+	/**
+	 * How levels of `texture` are written: 'storage' (storage textures) or
+	 * 'buffer' (a storage buffer and copies), or null when neither applies (see
+	 * {@link Downsampler.unsupportedReason}). Follows the `output` option; 'auto'
+	 * takes the buffer path only for formats the device can't write as storage
+	 * textures, never for a texture that merely lacks STORAGE_BINDING usage.
+	 */
+	outputPath( texture: GPUTexture ): OutputPath | null {
+
+		if ( ! isSupportedFormat( texture.format ) ) return null;
+		const storageFormat = this.storageFormatReason( texture ) === null;
+		const storage = storageFormat && ( texture.usage & GPUTextureUsage.STORAGE_BINDING ) !== 0;
+		const buffer = bufferWritable( texture.format ) && ( texture.usage & GPUTextureUsage.COPY_DST ) !== 0;
+		if ( this.output === 'storage' ) return storage ? 'storage' : null;
+		if ( this.output === 'buffer' ) return buffer ? 'buffer' : null;
+		return storageFormat ? ( storage ? 'storage' : null ) : buffer ? 'buffer' : null;
+
+	}
+
+	/** Why this device can't write `texture`'s format as a storage texture (here: compatibility mode counts), or null. */
+	private storageFormatReason( texture: GPUTexture ): string | null {
+
+		const format = texture.format as SupportedFormat;
+		const info: FormatInfo = formats[ format ];
+		if ( info.storage === false ) return `format ${ format } can't be a storage texture`;
+		if ( info.feature !== undefined && ! this.device.features.has( info.feature ) ) return `format ${ format } needs the "${ info.feature }" device feature`;
+		if ( info.coreStorage && this.usesCompatibility( texture ) ) return `format ${ format } has no storage in compatibility mode (it needs "core-features-and-limits")`;
 		return null;
 
 	}
@@ -197,6 +281,12 @@ export class Downsampler {
 			pass.setBindGroup( 0, batch.bindGroup );
 			pass.dispatchWorkgroups( batch.groupsX, batch.groupsY, texture.depthOrArrayLayers );
 			pass.end();
+			// Buffer path: each level into its texture, before the next batch reads it.
+			for ( const copy of batch.copies ?? [] ) {
+
+				encoder.copyBufferToTexture( { buffer: batch.buffer!, offset: copy.offset, bytesPerRow: copy.bytesPerRow, rowsPerImage: copy.rowsPerImage }, { texture, mipLevel: copy.mipLevel }, [ copy.width, copy.height, texture.depthOrArrayLayers ] );
+
+			}
 
 		}
 
@@ -206,11 +296,14 @@ export class Downsampler {
 	 * Record the mip chain into a compute pass the caller owns, one dispatch per
 	 * batch. Dispatches in a compute pass are separate usage scopes, so each batch
 	 * reads what the previous one wrote. Use it to share one pass (and one pair of
-	 * timestamp writes) with other dispatches. Throws for unsupported textures.
+	 * timestamp writes) with other dispatches. Throws for unsupported textures,
+	 * and on the buffer output path, whose copies can't be recorded in a pass.
 	 */
 	encodePass( pass: GPUComputePassEncoder, texture: GPUTexture, options: EncodeOptions = {} ): void {
 
-		for ( const batch of this.prepare( texture, options ) ) {
+		const batches = this.prepare( texture, options );
+		if ( batches.some( batch => batch.output === 'buffer' ) ) throw new Error( `downsampler: ${ texture.format } levels are written through a buffer and copied into the texture between dispatches, which a compute pass can't record; use encode().` );
+		for ( const batch of batches ) {
 
 			pass.setPipeline( batch.pipeline );
 			pass.setBindGroup( 0, batch.bindGroup );
@@ -271,44 +364,83 @@ export class Downsampler {
 
 		};
 
-		// Compatibility mode: batches write scratch textures and read written levels from them (SPEC §4).
-		const compat = this.usesCompatibility( texture );
+		const output = this.outputPath( texture )!;
+		const levelsPerDispatch = output === 'buffer' && this.output === 'auto' ? this.bufferLevelsPerDispatch : this.levelsPerDispatch;
+		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch, oddSizes, fromSource: source !== undefined } );
+
+		// Buffer path: one scratch buffer, sized for the largest batch, serves every
+		// batch in turn (each batch's copies are recorded before the next dispatch).
+		const layers = texture.depthOrArrayLayers;
+		const layouts = output === 'buffer' ? planned.map( batch => outputBufferLayout( Array.from( { length: batch.count }, ( _, i ) => [ mipSize( texture.width, batch.firstMipLevel + i ), mipSize( texture.height, batch.firstMipLevel + i ) ] as const ), layers, formats[ format ].bytesPerTexel ) ) : [];
+		const buffers: GPUBuffer[] = [];
+		let scratch: GPUBuffer | undefined;
+		if ( output === 'buffer' && planned.length > 0 ) {
+
+			const size = Math.max( ...layouts.map( layout => layout.size ) );
+			const limit = Math.min( this.device.limits.maxStorageBufferBindingSize, this.device.limits.maxBufferSize );
+			if ( size > limit ) throw new Error( `downsampler: the buffer output path needs a ${ size }-byte buffer for this texture, above this device's maxStorageBufferBindingSize / maxBufferSize (${ limit }); request higher limits.` );
+			buffers.push( scratch = this.device.createBuffer( { label: `downsampler output ${ format }`, size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC } ) );
+
+		}
+
+		// Compatibility mode, storage path: batches write scratch textures and read written
+		// levels from them (SPEC §4). The buffer path needs neither: it reads one level per
+		// dispatch and writes through copies.
+		const compat = output === 'storage' && this.usesCompatibility( texture );
 		const firstWritten = source === undefined ? baseMipLevel + 1 : baseMipLevel;
-		const output = compat ? ( level: number ) => this.scratchView( texture, level, dimension ) : view;
+		const target = compat ? ( level: number ) => this.scratchView( texture, level, dimension ) : view;
 		const input = ( level: number ) => compat && level >= firstWritten ? this.scratchView( texture, level, dimension ) : view( level );
-		let batches: PreparedBatch[] = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch: this.levelsPerDispatch, oddSizes, fromSource: source !== undefined } ).map( batch => {
+		let batches = planned.map( ( batch, index ): PreparedBatch => {
 
 			const external = batch.sourceMipLevel === null;
 			const sourceFormat = external ? source!.texture.format : format;
 			const access = this.access( reduction, sourceFormat );
-			const layout = this.layout( format, dimension, batch.count, access );
-			const pipeline = this.pipeline( format, dimension, batch.count, access, reduction, sourceFormat );
+			const layout = this.layout( format, dimension, batch.count, access, output );
+			const pipeline = this.pipeline( format, dimension, batch.count, access, reduction, sourceFormat, output );
 			const entries: GPUBindGroupEntry[] = access === 'sample' ? [ { binding: 0, resource: this.sampler } ] : [];
 			entries.push( { binding: 1, resource: external ? sourceView() : input( batch.sourceMipLevel! ) } );
-			for ( let i = 0; i < batch.count; i ++ ) entries.push( { binding: i + 2, resource: output( batch.firstMipLevel + i ) } );
-			return { ...batch, pipeline, bindGroup: this.device.createBindGroup( { label: 'downsampler', layout, entries } ) };
+			if ( output === 'storage' ) {
+
+				for ( let i = 0; i < batch.count; i ++ ) entries.push( { binding: i + 2, resource: target( batch.firstMipLevel + i ) } );
+				return { ...batch, pipeline, bindGroup: this.device.createBindGroup( { label: 'downsampler', layout, entries } ), output };
+
+			}
+
+			// The layout uniform: first-output size, then per level its offset and row stride in words and its rows.
+			const levels = layouts[ index ].levels;
+			const words = new Uint32Array( outputLayoutBytes / 4 );
+			words.set( [ batch.outputWidth, batch.outputHeight ] );
+			levels.forEach( ( level, i ) => { words[ 4 + i ] = level.offset / 4; words[ 12 + i ] = level.bytesPerRow / 4; words[ 20 + i ] = level.rowsPerImage; } );
+			const uniform = this.device.createBuffer( { label: 'downsampler output layout', size: outputLayoutBytes, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+			this.device.queue.writeBuffer( uniform, 0, words );
+			buffers.push( uniform );
+			entries.push( { binding: outputLayoutBinding, resource: { buffer: uniform } }, { binding: outputBufferBinding, resource: { buffer: scratch! } } );
+			const copies = levels.map( ( { offset, bytesPerRow, rowsPerImage, width, height }, i ) => ( { mipLevel: batch.firstMipLevel + i, offset, bytesPerRow, rowsPerImage, width, height } ) );
+			return { ...batch, pipeline, bindGroup: this.device.createBindGroup( { label: 'downsampler', layout, entries } ), output, buffer: scratch, copies };
 
 		} );
 		if ( compat ) batches = batches.flatMap( batch => [ batch, ...this.compatCopies( texture, batch, dimension, view ) ] );
 
-		cache.set( key, { source: source?.texture, batches } );
+		cache.set( key, { source: source?.texture, batches, buffers } );
 		return batches;
 
 	}
 
 	/**
-	 * Drop cached bind groups for a destination texture (pipelines stay cached
-	 * per device), and destroy its compatibility-mode scratch textures.
+	 * Drop cached bind groups for a destination texture (pipelines stay cached per
+	 * device), and destroy its buffer-path buffers: call it after submitting work
+	 * that uses them.
 	 */
 	release( texture: GPUTexture ): void {
 
+		for ( const plan of this.plans.get( texture )?.values() ?? [] ) for ( const buffer of plan.buffers ) buffer.destroy();
 		this.plans.delete( texture );
 		for ( const scratch of this.scratch.get( texture )?.values() ?? [] ) scratch.destroy();
 		this.scratch.delete( texture );
 
 	}
 
-	/** Whether `texture` takes the compatibility-mode path (see {@link DownsamplerOptions.compatibility}). */
+	/** Whether `texture` takes the compatibility-mode path (see {@link DownsamplerOptions.compatibility}); on the buffer path it changes nothing. */
 	usesCompatibility( texture: GPUTexture ): boolean {
 
 		return this.compatibility === 'auto' ? isCompatibilityTexture( this.device, texture ) : this.compatibility;
@@ -325,15 +457,15 @@ export class Downsampler {
 	private compatCopies( texture: GPUTexture, batch: Batch, dimension: ViewDimension, view: ( level: number ) => GPUTextureView ): PreparedBatch[] {
 
 		const format = texture.format as SupportedFormat;
-		const layout = this.layout( format, dimension, 1, 'load' );
-		const pipeline = this.pipeline( format, dimension, 1, 'load', 'max', format );
+		const layout = this.layout( format, dimension, 1, 'load', 'storage' );
+		const pipeline = this.pipeline( format, dimension, 1, 'load', 'max', format, 'storage' );
 		return Array.from( { length: batch.count }, ( _, i ) => {
 
 			const level = batch.firstMipLevel + i;
 			const outputWidth = mipSize( texture.width, level ), outputHeight = mipSize( texture.height, level ), tile = 8;
 			const entries: GPUBindGroupEntry[] = [ { binding: 1, resource: this.scratchView( texture, level, dimension ) }, { binding: 2, resource: view( level ) } ];
 			return {
-				sourceMipLevel: level, firstMipLevel: level, count: 1, outputWidth, outputHeight, tile, groupsX: Math.ceil( outputWidth / tile ), groupsY: Math.ceil( outputHeight / tile ), copy: true,
+				sourceMipLevel: level, firstMipLevel: level, count: 1, outputWidth, outputHeight, tile, groupsX: Math.ceil( outputWidth / tile ), groupsY: Math.ceil( outputHeight / tile ), copy: true, output: 'storage',
 				pipeline, bindGroup: this.device.createBindGroup( { label: 'downsampler compat copy', layout, entries } )
 			};
 
@@ -367,23 +499,23 @@ export class Downsampler {
 
 	}
 
-	private layout( format: SupportedFormat, dimension: ViewDimension, count: number, access: SourceAccess ): GPUBindGroupLayout {
+	private layout( format: SupportedFormat, dimension: ViewDimension, count: number, access: SourceAccess, output: OutputPath ): GPUBindGroupLayout {
 
-		const key = `${ format }:${ dimension }:${ count }:${ access }`;
+		const key = `${ format }:${ dimension }:${ count }:${ access }:${ output }`;
 		let layout = this.layouts.get( key );
-		if ( layout === undefined ) this.layouts.set( key, layout = this.device.createBindGroupLayout( { label: `downsampler ${ key }`, entries: kernelLayoutEntries( { format, dimension, count, access } ) } ) );
+		if ( layout === undefined ) this.layouts.set( key, layout = this.device.createBindGroupLayout( { label: `downsampler ${ key }`, entries: kernelLayoutEntries( { format, dimension, count, access, output } ) } ) );
 		return layout;
 
 	}
 
-	private pipeline( format: SupportedFormat, dimension: ViewDimension, count: number, access: SourceAccess, reduction: Reduction, sourceFormat: string ): GPUComputePipeline {
+	private pipeline( format: SupportedFormat, dimension: ViewDimension, count: number, access: SourceAccess, reduction: Reduction, sourceFormat: string, output: OutputPath ): GPUComputePipeline {
 
-		const key = `${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }`;
+		const key = `${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }:${ output }`;
 		let pipeline = this.pipelines.get( key );
 		if ( pipeline !== undefined ) return pipeline;
-		const label = `downsampler ${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ typeof reduction === 'string' ? reduction : 'custom' }`;
-		const module = this.device.createShaderModule( { label, code: createKernel( { format, dimension, count, reduction, access, sourceFormat } ) } );
-		const layout = this.device.createPipelineLayout( { label, bindGroupLayouts: [ this.layout( format, dimension, count, access ) ] } );
+		const label = `downsampler ${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ typeof reduction === 'string' ? reduction : 'custom' }:${ output }`;
+		const module = this.device.createShaderModule( { label, code: createKernel( { format, dimension, count, reduction, access, sourceFormat, output } ) } );
+		const layout = this.device.createPipelineLayout( { label, bindGroupLayouts: [ this.layout( format, dimension, count, access, output ) ] } );
 		pipeline = this.device.createComputePipeline( { label, layout, compute: { module, entryPoint: 'main' } } );
 		this.pipelines.set( key, pipeline );
 		return pipeline;

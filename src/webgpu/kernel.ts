@@ -1,4 +1,4 @@
-import { formats, integerDomains, isIntegerDomain, isSupportedFormat, sampledChannels, type SupportedFormat } from '../core/formats.js';
+import { formats, integerDomains, isIntegerDomain, isPackedQuantization, isSupportedFormat, sampledChannels, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { tileSize, workgroupSide } from '../core/plan.js';
 import { checkLevels } from '../core/pyramid.js';
 import { isBuiltinReduction, needsTileEdges, reductionKey, resolveReduction, type Channels, type CustomReduction, type EdgePolicy, type Reduction } from '../core/reduction.js';
@@ -54,6 +54,8 @@ export interface KernelOptions {
 	size?: string;
 	/** Tile kernels: WGSL declarations of the tool's `@group(1)` bindings, used by the hooks. */
 	bindings?: string;
+	/** Kernels without a store hook: write storage textures (default) or packed texels into a buffer ({@link OutputPath}). */
+	output?: OutputPath;
 	/**
 	 * Tile kernels: accumulator channels per texel, 4 (a `vec4f`, default) or 8
 	 * (`DsWide { lo: vec4f, hi: vec4f }`, which the load and store hooks and a
@@ -64,6 +66,163 @@ export interface KernelOptions {
 
 /** Group 0 binding of the size uniform (`struct { size: vec2u }`) of tile kernels with a load hook. */
 export const sizeBinding = 8;
+
+/**
+ * Where a kernel writes its levels:
+ * - 'storage': one write-only storage texture per level (bindings 2…).
+ * - 'buffer': packed texels into one storage buffer (binding {@link outputBufferBinding}),
+ *   each level and layer at its own offset with 256-byte rows, described by a
+ *   uniform (binding {@link outputLayoutBinding}, {@link outputLayoutBytes} bytes). The
+ *   caller copies each level into its texture with `copyBufferToTexture`. One
+ *   binding, so not limited by `maxStorageTexturesPerShaderStage`, and it writes
+ *   formats that can't be storage textures (rgb9e5ufloat). Exact kernels only for now.
+ */
+export type OutputPath = 'storage' | 'buffer';
+
+/** Group 0 binding of the buffer output's layout uniform. */
+export const outputLayoutBinding = 9;
+/** Group 0 binding of the buffer output's storage buffer (`array<u32>`). */
+export const outputBufferBinding = 10;
+/**
+ * Bytes of the layout uniform: `struct { size: vec2u, offset, stride, rows: array<vec4u, 2> }`
+ * with, per level i (0 = the first output), its offset and row stride in u32
+ * words and its rows per layer. `size` is the first output's size.
+ */
+export const outputLayoutBytes = 112;
+
+/**
+ * WGSL for the packed float formats, shared by every kernel that quantizes or
+ * writes them (mirrors `packRgb9e5` and `toUfloat` in core, bit for bit):
+ * - `ds_pack9e5(v: vec3f) -> u32`, `ds_unpack9e5(bits: u32) -> vec3f`
+ * - `ds_ufloat(v: f32, bits: u32) -> u32`, `ds_from_ufloat(code: u32, bits: u32) -> f32`
+ *   (5-bit exponent, `bits` of mantissa: 6 for r and g, 5 for b of rg11b10ufloat)
+ * Exponents come from the float's bits, never `log2` or `exp2`, which aren't exact.
+ */
+export function packedFloatWgsl( quantization: 'rgb9e5ufloat' | 'rg11b10ufloat' ): string {
+
+	const pow2 = `fn ds_pow2(e: i32) -> f32 { return bitcast<f32>(u32(e + 127) << 23u); }
+`;
+	return quantization === 'rgb9e5ufloat' ? pow2 + `fn ds_round_half_up(v: vec3f) -> vec3f {
+	let f = floor(v);
+	return select(f, f + vec3f(1.0), v - f >= vec3f(0.5));
+}
+// EXT_texture_shared_exponent: clamp to [0, 65408] (NaN → 0), exponent from the
+// largest channel's bits, bumped when its mantissa rounds to 512; round half up.
+fn ds_pack9e5(value: vec3f) -> u32 {
+	let nan = (bitcast<vec3u>(value) & vec3u(0x7fffffffu)) > vec3u(0x7f800000u);
+	let c = select(clamp(value, vec3f(0.0), vec3f(65408.0)), vec3f(0.0), nan);
+	let m = max(c.x, max(c.y, c.z));
+	var e = max(-16, i32((bitcast<u32>(m) >> 23u) & 0xffu) - 127) + 16;
+	if (ds_round_half_up(vec3f(m * ds_pow2(24 - e))).x == 512.0) { e += 1; }
+	let q = vec3u(ds_round_half_up(c * ds_pow2(24 - e)));
+	return q.x | (q.y << 9u) | (q.z << 18u) | (u32(e) << 27u);
+}
+fn ds_unpack9e5(bits: u32) -> vec3f {
+	return vec3f((vec3u(bits, bits >> 9u, bits >> 18u) & vec3u(0x1ffu))) * ds_pow2(i32(bits >> 27u) - 24);
+}
+` : pow2 + `// Unsigned float, 5-bit exponent: round to nearest even, negatives → 0, finite
+// overflow → the largest finite value, +Inf and NaN kept.
+fn ds_ufloat(value: f32, bits: u32) -> u32 {
+	let x = bitcast<u32>(value);
+	let inf = 31u << bits;
+	if ((x & 0x7fffffffu) > 0x7f800000u) { return inf | 1u; }
+	if ((x >> 31u) != 0u) { return 0u; }
+	if (x == 0x7f800000u) { return inf; }
+	let shift = 23u - bits;
+	let exponent = i32(x >> 23u) - 112;
+	var code: u32;
+	var remainder: u32;
+	var halfway: u32;
+	if (exponent <= 0) {
+		let s = shift + 1u + u32(-exponent);
+		if (s > 24u) { return 0u; }
+		let mantissa = (x & 0x7fffffu) | 0x800000u;
+		code = mantissa >> s;
+		remainder = mantissa & ((1u << s) - 1u);
+		halfway = 1u << (s - 1u);
+	} else {
+		code = (u32(exponent) << bits) | ((x & 0x7fffffu) >> shift);
+		remainder = x & ((1u << shift) - 1u);
+		halfway = 1u << (shift - 1u);
+	}
+	if (remainder > halfway || (remainder == halfway && (code & 1u) == 1u)) { code += 1u; }
+	return min(code, inf - 1u);
+}
+fn ds_from_ufloat(code: u32, bits: u32) -> f32 {
+	let exponent = code >> bits;
+	let mantissa = code & ((1u << bits) - 1u);
+	if (exponent == 0u) { return f32(mantissa) * ds_pow2(-14 - i32(bits)); }
+	if (exponent == 31u) { return bitcast<f32>(select(0x7f800000u, 0x7fc00000u, mantissa != 0u)); }
+	return bitcast<f32>(((exponent + 112u) << 23u) | (mantissa << (23u - bits)));
+}
+fn ds_pack11_11_10(v: vec3f) -> u32 { return ds_ufloat(v.x, 6u) | (ds_ufloat(v.y, 6u) << 11u) | (ds_ufloat(v.z, 5u) << 22u); }
+fn ds_unpack11_11_10(bits: u32) -> vec3f { return vec3f(ds_from_ufloat(bits & 0x7ffu, 6u), ds_from_ufloat((bits >> 11u) & 0x7ffu, 6u), ds_from_ufloat(bits >> 22u, 5u)); }
+`;
+
+}
+
+/**
+ * The u32 words of one texel of `format`, as WGSL expressions of `v`, little-endian
+ * in the format's byte order. `v` is either the exact kernels' working value
+ * (`normalized` false: integer units for normalized formats, already rounded and
+ * quantized as stored) or a normalized value (tile kernels), which normalized
+ * formats round with WGSL's pack builtins.
+ */
+function packedWords( format: SupportedFormat, normalized = false ): string[] {
+
+	const { quantization, channels } = formats[ format ];
+	const ch = [ 'x', 'y', 'z', 'w' ];
+	const order = format === 'bgra8unorm' ? [ 'z', 'y', 'x', 'w' ] : ch;
+	if ( normalized && isIntegerDomain( quantization ) ) {
+
+		const kind = quantization.startsWith( 'snorm' ) ? 'snorm' : 'unorm';
+		if ( quantization.endsWith( '8' ) && channels === 4 ) return [ `pack4x8${ kind }(v.${ order.join( '' ) })` ];
+		if ( quantization.endsWith( '16' ) && channels >= 2 ) return Array.from( { length: channels / 2 }, ( _, w ) => `pack2x16${ kind }(v.${ ch[ 2 * w ] }${ ch[ 2 * w + 1 ] })` );
+
+	}
+
+	const unsigned = ( c: string, mask: string ) => quantization.startsWith( 'snorm' ) ? `(bitcast<u32>(i32(v.${ c })) & ${ mask })` : `u32(v.${ c })`;
+	switch ( quantization ) {
+
+		case 'unorm8': case 'snorm8':
+			if ( channels !== 4 ) break;
+			return [ order.map( ( c, i ) => i === 0 ? unsigned( c, '0xffu' ) : `(${ unsigned( c, '0xffu' ) } << ${ 8 * i }u)` ).join( ' | ' ) ];
+		case 'unorm16': case 'snorm16':
+			if ( channels < 2 ) break;
+			return Array.from( { length: channels / 2 }, ( _, w ) => `${ unsigned( ch[ 2 * w ], '0xffffu' ) } | (${ unsigned( ch[ 2 * w + 1 ], '0xffffu' ) } << 16u)` );
+		case 'float16':
+			if ( channels < 2 ) break;
+			return Array.from( { length: channels / 2 }, ( _, w ) => `pack2x16float(v.${ ch[ 2 * w ] }${ ch[ 2 * w + 1 ] })` );
+		case 'float32':
+			return ch.slice( 0, channels ).map( c => `bitcast<u32>(v.${ c })` );
+		case 'rgb9e5ufloat':
+			return [ 'ds_pack9e5(v.xyz)' ];
+		case 'rg11b10ufloat':
+			return [ 'ds_pack11_11_10(v.xyz)' ];
+
+	}
+
+	throw new Error( `downsampler: the buffer output path writes 32-bit words; ${ format } texels are ${ formats[ format ].bytesPerTexel } bytes.` );
+
+}
+
+/**
+ * WGSL for the buffer output path (see {@link OutputPath}): the layout uniform,
+ * the buffer, and `fn ds_put(i: u32, texel: vec2u, layer: u32, v: vec4f)`, which
+ * writes level i's texel. Shared by every kernel family that writes buffers.
+ */
+export function bufferOutputWgsl( format: SupportedFormat, normalized = false ): string {
+
+	const words = packedWords( format, normalized );
+	return `struct DsOutput { size: vec2u, offset: array<vec4u, 2>, stride: array<vec4u, 2>, rows: array<vec4u, 2> }
+@group(0) @binding(${ outputLayoutBinding }) var<uniform> ds_output: DsOutput;
+@group(0) @binding(${ outputBufferBinding }) var<storage, read_write> ds_texels: array<u32>;
+fn ds_put(i: u32, texel: vec2u, layer: u32, v: vec4f) {
+	let index = ds_output.offset[i / 4u][i % 4u] + (layer * ds_output.rows[i / 4u][i % 4u] + texel.y) * ds_output.stride[i / 4u][i % 4u] + texel.x * ${ words.length }u;
+${ words.map( ( word, w ) => `	ds_texels[index${ w ? ` + ${ w }u` : '' }] = ${ word };\n` ).join( '' ) }}
+`;
+
+}
 
 /** Validates tile kernel options and resolves their defaults. */
 function tileOptions( options: KernelOptions ) {
@@ -80,9 +239,14 @@ function tileOptions( options: KernelOptions ) {
 	if ( typeof bindings !== 'string' ) throw new Error( 'downsampler: bindings must be WGSL declarations for @group(1).' );
 	if ( store === undefined && ( format === undefined || ! isSupportedFormat( format ) ) ) throw new Error( `downsampler: output format ${ JSON.stringify( format ) } is not supported; pass a supported format or a store hook.` );
 	if ( dimension !== '2d' && dimension !== '2d-array' ) throw new Error( `downsampler: view dimension ${ JSON.stringify( dimension ) } is not supported.` );
+	const output = options.output ?? 'storage';
+	if ( output !== 'storage' && output !== 'buffer' ) throw new Error( `downsampler: unknown output path ${ JSON.stringify( output ) }; expected 'storage' or 'buffer'.` );
+	if ( store !== undefined && output === 'buffer' ) throw new Error( 'downsampler: a store hook replaces the output textures; output \'buffer\' writes them through a buffer.' );
+	if ( store === undefined && output === 'storage' && ( formats[ format! ] as FormatInfo ).storage === false ) throw new Error( `downsampler: ${ format } can't be a storage texture; use output 'buffer'.` );
 	const { channels } = resolveReduction( reduction, options.channels );
-	if ( channels === 8 && ( load === undefined || store === undefined ) ) throw new Error( 'downsampler: 8-channel accumulators need a load hook and a store hook (textures hold at most 4 channels).' );
-	return { format, dimension, reduction, edges, levels, count, load, store, size, bindings, channels, sourceFormat: sourceFormat ?? format ?? 'rgba32float' };
+	// Eight channels never reach output textures (or the buffer output, which writes them).
+	if ( channels === 8 && ( load === undefined || store === undefined ) ) throw new Error( 'downsampler: 8-channel accumulators need a load hook and a store hook (textures hold at most 4 channels, so neither output textures nor output \'buffer\' can take them).' );
+	return { format, dimension, reduction, edges, levels, count, load, store, size, bindings, output, channels, sourceFormat: sourceFormat ?? format ?? 'rgba32float' };
 
 }
 
@@ -94,19 +258,25 @@ export function kernelLayoutEntries( options: KernelOptions ): GPUBindGroupLayou
 
 	if ( ( options.edges ?? 'exact' ) !== 'exact' ) {
 
-		const { format, dimension, levels, load, store, size } = tileOptions( options );
+		const { format, dimension, levels, load, store, size, output } = tileOptions( options );
 		if ( load === undefined ) entries.push( { binding: 1, visibility, texture: { sampleType: 'unfilterable-float', viewDimension: dimension } } );
-		if ( store === undefined ) levels.forEach( ( _, i ) => entries.push( { binding: i + 2, visibility, storageTexture: { access: 'write-only', format: format!, viewDimension: dimension } } ) );
+		if ( store === undefined && output === 'buffer' ) entries.push( { binding: outputLayoutBinding, visibility, buffer: { type: 'uniform', minBindingSize: outputLayoutBytes } }, { binding: outputBufferBinding, visibility, buffer: { type: 'storage' } } );
+		else if ( store === undefined ) levels.forEach( ( _, i ) => entries.push( { binding: i + 2, visibility, storageTexture: { access: 'write-only', format: format!, viewDimension: dimension } } ) );
 		if ( load !== undefined && size === undefined ) entries.push( { binding: sizeBinding, visibility, buffer: { type: 'uniform', minBindingSize: 8 } } );
 		return entries;
 
 	}
 
-	const { format, dimension = '2d', count, reduction = 'average' } = options;
+	const { format, dimension = '2d', count, reduction = 'average', output = 'storage' } = options;
 	const access = options.access ?? ( reduction === 'average' ? 'sample' : 'load' );
 	if ( access === 'sample' ) entries.push( { binding: 0, visibility, sampler: { type: 'filtering' } } );
 	entries.push( { binding: 1, visibility, texture: { sampleType: access === 'sample' ? 'float' : 'unfilterable-float', viewDimension: dimension } } );
-	for ( let i = 0; i < count!; i ++ ) entries.push( { binding: i + 2, visibility, storageTexture: { access: 'write-only', format: format!, viewDimension: dimension } } );
+	if ( output === 'buffer' ) {
+
+		entries.push( { binding: outputLayoutBinding, visibility, buffer: { type: 'uniform', minBindingSize: outputLayoutBytes } } );
+		entries.push( { binding: outputBufferBinding, visibility, buffer: { type: 'storage' } } );
+
+	} else for ( let i = 0; i < count!; i ++ ) entries.push( { binding: i + 2, visibility, storageTexture: { access: 'write-only', format: format!, viewDimension: dimension } } );
 	return entries;
 
 }
@@ -148,7 +318,7 @@ export function createKernel( options: KernelOptions ): string {
  * block measured ~30–45 % slower. Later levels are 2:1 reductions of the tile in
  * workgroup memory, with clamped reads for unit dimensions and partial tiles.
  */
-function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
+function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage' }:KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
 
 	reductionKey( reduction );
 	const average = reduction === 'average';
@@ -170,7 +340,11 @@ function createExactKernel( { format, dimension, count, reduction = 'average', a
 	code += `@group(0) @binding(1) var source: texture_2d${ suffix }<f32>;
 var<workgroup> tile: array<vec4f, ${ tile * tile }>;
 `;
-	for ( let i = 0; i < count; i ++ ) code += `@group(0) @binding(${ i + 2 }) var mip${ i }: texture_storage_2d${ suffix }<${ format }, write>;\n`;
+	const buffer = output === 'buffer';
+	if ( output !== 'storage' && ! buffer ) throw new Error( `downsampler: unknown output path ${ JSON.stringify( output ) }; expected 'storage' or 'buffer'.` );
+	if ( ! buffer && ( formats[ format ] as FormatInfo ).storage === false ) throw new Error( `downsampler: ${ format } can't be a storage texture; use output 'buffer'.` );
+	if ( buffer ) code += bufferOutputWgsl( format );
+	else for ( let i = 0; i < count; i ++ ) code += `@group(0) @binding(${ i + 2 }) var mip${ i }: texture_storage_2d${ suffix }<${ format }, write>;\n`;
 
 	// Intermediate levels are quantized exactly as they would be stored.
 	// Normalized values stay in integer units (value × scale) so 2:1 averages are
@@ -198,6 +372,15 @@ const SCALE = 1.0;
 fn quantize(value: vec4f) -> vec4f {
 	return vec4f(unpack2x16float(pack2x16float(value.xy)), unpack2x16float(pack2x16float(value.zw)));
 }
+`;
+
+	} else if ( isPackedQuantization( quantization ) ) {
+
+		// Packed floats: r, g and b packed and unpacked as stored; alpha reads as 1.
+		const [ pack, unpack ] = quantization === 'rgb9e5ufloat' ? [ 'ds_pack9e5', 'ds_unpack9e5' ] : [ 'ds_pack11_11_10', 'ds_unpack11_11_10' ];
+		code += `
+${ packedFloatWgsl( quantization ) }const SCALE = 1.0;
+fn quantize(value: vec4f) -> vec4f { return vec4f(${ unpack }(${ pack }(value.xyz)), 1.0); }
 `;
 
 	} else {
@@ -279,11 +462,20 @@ fn first(pos: vec2u, size: vec2u, layer: u32) -> vec4f {
 
 	}
 
-	code += `}
+	code += '}\n';
 
+	// Level i of the batch: its size, and the store of one texel. The buffer path
+	// derives sizes from the first output's (exact batches halve, floored, at least 1).
+	if ( buffer ) code += `
+fn ds_level_size(i: u32) -> vec2u { return max(ds_output.size >> vec2u(i), vec2u(1u)); }
+`;
+	const dims = ( i: number ) => buffer ? `ds_level_size(${ i }u)` : `textureDimensions(mip${ i })`;
+	const put = ( i: number, pos: string ) => buffer ? `ds_put(${ i }u, ${ pos }, group.z, value);` : `textureStore(mip${ i }, vec2i(${ pos })${ layer }, value / SCALE);`;
+
+	code += `
 @compute @workgroup_size(${ side }, ${ side })
 fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group: vec3u) {
-	let size0 = textureDimensions(mip0);
+	let size0 = ${ dims( 0 ) };
 	var value: vec4f;
 `;
 
@@ -295,7 +487,7 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
 		let pos0 = group.xy * ${ tile }u + p;
 		value = first(min(pos0, size0 - vec2u(1)), size0, group.z);
 		tile[p.y * ${ tile }u + p.x] = value;
-		if (all(pos0 < size0)) { textureStore(mip0, vec2i(pos0)${ layer }, value / SCALE); }
+		if (all(pos0 < size0)) { ${ put( 0, 'pos0' ) } }
 	}
 `;
 
@@ -310,7 +502,7 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
 		code += `
 	workgroupBarrier();
 	if (local.x < ${ extent }u && local.y < ${ extent }u) {
-		let last = textureDimensions(mip${ i - 1 }) - group.xy * ${ extent * 2 }u - vec2u(1);
+		let last = ${ dims( i - 1 ) } - group.xy * ${ extent * 2 }u - vec2u(1);
 		let lo = min(local.xy * 2u, last);
 		let hi = min(lo + vec2u(1), last);
 		value = ${ combine( at( 'lo', 'lo' ), at( 'hi', 'lo' ), at( 'lo', 'hi' ), at( 'hi', 'hi' ) ) };
@@ -320,7 +512,7 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
 	if (local.x < ${ extent }u && local.y < ${ extent }u) {
 		tile[local.y * ${ tile }u + local.x] = value;
 		let pos = group.xy * ${ extent }u + local.xy;
-		if (all(pos < textureDimensions(mip${ i }))) { textureStore(mip${ i }, vec2i(pos)${ layer }, value / SCALE); }
+		if (all(pos < ${ dims( i ) })) { ${ put( i, 'pos' ) } }
 	}
 `;
 
@@ -347,7 +539,9 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
  */
 function createTileKernel( options: KernelOptions ): string {
 
-	const { format, dimension, reduction, edges, levels, count, load, store, size, bindings, channels, sourceFormat } = tileOptions( options );
+	const { format, dimension, reduction, edges, levels, count, load, store, size, bindings, output, channels, sourceFormat } = tileOptions( options );
+	const buffer = store === undefined && output === 'buffer';
+	const packed = store === undefined && isPackedQuantization( formats[ format! ].quantization ) ? formats[ format! ].quantization as 'rgb9e5ufloat' | 'rg11b10ufloat' : null;
 	const resolved = resolveReduction( reduction, channels );
 	const array = dimension === '2d-array';
 	const suffix = array ? '_array' : '';
@@ -361,7 +555,10 @@ function createTileKernel( options: KernelOptions ): string {
 
 	let code = declarations;
 	if ( load === undefined ) code += `@group(0) @binding(1) var ds_source: texture_2d${ suffix }<f32>;\n`;
-	if ( store === undefined ) levels.forEach( ( level, i ) => code += `@group(0) @binding(${ i + 2 }) var ds_out${ level }: texture_storage_2d${ suffix }<${ format }, write>;\n` );
+	if ( buffer ) code += bufferOutputWgsl( format!, true );
+	// Packed floats are quantized by our encoder on either path, so stored values never depend on the GPU's conversion.
+	if ( packed !== null ) code += packedFloatWgsl( packed );
+	if ( store === undefined && ! buffer ) levels.forEach( ( level, i ) => code += `@group(0) @binding(${ i + 2 }) var ds_out${ level }: texture_storage_2d${ suffix }<${ format }, write>;\n` );
 	if ( load !== undefined && size === undefined ) code += `struct DsParams { size: vec2u }\n@group(0) @binding(${ sizeBinding }) var<uniform> ds_params: DsParams;\n`;
 	if ( bindings !== '' ) code += `\n// Tool bindings (group 1)\n${ bindings }\n`;
 	if ( load !== undefined ) code += `\n// load hook\n${ load }\n`;
@@ -491,6 +688,18 @@ fn ds_first(p: vec2u, layer: u32) -> ${ T } {
 	const emit = ( level: number, pos: string ) => {
 
 		const value = emitted ? `ds_emit(value, ${ texelCount( level, pos ) })` : 'value';
+		if ( buffer ) return `ds_put(${ levels.indexOf( level ) }u, vec2u(${ pos }), group.z, ${ value });`;
+		if ( packed !== null && store === undefined ) {
+
+			const [ pack, unpack ] = packed === 'rgb9e5ufloat' ? [ 'ds_pack9e5', 'ds_unpack9e5' ] : [ 'ds_pack11_11_10', 'ds_unpack11_11_10' ];
+			return `textureStore(ds_out${ level }, vec2i(${ pos })${ array ? ', i32(group.z)' : '' }, vec4f(${ unpack }(${ pack }((${ value }).xyz)), 1.0));`;
+
+		}
+
+		// float16 outputs round to nearest even with pack2x16float before the store, as
+		// Downsampler does: Apple's textureStore truncates f32 → f16 (results/probes/f16-store-rounding.mjs).
+		if ( store === undefined && formats[ format! ].quantization === 'float16' ) return `{ let v = ${ value }; textureStore(ds_out${ level }, vec2i(${ pos })${ array ? ', i32(group.z)' : '' }, vec4f(unpack2x16float(pack2x16float(v.xy)), unpack2x16float(pack2x16float(v.zw)))); }`;
+
 		return store !== undefined ? `store(${ level }u, vec2i(${ pos }), group.z, ${ value });` : `textureStore(ds_out${ level }, vec2i(${ pos })${ array ? ', i32(group.z)' : '' }, ${ value });`;
 
 	};
