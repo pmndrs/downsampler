@@ -89,7 +89,10 @@ export function levelOptions( device ) {
 /** A compatibility-mode device: no 'core-features-and-limits' (SPEC §4 Compatibility mode). */
 export const compatibility = device => ! device.features.has( 'core-features-and-limits' );
 
-/** `only`: run one part of the suite ('mips': all but scalars, 'reducer': Reducer cases only, 'scalar'); default all. */
+/**
+ * `only`: run one part of the suite; default all. The parts 'downsampler', 'reducer' and 'scalar' partition it
+ * (CI runs them as parallel jobs); 'mips' is 'downsampler' plus 'reducer'.
+ */
 export async function validate( device, { onProgress = () => {}, quick = false, only } = {} ) {
 
 	const results = [];
@@ -213,17 +216,21 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 			}
 
-			const reducer = await validateReducer( device, { quick, onProgress } );
-			results.push( ...reducer );
-			runs += reducer.reduce( ( sum, result ) => sum + ( result.runs ?? 0 ), 0 );
-			results.push( ...await validateTools( device, { quick, onProgress } ) );
-			results.push( ...await validateReducerOptions( device ) );
-			results.push( ...await validateWide( device, { quick, onProgress } ) );
-			results.push( ...await validatePayload( device, { quick, onProgress } ) );
+			if ( only !== 'downsampler' ) {
+
+				const reducer = await validateReducer( device, { quick, onProgress } );
+				results.push( ...reducer );
+				runs += reducer.reduce( ( sum, result ) => sum + ( result.runs ?? 0 ), 0 );
+				results.push( ...await validateTools( device, { quick, onProgress } ) );
+				results.push( ...await validateReducerOptions( device ) );
+				results.push( ...await validateWide( device, { quick, onProgress } ) );
+				results.push( ...await validatePayload( device, { quick, onProgress } ) );
+
+			}
 
 		}
 
-		if ( only !== 'mips' && only !== 'reducer' ) {
+		if ( only !== 'mips' && only !== 'reducer' && only !== 'downsampler' ) {
 
 			const scalar = await validateScalar( device, { quick, onProgress } );
 			results.push( ...scalar.results );

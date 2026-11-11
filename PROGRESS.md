@@ -10,7 +10,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 - [ ] M2T.4 SPD-style mode + comparison (agent, branch `m2t-spd`)
 - [ ] M2.3.4 buffer output + rgb9e5ufloat, M2.3.6 rg11b10ufloat (agent, branch `m2-gi-formats`)
-- [ ] CI: SwiftShader `--quick` now exceeds 30 min with the Reducer suites; trim quick shapes for SwiftShader
+- [ ] CI: confirm the three parallel SwiftShader jobs fit in 45 min on GitHub runners (first push); if `reducer` doesn't, trim its quick shapes on SwiftShader only
 
 ## Next (M2T, tools first: SPEC §11)
 
