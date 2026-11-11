@@ -9,7 +9,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 ## Now
 
 - [ ] M2T.1: reduction generator per SPEC §14.1 (agent, branch `m2t-generator`)
-- [ ] M2T.3 groundwork: FSR 3.1 + upscaler fixtures and bench in `test/tools/` (agent, branch `m2t-fixtures`)
+- [ ] M2T.3: plug the generator and `ScalarReduction` into `test/tools/generator.js` (3 pending plug-ins) and compare
 - [ ] Upscaler: parallel exposure, same 1024 taps (agent, upscaler branch `perf/exposure-parallel`, not pushed)
 
 ## Next (M2T, tools first: SPEC §11)
@@ -37,6 +37,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] M2T.3 groundwork: FSR 3.1.6 luma and shading-change pyramids (AMD-exact and every-texel), upscaler passes verbatim, oracles, `npm run tools` (`f67a2a3`)
 - [x] M2T.2: `ScalarReduction`: any size to one value per layer in 2 dispatches, every texel counted; load/finish hooks; 18/18 mutations caught (`50c6368`, `cb6ce7b`)
 - [x] `encodePass()`: record the chain into a caller-owned compute pass, for @pmndrs/reflections (branch `reflections-integration`, `a996cc4`)
 - [x] Tools survey: FSR 3.1.6 SPD passes (AMD source), upscaler, reflections, ssgiDev, Denoiser, webgpu-ddgi, Capsaicin → SPEC §14

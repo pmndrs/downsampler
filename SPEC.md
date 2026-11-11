@@ -346,6 +346,8 @@ New features add their own oracle first: each new format family, sRGB, rect, lay
 - **Results:** medians of 11 rounds, rotating order across strategies, warmed, with a parity check before timing.
 - **Baseline:** one render pass per level and layer, linear sampler. This is the common approach and what three.js does today.
 
+**Tool fixtures** (`npm run tools`, `test/tools/`) time compute passes with their own `timestampWrites` around 16 repeats (never empty), 11 rotated rounds, median.
+
 **Baseline results.** Apple M5 Pro, Metal 3, Chrome 155, 2026-11-10, GPU ms per chain:
 
 | Size | Format | render | compute (4 levels) | compute (6 levels) | 6 vs render |
@@ -496,7 +498,10 @@ Two SPD passes over the full render resolution, with the same setup: groups `⌈
 | Shading-change pyramid | signed min-difference of 5-tap sorted crosses: current luma × exposure vs previous luma reprojected by dilated motion; `(diff, sign, 1)` | average | `.xy` levels 1–6 → `SpdMips` (RG16F, half res, full chain) | levels 1–3 only, bilinear; max of `|x·y|` → `ShadingChange` (R8, half res) |
 
 Behaviour we'd diverge from, deliberately or not (decide per case, record in DIVERGES):
-- **Exposure covers only `[0, 2^mips)²`.** Only `(0,0)` of the last level is kept, so at 1920×1080 the scene average covers the top-left 1024×1024.
+- **Exposure covers only `[0, 2^mips)²`.** Only `(0,0)` of the last level is kept, so at 1920×1080 the scene average covers the top-left 1024×1024. Inside that window, tiles past the mip-6 resource (`(⌊w/2⌋ >> 5) × (⌊h/2⌋ >> 5)`) read as 0: their stores are dropped and D3D out-of-bounds loads return 0.
+  - Against every texel, log luma comes out −28 % at 1280×720, −38 % at 1129×635 and −8.7 % at 1707×960, so exposure is +13.5 %, +19 % and +4 % (`npm run tools`).
+  - `max(ε, log L)` makes every texel darker than luma 1 count as 0.
+  - The reset value `(−1, 1, 0, 0)` makes the first frame ease from log luma 1.
 - **Partial tiles repeat the edge texel** (clamped loads), so edge texels are over-weighted.
 - **The last odd row or column is dropped.**
 - **The fp16 paths are stubs** that return 0.
@@ -511,6 +516,9 @@ pmndrs/upscaler replaced both passes because no downsampler existed:
 - **Shading change:** a fused 16×16-tile block-statistics pass (sums of cur, prev, cur², prev², plus a max flag) that uses 2 levels. It costs 0.044 ms on Apple at 960×540.
 - **Bench:** its SPD-style bench candidate re-read the source per level with no shared memory. It measured 5× slower, so that comparison says nothing about a tiled kernel.
 - **Where the time goes:** accumulate is 67–78 % of its compute.
+- **Fixture ratios** (M5 Pro, one run, load average ~63 on 18 CPUs, so same-run ratios only):
+  - FSR's SPD luma pyramid takes 0.32–0.68× the upscaler's single-thread exposure, a 1.5–3× win that grows as size shrinks.
+  - FSR's shading-change pyramid plus its consumer takes 2.0–2.4× the upscaler's fused shading-change pass. The upscaler's design is faster for that pass, so the generator must beat the fused pass, not FSR's.
 
 ### Our other tools
 
@@ -573,7 +581,7 @@ The existing `'average' | 'min' | 'max' | 'minmax' | { wgsl }` stay valid, and a
 - `'exact'` (the current behaviour)
 - `'box'` (area weights, §2.1)
 - `'zero-weight'`: out-of-bounds texels contribute nothing; sizes are `⌈n/2⌉`; averages divide by the in-bounds count.
-- `'clamp'`: SPD/FSR-compatible. Out-of-bounds loads are clamped to the edge; sizes are `⌊n/2⌋`, dropping the last odd row or column. Used for parity fixtures.
+- `'clamp'`: SPD/FSR-compatible. Out-of-bounds loads are clamped to the edge; sizes are `⌊n/2⌋`, dropping the last odd row or column. Used for parity fixtures. A level can be 0 texels tall (1280×720, level 10) while AMD still uses its texel (0,0), so parity needs `finish`, not `store`.
 
 `'zero-weight'` and `'clamp'` keep every level in one tile, so batches never end at odd sizes.
 
