@@ -33,7 +33,7 @@
 			let report = null;
 
 			// Entry point for the headless runner (test/run.js) and the buttons below.
-			window.runSuite = async ( { bench = false, quick = false, sizes, formats, rounds, repeats } = {} ) => {
+			window.runSuite = async ( { bench = false, quick = false, only, sizes, formats, rounds, repeats } = {} ) => {
 
 				const { device, adapter, userAgent } = await requestDevice();
 				const errors = [];
@@ -43,7 +43,7 @@
 
 				try {
 
-					const validation = await validate( device, { onProgress: progress, quick } );
+					const validation = await validate( device, { onProgress: progress, quick, only } );
 					const timing = bench ? await benchmark( device, { sizes, formats, rounds, repeats, onProgress: progress } ) : null;
 					await device.queue.onSubmittedWorkDone();
 					if ( errors.length ) throw new Error( errors.join( '\n' ) );
