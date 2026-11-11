@@ -6,7 +6,10 @@
 //   node test/run.js --bench --sizes=1024x1024,512x512x6 --formats=rgba8unorm --rounds=11 --repeats=16
 //   node test/run.js --output=results/report.json --headful
 //   node test/run.js --adapter=swiftshader   software adapter (CI, no GPU)
+//   node test/run.js --bench --compare=spd --skip-validation   M2T.4: exact / tail / spd / atomic probe / render
+//   node test/run.js --quality --skip-validation              M2T.4: 'spd' vs 'exact' per level, Hi-Z violations
 import { mkdir, writeFile } from 'node:fs/promises';
+import { loadavg } from 'node:os';
 import { dirname } from 'node:path';
 import puppeteer from 'puppeteer';
 import { createServer } from './serve.js';
@@ -19,6 +22,10 @@ if ( value( 'sizes' ) ) options.sizes = value( 'sizes' ).split( ',' ).map( size 
 if ( value( 'formats' ) ) options.formats = value( 'formats' ).split( ',' );
 if ( value( 'rounds' ) ) options.rounds = Number( value( 'rounds' ) );
 if ( value( 'repeats' ) ) options.repeats = Number( value( 'repeats' ) );
+if ( value( 'compare' ) ) options.compare = value( 'compare' );
+if ( args.includes( '--quality' ) ) options.quality = true;
+if ( args.includes( '--skip-validation' ) ) options.skipValidation = true;
+const loadBefore = loadavg();
 
 const browserArgs = [ '--enable-unsafe-webgpu' ];
 if ( process.env.CI ) browserArgs.push( '--no-sandbox' );
@@ -48,14 +55,26 @@ try {
 	if ( errors.length ) throw new Error( errors.join( '\n' ) );
 
 	const { validation, timing, adapter } = report;
+	report.loadAverage = { before: loadBefore, after: loadavg() };
 	console.log( JSON.stringify( adapter ) );
+	console.log( `load average (1, 5, 15 min): before ${ loadBefore.map( v => v.toFixed( 1 ) ).join( ' ' ) }, after ${ report.loadAverage.after.map( v => v.toFixed( 1 ) ).join( ' ' ) }` );
 	console.log( `validation passed: ${ validation.cases } cases, ${ validation.checks } pattern runs, ${ validation.ms } ms` );
 	if ( validation.scalarPrecision ) console.log( `scalar float sums: worst error ${ ( validation.scalarPrecision.worst * 100 ).toFixed( 2 ) } % of the oracle's bound; ${ validation.scalarPrecision.pairing } results equal the oracle's float32 pairing bit for bit` );
 	if ( validation.skipped.length ) console.log( `skipped (feature unavailable): ${ validation.skipped.join( ', ' ) }` );
 
 	if ( timing?.timestamps === false ) console.log( 'timestamp-query unavailable: benchmark skipped' );
 
-	if ( timing?.results.length ) {
+	if ( timing?.results.length && options.compare === 'spd' ) {
+
+		// Same-run ratios to 'exact' (average) and 'exactMax' (max).
+		const names = timing.strategies;
+		console.table( timing.results.map( row => ( {
+			size: `${ row.width }x${ row.height }`, format: row.format,
+			passes: names.map( name => `${ name } ${ row.passes[ name ] }` ).join( ', ' ),
+			...Object.fromEntries( names.map( name => [ name, `${ row.gpuMs[ name ].toFixed( 4 ) } (${ ( row.gpuMs[ name ] / row.gpuMs[ name.endsWith( 'Max' ) ? 'exactMax' : 'exact' ] ).toFixed( 2 ) })` ] ) )
+		} ) ) );
+
+	} else if ( timing?.results.length ) {
 
 		const names = timing.strategies;
 		const best = names.filter( name => name.startsWith( 'compute' ) ).pop();
@@ -66,6 +85,18 @@ try {
 			[ `${ best } vs render` ]: `${ ( row.gpuMs.render / row.gpuMs[ best ] ).toFixed( 2 ) }×`,
 			[ `${ best } vs compute4` ]: `${ ( row.gpuMs.compute4 / row.gpuMs[ best ] ).toFixed( 2 ) }×`
 		} ) ) );
+
+	}
+
+	if ( report.quality ) {
+
+		console.table( report.quality.flatMap( row => row.levels.filter( level => level.width * level.height > 1 || level.level === row.levels.length ).map( level => ( {
+			size: `${ row.width }x${ row.height }`, format: row.format, pattern: row.pattern, level: `${ level.level } (${ level.width }x${ level.height })`,
+			'spd-exact max': level.spdVsExact.max.toFixed( 4 ), 'spd-exact mean': level.spdVsExact.mean.toFixed( 5 ),
+			'exact-ideal mean': level.exactVsIdeal.mean.toFixed( 5 ), 'spd-ideal mean': level.spdVsIdeal.mean.toFixed( 5 ),
+			'tail-exact max': level.tailVsExact.max.toFixed( 4 ),
+			'max violations e/s/t': `${ level.maxViolations.exact }/${ level.maxViolations.spd }/${ level.maxViolations.tail }`
+		} ) ) ) );
 
 	}
 

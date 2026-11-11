@@ -2,7 +2,8 @@
 import { formats, fromHalf, integerDomains, isIntegerDomain, toHalf } from '/dist/index.js';
 import { Downsampler } from '/dist/webgpu/index.js';
 
-export async function requestDevice() {
+/** `maxStorageTextures`: request the adapter's storage texture limit (the atomic probe's tail levels), not just six. */
+export async function requestDevice( { maxStorageTextures = false } = {} ) {
 
 	if ( ! navigator.gpu ) throw new Error( 'WebGPU is not available in this browser.' );
 	const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance' } );
@@ -13,7 +14,7 @@ export async function requestDevice() {
 	const optional = [ 'texture-formats-tier1', 'bgra8unorm-storage' ].filter( feature => adapter.features.has( feature ) );
 	const device = await adapter.requestDevice( {
 		requiredFeatures: [ ...optional, ...( timestamps ? [ 'timestamp-query' ] : [] ) ],
-		requiredLimits: Downsampler.requiredLimits( adapter )
+		requiredLimits: maxStorageTextures ? { maxStorageTexturesPerShaderStage: adapter.limits.maxStorageTexturesPerShaderStage } : Downsampler.requiredLimits( adapter )
 	} );
 	const info = adapter.info || {};
 	return {

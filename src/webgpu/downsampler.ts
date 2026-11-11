@@ -1,7 +1,7 @@
 import { formats, isSupportedFormat, type FormatInfo, type SupportedFormat } from '../core/formats.js';
-import { planBatches, type Batch, type OddSizePolicy } from '../core/plan.js';
+import { planBatches, type Batch, type BatchKernel, type OddSizePolicy } from '../core/plan.js';
 import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
-import { createKernel, kernelLayoutEntries, type SourceAccess, type ViewDimension } from './kernel.js';
+import { createKernel, kernelLayoutEntries, type KernelOptions, type SourceAccess, type ViewDimension } from './kernel.js';
 
 export interface DownsamplerOptions {
 	/**
@@ -16,6 +16,12 @@ export interface DownsamplerOptions {
 	 * 'sample'. Unfilterable formats (float32, depth) and fold reductions always load.
 	 */
 	averageAccess?: SourceAccess;
+	/**
+	 * 'exact' chains: once a level fits one 32×32 workgroup, finish the chain in
+	 * one dispatch (the tail kernel) instead of a batch per odd size. Results
+	 * follow the same 'exact' rule. Default false (SPEC.md §2.1).
+	 */
+	tail?: boolean;
 }
 
 export interface SourceOptions {
@@ -51,8 +57,13 @@ export interface EncodeOptions {
 	/**
 	 * 'exact' (default): odd, non-unit sizes end a batch and the next level is
 	 * re-sampled with normalized coordinates, matching render-pass/WebGL mipmaps.
-	 * 'box' (planned): area-weighted odd sizes. SPD-style 'fast' was dropped
-	 * because it loses the last row/column. See SPEC.md §2.1.
+	 * 'spd': AMD SPD semantics, for comparison and SPD parity. Each dispatch
+	 * reduces up to `levelsPerDispatch` levels in one tile with clamped loads and
+	 * ⌊n/2⌋ sizes (the last odd row or column is dropped), without rounding
+	 * between its levels; the next dispatch reads the last stored level. Any size
+	 * takes ⌈levels / levelsPerDispatch⌉ dispatches. Lower quality at odd sizes,
+	 * and 'min'/'max' are NOT conservative there: not a valid Hi-Z.
+	 * 'box' (planned): area-weighted odd sizes. See SPEC.md §2.1.
 	 */
 	oddSizes?: OddSizePolicy;
 	/**
@@ -78,6 +89,16 @@ interface CachedPlan {
 
 const mipSize = ( size: number, level: number ) => Math.max( 1, size >> level );
 
+interface BatchKernelKey {
+	format: SupportedFormat;
+	dimension: ViewDimension;
+	count: number;
+	access: SourceAccess;
+	reduction: Reduction;
+	sourceFormat: string;
+	kind: BatchKernel;
+}
+
 /**
  * Generates mip chains with compute shaders, up to six levels per dispatch.
  *
@@ -91,6 +112,7 @@ export class Downsampler {
 	readonly device: GPUDevice;
 	readonly levelsPerDispatch: number;
 	readonly averageAccess: SourceAccess | undefined;
+	readonly tail: boolean;
 	private readonly pipelines = new Map<string, GPUComputePipeline>();
 	private readonly layouts = new Map<string, GPUBindGroupLayout>();
 	private readonly plans = new WeakMap<GPUTexture, Map<string, CachedPlan>>();
@@ -112,6 +134,7 @@ export class Downsampler {
 		this.levelsPerDispatch = levels;
 		if ( options.averageAccess !== undefined && options.averageAccess !== 'sample' && options.averageAccess !== 'load' ) throw new Error( 'downsampler: averageAccess must be "sample" or "load".' );
 		this.averageAccess = options.averageAccess;
+		this.tail = options.tail ?? false;
 		this.sampler = device.createSampler( { label: 'downsampler', minFilter: 'linear', magFilter: 'linear' } );
 
 	}
@@ -221,6 +244,7 @@ export class Downsampler {
 		}
 
 		const oddSizes = options.oddSizes ?? 'exact';
+		if ( oddSizes !== 'exact' && oddSizes !== 'spd' ) throw new Error( `downsampler: odd size policy ${ JSON.stringify( oddSizes ) } is not implemented ('exact' or 'spd').` );
 		const reduction = options.reduction ?? 'average';
 		if ( needsTileEdges( reduction ) ) throw new Error( 'downsampler: sums, per-channel reductions and custom sums have no \'exact\' mip-chain meaning; use a Reducer (edges \'zero-weight\' or \'clamp\').' );
 		const sourceMipLevel = source?.mipLevel ?? 0;
@@ -241,13 +265,16 @@ export class Downsampler {
 
 		};
 
-		const batches = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch: this.levelsPerDispatch, oddSizes, fromSource: source !== undefined } ).map( batch => {
+		const copySource = source !== undefined && mipSize( source.texture.width, sourceMipLevel ) === mipSize( texture.width, baseMipLevel ) && mipSize( source.texture.height, sourceMipLevel ) === mipSize( texture.height, baseMipLevel );
+		const plan = { baseMipLevel, mipLevelCount, levelsPerDispatch: this.levelsPerDispatch, oddSizes, fromSource: source !== undefined, copySource, tail: oddSizes === 'exact' && this.tail };
+		const batches = planBatches( texture.width, texture.height, plan ).map( batch => {
 
 			const external = batch.sourceMipLevel === null;
 			const sourceFormat = external ? source!.texture.format : format;
 			const access = this.access( reduction, sourceFormat );
-			const layout = this.layout( format, dimension, batch.count, access );
-			const pipeline = this.pipeline( format, dimension, batch.count, access, reduction, sourceFormat );
+			const kernel = { format, dimension, count: batch.count, access, reduction, sourceFormat, kind: batch.kernel };
+			const layout = this.layout( kernel );
+			const pipeline = this.pipeline( kernel );
 			const entries: GPUBindGroupEntry[] = access === 'sample' ? [ { binding: 0, resource: this.sampler } ] : [];
 			entries.push( { binding: 1, resource: external ? sourceView() : view( batch.sourceMipLevel! ) } );
 			for ( let i = 0; i < batch.count; i ++ ) entries.push( { binding: i + 2, resource: view( batch.firstMipLevel + i ) } );
@@ -278,25 +305,40 @@ export class Downsampler {
 
 	}
 
-	private layout( format: SupportedFormat, dimension: ViewDimension, count: number, access: SourceAccess ): GPUBindGroupLayout {
+	/**
+	 * Kernel options for a batch. 'clamp' batches (`oddSizes: 'spd'`) are the
+	 * Reducer's 'clamp' tile kernel emitting every level; folds there load, and
+	 * a custom `{ wgsl }` is a fold.
+	 */
+	private kernelOptions( { format, dimension, count, access, reduction, sourceFormat, kind }: BatchKernelKey ): KernelOptions {
 
-		const key = `${ format }:${ dimension }:${ count }:${ access }`;
-		let layout = this.layouts.get( key );
-		if ( layout === undefined ) this.layouts.set( key, layout = this.device.createBindGroupLayout( { label: `downsampler ${ key }`, entries: kernelLayoutEntries( { format, dimension, count, access } ) } ) );
+		if ( kind !== 'clamp' ) return { format, dimension, count, reduction, access, sourceFormat, ...( kind === 'tail' ? { tail: true } : {} ) };
+		return { format, dimension, edges: 'clamp', count, reduction, access, sourceFormat };
+
+	}
+
+	private layout( key: BatchKernelKey ): GPUBindGroupLayout {
+
+		const { format, dimension, count, access, kind } = key;
+		// Exact and tail kernels share layouts; 'clamp' ones differ only without a sampler.
+		const id = `${ format }:${ dimension }:${ count }:${ access }${ kind === 'clamp' ? ':clamp' : '' }`;
+		let layout = this.layouts.get( id );
+		if ( layout === undefined ) this.layouts.set( id, layout = this.device.createBindGroupLayout( { label: `downsampler ${ id }`, entries: kernelLayoutEntries( this.kernelOptions( key ) ) } ) );
 		return layout;
 
 	}
 
-	private pipeline( format: SupportedFormat, dimension: ViewDimension, count: number, access: SourceAccess, reduction: Reduction, sourceFormat: string ): GPUComputePipeline {
+	private pipeline( key: BatchKernelKey ): GPUComputePipeline {
 
-		const key = `${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }`;
-		let pipeline = this.pipelines.get( key );
+		const { format, dimension, count, access, reduction, sourceFormat, kind } = key;
+		const id = `${ kind }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }`;
+		let pipeline = this.pipelines.get( id );
 		if ( pipeline !== undefined ) return pipeline;
-		const label = `downsampler ${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ typeof reduction === 'string' ? reduction : 'custom' }`;
-		const module = this.device.createShaderModule( { label, code: createKernel( { format, dimension, count, reduction, access, sourceFormat } ) } );
-		const layout = this.device.createPipelineLayout( { label, bindGroupLayouts: [ this.layout( format, dimension, count, access ) ] } );
+		const label = `downsampler ${ kind }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ typeof reduction === 'string' ? reduction : 'custom' }`;
+		const module = this.device.createShaderModule( { label, code: createKernel( this.kernelOptions( key ) ) } );
+		const layout = this.device.createPipelineLayout( { label, bindGroupLayouts: [ this.layout( key ) ] } );
 		pipeline = this.device.createComputePipeline( { label, layout, compute: { module, entryPoint: 'main' } } );
-		this.pipelines.set( key, pipeline );
+		this.pipelines.set( id, pipeline );
 		return pipeline;
 
 	}
