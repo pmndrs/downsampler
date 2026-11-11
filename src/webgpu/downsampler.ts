@@ -60,7 +60,8 @@ export interface EncodeOptions {
 	 * (even channels min, odd channels max) combine every texel an output covers,
 	 * including the extra row/column of odd sizes, as Hi-Z needs. A custom
 	 * `{ wgsl }` defines `fn reduce(a: vec4f, b: vec4f) -> vec4f`, which must be
-	 * associative, commutative and idempotent.
+	 * associative, commutative and idempotent. Sums, per-channel ops and custom
+	 * sums have no 'exact' meaning and are rejected: use a `Reducer`.
 	 */
 	reduction?: Reduction;
 }

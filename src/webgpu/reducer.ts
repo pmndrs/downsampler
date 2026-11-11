@@ -1,6 +1,6 @@
 import { formats, isSupportedFormat, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { levelSize, tileDispatch } from '../core/pyramid.js';
-import { reductionKey, resolveReduction, type Reduction, type TileEdgePolicy } from '../core/reduction.js';
+import { resolveReduction, type Reduction, type TileEdgePolicy } from '../core/reduction.js';
 import { createKernel, kernelLayoutEntries, sizeBinding, type KernelOptions, type ViewDimension } from './kernel.js';
 
 /** The tool's `@group(1)`: WGSL declarations and the matching layout entries. */
@@ -169,7 +169,6 @@ export class Reducer {
 		this.edges = edges;
 		this.label = label;
 		this.options = { ...options, reduction };
-		reductionKey( reduction );
 
 	}
 
