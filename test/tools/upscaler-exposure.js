@@ -22,24 +22,34 @@ export function upscalerConstants( scene, { flags = FLAG_AUTO_EXPOSURE | FLAG_SH
 // The previous frame's exposure texel: (exposure, average luma, host pre-exposure, 0).
 export const previousExposure = [ 1, 0.5, 1, 0 ];
 
-export async function createUpscalerExposure( device, scene, colour ) {
+/**
+ * The pass's resources in binding order (0-6 of luminancePyramid.ts) and a
+ * check against an oracle. Shared with the generator versions.
+ */
+export function createUpscalerExposureResources( device, scene, colour ) {
 
-	const module = await compile( device, 'upscaler exposure', LUMINANCE_PYRAMID_SHADER );
-	const pipeline = await device.createComputePipelineAsync( { layout: 'auto', compute: { module, entryPoint: 'main' } } );
 	const constants = uniformBuffer( device, 'FsrConstants', upscalerConstants( scene ) );
 	const previous = createTexture( device, { label: 'exposure prev', width: 1, height: 1, format: 'rgba16float', data: previousExposure } );
 	const output = createTexture( device, { label: 'exposure', width: 1, height: 1, format: 'rgba16float', usage: GPUTextureUsage.STORAGE_BINDING } );
 	const dummy = device.createTexture( { label: 'reactive dummy', size: [ 1, 1 ], format: 'r8unorm', usage: GPUTextureUsage.TEXTURE_BINDING } );
 	const sampler = device.createSampler( { magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' } );
-	const group = device.createBindGroup( { layout: pipeline.getBindGroupLayout( 0 ), entries: [
-		{ binding: 0, resource: { buffer: constants } },
-		{ binding: 1, resource: colour.createView() },
-		{ binding: 2, resource: sampler },
-		{ binding: 3, resource: previous.createView() },
-		{ binding: 4, resource: output.createView() },
-		{ binding: 5, resource: dummy.createView() },
-		{ binding: 6, resource: dummy.createView() }
-	] } );
+	const views = [ { buffer: constants }, colour.createView(), sampler, previous.createView(), output.createView(), dummy.createView(), dummy.createView() ];
+	return {
+		/** Bind group entries 0-6, at `offset` + i. */
+		groupEntries: ( offset = 0 ) => views.map( ( resource, binding ) => ( { binding: binding + offset, resource } ) ),
+		/** Compares the exposure texel with `oracle` (the 1024-tap one by default). */
+		async check( oracle = exposureOracle ) { return checkExposure( scene, Array.from( ( await readTexture( device, output ) ).data ), oracle ); },
+		destroy() { for ( const resource of [ constants, previous, output, dummy ] ) resource.destroy(); }
+	};
+
+}
+
+export async function createUpscalerExposure( device, scene, colour ) {
+
+	const module = await compile( device, 'upscaler exposure', LUMINANCE_PYRAMID_SHADER );
+	const pipeline = await device.createComputePipelineAsync( { layout: 'auto', compute: { module, entryPoint: 'main' } } );
+	const shared = createUpscalerExposureResources( device, scene, colour );
+	const group = device.createBindGroup( { layout: pipeline.getBindGroupLayout( 0 ), entries: shared.groupEntries() } );
 
 	return {
 		name: 'upscaler/exposure',
@@ -47,8 +57,8 @@ export async function createUpscalerExposure( device, scene, colour ) {
 		dispatches: 1,
 		// ComputePass.dispatch( pass, group, 8, 8 ): ⌈8/8⌉ × ⌈8/8⌉ workgroups.
 		encodePass( pass ) { pass.setPipeline( pipeline ); pass.setBindGroup( 0, group ); pass.dispatchWorkgroups( 1, 1 ); },
-		async check() { return checkExposure( scene, Array.from( ( await readTexture( device, output ) ).data ) ); },
-		destroy() { for ( const resource of [ constants, previous, output, dummy ] ) resource.destroy(); }
+		check: () => shared.check(),
+		destroy: () => shared.destroy()
 	};
 
 }
@@ -87,7 +97,43 @@ export function exposureOracle( scene ) {
 	}
 
 	const avgLum = 2 ** ( logSum / ( taps * taps ) ); // host pre-exposure dummy reads 0 → 1
-	const avgBound = avgLum * Math.LN2 * logBound / ( taps * taps );
+	return exposureFrom( avgLum, avgLum * Math.LN2 * logBound / ( taps * taps ), deltaTime );
+
+}
+
+/**
+ * The same epilogue over every texel equally weighted (the generator's
+ * `ScalarReduction`). Bound on the mean of log2 luma, per texel: the luma dot
+ * product (3 f32 roundings, 3·2^-24 relative → /ln 2 in log2) and WGSL log2
+ * (2^-21 absolute inside [0.5, 2], else 3 ulp); then the scalar's summation
+ * bound (SPEC §4 Scalar reductions: γ_D·Σ|x|, D ≤ 27 to 4K). The result's
+ * bound adds exp2 (3 + 2|x| ulp), one f16 ulp and the same 1e-5 relative as
+ * the 1024-tap oracle.
+ */
+export function exposureOracleEveryTexel( scene ) {
+
+	const { width: w, height: h, colour, deltaTime } = scene;
+	const count = w * h, u = 2 ** - 24;
+	let logSum = 0, absSum = 0, logBound = 0;
+	for ( let i = 0; i < count; i ++ ) {
+
+		const luma = f32( f32( f32( colour[ i * 4 ] * f32( 0.2126 ) ) + f32( colour[ i * 4 + 1 ] * f32( 0.7152 ) ) ) + f32( colour[ i * 4 + 2 ] * f32( 0.0722 ) ) );
+		const clamped = Math.max( luma, f32( 1e-4 ) ), log = Math.log2( clamped );
+		logSum += log; absSum += Math.abs( log );
+		logBound += ( clamped > luma ? 0 : 3 * u / Math.LN2 ) + ( clamped >= 0.5 && clamped <= 2 ? 2 ** - 21 : 3 * 2 * u * Math.abs( log ) );
+
+	}
+
+	const mean = logSum / count, D = 27, gamma = D * u / ( 1 - D * u );
+	const meanBound = logBound / count + gamma * absSum / count;
+	const avgLum = 2 ** mean;
+	return exposureFrom( avgLum, avgLum * ( Math.LN2 * meanBound + ( 3 + 2 * Math.abs( mean ) ) * 2 * u ), deltaTime );
+
+}
+
+/** luminancePyramid.ts after the metering: target, dead band, easing. Bounds carried from avgLum. */
+function exposureFrom( avgLum, avgBound, deltaTime ) {
+
 	const target = Math.min( Math.max( 0.18 / Math.max( avgLum, 1e-4 ), 0.02 ), 8 );
 	const prev = previousExposure[ 0 ];
 	let exposure = prev, rate = 0;
@@ -107,9 +153,9 @@ export function exposureOracle( scene ) {
 
 }
 
-export function checkExposure( scene, output ) {
+export function checkExposure( scene, output, oracle = exposureOracle ) {
 
-	const expected = exposureOracle( scene );
+	const expected = oracle( scene );
 	const checks = [ [ 0, 'exposure' ], [ 1, 'avgLum' ] ].map( ( [ i, name ] ) => {
 
 		const error = Math.abs( output[ i ] - expected.value[ i ] );

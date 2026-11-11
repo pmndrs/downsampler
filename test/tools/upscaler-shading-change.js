@@ -47,11 +47,14 @@ function currentExposure( scene ) {
 
 }
 
-export async function createUpscalerShadingChange( device, scene, colour ) {
+/**
+ * The pass's resources in binding order (0-10 of shadingChange.ts), with the
+ * block memory prefilled, and a check of the outputs against the oracle.
+ * Shared with the generator version, which binds them in its own group 1.
+ */
+export function createUpscalerShadingResources( device, scene, colour ) {
 
 	const { width, height } = scene;
-	const module = await compile( device, 'upscaler shading change', SHADING_CHANGE_SHADER );
-	const pipeline = await device.createComputePipelineAsync( { layout: 'auto', compute: { module, entryPoint: 'main' } } );
 	const [ mw, mh ] = memorySize( width, height );
 	const outputSize = [ Math.max( 1, Math.ceil( width / 2 ) ), Math.max( 1, Math.ceil( height / 2 ) ) ];
 	const memoryIn = prefillMemory( scene );
@@ -68,18 +71,16 @@ export async function createUpscalerShadingChange( device, scene, colour ) {
 		memoryOut: createTexture( device, { label: 'shading-memory-out', width: mw, height: mh, format: 'rgba32uint', usage: GPUTextureUsage.STORAGE_BINDING } )
 	};
 	device.queue.writeTexture( { texture: resources.masks }, scene.masks, { bytesPerRow: width * 4, rowsPerImage: height }, [ width, height ] );
-	const group = device.createBindGroup( { layout: pipeline.getBindGroupLayout( 0 ), entries: [
+	const views = [
 		{ buffer: resources.constants }, colour.createView(), resources.lumaHistoryIn.createView(), resources.motion.createView(),
 		resources.exposure.createView(), resources.exposurePrev.createView(), resources.lumaHistoryOut.createView(), resources.signal.createView(),
 		resources.masks.createView(), resources.memoryIn.createView(), resources.memoryOut.createView()
-	].map( ( resource, binding ) => ( { binding, resource } ) ) } );
-	const groups = [ Math.ceil( Math.max( 1, Math.ceil( width / 2 ) ) / 8 ), Math.ceil( Math.max( 1, Math.ceil( height / 2 ) ) / 8 ) ];
+	];
 
 	return {
-		name: 'upscaler/shading-change',
-		pass: 'shading',
-		dispatches: 1,
-		encodePass( pass ) { pass.setPipeline( pipeline ); pass.setBindGroup( 0, group ); pass.dispatchWorkgroups( ...groups ); },
+		resources, memoryIn, outputSize,
+		/** Bind group entries 0-10, at `offset` + i. */
+		groupEntries: ( offset = 0 ) => views.map( ( resource, binding ) => ( { binding: binding + offset, resource } ) ),
 		async check() {
 
 			const output = {
@@ -91,6 +92,26 @@ export async function createUpscalerShadingChange( device, scene, colour ) {
 
 		},
 		destroy() { for ( const resource of Object.values( resources ) ) resource.destroy(); }
+	};
+
+}
+
+export async function createUpscalerShadingChange( device, scene, colour ) {
+
+	const { width, height } = scene;
+	const module = await compile( device, 'upscaler shading change', SHADING_CHANGE_SHADER );
+	const pipeline = await device.createComputePipelineAsync( { layout: 'auto', compute: { module, entryPoint: 'main' } } );
+	const shared = createUpscalerShadingResources( device, scene, colour );
+	const group = device.createBindGroup( { layout: pipeline.getBindGroupLayout( 0 ), entries: shared.groupEntries() } );
+	const groups = [ Math.ceil( Math.max( 1, Math.ceil( width / 2 ) ) / 8 ), Math.ceil( Math.max( 1, Math.ceil( height / 2 ) ) / 8 ) ];
+
+	return {
+		name: 'upscaler/shading-change',
+		pass: 'shading',
+		dispatches: 1,
+		encodePass( pass ) { pass.setPipeline( pipeline ); pass.setBindGroup( 0, group ); pass.dispatchWorkgroups( ...groups ); },
+		check: () => shared.check(),
+		destroy: () => shared.destroy()
 	};
 
 }
@@ -295,19 +316,19 @@ export function checkUpscalerShading( scene, output, memoryIn ) {
 	const checks = [];
 	const [ ow, oh ] = expected.size;
 
-	let worst = 0, outside = 0, worstOutside = 0, flips = 0, firing = 0;
+	let worst = 0, outside = 0, worstOutside = 0, flips = 0, firing = 0, examples = [];
 	for ( let i = 0; i < ow * oh; i ++ ) {
 
 		const error = Math.abs( output.signal.data[ i ] - expected.signal[ i ] );
 		if ( expected.signal[ i ] > 0.5 ) firing ++;
 		if ( error <= 2e-3 ) { worst = Math.max( worst, error ); continue; }
 		if ( expected.decisions[ i ] < 1e-4 ) { flips ++; continue; }
-		outside ++; worstOutside = Math.max( worstOutside, error );
+		outside ++; worstOutside = Math.max( worstOutside, error ); if ( examples.length < 8 ) examples.push( { x: i % ow, y: Math.floor( i / ow ), actual: output.signal.data[ i ], expected: expected.signal[ i ] } );
 
 	}
 
 	const budget = Math.floor( 1e-4 * ow * oh );
-	checks.push( { output: 'shading signal (r32float)', texels: ow * oh, maxError: worst, unit: 'absolute', tolerance: 2e-3, outside, budget, worstOutside, gateFlips: flips, firing: firing / ( ow * oh ), ok: outside <= budget } );
+	checks.push( { output: 'shading signal (r32float)', texels: ow * oh, maxError: worst, unit: 'absolute', tolerance: 2e-3, outside, budget, worstOutside, gateFlips: flips, examples, firing: firing / ( ow * oh ), ok: outside <= budget } );
 
 	let worstLuma = 0, badLuma = 0;
 	for ( let i = 0; i < scene.width * scene.height; i ++ ) {

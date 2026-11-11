@@ -15,10 +15,10 @@ import { compile, createTexture, readTexture, uniformBuffer } from './gpu.js';
 import { f16, f32, halfUlp } from './half.js';
 
 /** The tool half of the pyramid in @group(1); `levels` mips are stored (AMD: 6). */
-export function shadingToolWgsl( { half2 }, levels ) {
+export function shadingToolParts( { half2 }, levels ) {
 
 	const mips = Array.from( { length: levels }, ( _, i ) => i );
-	return /* wgsl */ `
+	const bindings = /* wgsl */ `
 struct ShadingConstants {
 	renderSize: vec2i,          // RenderSize()
 	previousRenderSize: vec2i,  // PreviousFrameRenderSize()
@@ -163,6 +163,8 @@ fn ComputeDiff(iPxPos: vec2i, fUv: vec2f, fMotionVector: vec2f) -> f32 {
 	return fMinDiff;
 }
 
+`;
+	const load = /* wgsl */ `
 // SpdLoadSourceImage without its ClampLoad (the skeleton clamps).
 fn load(iPxSamplePos: vec2i, layer: u32) -> vec4f {
 	let fDilatedMotionVector = textureLoad(r_dilated_motion_vectors, iPxSamplePos, 0).xy;
@@ -175,6 +177,8 @@ fn load(iPxSamplePos: vec2i, layer: u32) -> vec4f {
 	return fOutput;
 }
 
+`;
+	const store = /* wgsl */ `
 // StorePyramid: writes outside a mip are dropped (D3D UAV semantics).
 fn StorePyramid(pix: vec2i, outValue: vec2f, index: u32) {
 ${ mips.map( i => `	if (index == ${ i }u && all(vec2u(pix) < textureDimensions(rw_spd_mip${ i }))) { textureStore(rw_spd_mip${ i }, pix, vec4f(outValue, 0.0, 0.0)); }` ).join( '\n' ) }
@@ -184,9 +188,20 @@ fn store(level: u32, pix: vec2i, layer: u32, outValue: vec4f) {
 	if (level - 1u >= iShadingChangeMipStart) { StorePyramid(pix, outValue.xy, level - 1u); }
 }
 
+`;
+	const spdLoad = /* wgsl */ `
 // SpdLoad (RWLoadPyramid(tex, 5)) feeds only the tail, whose mips this pass never stores; the tail is not run.
 fn spdLoad(tex: vec2i) -> vec4f { return vec4f(0.0); }
 `;
+	return { bindings, load, store, spdLoad };
+
+}
+
+/** The tool half of the pyramid in @group(1) as one string (the SPD port compiles it whole). */
+export function shadingToolWgsl( formats, levels ) {
+
+	const { bindings, load, store, spdLoad } = shadingToolParts( formats, levels );
+	return bindings + load + store + spdLoad;
 
 }
 
@@ -246,16 +261,16 @@ fn main(@builtin(global_invocation_id) gid: vec3u) { ShadingChange(vec2i(gid.xy)
 
 }
 
-function toolLayout( device, half2, levels ) {
+function toolEntries( half2, levels ) {
 
-	return device.createBindGroupLayout( { label: 'fsr shading tool (group 1)', entries: [
+	return [
 		{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
 		{ binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
 		{ binding: 2, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
 		{ binding: 3, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
 		{ binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 		...Array.from( { length: levels }, ( _, i ) => ( { binding: 5 + i, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: half2 } } ) )
-	] } );
+	];
 
 }
 
@@ -289,7 +304,8 @@ export function createShadingTool( device, scene, inputs, formats, { levels = 3 
 
 	const { width, height } = scene;
 	const texture = createTexture( device, { label: `r_spd_mips (${ levels })`, width: Math.floor( width / 2 ), height: Math.floor( height / 2 ), format: formats.half2, mipLevelCount: levels, usage: GPUTextureUsage.STORAGE_BINDING } );
-	const layout = toolLayout( device, formats.half2, levels );
+	const entries = toolEntries( formats.half2, levels );
+	const layout = device.createBindGroupLayout( { label: 'fsr shading tool (group 1)', entries } );
 	const group = device.createBindGroup( { layout, entries: [
 		{ binding: 0, resource: { buffer: inputs.uniforms } },
 		{ binding: 1, resource: inputs.currentLuma.createView() },
@@ -299,7 +315,7 @@ export function createShadingTool( device, scene, inputs, formats, { levels = 3 
 		...Array.from( { length: levels }, ( _, i ) => ( { binding: 5 + i, resource: texture.createView( { baseMipLevel: i, mipLevelCount: 1 } ) } ) )
 	] } );
 	return {
-		wgsl: shadingToolWgsl( formats, levels ), layout, group, texture, levels,
+		wgsl: shadingToolWgsl( formats, levels ), parts: shadingToolParts( formats, levels ), entries, layout, group, texture, levels,
 		async read() { return Promise.all( Array.from( { length: levels }, ( _, i ) => readTexture( device, texture, i ) ) ); },
 		async check() { return checkShadingPyramid( scene, await this.read(), { exposure: inputs.exposure, levels } ); },
 		destroy() { texture.destroy(); }

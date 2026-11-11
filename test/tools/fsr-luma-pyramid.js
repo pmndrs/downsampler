@@ -25,9 +25,9 @@ export const unsmoothedFrameInfo = [ 0, 1e4, 0, 0 ];
  * SpdStore (level = SPD mip index + 1); `spdLoad` is SpdLoad (mip 6 read back
  * by the tail); `finish` is the scalar epilogue for the every-texel variant.
  */
-export function lumaToolWgsl( { half1 } ) {
+export function lumaToolParts( { half1 } ) {
 
-	return /* wgsl */ `
+	const bindings = /* wgsl */ `
 struct LumaConstants {
 	mips: u32,          // MipCount(); 0 disables the SPD last-mip epilogue
 	deltaTime: f32,     // DeltaTime()
@@ -60,6 +60,8 @@ fn ComputeAutoExposureFromLavg(LavgIn: f32) -> f32 {
 	return 1.0 / Lmax;
 }
 
+`;
+	const load = /* wgsl */ `
 fn load(texel: vec2i, layer: u32) -> vec4f {
 	let fLuma = textureLoad(r_current_luma, texel, 0).r;
 	let fLogLuma = max(FSR3UPSCALER_EPSILON, log(fLuma));
@@ -71,6 +73,8 @@ fn load(texel: vec2i, layer: u32) -> vec4f {
 	return fOutput;
 }
 
+`;
+	const helpers = /* wgsl */ `
 // Texture writes outside the resource are dropped (D3D UAV semantics), and out-of-bounds reads return 0.
 fn StoreFarthestDepthMip1(pix: vec2i, depth: f32) {
 	if (all(vec2u(pix) < textureDimensions(rw_farthest_depth_mip1))) { textureStore(rw_farthest_depth_mip1, pix, vec4f(depth, 0.0, 0.0, 0.0)); }
@@ -100,6 +104,8 @@ fn updateFrameInfo(outValue: vec4f) {
 	rw_frame_info[0] = frameInfo;
 }
 
+`;
+	const store = /* wgsl */ `
 fn store(level: u32, pix: vec2i, layer: u32, outValue: vec4f) {
 	if (level == 6u) {
 		StorePyramidMip5(pix, outValue.xy);
@@ -111,8 +117,19 @@ fn store(level: u32, pix: vec2i, layer: u32, outValue: vec4f) {
 	}
 }
 
+`;
+	const finish = /* wgsl */ `
 fn finish(value: vec4f, weight: f32) { updateFrameInfo(value); }
 `;
+	return { bindings: bindings + helpers, load, store, finish };
+
+}
+
+/** All of the tool half in one string (the SPD port and the every-texel kernel compile it whole). */
+export function lumaToolWgsl( formats ) {
+
+	const { bindings, load, store, finish } = lumaToolParts( formats );
+	return bindings + load + store + finish;
 
 }
 
@@ -170,16 +187,16 @@ fn combine(@builtin(local_invocation_index) index: u32) {
 }
 `;
 
-function toolLayout( device, half1 ) {
+function toolEntries( half1 ) {
 
-	return device.createBindGroupLayout( { label: 'fsr luma tool (group 1)', entries: [
+	return [
 		{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
 		{ binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
 		{ binding: 2, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
 		{ binding: 3, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: half1 } },
 		{ binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
 		{ binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }
-	] } );
+	];
 
 }
 
@@ -215,20 +232,25 @@ export function createLumaTool( device, scene, inputs, formats, { variant = 'amd
 	new Float32Array( constants, 4, 1 )[ 0 ] = scene.deltaTime;
 	new Uint32Array( constants, 8, 2 ).set( mip6 );
 	const uniforms = uniformBuffer( device, 'fsr luma constants', constants );
-	const layout = toolLayout( device, formats.half1 );
-	const group = device.createBindGroup( { layout, entries: [
+	const entries = toolEntries( formats.half1 );
+	const layout = device.createBindGroupLayout( { label: 'fsr luma tool (group 1)', entries } );
+	const groupEntries = [
 		{ binding: 0, resource: { buffer: uniforms } },
 		{ binding: 1, resource: inputs.currentLuma.createView() },
 		{ binding: 2, resource: inputs.farthestDepth.createView() },
 		{ binding: 3, resource: depthMip1.createView() },
 		{ binding: 4, resource: { buffer: mip5 } },
 		{ binding: 5, resource: { buffer: frameInfoBuffer } }
-	] } );
+	];
+	const group = device.createBindGroup( { layout, entries: groupEntries } );
 	const reset = ( state = frameInfo ) => device.queue.writeBuffer( frameInfoBuffer, 0, new Float32Array( state ) );
 	reset();
 
 	return {
-		wgsl: lumaToolWgsl( formats ), layout, group, variant, mips: setup.mips, reset,
+		wgsl: lumaToolWgsl( formats ), layout, group, variant, mips: setup.mips, mip6Size: mip6, reset,
+		// For generators that compose their own group 1 (SPEC §14.1): the hooks
+		// separately, and the layout and bind group entries to extend.
+		parts: lumaToolParts( formats ), entries, groupEntries,
 		async read() {
 
 			return {
