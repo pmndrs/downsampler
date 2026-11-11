@@ -8,7 +8,10 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Now
 
-- [ ] M2T.1: design the generator API against SPEC §14 (next to start)
+- [ ] M2T.1: reduction generator per SPEC §14.1 (agent, branch `m2t-generator`)
+- [ ] M2T.2: `reduceToScalar` (agent, branch `m2t-scalar`)
+- [ ] M2T.3 groundwork: FSR 3.1 + upscaler fixtures and bench in `test/tools/` (agent, branch `m2t-fixtures`)
+- [ ] Upscaler: parallel exposure, same 1024 taps (agent, upscaler branch `perf/exposure-parallel`, not pushed)
 
 ## Next (M2T, tools first: SPEC §11)
 
@@ -63,7 +66,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 ## Waiting on owner
 
 - Upscaler exposure: a parallel reduction averages every texel instead of 1024 samples (or FSR's top-left 2^mips square), so values change. Accept for the upscaler, or match one of them for the comparison?
-- M2T.3 cross-device runs: RTX 3060 laptop and Intel UHD timings of the bench fixtures
+- M2T.3 cross-device runs: RTX 3060 laptop and Intel UHD timings of the bench fixtures and the upscaler exposure branch (owner, 2026-11-12)
 - Cross-vendor hardware for M3: which NVIDIA/AMD/Intel (Windows) and Android devices are available?
 - Package name: `downsampler` or `@pmndrs/downsampler` (SPEC §12)
 - Review of the gpuweb#5253 comment draft before anything is posted (M5)
