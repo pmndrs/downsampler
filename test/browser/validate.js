@@ -5,6 +5,8 @@ import { copyReference, formats, fromHalf, isIntegerDomain, levelSize, pyramidTo
 import { Downsampler, Reducer } from '/dist/webgpu/index.js';
 import { createDepthSource, createTexture, makeData, poison, readMip, readMips, toFloats, upload } from './gpu.js';
 import { validateScalar } from './validate-scalar.js';
+import { validatePayload } from './validate-payload.js';
+import { validateWide } from './validate-wide.js';
 
 // [ width, height, layers?, viewDimension? ]: 1×1, 1D tails, odd sizes, partial
 // workgroups, rectangles, layers, both 2D view variants, and multi-batch sizes.
@@ -84,12 +86,15 @@ export function levelOptions( device ) {
 
 }
 
-/** `only`: run one part of the suite ('mips', 'scalar'); default all. */
+/** A compatibility-mode device: no 'core-features-and-limits' (SPEC §4 Compatibility mode). */
+export const compatibility = device => ! device.features.has( 'core-features-and-limits' );
+
+/** `only`: run one part of the suite ('mips': all but scalars, 'reducer': Reducer cases only, 'scalar'); default all. */
 export async function validate( device, { onProgress = () => {}, quick = false, only } = {} ) {
 
 	const results = [];
 	const started = performance.now();
-	const cases = only === 'scalar' ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
+	const cases = only === 'scalar' || only === 'reducer' ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
 	let scalarPrecision = null;
 	let runs = 0;
 	const skipped = [];
@@ -105,10 +110,21 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 		for ( const format of Object.keys( formats ) ) {
 
-			const { quantization, channels, filterable, feature } = formats[ format ];
+			const { quantization, channels, filterable, feature, coreStorage } = formats[ format ];
 			if ( feature !== undefined && ! device.features.has( feature ) ) {
 
 				skipped.push( `${ format } (needs ${ feature })` );
+				continue;
+
+			}
+
+			if ( coreStorage && compatibility( device ) ) {
+
+				skipped.push( `${ format } (no storage in compatibility mode)` );
+				// The Downsampler names the reason (a texture without storage usage can still be created).
+				const probe = device.createTexture( { size: [ 1, 1 ], format, usage: GPUTextureUsage.TEXTURE_BINDING } );
+				if ( ! new Downsampler( device ).unsupportedReason( probe )?.includes( 'compatibility mode' ) ) throw new Error( `compat: Downsampler does not reject ${ format }, which has no storage in compatibility mode` );
+				probe.destroy();
 				continue;
 
 			}
@@ -152,7 +168,7 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 							// normalized formats: they must match the oracle bit for bit,
 							// which is what tests tie rounding. Only a batch's first output
 							// (sampler or float weights) gets the tolerance.
-							const firstOutputs = new Set( downsampler.prepare( texture, options ).map( batch => batch.firstMipLevel ) );
+							const firstOutputs = new Set( downsampler.prepare( texture, options ).filter( batch => ! batch.copy ).map( batch => batch.firstMipLevel ) );
 							let previous = input.floats, w = width, h = height;
 
 							for ( let level = 1; level < texture.mipLevelCount; level ++ ) {
@@ -190,17 +206,24 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 		if ( only !== 'scalar' ) {
 
-			results.push( ...await validateSource( device, { quick, onProgress } ) );
-			results.push( ...await validateOptions( device ) );
+			if ( only !== 'reducer' ) {
+
+				results.push( ...await validateSource( device, { quick, onProgress } ) );
+				results.push( ...await validateOptions( device ) );
+
+			}
+
 			const reducer = await validateReducer( device, { quick, onProgress } );
 			results.push( ...reducer );
 			runs += reducer.reduce( ( sum, result ) => sum + ( result.runs ?? 0 ), 0 );
 			results.push( ...await validateTools( device, { quick, onProgress } ) );
 			results.push( ...await validateReducerOptions( device ) );
+			results.push( ...await validateWide( device, { quick, onProgress } ) );
+			results.push( ...await validatePayload( device, { quick, onProgress } ) );
 
 		}
 
-		if ( only !== 'mips' ) {
+		if ( only !== 'mips' && only !== 'reducer' ) {
 
 			const scalar = await validateScalar( device, { quick, onProgress } );
 			results.push( ...scalar.results );
@@ -275,6 +298,8 @@ async function validateSource( device, { quick, onProgress } ) {
 	const downsamplers = levelOptions( device ).map( levels => new Downsampler( device, { levelsPerDispatch: levels } ) );
 
 	for ( const { source: sourceFormat, destination: format, relation, reductions } of sourceCases ) {
+
+		if ( formats[ format ].coreStorage && compatibility( device ) ) continue;
 
 		const { quantization, channels } = formats[ format ];
 
@@ -457,6 +482,43 @@ async function validateOptions( device ) {
 	}
 
 	results.push( { option: 'encodePass matches encode' } );
+
+	// The compatibility-mode path (scratch level per batch output, a copy dispatch
+	// per level) writes the same bits as the direct path: in place, from a depth
+	// source, with layers, through encode and encodePass. On core devices only
+	// (a compatibility-mode device rejects the direct path).
+	const compat = new Downsampler( device, { compatibility: true } ), direct = new Downsampler( device, { compatibility: false } );
+	for ( const [ width, height, layers, format, options, label ] of compatibility( device ) ? [] : [
+		[ 333, 200, 3, 'rgba16float', {}, 'average, 3 layers' ],
+		[ 255, 257, 1, 'rgba8unorm', { reduction: 'minmax' }, 'minmax' ],
+		[ 17, 9, 1, 'rgba8unorm', { baseMipLevel: 1 }, 'sub-range' ],
+		[ 1917, 1079, 1, 'r32float', { reduction: 'min' }, 'depth min' ],
+	] ) {
+
+		const a = createTexture( device, { width, height, layers, format } ), b = createTexture( device, { width, height, layers, format } );
+		const depth = format === 'r32float' ? await createDepthSource( device, { width, height }, makeData( width, height, 1, 'r32float', 'random', 9, { unit: true } ) ) : null;
+		const data = makeData( width, height, layers, format, 'random', 13 );
+		if ( depth === null ) { upload( device, a, data ); upload( device, b, data ); }
+		poison( device, b, depth ? 0 : ( options.baseMipLevel ?? 0 ) + 1 );
+		const run = { ...options, ...( depth ? { source: { texture: depth.texture } } : {} ) };
+		direct.generate( a, run );
+		const encoder = device.createCommandEncoder();
+		const pass = encoder.beginComputePass();
+		compat.encodePass( pass, b, run );
+		pass.end();
+		device.queue.submit( [ encoder.finish() ] );
+		const batches = compat.prepare( b, run );
+		const written = b.mipLevelCount - ( depth ? 0 : ( options.baseMipLevel ?? 0 ) + 1 );
+		if ( batches.filter( batch => batch.copy ).length !== written || batches.some( batch => ! batch.copy && batch.firstMipLevel === undefined ) ) throw new Error( `compat ${ label }: expected one copy per written level (${ written })` );
+		const ma = await readMips( device, a ), mb = await readMips( device, b );
+		ma.forEach( ( level, l ) => { if ( level.some( ( value, i ) => ! Object.is( value, mb[ l ][ i ] ) ) ) throw new Error( `compat ${ label }: level ${ l } differs from the direct path` ); } );
+		compat.release( b );
+		for ( const t of [ a, b, depth?.texture ] ) t?.destroy();
+
+	}
+
+	if ( direct.prepare( createTexture( device, { width: 8, height: 8, format: 'rgba8unorm' } ) ).some( batch => batch.copy ) ) throw new Error( 'compat: the direct path has copy dispatches' );
+	if ( ! compatibility( device ) ) results.push( { option: 'compatibility path matches the direct path' } );
 	return results;
 
 }
@@ -818,7 +880,15 @@ async function validateTools( device, { quick, onProgress } ) {
 		const mips = device.createTexture( { size: [ width >> 1 || 1, height >> 1 || 1 ], mipLevelCount: Math.min( 3, Math.floor( Math.log2( Math.max( width >> 1 || 1, height >> 1 || 1 ) ) ) + 1 ), format: 'rgba16float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST } );
 		const bindGroup = device.createBindGroup( { layout: shading.bindGroupLayouts[ 1 ], entries: [ { binding: 0, resource: cur.createView() }, { binding: 1, resource: prev.createView() }, { binding: 2, resource: { buffer: uniform } } ] } );
 
-		if ( mips.mipLevelCount === 3 ) {
+		if ( mips.mipLevelCount === 3 && compatibility( device ) ) {
+
+			// Compatibility mode: three mips of one texture in one dispatch are rejected up front.
+			let error = null;
+			try { shading.encode( device.createCommandEncoder(), { width, height, bindGroup, outputs: [ 0, 1, 2 ].map( mipLevel => ( { texture: mips, mipLevel } ) ) } ); } catch ( caught ) { error = caught; }
+			if ( ! error?.message.includes( 'compatibility mode' ) ) throw new Error( `compat: the Reducer accepted three mips of one texture (${ error?.message })` );
+			results.push( { tool: 'fsr shading change (compat: rejected)', width, height } );
+
+		} else if ( mips.mipLevelCount === 3 ) {
 
 			poison( device, mips, 0 );
 			const encoder = device.createCommandEncoder();
@@ -1097,7 +1167,8 @@ async function validateReducerOptions( device ) {
 	const textureReducer = edges => new Reducer( device, { reduction: 'average', levels: [ 1, 2 ], edges, format: 'rgba32float' } );
 	const mipOutputs = [ 1, 2 ].map( mipLevel => ( { texture: mipped, mipLevel } ) );
 	expectThrow( () => textureReducer( 'zero-weight' ).encode( device.createCommandEncoder(), { source, outputs: mipOutputs } ), 'smaller than the level', 'zero-weight mip outputs' );
-	textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { source, outputs: mipOutputs } );
+	if ( compatibility( device ) ) expectThrow( () => textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { source, outputs: mipOutputs } ), 'compatibility mode', 'compat: two mips of one texture' );
+	else textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { source, outputs: mipOutputs } );
 	expectThrow( () => textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { source, outputs: mipOutputs.slice( 1 ) } ), 'one output per emitted level', 'output count' );
 	expectThrow( () => textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { outputs: mipOutputs } ), 'pass `source`', 'missing source' );
 	expectThrow( () => new Reducer( device, { reduction: 'average', levels: [ 1, 2 ], format: 'rgba16float' } ).encode( device.createCommandEncoder(), { source, outputs: mipOutputs } ), 'this Reducer writes rgba16float', 'output format' );

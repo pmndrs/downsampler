@@ -1,14 +1,12 @@
 import { formats, isSupportedFormat, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { levelSize, tileDispatch } from '../core/pyramid.js';
-import { resolveReduction, type Reduction, type TileEdgePolicy } from '../core/reduction.js';
+import { tileSize, workgroupSide } from '../core/plan.js';
+import { resolveReduction, type Channels, type Reduction, type TileEdgePolicy } from '../core/reduction.js';
+import { isCompatibilityTexture } from './compat.js';
 import { createKernel, kernelLayoutEntries, sizeBinding, type KernelOptions, type ViewDimension } from './kernel.js';
+import { checkToolBindings, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolGroupLayouts, toolPipelineLayout, type ToolBindings } from './tool.js';
 
-/** The tool's `@group(1)`: WGSL declarations and the matching layout entries. */
-export interface ToolBindings {
-	/** e.g. `@group(1) @binding(0) var luma: texture_2d<f32>;` */
-	wgsl: string;
-	entries: GPUBindGroupLayoutEntry[];
-}
+export type { ToolBindings } from './tool.js';
 
 export interface ReducerOptions {
 	/**
@@ -39,6 +37,14 @@ export interface ReducerOptions {
 	sourceFormat?: string;
 	/** The tool's group-1 bindings, used by its hooks. */
 	bindings?: ToolBindings;
+	/**
+	 * Accumulator channels per texel: 4 (a `vec4f`, default) or 8. With 8, the
+	 * load hook returns, the store hook takes, and a custom reduce combines
+	 * `DsWide { lo: vec4f, hi: vec4f }` (channels 0–3, 4–7), and both hooks are
+	 * required. Eight channel ops imply it. Workgroup memory doubles: 8 KiB
+	 * for 5 levels, 32 KiB for 6 (above the default limit).
+	 */
+	channels?: Channels;
 	label?: string;
 }
 
@@ -112,6 +118,8 @@ export class Reducer {
 	readonly pipeline: GPUComputePipeline;
 	readonly levels: readonly number[];
 	readonly edges: TileEdgePolicy;
+	/** Accumulator channels per texel (4 or 8). */
+	readonly channels: Channels;
 	readonly label: string;
 	private readonly options: ReducerOptions;
 	private readonly cache = new Map<string, Prepared>();
@@ -121,11 +129,17 @@ export class Reducer {
 		const edges = options.edges ?? 'zero-weight';
 		if ( edges !== 'zero-weight' && edges !== 'clamp' ) throw new Error( `downsampler: a Reducer takes edges 'zero-weight' or 'clamp', got ${ JSON.stringify( edges ) }; 'exact' mip chains (a batch per odd size) are Downsampler's.` );
 		const reduction = options.reduction ?? 'average';
-		resolveReduction( reduction );
+		const { channels } = resolveReduction( reduction, options.channels );
+		checkToolBindings( options.bindings );
 		const kernel: KernelOptions = {
 			edges, levels: options.levels, reduction, format: options.format, dimension: options.dimension ?? '2d', sourceFormat: options.sourceFormat,
-			load: options.load, store: options.store, size: options.size, bindings: options.bindings?.wgsl
+			load: options.load, store: options.store, size: options.size, bindings: options.bindings?.wgsl, ...( channels === 8 ? { channels } : {} )
 		};
+		const deepest = options.levels[ options.levels.length - 1 ];
+		const invocations = workgroupSide( tileSize( deepest ) ) ** 2;
+		if ( Number.isInteger( deepest ) && invocations > device.limits.maxComputeInvocationsPerWorkgroup ) throw new Error( `downsampler: ${ deepest } levels take workgroups of ${ invocations } invocations; this device allows ${ device.limits.maxComputeInvocationsPerWorkgroup } (maxComputeInvocationsPerWorkgroup; compatibility mode defaults to 128). Emit at most 4 levels or request a higher limit (Downsampler.requiredLimits).` );
+		const tileBytes = tileSize( deepest ) ** 2 * channels * 4;
+		if ( Number.isInteger( deepest ) && tileBytes > device.limits.maxComputeWorkgroupStorageSize ) throw new Error( `downsampler: ${ deepest } levels of ${ channels }-channel accumulators take ${ tileBytes } bytes of workgroup memory; this device allows ${ device.limits.maxComputeWorkgroupStorageSize } (maxComputeWorkgroupStorageSize). Emit fewer levels or request a higher limit.` );
 
 		if ( options.store === undefined ) {
 
@@ -151,9 +165,10 @@ export class Reducer {
 
 		if ( cached === undefined ) {
 
-			const bindGroupLayouts = [ device.createBindGroupLayout( { label: `${ label } group 0`, entries: kernelLayoutEntries( kernel ) } ) ];
-			if ( toolEntries !== undefined ) bindGroupLayouts.push( device.createBindGroupLayout( { label: `${ label } group 1`, entries: toolEntries } ) );
-			const layout = device.createPipelineLayout( { label, bindGroupLayouts } );
+			const group0 = device.createBindGroupLayout( { label: `${ label } group 0`, entries: kernelLayoutEntries( kernel ) } );
+			const tool = toolBindGroupLayout( device, `${ label } group 1`, options.bindings );
+			const layout = toolPipelineLayout( device, label, group0, tool );
+			const bindGroupLayouts = toolGroupLayouts( group0, tool );
 			const module = device.createShaderModule( { label, code: wgsl } );
 			cached = { pipeline: device.createComputePipeline( { label, layout, compute: { module, entryPoint: 'main' } } ), layout, bindGroupLayouts };
 			cache.set( key, cached );
@@ -166,6 +181,7 @@ export class Reducer {
 		this.bindGroupLayouts = cached.bindGroupLayouts;
 		this.pipeline = cached.pipeline;
 		this.levels = [ ...options.levels ];
+		this.channels = channels;
 		this.edges = edges;
 		this.label = label;
 		this.options = { ...options, reduction };
@@ -204,13 +220,9 @@ export class Reducer {
 		const { bindGroup, workgroups } = this.prepare( dispatch );
 		pass.setPipeline( this.pipeline );
 		pass.setBindGroup( 0, bindGroup );
-		if ( this.bindGroupLayouts.length > 1 ) {
-
-			if ( dispatch.bindGroup === undefined ) throw new Error( 'downsampler: this Reducer has tool bindings; pass their group-1 bindGroup.' );
-			pass.setBindGroup( 1, dispatch.bindGroup );
-
-		} else if ( dispatch.bindGroup !== undefined ) throw new Error( 'downsampler: a bindGroup was passed, but this Reducer has no tool bindings.' );
-
+		const reason = toolBindGroupReason( this.bindGroupLayouts.length > 1, dispatch.bindGroup, 'this Reducer' );
+		if ( reason !== null ) throw new Error( `downsampler: ${ reason }.` );
+		setToolBindGroup( pass, dispatch.bindGroup );
 		pass.dispatchWorkgroups( ...workgroups );
 
 	}
@@ -294,6 +306,9 @@ export class Reducer {
 
 		}
 
+		// Compatibility mode binds one view (mip range) of a texture per dispatch.
+		const textures = [ ...( source ? [ source.texture ] : [] ), ...( outputs ?? [] ).map( output => output.texture ) ];
+		if ( new Set( textures ).size < textures.length && textures.some( texture => isCompatibilityTexture( this.device, texture ) ) ) throw new Error( 'downsampler: in compatibility mode a dispatch binds one view of a texture, so the source and each output level must be separate textures (or use a store hook).' );
 		const prepared = { bindGroup: this.device.createBindGroup( { label: this.label, layout: this.bindGroupLayouts[ 0 ], entries } ), workgroups };
 		this.cache.set( key, prepared );
 		if ( this.cache.size > cacheSize ) this.cache.delete( this.cache.keys().next().value! );

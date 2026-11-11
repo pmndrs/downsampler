@@ -36,6 +36,8 @@ export interface FormatInfo {
 	filterable: boolean;
 	/** Device feature needed to use it as a storage texture, if any. */
 	feature?: string;
+	/** Storage needs 'core-features-and-limits': not available in compatibility mode (rg32float). */
+	coreStorage?: true;
 }
 
 /** Formats supported by the current kernels. See SPEC.md for the planned matrix. */
@@ -62,7 +64,7 @@ export const formats = {
 	// Filtering float32 needs the optional `float32-filterable` feature, so these
 	// always use the load path.
 	r32float: { quantization: 'float32', bytesPerTexel: 4, channels: 1, filterable: false },
-	rg32float: { quantization: 'float32', bytesPerTexel: 8, channels: 2, filterable: false },
+	rg32float: { quantization: 'float32', bytesPerTexel: 8, channels: 2, filterable: false, coreStorage: true },
 	rgba32float: { quantization: 'float32', bytesPerTexel: 16, channels: 4, filterable: false }
 } as const satisfies Record<string, FormatInfo>;
 
