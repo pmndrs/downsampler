@@ -2,8 +2,11 @@
 import { formats, fromHalf, integerDomains, isIntegerDomain, isPackedQuantization, isSupportedFormat, packTexel, storageWritable, toHalf, unpackTexel } from '/dist/index.js';
 import { Downsampler } from '/dist/webgpu/index.js';
 
-/** `compat`: a compatibility-mode device (featureLevel 'compatibility', without 'core-features-and-limits'). */
-export async function requestDevice( { compat = false } = {} ) {
+/**
+ * `compat`: a compatibility-mode device (featureLevel 'compatibility', without 'core-features-and-limits').
+ * `maxStorageTextures`: request the adapter's storage texture limit (the atomic probe's tail levels), not just six.
+ */
+export async function requestDevice( { compat = false, maxStorageTextures = false } = {} ) {
 
 	if ( ! navigator.gpu ) throw new Error( 'WebGPU is not available in this browser.' );
 	const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance', ...( compat ? { featureLevel: 'compatibility' } : {} ) } );
@@ -14,7 +17,7 @@ export async function requestDevice( { compat = false } = {} ) {
 	const optional = [ 'texture-formats-tier1', 'bgra8unorm-storage' ].filter( feature => adapter.features.has( feature ) );
 	const device = await adapter.requestDevice( {
 		requiredFeatures: [ ...optional, ...( timestamps ? [ 'timestamp-query' ] : [] ) ],
-		requiredLimits: Downsampler.requiredLimits( adapter )
+		requiredLimits: maxStorageTextures ? { maxStorageTexturesPerShaderStage: adapter.limits.maxStorageTexturesPerShaderStage } : Downsampler.requiredLimits( adapter )
 	} );
 	if ( compat && device.features.has( 'core-features-and-limits' ) ) throw new Error( 'compat: the browser gave a core device (it cannot enforce compatibility-mode validation).' );
 	const info = adapter.info || {};

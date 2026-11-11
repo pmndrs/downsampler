@@ -1,5 +1,5 @@
 import { formats, integerDomains, isIntegerDomain, isPackedQuantization, isSupportedFormat, sampledChannels, type FormatInfo, type SupportedFormat } from '../core/formats.js';
-import { tileSize, workgroupSide } from '../core/plan.js';
+import { tailTile, tileSize, workgroupSide } from '../core/plan.js';
 import { checkLevels } from '../core/pyramid.js';
 import { isBuiltinReduction, needsTileEdges, reductionKey, resolveReduction, type Channels, type CustomReduction, type EdgePolicy, type Reduction } from '../core/reduction.js';
 import { lanes, payloadCombine } from './lanes.js';
@@ -12,7 +12,9 @@ export type ViewDimension = '2d' | '2d-array';
  * - 'sample': one hardware bilinear sample (average only; needs a filterable format)
  * - 'load': `textureLoad` of the footprint, with bilinear weights computed in the
  *   shader for 'average'. Required for fold reductions and unfilterable formats.
- * Tile kernels ('zero-weight', 'clamp') always load.
+ * Tile kernels ('zero-weight', 'clamp') load by default. Under 'clamp', an
+ * all-'average' reduction without a load hook can 'sample' instead: one
+ * bilinear sample at the shared corner of each 2×2 block (as SPD does).
  */
 export type SourceAccess = 'sample' | 'load';
 
@@ -25,8 +27,21 @@ export interface KernelOptions {
 	count?: number;
 	/** Default 'average'. Channel ops and custom `kind: 'sum'` need a tile edge policy. */
 	reduction?: Reduction;
-	/** 'exact' only. Default 'sample' for 'average', otherwise 'load' (the only option for folds). */
+	/**
+	 * 'exact': default 'sample' for 'average', otherwise 'load' (the only option
+	 * for folds). Tile kernels: default 'load'; 'sample' only under 'clamp' for
+	 * an all-'average' reduction read from a texture (no load hook).
+	 */
 	access?: SourceAccess;
+	/**
+	 * 'exact' only: a tail kernel. One workgroup (dispatch 1×1×layers) writes all
+	 * `count` levels; the first output (at most `tile`²) reads the source level as
+	 * usual, and every further level is reduced from the previous one in
+	 * workgroup memory by the same 'exact' rule, odd sizes included.
+	 */
+	tail?: boolean;
+	/** Tail kernels: the tile edge, 8, 16 or 32, at least the first output's larger side. Default 32. */
+	tile?: number;
 	/**
 	 * Format of the texture the first output reads, when it isn't `format` (a
 	 * separate source, e.g. depth32float). Single-channel sources are splatted to
@@ -233,7 +248,10 @@ function tileOptions( options: KernelOptions ) {
 	checkLevels( levels );
 	const count = levels[ levels.length - 1 ];
 	if ( options.count !== undefined && options.count !== count ) throw new Error( `downsampler: count ${ options.count } must be the deepest emitted level (${ count }).` );
-	if ( options.access === 'sample' ) throw new Error( 'downsampler: tile kernels read their source with textureLoad (access "load").' );
+	const access = options.access ?? 'load';
+	if ( access !== 'load' && access !== 'sample' ) throw new Error( `downsampler: unknown access ${ JSON.stringify( access ) }.` );
+	if ( access === 'sample' && ( edges !== 'clamp' || load !== undefined || resolveReduction( reduction, options.channels ).ops?.some( op => op !== 'average' ) !== false ) ) throw new Error( 'downsampler: tile kernels sample (access "sample") only under \'clamp\', for an all-\'average\' reduction read from a texture; otherwise they read with textureLoad.' );
+	if ( options.tail !== undefined || options.tile !== undefined ) throw new Error( 'downsampler: tail and tile are \'exact\' kernel options.' );
 	checkHooks( { load, store, size } );
 	if ( size !== undefined && load === undefined ) throw new Error( 'downsampler: a size hook replaces the size uniform of a load hook; without a load hook the size is the source texture\'s.' );
 	if ( typeof bindings !== 'string' ) throw new Error( 'downsampler: bindings must be WGSL declarations for @group(1).' );
@@ -246,7 +264,7 @@ function tileOptions( options: KernelOptions ) {
 	const { channels } = resolveReduction( reduction, options.channels );
 	// Eight channels never reach output textures (or the buffer output, which writes them).
 	if ( channels === 8 && ( load === undefined || store === undefined ) ) throw new Error( 'downsampler: 8-channel accumulators need a load hook and a store hook (textures hold at most 4 channels, so neither output textures nor output \'buffer\' can take them).' );
-	return { format, dimension, reduction, edges, levels, count, load, store, size, bindings, output, channels, sourceFormat: sourceFormat ?? format ?? 'rgba32float' };
+	return { format, dimension, reduction, edges, access, levels, count, load, store, size, bindings, output, channels, sourceFormat: sourceFormat ?? format ?? 'rgba32float' };
 
 }
 
@@ -258,8 +276,9 @@ export function kernelLayoutEntries( options: KernelOptions ): GPUBindGroupLayou
 
 	if ( ( options.edges ?? 'exact' ) !== 'exact' ) {
 
-		const { format, dimension, levels, load, store, size, output } = tileOptions( options );
-		if ( load === undefined ) entries.push( { binding: 1, visibility, texture: { sampleType: 'unfilterable-float', viewDimension: dimension } } );
+		const { format, dimension, access, levels, load, store, size, output } = tileOptions( options );
+		if ( access === 'sample' ) entries.push( { binding: 0, visibility, sampler: { type: 'filtering' } } );
+		if ( load === undefined ) entries.push( { binding: 1, visibility, texture: { sampleType: access === 'sample' ? 'float' : 'unfilterable-float', viewDimension: dimension } } );
 		if ( store === undefined && output === 'buffer' ) entries.push( { binding: outputLayoutBinding, visibility, buffer: { type: 'uniform', minBindingSize: outputLayoutBytes } }, { binding: outputBufferBinding, visibility, buffer: { type: 'storage' } } );
 		else if ( store === undefined ) levels.forEach( ( _, i ) => entries.push( { binding: i + 2, visibility, storageTexture: { access: 'write-only', format: format!, viewDimension: dimension } } ) );
 		if ( load !== undefined && size === undefined ) entries.push( { binding: sizeBinding, visibility, buffer: { type: 'uniform', minBindingSize: 8 } } );
@@ -317,8 +336,13 @@ export function createKernel( options: KernelOptions ): string {
  * store adjacent texels — the layout matters: assigning each invocation a 2×2
  * block measured ~30–45 % slower. Later levels are 2:1 reductions of the tile in
  * workgroup memory, with clamped reads for unit dimensions and partial tiles.
+ *
+ * A tail kernel (`tail`) is one workgroup with a `tile`² tile (8, 16 or 32): the
+ * first output as above, then every further level from the previous one in the
+ * tile by the 'exact' rule at any parity (shader bilinear weights for 'average',
+ * the `2x … 2x+2` footprint for folds), each quantized as stored.
  */
-function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage' }:KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
+function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage', tail = false, tile: tailEdge = tailTile }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
 
 	reductionKey( reduction );
 	const average = reduction === 'average';
@@ -332,7 +356,9 @@ function createExactKernel( { format, dimension, count, reduction = 'average', a
 	const integer = isIntegerDomain( quantization );
 	const exactLoads = integer && isSupportedFormat( sourceFormat ) && formats[ sourceFormat ].quantization === quantization;
 	const splat = sampledChannels( sourceFormat ) === 1 ? '.xxxx' : '';
-	const tile = tileSize( count );
+	if ( tail && tailEdge !== 8 && tailEdge !== 16 && tailEdge !== 32 ) throw new Error( `downsampler: a tail tile is 8, 16 or 32, got ${ tailEdge }.` );
+	if ( ! tail && tailEdge !== tailTile ) throw new Error( 'downsampler: tile is a tail kernel option.' );
+	const tile = tail ? tailEdge : tileSize( count );
 	const side = workgroupSide( tile );
 	const samples = tile / side;
 
@@ -472,6 +498,38 @@ fn ds_level_size(i: u32) -> vec2u { return max(ds_output.size >> vec2u(i), vec2u
 	const dims = ( i: number ) => buffer ? `ds_level_size(${ i }u)` : `textureDimensions(mip${ i })`;
 	const put = ( i: number, pos: string ) => buffer ? `ds_put(${ i }u, ${ pos }, group.z, value);` : `textureStore(mip${ i }, vec2i(${ pos })${ layer }, value / SCALE);`;
 
+	if ( tail ) {
+
+		// The 'exact' rule from a level held in the tile (scaled, quantized units),
+		// as `first` applies it to a texture level with 'load' access.
+		code += `
+fn tileAt(p: vec2u) -> vec4f { return tile[p.y * ${ tile }u + p.x]; }
+fn tailStep(pos: vec2u, sourceSize: vec2u, size: vec2u) -> vec4f {
+	let last = sourceSize - vec2u(1);
+`;
+		code += average ? `	let numerator = (2u * pos + vec2u(1)) * sourceSize - size;
+	let denominator = 2u * size;
+	let lo = min(numerator / denominator, last);
+	let hi = min(lo + vec2u(1), last);
+	let f = vec2f(numerator % denominator) / vec2f(denominator);
+	let top = mix(tileAt(lo), tileAt(vec2u(hi.x, lo.y)), f.x);
+	let bottom = mix(tileAt(vec2u(lo.x, hi.y)), tileAt(hi), f.x);
+	return quantize(mix(top, bottom, f.y));
+}
+` : `	let lo = min(pos * 2u, last);
+	let hi = min(lo + vec2u(1), last);
+	var v = fold(fold(tileAt(lo), tileAt(vec2u(hi.x, lo.y))), fold(tileAt(vec2u(lo.x, hi.y)), tileAt(hi)));
+	let odd = ((sourceSize & vec2u(1)) == vec2u(1)) & (sourceSize > vec2u(1));
+	let far = min(lo + vec2u(2), last);
+	if (odd.x) { v = fold(v, fold(tileAt(vec2u(far.x, lo.y)), tileAt(vec2u(far.x, hi.y)))); }
+	if (odd.y) { v = fold(v, fold(tileAt(vec2u(lo.x, far.y)), tileAt(vec2u(hi.x, far.y)))); }
+	if (odd.x && odd.y) { v = fold(v, tileAt(far)); }
+	return quantize(v);
+}
+`;
+
+	}
+
 	code += `
 @compute @workgroup_size(${ side }, ${ side })
 fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group: vec3u) {
@@ -490,6 +548,32 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
 		if (all(pos0 < size0)) { ${ put( 0, 'pos0' ) } }
 	}
 `;
+
+	}
+
+	if ( tail ) {
+
+		// The first output fits the tile, so every later level fits half of it, at
+		// most the workgroup's side: one texel per invocation.
+		for ( let i = 1; i < count; i ++ ) {
+
+			code += `
+	workgroupBarrier();
+	{
+		let size = ${ dims( i ) };
+		if (all(local.xy < size)) { value = tailStep(local.xy, ${ dims( i - 1 ) }, size); }
+	}
+	// Every reader must finish before the shared tile is overwritten.
+	workgroupBarrier();
+	if (all(local.xy < ${ dims( i ) })) {
+		tile[local.y * ${ tile }u + local.x] = value;
+		${ put( i, 'local.xy' ) }
+	}
+`;
+
+		}
+
+		return code + '}\n';
 
 	}
 
@@ -539,7 +623,7 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
  */
 function createTileKernel( options: KernelOptions ): string {
 
-	const { format, dimension, reduction, edges, levels, count, load, store, size, bindings, output, channels, sourceFormat } = tileOptions( options );
+	const { format, dimension, reduction, edges, access, levels, count, load, store, size, bindings, output, channels, sourceFormat } = tileOptions( options );
 	const buffer = store === undefined && output === 'buffer';
 	const packed = store === undefined && isPackedQuantization( formats[ format! ].quantization ) ? formats[ format! ].quantization as 'rgb9e5ufloat' | 'rg11b10ufloat' : null;
 	const resolved = resolveReduction( reduction, channels );
@@ -554,6 +638,7 @@ function createTileKernel( options: KernelOptions ): string {
 	const { type: T, channel: ch, build, declarations } = lane;
 
 	let code = declarations;
+	if ( access === 'sample' ) code += '@group(0) @binding(0) var ds_sampler: sampler;\n';
 	if ( load === undefined ) code += `@group(0) @binding(1) var ds_source: texture_2d${ suffix }<f32>;\n`;
 	if ( buffer ) code += bufferOutputWgsl( format!, true );
 	// Packed floats are quantized by our encoder on either path, so stored values never depend on the GPU's conversion.
@@ -670,8 +755,16 @@ fn ds_reduce4(a: vec4f, b: vec4f, c: vec4f, d: vec4f) -> vec4f {
 
 	// Level 1 from a 2×2 block of the source. Coordinates are clamped, so the load
 	// hook only sees in-bounds texels; under 'zero-weight' the clamped duplicates
-	// are then left out.
-	code += `
+	// are then left out. 'sample' takes one bilinear sample at the block's shared
+	// corner (weights ½, ½): clamp-to-edge addressing repeats the edge texel past
+	// the image exactly as clamped loads do. The tile holds sums, hence × 4.
+	if ( access === 'sample' ) code += `
+fn ds_first(p: vec2u, layer: u32) -> vec4f {
+	let uv = vec2f(p * 2u + vec2u(1u)) / vec2f(ds_size());
+	return textureSampleLevel(ds_source, ds_sampler, uv${ array ? ', i32(layer)' : '' }, 0.0)${ sampledChannels( sourceFormat ) === 1 ? '.xxxx' : '' } * 4.0;
+}
+`;
+	else code += `
 fn ds_first(p: vec2u, layer: u32) -> ${ T } {
 	let size = ds_size();
 	let last = vec2i(size) - vec2i(1);

@@ -1,7 +1,7 @@
 // GPU correctness suite. Every texel of every generated level is checked against
 // the CPU reference, computed from the GPU's own previous level so permitted
 // rounding differences do not accumulate along the chain.
-import { copyReference, formats, fromHalf, isIntegerDomain, isPackedQuantization, levelSize, pyramidTolerance, quantize, reducePyramid, reduceReference, sampledChannels, storageWritable, toHalf, tolerance } from '/dist/index.js';
+import { copyReference, formats, fromHalf, isIntegerDomain, isPackedQuantization, levelSize, pyramidTolerance, quantize, reducePyramid, reduceReference, sampledChannels, spdReference, storageWritable, toHalf, tolerance } from '/dist/index.js';
 import { Downsampler, Reducer } from '/dist/webgpu/index.js';
 import { createDepthSource, createTexture, makeData, poison, readMip, readMips, toFloats, upload } from './gpu.js';
 import { validatePacked } from './validate-packed.js';
@@ -57,8 +57,62 @@ export const variants = [
 	{ name: 'min', reduction: 'min', patterns: patterns.slice( 1 ) },
 	{ name: 'max', reduction: 'max', patterns: patterns.slice( 1 ) },
 	{ name: 'minmax', reduction: 'minmax', patterns: patterns.slice( 1 ) },
-	{ name: 'custom', reduction: { wgsl: preferHigh.wgsl }, reference: preferHigh.reference, patterns: patterns.slice( 1 ) }
+	{ name: 'custom', reduction: { wgsl: preferHigh.wgsl }, reference: preferHigh.reference, patterns: patterns.slice( 1 ) },
+	// oddSizes: 'spd' (SPD semantics, 'average' only: 'clamp' tile batches, ⌊n/2⌋
+	// sizes), checked per batch against `spdReference` from the GPU's own batch source level.
+	{ name: 'spd average', reduction: 'average', oddSizes: 'spd', patterns },
+	{ name: 'spd average (load)', reduction: 'average', oddSizes: 'spd', access: 'load', patterns, filterableOnly: true },
+	// The exact tail kernel ('exact' results, fewer batches). Only shapes whose
+	// plan has a tail batch run these; elsewhere the plan is the 'exact' one.
+	{ name: 'tail average', reduction: 'average', tail: true, patterns },
+	{ name: 'tail average (load)', reduction: 'average', tail: true, access: 'load', patterns, filterableOnly: true },
+	{ name: 'tail max', reduction: 'max', tail: true, patterns: patterns.slice( 1 ) },
+	{ name: 'tail minmax', reduction: 'minmax', tail: true, patterns: patterns.slice( 1 ) },
+	{ name: 'tail custom', reduction: { wgsl: preferHigh.wgsl }, reference: preferHigh.reference, tail: true, patterns: patterns.slice( 1 ) }
 ];
+
+const mipSize = ( size, level ) => Math.max( 1, size >> level );
+
+function expectThrow( run, message, label ) {
+
+	try { run(); } catch ( error ) {
+
+		if ( ! String( error.message ).includes( message ) ) throw new Error( `${ label }: expected "${ message }", got "${ error.message }"` );
+		return;
+
+	}
+
+	throw new Error( `${ label }: expected an error "${ message }"` );
+
+}
+
+/**
+ * Levels of a plan that need the declared tolerance instead of a bit-exact
+ * match (normalized and packed formats): each batch's first output, and in a
+ * tail batch every level reduced from an odd, non-unit size (shader bilinear
+ * weights), or every tail level for packed formats (the tail's f32 pairing
+ * differs from the oracle's float32 pairing). Compatibility copies are skipped.
+ */
+function toleratedLevels( batches, width, height, packed ) {
+
+	const levels = new Set();
+	for ( const batch of batches ) {
+
+		if ( batch.copy ) continue;
+		levels.add( batch.firstMipLevel );
+		if ( batch.kernel !== 'tail' ) continue;
+		for ( let level = batch.firstMipLevel + 1; level < batch.firstMipLevel + batch.count; level ++ ) {
+
+			const w = mipSize( width, level - 1 ), h = mipSize( height, level - 1 );
+			if ( packed || ( w > 1 && w % 2 === 1 ) || ( h > 1 && h % 2 === 1 ) ) levels.add( level );
+
+		}
+
+	}
+
+	return levels;
+
+}
 
 /**
  * Compares the stored channels of every texel; the rest are not written.
@@ -103,6 +157,7 @@ export const compatibility = device => ! device.features.has( 'core-features-and
  * `only`: run one part of the suite; default all. The parts 'downsampler', 'reducer' and 'scalar' partition it
  * (CI runs them as parallel jobs); 'mips' is 'downsampler' plus 'reducer'. 'packed' runs the packed float
  * formats and the buffer output path ('packed-source' and 'packed-api' one piece of it, for debugging).
+ * 'odd' runs only the 'spd' and tail variants of the main matrix (part of 'downsampler', for debugging).
  */
 export async function validate( device, { onProgress = () => {}, quick = false, only } = {} ) {
 
@@ -122,7 +177,9 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 		const downsamplerSet = ( levels, output ) => ( {
 			levels, output,
 			sample: new Downsampler( device, { levelsPerDispatch: levels, output } ),
-			load: new Downsampler( device, { levelsPerDispatch: levels, averageAccess: 'load', output } )
+			load: new Downsampler( device, { levelsPerDispatch: levels, averageAccess: 'load', output } ),
+			tailsample: new Downsampler( device, { levelsPerDispatch: levels, output, tail: true } ),
+			tailload: new Downsampler( device, { levelsPerDispatch: levels, averageAccess: 'load', output, tail: true } )
 		} );
 		const storageSets = levelOptions( device ).map( levels => downsamplerSet( levels, 'storage' ) );
 		const bufferSets = [ 1, 4, 5, 6 ].filter( levels => levels <= 4 || device.limits.maxComputeInvocationsPerWorkgroup >= 256 ).map( levels => downsamplerSet( levels, 'buffer' ) );
@@ -153,7 +210,13 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 			}
 
-			const formatVariants = variants.filter( variant => filterable || ! variant.filterableOnly );
+			// --quick (CI, SwiftShader) runs the 'spd' variants on the family formats and
+			// the tail on rgba8unorm and rgba16float (integer and float16 paths), with two
+			// patterns. SwiftShader takes 30 s or more to compile a 32×32-tile pipeline.
+			const odd = variant => variant.oddSizes !== undefined || variant.tail === true;
+			const quickOdd = variant => quick && odd( variant );
+			const quickFormats = variant => variant.tail ? [ 'rgba8unorm', 'rgba16float' ] : familyFormats;
+			const formatVariants = variants.filter( variant => ( filterable || ! variant.filterableOnly ) && ( only !== 'odd' || odd( variant ) ) && ! ( quickOdd( variant ) && ! quickFormats( variant ).includes( format ) ) );
 			const family = familyFormats.includes( format ) || packed;
 			const storageShapes = ! storagePath ? [] : family ? cases : subset;
 			// The buffer path runs every shape when it is a packed format's only path (rgb9e5ufloat;
@@ -179,13 +242,17 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 					for ( const { levels, output, ...byAccess } of sets ) for ( const variant of formatVariants ) {
 
-						const downsampler = byAccess[ variant.access ?? 'sample' ];
-						const options = { reduction: variant.reduction };
+						const downsampler = byAccess[ `${ variant.tail ? 'tail' : '' }${ variant.access ?? 'sample' }` ];
+						const options = { reduction: variant.reduction, oddSizes: variant.oddSizes };
+						// Tail variants run where the plan has a tail batch. --quick skips 32×32-tile
+						// tails: SwiftShader takes minutes to compile each of those pipelines.
+						const tails = variant.tail ? downsampler.prepare( texture, options ).filter( batch => batch.kernel === 'tail' ) : [];
+						if ( variant.tail && ( tails.length === 0 || ( quick && tails.some( batch => batch.tile > 16 ) ) ) ) continue;
 						const reference = variant.reference ?? variant.reduction;
 						const result = { width, height, layers, format, output, levelsPerDispatch: levels, reduction: variant.name, dispatches: 0, maxError: 0 };
 
 						// Reusing one texture with changing input exercises the cached plans.
-						for ( const pattern of variant.patterns ) {
+						for ( const pattern of quickOdd( variant ) ? variant.patterns.filter( pattern => pattern === 'random' || pattern === 'edge' ) : variant.patterns ) {
 
 							if ( ! inputs.has( pattern ) ) {
 
@@ -199,13 +266,37 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 							poison( device, texture );
 							downsampler.generate( texture, options );
 							const mips = await readMips( device, texture, 1 );
+							const label = `${ width }x${ height }x${ layers } ${ format } ${ output } ${ variant.name } ${ pattern } L${ levels }`;
+
+							if ( variant.oddSizes === 'spd' ) {
+
+								// Each batch from the level it reads (the input, or the GPU's own).
+								for ( const batch of downsampler.prepare( texture, options ).filter( batch => ! batch.copy ) ) {
+
+									const source = batch.sourceMipLevel === 0 ? input.floats : mips[ batch.sourceMipLevel - 1 ];
+									const expected = spdReference( source, mipSize( width, batch.sourceMipLevel ), mipSize( height, batch.sourceMipLevel ), layers, quantization, reference, batch.count );
+									expected.forEach( ( level, i ) => {
+
+										const mip = batch.firstMipLevel + i;
+										result.maxError = Math.max( result.maxError, check( mips[ mip - 1 ], level, quantization, `${ label } mip ${ mip }`, reference, channels ) );
+
+									} );
+
+								}
+
+								runs ++;
+								continue;
+
+							}
+
 							// Levels reduced in workgroup memory use exact integer math in
 							// normalized formats: they must match the oracle bit for bit,
 							// which is what tests tie rounding. Only a batch's first output
 							// (sampler or float weights) gets the tolerance. Packed float
 							// formats are exact there too, against an oracle that sums in
 							// float32 in the kernel's order (their sums aren't always exact).
-							const firstOutputs = new Set( downsampler.prepare( texture, options ).filter( batch => ! batch.copy ).map( batch => batch.firstMipLevel ) );
+							// A tail's odd steps get the tolerance too (toleratedLevels).
+							const firstOutputs = toleratedLevels( downsampler.prepare( texture, options ), width, height, packed );
 							let previous = input.floats, w = width, h = height;
 
 							for ( let level = 1; level < texture.mipLevelCount; level ++ ) {
@@ -216,7 +307,7 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 								if ( expected === undefined ) expected = reduceReference( previous, w, h, layers, quantization, reference, packed && inTile ? { pairing: 'float32' } : {} );
 								if ( level === 1 ) firstLevels.set( key, expected );
 								const actual = mips[ level - 1 ];
-								result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ width }x${ height }x${ layers } ${ format } ${ output } ${ variant.name } ${ pattern } L${ levels } mip ${ level }`, reference, channels, 0, ( isIntegerDomain( quantization ) || packed ) && inTile ) );
+								result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ label } mip ${ level }`, reference, channels, 0, ( isIntegerDomain( quantization ) || packed ) && inTile ) );
 								previous = actual; w = expected.width; h = expected.height;
 
 							}
@@ -242,7 +333,11 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 		}
 
-		if ( only?.startsWith( 'packed' ) ) {
+		if ( only === 'odd' ) {
+
+			// The main matrix's 'spd' and tail variants only (above).
+
+		} else if ( only?.startsWith( 'packed' ) ) {
 
 			// 'packed-source' and 'packed-api' run one part (for debugging).
 			if ( only !== 'packed-api' ) results.push( ...await validateSource( device, { quick, onProgress, packedOnly: true } ) );
@@ -273,7 +368,7 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 		}
 
-		if ( only !== 'mips' && only !== 'reducer' && only !== 'downsampler' && ! only?.startsWith( 'packed' ) ) {
+		if ( only !== 'mips' && only !== 'reducer' && only !== 'downsampler' && only !== 'odd' && ! only?.startsWith( 'packed' ) ) {
 
 			const scalar = await validateScalar( device, { quick, onProgress } );
 			results.push( ...scalar.results );
@@ -349,7 +444,16 @@ async function validateSource( device, { quick, onProgress, packedOnly = false }
 
 	const results = [];
 	const shapes = quick ? sourceShapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : sourceShapes;
-	const downsamplers = levelOptions( device ).map( levels => new Downsampler( device, { levelsPerDispatch: levels } ) );
+	// 'exact', 'spd' ('average' only; a same-size source: an exact copy batch, then
+	// clamp batches) and the exact tail (only where the plan has a tail batch).
+	const downsamplers = levelOptions( device ).flatMap( levels => {
+
+		const exact = new Downsampler( device, { levelsPerDispatch: levels } );
+		const modes = [ { downsampler: exact, mode: 'exact' }, { downsampler: exact, mode: 'spd' } ];
+		// Tail pipelines compile slowly on SwiftShader; --quick leaves them to the main matrix.
+		return quick ? modes : [ ...modes, { downsampler: new Downsampler( device, { levelsPerDispatch: levels, tail: true } ), mode: 'tail' } ];
+
+	} );
 
 	for ( const { source: sourceFormat, destination: format, relation, reductions } of sourceCases ) {
 
@@ -372,12 +476,44 @@ async function validateSource( device, { quick, onProgress, packedOnly = false }
 
 					try {
 
-						for ( const downsampler of downsamplers ) for ( const reduction of reductions ) {
+						for ( const { downsampler, mode } of downsamplers ) for ( const reduction of reductions ) {
 
+							if ( mode === 'spd' && reduction !== 'average' ) continue;
+							const options = { source: { texture: source.texture }, reduction, oddSizes: mode === 'spd' ? 'spd' : 'exact' };
+							if ( mode === 'tail' && ! downsampler.prepare( destination, options ).some( batch => batch.kernel === 'tail' ) ) continue;
 							poison( device, destination, 0 );
-							downsampler.generate( destination, { source: { texture: source.texture }, reduction } );
+							downsampler.generate( destination, options );
 							const mips = await readMips( device, destination, 0 );
-							const label = `${ sourceFormat } ${ width }x${ height }x${ layers } -> ${ format } ${ relation } ${ reduction } ${ pattern } L${ downsampler.levelsPerDispatch }`;
+							const label = `${ sourceFormat } ${ width }x${ height }x${ layers } -> ${ format } ${ relation } ${ reduction } ${ pattern } L${ downsampler.levelsPerDispatch } ${ mode }`;
+							const unormSource = /unorm/.test( sourceFormat ) ? 2 ** - 21 : 0;
+
+							if ( mode === 'spd' ) {
+
+								for ( const batch of downsampler.prepare( destination, options ).filter( batch => ! batch.copy ) ) {
+
+									const external = batch.sourceMipLevel === null;
+									if ( batch.kernel === 'exact' ) {
+
+										check( mips[ 0 ], copyReference( input, width, height, layers, quantization ), quantization, `${ label } copy`, reduction, channels, unormSource );
+										continue;
+
+									}
+
+									const from = external ? input : mips[ batch.sourceMipLevel ];
+									const sw = external ? width : mipSize( dw, batch.sourceMipLevel ), sh = external ? height : mipSize( dh, batch.sourceMipLevel );
+									spdReference( from, sw, sh, layers, quantization, reduction, batch.count ).forEach( ( level, i ) => {
+
+										const mip = batch.firstMipLevel + i;
+										check( mips[ mip ], level, quantization, `${ label } mip ${ mip }`, reduction, channels, external ? unormSource : 0 );
+
+									} );
+
+								}
+
+								continue;
+
+							}
+
 							let previous = input, w = width, h = height;
 
 							for ( let level = 0; level < destination.mipLevelCount; level ++ ) {
@@ -574,6 +710,57 @@ async function validateOptions( device ) {
 
 	if ( direct.prepare( createTexture( device, { width: 8, height: 8, format: 'rgba8unorm' } ) ).some( batch => batch.copy ) ) throw new Error( 'compat: the direct path has copy dispatches' );
 	if ( ! compatibility( device ) ) results.push( { option: 'compatibility path matches the direct path' } );
+
+	// Odd-size policies (M2T.4). Unknown policies, and folds under 'spd', are
+	// rejected. 'spd' and the tail record the same bits through encodePass as
+	// through encode; on the buffer output path as on the storage path (float16:
+	// both round with pack2x16float); and through the compatibility-mode path
+	// (scratch levels and copies) as directly. On a compatibility-mode device
+	// (fewer than 256 invocations) tail tiles are 8×8.
+	// 133×75: the tail starts at 16×9, a 16×16 tile (32×32 tiles compile for minutes on SwiftShader).
+	const policy = createTexture( device, { width: 133, height: 75, format: 'rgba16float' } );
+	expectThrow( () => downsampler.prepare( policy, { oddSizes: 'fast' } ), 'not implemented', 'oddSizes fast' );
+	for ( const reduction of [ 'min', 'max', 'minmax', { wgsl: preferHigh.wgsl } ] ) expectThrow( () => downsampler.prepare( policy, { oddSizes: 'spd', reduction } ), '\'zero-weight\'', `spd ${ typeof reduction === 'string' ? reduction : 'custom' }` );
+	const policyData = makeData( 133, 75, 1, 'rgba16float', 'random', 12 );
+	const tail = new Downsampler( device, { tail: true } );
+	const runs = [ [ downsampler, { oddSizes: 'spd' }, 'spd' ], [ tail, {}, 'tail' ], [ tail, { reduction: 'max' }, 'tail max' ] ];
+	const chain = async ( owner, options, record ) => {
+
+		upload( device, policy, policyData );
+		poison( device, policy );
+		const encoder = device.createCommandEncoder();
+		if ( record === 'pass' ) {
+
+			const pass = encoder.beginComputePass();
+			owner.encodePass( pass, policy, options );
+			pass.end();
+
+		} else owner.encode( encoder, policy, options );
+		device.queue.submit( [ encoder.finish() ] );
+		return readMips( device, policy, 1 );
+
+	};
+	const same = ( a, b, label ) => a.forEach( ( level, l ) => { if ( level.some( ( value, i ) => ! Object.is( value, b[ l ][ i ] ) ) ) throw new Error( `${ label }: level ${ l + 1 } differs` ); } );
+	// The same levels per dispatch on every path: 'spd' results depend on where batches end.
+	const levelsPerDispatch = downsampler.levelsPerDispatch;
+	const buffer = ( policy.usage & GPUTextureUsage.COPY_DST ) !== 0 ? { spd: new Downsampler( device, { output: 'buffer', levelsPerDispatch } ), tail: new Downsampler( device, { output: 'buffer', levelsPerDispatch, tail: true } ) } : null;
+	const compatPaths = compatibility( device ) ? null : { spd: new Downsampler( device, { compatibility: true, levelsPerDispatch } ), tail: new Downsampler( device, { compatibility: true, levelsPerDispatch, tail: true } ) };
+	for ( const [ owner, options, label ] of runs ) {
+
+		const reference = await chain( owner, options, 'encode' );
+		same( reference, await chain( owner, options, 'pass' ), `encodePass ${ label }` );
+		const kind = owner === tail ? 'tail' : 'spd';
+		if ( buffer ) same( reference, await chain( buffer[ kind ], options, 'encode' ), `buffer output ${ label }` );
+		if ( compatPaths ) same( reference, await chain( compatPaths[ kind ], options, 'pass' ), `compatibility path ${ label }` );
+
+	}
+
+	if ( downsampler.prepare( policy, { oddSizes: 'spd' } ).filter( batch => ! batch.copy ).length !== Math.ceil( ( policy.mipLevelCount - 1 ) / downsampler.levelsPerDispatch ) ) throw new Error( 'spd: expected ⌈levels / levelsPerDispatch⌉ dispatches' );
+	if ( device.limits.maxComputeInvocationsPerWorkgroup < 256 && tail.prepare( policy ).some( batch => batch.kernel === 'tail' && batch.tile !== 8 ) ) throw new Error( 'tail: tiles must be 8×8 below 256 invocations per workgroup' );
+	if ( ! tail.prepare( policy ).some( batch => batch.kernel === 'tail' ) ) throw new Error( 'tail: expected a tail batch for 133×75' );
+	tail.release( policy ); buffer?.spd.release( policy ); buffer?.tail.release( policy ); compatPaths?.spd.release( policy ); compatPaths?.tail.release( policy );
+	policy.destroy();
+	results.push( { option: 'odd-size policies: rejections, encodePass, buffer output, compatibility path' } );
 	return results;
 
 }
@@ -1121,18 +1308,6 @@ async function validateCrossLevel( device, { quick } ) {
 async function validateReducerOptions( device ) {
 
 	const results = [];
-	const expectThrow = ( run, message, label ) => {
-
-		try { run(); } catch ( error ) {
-
-			if ( ! String( error.message ).includes( message ) ) throw new Error( `${ label }: expected "${ message }", got "${ error.message }"` );
-			return;
-
-		}
-
-		throw new Error( `${ label }: expected an error "${ message }"` );
-
-	};
 
 	// The same reduction recorded with encode(), encodePass() and dispatched by
 	// the tool itself from { wgsl, layout, bindGroup(), workgroups() }; and with a

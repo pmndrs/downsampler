@@ -28,14 +28,16 @@
 			import { requestDevice } from './gpu.js';
 			import { validate } from './validate.js';
 			import { benchmark } from '../bench/bench.js';
+			import { quality } from '../bench/quality.js';
 
 			const status = document.getElementById( 'status' );
 			let report = null;
 
 			// Entry point for the headless runner (test/run.js) and the buttons below.
-			window.runSuite = async ( { bench = false, quick = false, only, sizes, formats, rounds, repeats, compat = false } = {} ) => {
+			// `compare: 'spd'` times the odd-size strategies (M2T.4); `quality` measures 'spd' against 'exact'.
+			window.runSuite = async ( { bench = false, quick = false, only, sizes, formats, rounds, repeats, compat = false, compare, quality: measureQuality = false, skipValidation = false } = {} ) => {
 
-				const { device, adapter, userAgent } = await requestDevice( { compat } );
+				const { device, adapter, userAgent } = await requestDevice( { compat, maxStorageTextures: compare === 'spd' } );
 				const errors = [];
 				device.addEventListener( 'uncapturederror', event => errors.push( event.error.message ) );
 				device.lost.then( info => { if ( info.reason !== 'destroyed' ) errors.push( `device lost: ${ info.message }` ); } );
@@ -43,11 +45,12 @@
 
 				try {
 
-					const validation = await validate( device, { onProgress: progress, quick, only } );
-					const timing = bench ? await benchmark( device, { sizes, formats, rounds, repeats, onProgress: progress } ) : null;
+					const validation = skipValidation ? { passed: true, cases: 0, checks: 0, skipped: [], ms: 0, results: [] } : await validate( device, { onProgress: progress, quick, only } );
+					const timing = bench ? await benchmark( device, { sizes, formats, rounds, repeats, compare, onProgress: progress } ) : null;
+					const qualityResults = measureQuality ? await quality( device, { sizes, formats, onProgress: progress } ) : null;
 					await device.queue.onSubmittedWorkDone();
 					if ( errors.length ) throw new Error( errors.join( '\n' ) );
-					return { date: new Date().toISOString(), adapter, userAgent, validation, timing };
+					return { date: new Date().toISOString(), adapter, userAgent, validation, timing, quality: qualityResults };
 
 				} finally {
 
