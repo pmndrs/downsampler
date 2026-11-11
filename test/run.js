@@ -1,7 +1,7 @@
 // Headless GPU suite runner.
 //   node test/run.js                     validation suite
 //   node test/run.js --quick             small shapes only
-//   node test/run.js --only=scalar       one part of the suite (mips, scalar)
+//   node test/run.js --only=scalar       one part of the suite (mips, reducer, scalar)
 //   node test/run.js --bench             validation + benchmark
 //   node test/run.js --bench --sizes=1024x1024,512x512x6 --formats=rgba8unorm --rounds=11 --repeats=16
 //   node test/run.js --output=results/report.json --headful

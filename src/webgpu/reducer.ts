@@ -2,13 +2,9 @@ import { formats, isSupportedFormat, type FormatInfo, type SupportedFormat } fro
 import { levelSize, tileDispatch } from '../core/pyramid.js';
 import { resolveReduction, type Reduction, type TileEdgePolicy } from '../core/reduction.js';
 import { createKernel, kernelLayoutEntries, sizeBinding, type KernelOptions, type ViewDimension } from './kernel.js';
+import { checkToolBindings, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolGroupLayouts, toolPipelineLayout, type ToolBindings } from './tool.js';
 
-/** The tool's `@group(1)`: WGSL declarations and the matching layout entries. */
-export interface ToolBindings {
-	/** e.g. `@group(1) @binding(0) var luma: texture_2d<f32>;` */
-	wgsl: string;
-	entries: GPUBindGroupLayoutEntry[];
-}
+export type { ToolBindings } from './tool.js';
 
 export interface ReducerOptions {
 	/**
@@ -122,6 +118,7 @@ export class Reducer {
 		if ( edges !== 'zero-weight' && edges !== 'clamp' ) throw new Error( `downsampler: a Reducer takes edges 'zero-weight' or 'clamp', got ${ JSON.stringify( edges ) }; 'exact' mip chains (a batch per odd size) are Downsampler's.` );
 		const reduction = options.reduction ?? 'average';
 		resolveReduction( reduction );
+		checkToolBindings( options.bindings );
 		const kernel: KernelOptions = {
 			edges, levels: options.levels, reduction, format: options.format, dimension: options.dimension ?? '2d', sourceFormat: options.sourceFormat,
 			load: options.load, store: options.store, size: options.size, bindings: options.bindings?.wgsl
@@ -151,9 +148,10 @@ export class Reducer {
 
 		if ( cached === undefined ) {
 
-			const bindGroupLayouts = [ device.createBindGroupLayout( { label: `${ label } group 0`, entries: kernelLayoutEntries( kernel ) } ) ];
-			if ( toolEntries !== undefined ) bindGroupLayouts.push( device.createBindGroupLayout( { label: `${ label } group 1`, entries: toolEntries } ) );
-			const layout = device.createPipelineLayout( { label, bindGroupLayouts } );
+			const group0 = device.createBindGroupLayout( { label: `${ label } group 0`, entries: kernelLayoutEntries( kernel ) } );
+			const tool = toolBindGroupLayout( device, `${ label } group 1`, options.bindings );
+			const layout = toolPipelineLayout( device, label, group0, tool );
+			const bindGroupLayouts = toolGroupLayouts( group0, tool );
 			const module = device.createShaderModule( { label, code: wgsl } );
 			cached = { pipeline: device.createComputePipeline( { label, layout, compute: { module, entryPoint: 'main' } } ), layout, bindGroupLayouts };
 			cache.set( key, cached );
@@ -204,13 +202,9 @@ export class Reducer {
 		const { bindGroup, workgroups } = this.prepare( dispatch );
 		pass.setPipeline( this.pipeline );
 		pass.setBindGroup( 0, bindGroup );
-		if ( this.bindGroupLayouts.length > 1 ) {
-
-			if ( dispatch.bindGroup === undefined ) throw new Error( 'downsampler: this Reducer has tool bindings; pass their group-1 bindGroup.' );
-			pass.setBindGroup( 1, dispatch.bindGroup );
-
-		} else if ( dispatch.bindGroup !== undefined ) throw new Error( 'downsampler: a bindGroup was passed, but this Reducer has no tool bindings.' );
-
+		const reason = toolBindGroupReason( this.bindGroupLayouts.length > 1, dispatch.bindGroup, 'this Reducer' );
+		if ( reason !== null ) throw new Error( `downsampler: ${ reason }.` );
+		setToolBindGroup( pass, dispatch.bindGroup );
 		pass.dispatchWorkgroups( ...workgroups );
 
 	}

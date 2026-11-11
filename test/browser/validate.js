@@ -84,12 +84,12 @@ export function levelOptions( device ) {
 
 }
 
-/** `only`: run one part of the suite ('mips', 'scalar'); default all. */
+/** `only`: run one part of the suite ('mips': all but scalars, 'reducer': Reducer cases only, 'scalar'); default all. */
 export async function validate( device, { onProgress = () => {}, quick = false, only } = {} ) {
 
 	const results = [];
 	const started = performance.now();
-	const cases = only === 'scalar' ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
+	const cases = only === 'scalar' || only === 'reducer' ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
 	let scalarPrecision = null;
 	let runs = 0;
 	const skipped = [];
@@ -190,8 +190,13 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 		if ( only !== 'scalar' ) {
 
-			results.push( ...await validateSource( device, { quick, onProgress } ) );
-			results.push( ...await validateOptions( device ) );
+			if ( only !== 'reducer' ) {
+
+				results.push( ...await validateSource( device, { quick, onProgress } ) );
+				results.push( ...await validateOptions( device ) );
+
+			}
+
 			const reducer = await validateReducer( device, { quick, onProgress } );
 			results.push( ...reducer );
 			runs += reducer.reduce( ( sum, result ) => sum + ( result.runs ?? 0 ), 0 );
@@ -200,7 +205,7 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 		}
 
-		if ( only !== 'mips' ) {
+		if ( only !== 'mips' && only !== 'reducer' ) {
 
 			const scalar = await validateScalar( device, { quick, onProgress } );
 			results.push( ...scalar.results );

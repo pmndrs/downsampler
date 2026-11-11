@@ -1,12 +1,7 @@
 import { sampledChannels } from '../core/formats.js';
 import { isSumOp, scalarBlock, scalarInvocations, scalarOps, scalarSide, scalarWeightChannel, scalarWorkgroups, type ScalarOp, type ScalarReduce } from '../core/scalar.js';
 import type { ViewDimension } from './kernel.js';
-
-// NOTE (refactor): the @group(1) tool-binding plumbing and the load-hook
-// validation below duplicate what the M2T.1 generator in kernel.ts needs. Fold
-// them into one shared helper once both land (SPEC §14.1).
-
-import type { ToolBindings } from './reducer.js';
+import { checkHooks, checkToolBindings, hookArity, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolPipelineLayout, type ToolBindings } from './tool.js';
 
 export interface ScalarReductionOptions {
 	/** One op for all channels, or one per channel. Default 'average'. */
@@ -88,21 +83,6 @@ export function scalarLayoutEntries( { load, finish, dimension = '2d' }: Pick<Sc
 
 }
 
-function checkHook( wgsl: string | undefined, name: string, signature: string ): void {
-
-	if ( wgsl === undefined ) return;
-	if ( typeof wgsl !== 'string' || ! new RegExp( `\\bfn\\s+${ name }\\s*\\(` ).test( wgsl ) ) throw new Error( `downsampler: the ${ name } hook must define \`${ signature }\`.` );
-
-}
-
-/** Number of parameters the `finish` hook declares (2, or 3 with `layer`). */
-function finishArity( wgsl: string ): number {
-
-	const parameters = /\bfn\s+finish\s*\(([^)]*)\)/.exec( wgsl )?.[ 1 ] ?? '';
-	return parameters.split( ',' ).filter( parameter => parameter.trim() !== '' ).length;
-
-}
-
 /**
  * WGSL for both dispatches, entry points `partials` (16 × 16 invocations, one
  * workgroup per tile of 16·block texels square, z = layer) and `combine` (256
@@ -116,8 +96,8 @@ export function createScalarKernel( options: ScalarKernelOptions = {} ): string 
 	const { load, finish, bindings, dimension = '2d', splat = false, block = scalarBlock } = options;
 	const ops = scalarOps( options.reduce );
 	if ( ! [ 1, 2, 4, 8 ].includes( block ) ) throw new Error( 'downsampler: block must be 1, 2, 4 or 8.' );
-	checkHook( load, 'load', 'fn load( texel: vec2i, layer: u32 ) -> vec4f' );
-	checkHook( finish, 'finish', 'fn finish( value: vec4f, weight: f32 )' );
+	checkHooks( { load, finish } );
+	checkToolBindings( bindings );
 	const weightChannel = scalarWeightChannel( ops );
 	const tile = scalarSide * block;
 	const array = dimension === '2d-array';
@@ -204,7 +184,7 @@ fn partials(@builtin(local_invocation_id) local: vec3u, @builtin(local_invocatio
 
 	}
 
-	const layerArgument = finish !== undefined && finishArity( finish ) >= 3 ? ', ds_params.firstLayer + group.z' : '';
+	const layerArgument = finish !== undefined && hookArity( finish, 'finish' ) >= 3 ? ', ds_params.firstLayer + group.z' : '';
 	const normalise = ops.map( ( op, c ) => op === 'average' ? `total.${ channels[ c ] } / f32(ds_params.count)` : op === 'weighted' ? `select(total.${ channels[ c ] } / weight, 0.0, weight == 0.0)` : `total.${ channels[ c ] }` );
 
 	code += `	ds_slots[index] = ${ names[ 0 ] };
@@ -289,7 +269,7 @@ export class ScalarReduction {
 		this.ops = scalarOps( options.reduce );
 		this.block = options.block ?? scalarBlock;
 		createScalarKernel( options ); // validates
-		if ( options.bindings !== undefined ) this.toolLayout = device.createBindGroupLayout( { label: 'downsampler scalar tool', entries: options.bindings.entries } );
+		this.toolLayout = toolBindGroupLayout( device, 'downsampler scalar tool', options.bindings );
 
 	}
 
@@ -318,7 +298,7 @@ export class ScalarReduction {
 		const wgsl = createScalarKernel( { ...this.options, dimension, splat } );
 		const label = `downsampler scalar ${ this.ops.join( ',' ) } ${ key }`;
 		const layout = this.device.createBindGroupLayout( { label, entries: scalarLayoutEntries( { ...this.options, dimension } ) } );
-		const pipelineLayout = this.device.createPipelineLayout( { label, bindGroupLayouts: this.toolLayout === undefined ? [ layout ] : [ layout, this.toolLayout ] } );
+		const pipelineLayout = toolPipelineLayout( this.device, label, layout, this.toolLayout );
 		const module = this.device.createShaderModule( { label, code: wgsl } );
 		variant = {
 			dimension, splat, layout, wgsl,
@@ -362,7 +342,8 @@ export class ScalarReduction {
 		const [ x, y ] = scalarWorkgroups( width, height, this.block );
 		const limit = this.device.limits.maxComputeWorkgroupsPerDimension;
 		if ( x > limit || y > limit || count > limit ) return 'too many workgroups for this device';
-		if ( bindings !== undefined && run.bindGroup === undefined ) return 'the reduction declares bindings, so a run needs its bindGroup';
+		const toolReason = toolBindGroupReason( bindings !== undefined, run.bindGroup, 'this reduction', { strict: false } );
+		if ( toolReason !== null ) return toolReason;
 		if ( finish === undefined ) {
 
 			if ( run.output === undefined ) return 'without a finish hook, a run needs an output buffer';
@@ -428,7 +409,7 @@ export class ScalarReduction {
 
 		pass.setPipeline( prepared[ step ] );
 		pass.setBindGroup( 0, prepared.bindGroup );
-		if ( prepared.toolBindGroup !== undefined ) pass.setBindGroup( 1, prepared.toolBindGroup );
+		setToolBindGroup( pass, prepared.toolBindGroup );
 		const [ x, y, z ] = step === 'partials' ? prepared.workgroups : prepared.combineWorkgroups;
 		pass.dispatchWorkgroups( x, y, z );
 

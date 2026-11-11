@@ -2,6 +2,7 @@ import { formats, integerDomains, isIntegerDomain, isSupportedFormat, sampledCha
 import { tileSize, workgroupSide } from '../core/plan.js';
 import { checkLevels } from '../core/pyramid.js';
 import { isBuiltinReduction, needsTileEdges, reductionKey, resolveReduction, type CustomReduction, type EdgePolicy, type Reduction } from '../core/reduction.js';
+import { checkHooks } from './tool.js';
 
 export type ViewDimension = '2d' | '2d-array';
 
@@ -57,12 +58,6 @@ export interface KernelOptions {
 /** Group 0 binding of the size uniform (`struct { size: vec2u }`) of tile kernels with a load hook. */
 export const sizeBinding = 8;
 
-const hookPatterns = {
-	load: /\bfn\s+load\s*\(/,
-	store: /\bfn\s+store\s*\(/,
-	size: /\bfn\s+size\s*\(/
-};
-
 /** Validates tile kernel options and resolves their defaults. */
 function tileOptions( options: KernelOptions ) {
 
@@ -73,12 +68,7 @@ function tileOptions( options: KernelOptions ) {
 	const count = levels[ levels.length - 1 ];
 	if ( options.count !== undefined && options.count !== count ) throw new Error( `downsampler: count ${ options.count } must be the deepest emitted level (${ count }).` );
 	if ( options.access === 'sample' ) throw new Error( 'downsampler: tile kernels read their source with textureLoad (access "load").' );
-	for ( const [ name, hook ] of Object.entries( { load, store, size } ) ) {
-
-		if ( hook !== undefined && ( typeof hook !== 'string' || ! hookPatterns[ name as keyof typeof hookPatterns ].test( hook ) ) ) throw new Error( `downsampler: the ${ name } hook must be WGSL defining \`fn ${ name }(…)\`.` );
-
-	}
-
+	checkHooks( { load, store, size } );
 	if ( size !== undefined && load === undefined ) throw new Error( 'downsampler: a size hook replaces the size uniform of a load hook; without a load hook the size is the source texture\'s.' );
 	if ( typeof bindings !== 'string' ) throw new Error( 'downsampler: bindings must be WGSL declarations for @group(1).' );
 	if ( store === undefined && ( format === undefined || ! isSupportedFormat( format ) ) ) throw new Error( `downsampler: output format ${ JSON.stringify( format ) } is not supported; pass a supported format or a store hook.` );
