@@ -8,11 +8,12 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Now
 
-- [ ] M2T.3: plug `Reducer` and `ScalarReduction` into `test/tools/generator.js`, build upscaler-shaped versions, compare (agent, branch `m2t-compare`)
 
 ## Next (M2T, tools first: SPEC §11)
 
 - [ ] M2T.1: WGSL reduction generator as the primary product: tool-supplied `load` with its own bindings, per-channel reductions (sum/average/min/max/custom), choice of emitted levels, outputs (texture, buffer, or WGSL `store` hook), edge policy. `Downsampler` and the three adapter become users of it
+- [ ] M2T.4: SPD-style mode, measured against `'exact'`, the tail kernel idea and a single-dispatch atomic prototype (SPEC §2.2)
+- [ ] Tool API follow-ups (SPEC §14 gaps): shared group-1 plumbing for Reducer and ScalarReduction; combine-only scalar entry (Reducer → scalar in 2 dispatches); wider accumulator (>4 channels); payload fold (argmin/argmax)
 - [ ] Compatibility mode: split reads and writes of one texture across dispatches, or use the buffer path (reflections D4100)
 - [ ] M2T.2: reduce-to-scalar: any size to one value in 2 dispatches, with an epilogue hook (exposure)
 - [ ] M2T.3: prove it on the upscaler's passes (FSR 3.1 luminance pyramid / exposure, shading change) as bench fixtures in this repo; oracle + M5 timings; RTX 3060 / Intel UHD runs by the owner
@@ -35,6 +36,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] M2T.3: generator versions of every FSR 3.1 and upscaler pass pass their oracles; upscaler shading change ties the hand-fused pass (0.95–1.02×), every-texel exposure 0.33–0.60× of the upscaler's, fused luma pyramid 0.89–1.15× of FSR's every-texel (M5 Pro, loaded, paired ratios; `bfcdaea`)
 - [x] M2T.1: `Reducer` tile kernels: tool hooks in group 1, per-channel sums/weights, level selection, `'zero-weight'`/`'clamp'` edges, self-dispatch; 10/10 mutations caught (`97664d7`, `546692b`)
 - [x] Upscaler: parallel exposure, same 1024 taps, 6–10× faster on M5 Pro, output bit-identical on 1440 bench frames (exposure channel); upscaler branch `perf/exposure-parallel` (`22468ae`…`4715027`, not pushed)
 - [x] M2T.3 groundwork: FSR 3.1.6 luma and shading-change pyramids (AMD-exact and every-texel), upscaler passes verbatim, oracles, `npm run tools` (`f67a2a3`)
@@ -66,6 +68,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Waiting on owner
 
+- How should pmndrs/upscaler consume the library before npm publish: vendored generated WGSL, a git dependency, or wait for publish?
 - Reducer defaults to review: `edges: 'zero-weight'` by default; no rounding between levels (each level reduced from its own source block, rounded once on store)
 - Scalar `finish` gained an optional `layer: u32` third parameter for multi-layer runs (not in §14.1): keep?
 - Upscaler exposure: a parallel reduction averages every texel instead of 1024 samples (or FSR's top-left 2^mips square), so values change. Accept for the upscaler, or match one of them for the comparison?
