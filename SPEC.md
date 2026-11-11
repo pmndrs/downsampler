@@ -1,12 +1,14 @@
 # downsampler — core specification
 
-Status: milestone 2 in progress. M2.1 (reductions, load path) and M2.2 (separate source, float32 formats) are done. This document is the source of truth for scope, design decisions, correctness requirements and the remaining plan. Update it when a decision changes.
+Status: milestone 2 in progress, refocused on our tools (M2T, §11). M2.1 (reductions, load path), M2.2 (separate source, float32 formats) and format steps 1–2 are done. This document is the source of truth for scope, design decisions, correctness requirements and the remaining plan. Update it when a decision changes.
 
 ## 1. Purpose
 
 Generate texture pyramids on the GPU: mip chains first, then min/max reduction pyramids (Hi-Z), custom reductions and related downsampling chains. WebGPU first and engine-agnostic. Thin adapters (three.js first) sit on top.
 
 Feature target: parity with AMD FidelityFX SPD, implemented independently in WGSL. SPD is the reference for what a downsampler should offer, not code to port. See §6.
+
+**Primary users (decided 2026-11-11):** our own tools: the upscaler (pmndrs/upscaler, based on FSR 3), the denoiser and GI. three.js mipmaps benefit from the same work but don't drive it. Those tools use SPD for fused passes: a custom per-texel load from several inputs, a few levels reduced inside a tile, and a custom store, all in the tool's own dispatch. So the main product is a WGSL reduction generator that tools embed or dispatch themselves; `Downsampler` (mip chains, Hi-Z) is one user of it. Speed at render resolutions, which are rarely powers of two, is a first-class goal. A single dispatch is not, because WGSL can't make SPD's handoff safe (§2.2): chains of up to 6 levels already take one dispatch, and full chains take two.
 
 ## 2. Two decisions to know up front
 
@@ -341,19 +343,14 @@ three.js does not take runtime dependencies for core features. The plan:
 Build first, benchmark once coverage is broad (decided 2026-11-10). Live status is in [PROGRESS.md](PROGRESS.md).
 
 1. **M1 (done):** port the kernel, Downsampler, three adapter, core unit tests, GPU suite, device lab, benchmark and CI.
-2. **M2 (features), in this order:**
-   1. ✅ load path + reductions (min/max/minmax/custom)
-   2. ✅ separate source/destination (Hi-Z), plus the float32 formats it needs
-   3. formats, in the §6.1 order:
-      1. fewer-channel unorm8/float16 + bgra8unorm
-      2. snorm8, unorm16, snorm16
-      3. rgb10a2unorm
-      4. buffer output path + rgb9e5ufloat
-      5. sRGB + load/store transform hooks
-      6. rg11b10ufloat
-      7. integers
-   4. layer range + rect
-   5. odd sizes: `'box'`, then the exact tail kernel (§2.1, §13)
+2. **M2 (features).** Done: load path and reductions; separate source (Hi-Z) with the float32 formats; formats steps 1–2 (fewer-channel unorm8/float16, bgra8unorm, snorm8, unorm16, snorm16).
+   **M2T (tools first, 2026-11-11)**, in this order (details in §14 once the survey lands):
+   1. WGSL reduction generator: tool-supplied `load` with its own bindings, per-channel reductions including sums, choice of emitted levels, outputs (texture, buffer, WGSL `store` hook), edge policy.
+   2. Reduce-to-scalar in 2 dispatches with an epilogue hook.
+   3. Proof on the upscaler's FSR 3.1 passes as bench fixtures, against an oracle, timed on M5 and by the owner on RTX 3060 / Intel UHD.
+   4. Deferred until 1–3 clear: an SPD-style mode, built at least as a measured comparison that justifies, or not, its not being the primary method.
+   Then: buffer output + rgb9e5ufloat and rg11b10ufloat (GI formats); layer range + rect; `'box'`, power-of-two destination from a separate source, and the exact tail kernel.
+   Deferred, three.js-driven: rgb10a2unorm, sRGB, integer formats.
 3. **M3 (dial in: coverage and tuning):**
    - per-frame throughput benchmark alongside timestamps (§13)
    - device lab runs across vendors (§9)
@@ -362,7 +359,7 @@ Build first, benchmark once coverage is broad (decided 2026-11-10). Live status 
    - subgroup kernel with the workgroup-memory fallback, only if the upper-bound test shows ≥5 %
    - fp16
 4. **M4 (examples and docs):** usage docs, notes for SPD users (§13), examples (mip chain, Hi-Z from depth, custom reduction, three.js).
-5. **M5:** three.js in-tree PR (§10), npm publish, the sibling upscaler as a consumer, and the data-backed gpuweb#5253 comment.
+5. **M5:** npm publish, the upscaler and other tools as consumers, three.js in-tree PR (§10), and the data-backed gpuweb#5253 comment.
 
 ## 12. Open questions
 
@@ -438,3 +435,70 @@ The rows are folded into §6. Differences SPD users must be told about: mip coun
 3. **Halo batches under `'exact'`** (candidate). Our odd bilinear taps also fall in 2x … 2x+2, so nvpro's halo structure carries one odd step per dispatch without changing results.
 4. **Area-weighted odd sizes** (candidate opt-in, e.g. `oddSizes: 'box'`). This is the quality fix for the 31×31 case, and a defined meaning for weighted reductions at odd sizes. It needs its own oracle.
 5. **Engagement:** one data-backed comment in #5253 (method, named devices, device-lab link), and a comment on webgpu-spd#7 citing the memory model. Both only after the cross-vendor data exists.
+
+## 14. Tools survey (2026-11-11)
+
+What our tools and their references actually build, to decide the M2T generator (§11). Sources: AMD FidelityFX SDK at `7539ae8` (FSR3UPSCALER 3.1.6, `Kits/FidelityFX/upscalers/fsr3/`) and the local tool repos; claims spot-checked against the code.
+
+### FSR 3.1 upscaler (the reference for pmndrs/upscaler)
+
+Two SPD passes over the full render resolution, with the same setup: groups `⌈W/64⌉×⌈H/64⌉`, `mips = min(⌊log2 max(W,H)⌋, 12)`, the atomic tail, and a counter cleared every frame.
+
+| Pass | Custom load (per render texel) | Reduce | Stored | Read downstream |
+|---|---|---|---|---|
+| Luma pyramid | `(max(6.1e-5, log luma), luma, farthest depth m)` from R16F current luma and farthest depth | average, all channels | level 1 depth → `FarthestDepthMip1` (R16F, half res); level 6 `.xy` (SPD tail only); last level `(0,0)` → `FrameInfo` (RGBA32F 1×1) with temporal smoothing → exposure `1/(9.6·exp(Lavg))` | depth mip 1 bilinear (accumulate, luma instability); exposure by load in six passes |
+| Shading-change pyramid | signed min-difference of 5-tap sorted crosses: current luma × exposure vs previous luma reprojected by dilated motion; `(diff, sign, 1)` | average | `.xy` levels 1–6 → `SpdMips` (RG16F, half res, full chain) | levels 1–3 only, bilinear; max of `|x·y|` → `ShadingChange` (R8, half res) |
+
+Behaviour we'd diverge from, deliberately or not (decide per case, record in DIVERGES):
+- **Exposure covers only `[0, 2^mips)²`.** Only `(0,0)` of the last level is kept, so at 1920×1080 the scene average covers the top-left 1024×1024.
+- **Partial tiles repeat the edge texel** (clamped loads), so edge texels are over-weighted.
+- **The last odd row or column is dropped.**
+- **The fp16 paths are stubs** that return 0.
+
+What it needs from us:
+- **Luma pyramid:** a full chain to a scalar, with an epilogue hook for the smoothing. That is 2 dispatches. Only level 1 and the scalar are stored.
+- **Shading change:** 3 levels of a 2-channel average with a heavy custom load. That is 1 dispatch with no tail.
+- **Single dispatch:** neither pass needs it. Both need custom load/store and level selection.
+
+pmndrs/upscaler replaced both passes because no downsampler existed:
+- **Exposure:** one thread takes 1024 serial samples (`luminancePyramid.ts:87-99`). It costs 0.06 ms on an RTX 3060 laptop and 0.17 ms on Intel UHD, both in the full pipeline.
+- **Shading change:** a fused 16×16-tile block-statistics pass (sums of cur, prev, cur², prev², plus a max flag) that uses 2 levels. It costs 0.044 ms on Apple at 960×540.
+- **Bench:** its SPD-style bench candidate re-read the source per level with no shared memory. It measured 5× slower, so that comparison says nothing about a tiled kernel.
+- **Where the time goes:** accumulate is 67–78 % of its compute.
+
+### Our other tools
+
+| Tool | Pyramid / reduction | Shape | Built today |
+|---|---|---|---|
+| reflections (SSSR port) | Hi-Z from depth, min (max for reverse-Z), r32float, ≤7 levels; `textureLoad` traversal | full chain, separate source | **on downsampler** via `encodePass` (branch `reflections-integration`): 1080p 0.23 → 0.15 ms (M5 Pro) |
+| reflections | probe prefilter source chain, rgba16float cube (6 layers), average; `textureSampleLevel` | full chain | on downsampler; **fails in compatibility mode** (one texture read and written in one dispatch) |
+| ssgiDev | depth min pyramid, 5 levels, one dispatch per level brute force; optional max pyramid; light pyramid (average rgba16f); G-buffer downsample (min depth, normal of the min texel, mean light) | Hi-Z, chain, fold with payload | hand-written |
+| Denoiser | OIDN auto-exposure: log-mean luma → scalar (f32 buffer); FFX reflections 8×8 luma-weighted radiance mean fused into reproject; ReBLUR-style history-fix mips 1–3 in one LDS dispatch, sum ÷ non-sky count, off-image weight 0, ceil sizes, atlas layout | scalar, fused block stats | hand-written |
+| webgpu-ddgi | material store: alpha-weighted 2×2 average, 9 levels of 256² layers, sRGB via buffer + `copyBufferToTexture`; sky SH 19 sums → scalar (subgroups); radiance cache: r32uint "first valid of 2×2" probe mask (~8 levels), hash-grid tile sums `(rgb·n, n)` 4 levels | chain, scalar, uint fold, block stats | hand-written, one dispatch per level |
+| Capsaicin (reference) | `GPUMip`: area-weighted odd sizes (nvpro weights), depth min/max `2x…2x+2`, sRGB re-encode, then SPD once the size is a power of two; HZB with a min-reduction sampler (WebGPU has none); `GPUReduce` 1D sum/min/max/product | chain, Hi-Z, scalar | D3D12 |
+
+### Shapes that recur, and what the generator must cover
+
+1. **Hi-Z from depth:** min, max or a min+max pair, full chain, separate source, read with `textureLoad`. This is covered today.
+2. **Average colour chains:** cubes and arrays, sometimes alpha-weighted, sometimes with sRGB output. Mostly covered; sRGB and weighting are missing.
+3. **Fused block statistics:** 2–4 levels in one tile, from a custom load. This is the most common shape and the biggest gap.
+   - The reductions are sums or weighted means with a carried weight channel, and off-image texels get weight 0.
+   - Some carry a payload, such as the normal of the min-depth texel.
+   - None of them are semilattice folds.
+4. **Scalar 1×1:** exposure, SH and statistics, usually into a buffer, with an epilogue.
+5. **uint folds:** "first valid", or max over a packed key.
+
+**Generator requirements (M2T.1–2).**
+- **Hooks:**
+  - **load:** WGSL with the tool's own bindings, returning `vec4f` (later also `vec4u`).
+  - **reduce:** per channel, one of sum, average, weighted average (a channel holds the weight), min, max, or a custom fold. Plus argmin/argmax with a payload.
+  - **store or epilogue:** WGSL per emitted level.
+- **Level selection:** which levels to emit, and where: texture mips, an atlas, a buffer, or nothing.
+- **Edge policy:** `exact`, `box` (area), `zero-weight` (off-image texels contribute nothing; ceil sizes), and `clamp` (FSR/SPD-compatible, for parity tests).
+- **Recording:**
+  - Into a caller-owned pass (`encodePass`), so one timestamp pair covers the chain.
+  - Dispatches only, so a tool can embed the kernel in its own pass order.
+- **Scalar:** partial results per workgroup, then a final dispatch with the epilogue. It writes to a buffer or a texel.
+- **Compatibility mode:** split the read and write views of one texture across dispatches, or use the buffer path.
+
+The fold contract in §4 (idempotent only) stays for folds. Sums and weighted means become reductions in their own right, each with its own oracle. They are defined at odd sizes only under `box` and `zero-weight`.

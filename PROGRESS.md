@@ -8,25 +8,35 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Now
 
-- [ ] M2.3.3: rgb10a2unorm (SPEC §6.1)
+- [ ] M2T.1: design the generator API against SPEC §14 (next to start)
 
-## Next (M2, features: SPEC §11)
+## Next (M2T, tools first: SPEC §11)
 
-- [ ] M2.3.4: buffer output path + rgb9e5ufloat (probe: `results/probes/rgb9e5-buffer-copy.mjs`)
-- [ ] M2.3.5: sRGB + load/store transform hooks (scratch texture vs buffer output, by measurement)
-- [ ] M2.3.6: rg11b10ufloat
-- [ ] M2.3.7: integer formats (folds first)
+- [ ] Bring in `encodePass()` from branch `reflections-integration` (worktree `../downsampler-reflections`, 2 commits; reflections already links it): needs owner OK
+- [ ] M2T.1: WGSL reduction generator as the primary product: tool-supplied `load` with its own bindings, per-channel reductions (sum/average/min/max/custom), choice of emitted levels, outputs (texture, buffer, or WGSL `store` hook), edge policy. `Downsampler` and the three adapter become users of it
+- [ ] Compatibility mode: split reads and writes of one texture across dispatches, or use the buffer path (reflections D4100)
+- [ ] M2T.2: reduce-to-scalar: any size to one value in 2 dispatches, with an epilogue hook (exposure)
+- [ ] M2T.3: prove it on the upscaler's passes (FSR 3.1 luminance pyramid / exposure, shading change) as bench fixtures in this repo; oracle + M5 timings; RTX 3060 / Intel UHD runs by the owner
+- [ ] M2T.4 (deferred until M2T.1–3 clear): SPD-style mode (`'spd'` odd sizes, clamp/drop edges, single-dispatch-equivalent structure) measured against the other options, to justify, or not, that it isn't the primary method
+- [ ] Tool formats: M2.3.4 buffer output + rgb9e5ufloat, M2.3.6 rg11b10ufloat (GI)
 - [ ] M2.4: layer range + rect
-- [ ] M2.5: `oddSizes: 'box'`, then the exact tail kernel (SPEC §2.1, §13)
+- [ ] M2.5: `oddSizes: 'box'`, power-of-two destination from a separate source, then the exact tail kernel (SPEC §2.1, §13)
+
+## Deferred (three.js-driven)
+
+- [ ] M2.3.3: rgb10a2unorm
+- [ ] M2.3.5: sRGB + transform hooks for colour textures (hooks themselves arrive with M2T.1)
+- [ ] M2.3.7: integer formats
 
 ## Later
 
 - **M3, dial in:** per-frame throughput benchmark; cross-vendor device lab runs (NVIDIA/D3D12 first); `STORAGE_BINDING` sampling cost; float32 sampler vs load; subgroup kernel with fallback (upper-bound test first); fp16
 - **M4, examples and docs:** usage docs, notes for SPD users, examples (mip chain, Hi-Z from depth, custom reduction, three.js)
-- **M5, ship:** three.js in-tree PR, npm publish, the upscaler as a consumer, the gpuweb#5253 comment
+- **M5, ship:** npm publish, the upscaler and other tools as consumers, three.js in-tree PR, the gpuweb#5253 comment
 
 ## Done
 
+- [x] Tools survey: FSR 3.1.6 SPD passes (AMD source), upscaler, reflections, ssgiDev, Denoiser, webgpu-ddgi, Capsaicin → SPEC §14
 - [x] DIVERGES.md: 21 divergences from SPD, nvpro and the WebGPU community, with effort and impact; readable copy at `docs/diverges.html` (published as an artifact)
 - [x] M1: kernel, Downsampler, three adapter, tests, device lab, benchmark, CI (`f0f684c`)
 - [x] M2.1: min/max/minmax/custom reductions, textureLoad path, explicit layouts (`9cf50f2`)
@@ -40,6 +50,8 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Decisions (dated; details in SPEC)
 
+- 2026-11-11 · Primary users are our tools (upscaler, denoiser, GI); three.js mipmaps are a beneficiary, not the driver. Speed at render resolutions (non-power-of-two) is a first-class goal; single dispatch is not (WGSL forbids it). Plan reworked into M2T (§11)
+- 2026-11-11 · SPD-style mode is deferred until M2T.1–3 clear, then built at least as a measured comparison
 - 2026-11-10 · `'exact'` stays the default odd-size policy; `'box'` is added as an opt-in; SPD-style `'fast'` is dropped in favour of the tail kernel (§2.1)
 - 2026-11-10 · Build features first, benchmark once coverage is broad (§11)
 - 2026-11-10 · `'average'` keeps the sampler: loads measured 12–50 % slower for rgba8 (§4 Source access)
@@ -48,6 +60,9 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Waiting on owner
 
+- OK to merge `reflections-integration` (`encodePass`) into `m2-reductions`?
+- Upscaler exposure: a parallel reduction averages every texel instead of 1024 samples (or FSR's top-left 2^mips square), so values change. Accept for the upscaler, or match one of them for the comparison?
+- M2T.3 cross-device runs: RTX 3060 laptop and Intel UHD timings of the bench fixtures
 - Cross-vendor hardware for M3: which NVIDIA/AMD/Intel (Windows) and Android devices are available?
 - Package name: `downsampler` or `@pmndrs/downsampler` (SPEC §12)
 - Review of the gpuweb#5253 comment draft before anything is posted (M5)
