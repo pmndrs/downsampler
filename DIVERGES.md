@@ -12,7 +12,7 @@ Each entry says what they do, what we do, why, what it would take to converge, a
 
 Effort: **S** is under a day, **M** a few days including oracle and GPU cases, **L** a week or more.
 
-Last updated: 2026-11-11
+Last updated: 2026-11-11 (M2T.1)
 
 ## Summary
 
@@ -25,7 +25,7 @@ Last updated: 2026-11-11
 | 5 | Clamp at edges, no zero reads | SPD | Keep | S | Ours: no dark or zero borders | ~None |
 | 6 | Clamp only, no wrap edges | gpuweb#5253 | Candidate | S–M | Seams on tiling textures at odd sizes | ~None |
 | 7 | Every level rounded as stored | SPD | Keep; unrounded opt-in is a candidate | S | Ours equals level-by-level generation | Unknown, likely noise |
-| 8 | Binary semilattice fold, no `SpdReduce4` | SPD | Candidate (with `'box'`) | M | No sums, counts or weighted reductions | None |
+| 8 | Binary `reduce(a, b)` (fold or sum), not 4-way `SpdReduce4` | SPD | Mostly converged (M2T.1) | — | Sums, counts and weighted means now supported | None |
 | 9 | No alpha-coverage preservation | gpuweb#5253 | Candidate | M | Cutout foliage thins out with distance | One extra pass if added |
 | 10 | No subgroup / wave ops | SPD, nvpro, fiddle | Planned (M3, gated) | L | Butterfly order changes float sums | Unknown; plausible gain at ≤512² only |
 | 11 | No packed fp16 | SPD | Planned (M3) | M | f16 math, slightly less precise | Unknown; nvpro saw no gain |
@@ -120,13 +120,12 @@ Last updated: 2026-11-11
 
 ## Reductions
 
-### 8. Binary semilattice fold, not `SpdReduce4`
+### 8. Binary reductions, not a 4-way `SpdReduce4`
 - **They:** SPD's `SpdReduce4(a, b, c, d)` is arbitrary, so it can be a weighted average, a sum or a count.
-- **We:** custom reductions are `fn reduce(a, b)`, which must be associative, commutative and idempotent.
-- **Why:** idempotence makes clamped duplicate reads and overlapping odd footprints harmless. A weighted 4-way reduction has no defined meaning at odd sizes under `'exact'`.
-- **Effort to converge:** M. `'box'` gives every texel a defined weight, so a weighted `reduce4` could be offered with `'box'`, or for even sizes only.
-- **Quality:** today there are no sums, counts or custom weighted averages. Premultiplied alpha and sRGB come from the planned load/store hooks instead.
-- **Verdict:** candidate, after `'box'`.
+- **We (since M2T.1):** `Reducer` takes a reduction per channel: sum, average, min, max, a weight channel for weighted means, or a custom binary `{ wgsl, kind: 'fold' | 'sum' }`. `Downsampler` keeps idempotent folds only, because its `'exact'` odd sizes have no defined meaning for sums.
+- **Why binary:** a pairwise reduction composes inside the tile, and normalisation happens once when a level is emitted. A 4-way custom reduction adds nothing that a binary sum plus a weight channel can't express.
+- **Still missing:** argmin/argmax with a payload (ssgiDev's normal taken from the min-depth texel), and a non-commutative "first valid" scan (GI-1 probe masks).
+- **Verdict:** mostly converged. The payload fold is a candidate.
 
 ### 9. No alpha-coverage preservation
 - **They:** gpuweb#5253 lists it as a requirement for a core API.

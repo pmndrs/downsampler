@@ -131,7 +131,7 @@ footer { color: var(--muted); font-size: 13px; display: grid; gap: 6px; max-widt
 
 <div class="wrap">
 	<header>
-		<span class="eyebrow">downsampler · research ledger · 2026-11-11</span>
+		<span class="eyebrow">downsampler · research ledger · 2026-11-11 (M2T.1)</span>
 		<h1>Where we diverge from SPD, nvpro and the WebGPU community</h1>
 		<p>Every place this library does something different from AMD FidelityFX SPD, nvpro_pyramid, the WebGPU community ports and the gpuweb #386 / #5253 requests. Each entry gives the reason, the effort to converge, and the quality and performance effect.</p>
 		<p><strong>Performance labels:</strong> <em>measured</em> means Apple M5 Pro runs from SPEC §2.2, §4 and §8. Nothing has been measured on NVIDIA, AMD or Intel yet, so everything else is an <em>estimate</em> or <em>unknown</em>.</p>
@@ -240,13 +240,13 @@ const entries = [
 		quality: 'SPD lands closer to a true box average of the base on deep 8-bit chains. Ours matches every render-pass generator and does not depend on batch layout.',
 		perfKind: 'unknown', perf: 'A few ALU ops per texel; likely noise at bandwidth-bound sizes.',
 		perfShort: 'Unknown, likely noise', qualityShort: 'Equals level-by-level generation', note: 'Unrounded opt-in is a candidate.' },
-	{ n: 8, title: 'Binary semilattice fold, not SpdReduce4', src: [ 'spd' ], srcText: 'SPD', verdict: 'candidate', effort: 'M',
+	{ n: 8, title: 'Binary reductions, not a 4-way SpdReduce4', src: [ 'spd' ], srcText: 'SPD', verdict: 'keep', effort: '—',
 		they: 'SpdReduce4(a, b, c, d) is arbitrary: weighted averages, sums, counts.',
-		we: 'Custom reductions are fn reduce(a, b): associative, commutative and idempotent.',
-		why: 'Idempotence makes clamped duplicate reads and overlapping odd footprints harmless. A weighted 4-way reduction has no defined odd-size meaning under \'exact\'.',
-		converge: 'M. \'box\' gives every texel a defined weight, so a weighted reduce4 could ship with \'box\' or for even sizes only.',
-		quality: 'No sums, counts or custom weighted averages today. Premultiplied alpha and sRGB come from the planned load/store hooks instead.',
-		perfKind: 'estimate', perf: 'None.', perfShort: 'None', qualityShort: 'No sums, counts or weighted reductions', note: 'After \'box\'.' },
+		we: 'Since M2T.1, Reducer takes a reduction per channel: sum, average, min, max, a weight channel for weighted means, or a custom binary fold or sum. Downsampler keeps idempotent folds, since its exact odd sizes have no meaning for sums.',
+		why: 'A pairwise reduction composes inside the tile and normalises once on emit; a binary sum plus a weight channel covers what a 4-way reduction would.',
+		converge: 'Mostly converged. Still missing: argmin/argmax with a payload (normal of the min-depth texel) and a non-commutative first-valid scan (GI-1 probe masks).',
+		quality: 'Sums, counts and weighted means are supported for the denoiser, GI and upscaler block statistics.',
+		perfKind: 'estimate', perf: 'None.', perfShort: 'None', qualityShort: 'Sums and weighted means supported', note: 'Mostly converged; the payload fold is a candidate.' },
 	{ n: 9, title: 'No alpha-coverage preservation', src: [ 'gpuweb' ], srcText: 'gpuweb#5253', verdict: 'candidate', effort: 'M',
 		they: 'Listed in gpuweb#5253 as a requirement for a core API.',
 		we: 'Not offered.',

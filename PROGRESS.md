@@ -8,8 +8,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Now
 
-- [ ] M2T.1: reduction generator per SPEC §14.1 (agent, branch `m2t-generator`)
-- [ ] M2T.3: plug the generator and `ScalarReduction` into `test/tools/generator.js` (3 pending plug-ins) and compare
+- [ ] M2T.3: plug `Reducer` and `ScalarReduction` into `test/tools/generator.js`, build upscaler-shaped versions, compare (agent, branch `m2t-compare`)
 
 ## Next (M2T, tools first: SPEC §11)
 
@@ -36,6 +35,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] M2T.1: `Reducer` tile kernels: tool hooks in group 1, per-channel sums/weights, level selection, `'zero-weight'`/`'clamp'` edges, self-dispatch; 10/10 mutations caught (`97664d7`, `546692b`)
 - [x] Upscaler: parallel exposure, same 1024 taps, 6–10× faster on M5 Pro, output bit-identical on 1440 bench frames (exposure channel); upscaler branch `perf/exposure-parallel` (`22468ae`…`4715027`, not pushed)
 - [x] M2T.3 groundwork: FSR 3.1.6 luma and shading-change pyramids (AMD-exact and every-texel), upscaler passes verbatim, oracles, `npm run tools` (`f67a2a3`)
 - [x] M2T.2: `ScalarReduction`: any size to one value per layer in 2 dispatches, every texel counted; load/finish hooks; 18/18 mutations caught (`50c6368`, `cb6ce7b`)
@@ -66,6 +66,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Waiting on owner
 
+- Reducer defaults to review: `edges: 'zero-weight'` by default; no rounding between levels (each level reduced from its own source block, rounded once on store)
 - Scalar `finish` gained an optional `layer: u32` third parameter for multi-layer runs (not in §14.1): keep?
 - Upscaler exposure: a parallel reduction averages every texel instead of 1024 samples (or FSR's top-left 2^mips square), so values change. Accept for the upscaler, or match one of them for the comparison?
 - Review/merge upscaler `perf/exposure-parallel` (based on its `origin/main`); Windows commands are in its `docs/windows-followups.md`
