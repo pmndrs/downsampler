@@ -191,7 +191,7 @@ async function generateAndCheck( device, downsampler, texture, data, label, redu
 
 }
 
-async function validateBufferPath( device ) {
+async function validateBufferPath( device, { quick } ) {
 
 	const results = [];
 
@@ -202,8 +202,9 @@ async function validateBufferPath( device ) {
 		if ( storage.unsupportedReason( createTexture( device, { width: 1, height: 1, format } ) ) !== null ) continue;
 		for ( const reduction of [ 'average', 'max' ] ) {
 
-			const [ a, b ] = [ 0, 1 ].map( () => createTexture( device, { width: 333, height: 201, layers: 2, format } ) );
-			const data = makeData( 333, 201, 2, format, 'random', 21 );
+			const [ w, h ] = quick ? [ 67, 45 ] : [ 333, 201 ];
+			const [ a, b ] = [ 0, 1 ].map( () => createTexture( device, { width: w, height: h, layers: 2, format } ) );
+			const data = makeData( w, h, 2, format, 'random', 21 );
 			for ( const texture of [ a, b ] ) { upload( device, texture, data ); poison( device, texture ); }
 			storage.generate( a, { reduction } );
 			buffer.generate( b, { reduction } );
@@ -273,12 +274,13 @@ async function validateBufferPath( device ) {
 		new Downsampler( plain, { levelsPerDispatch: 6, output: 'buffer' } );
 		for ( const format of [ 'rgb9e5ufloat', 'rg11b10ufloat' ] ) {
 
-			const texture = createTexture( plain, { width: 512, height: 256, format } );
+			const [ w, h, expected ] = quick ? [ 256, 128, '6,2' ] : [ 512, 256, '6,3' ];
+			const texture = createTexture( plain, { width: w, height: h, format } );
 			if ( ds.outputPath( texture ) !== 'buffer' ) throw new Error( `${ format } on a plain device: expected the buffer path` );
 			const counts = ds.prepare( texture ).map( batch => batch.count );
-			if ( counts.join() !== '6,3' ) throw new Error( `${ format } 512×256 on a plain device: batches ${ counts }, expected 6,3` );
-			await generateAndCheck( plain, ds, texture, makeData( 512, 256, 1, format, 'random', 3 ), `${ format } plain device` );
-			await generateAndCheck( plain, ds, texture, makeData( 512, 256, 1, format, 'random', 5 ), `${ format } plain device max`, 'max' );
+			if ( counts.join() !== expected ) throw new Error( `${ format } ${ w }×${ h } on a plain device: batches ${ counts }, expected ${ expected }` );
+			await generateAndCheck( plain, ds, texture, makeData( w, h, 1, format, 'random', 3 ), `${ format } plain device` );
+			await generateAndCheck( plain, ds, texture, makeData( w, h, 1, format, 'random', 5 ), `${ format } plain device max`, 'max' );
 			texture.destroy();
 
 		}
@@ -334,12 +336,12 @@ async function runReducer( device, reducer, source, outputs, mode = 'encode' ) {
 const sameBits = ( a, b ) => a.every( ( level, l ) => level.every( ( value, i ) => Object.is( value, b[ l ][ i ] ) ) );
 
 /** Reducer (tile kernels) on the buffer output path: against the oracle, against the storage path, packed outputs, API. */
-async function validateReducerBuffer( device ) {
+async function validateReducerBuffer( device, { quick } ) {
 
 	const results = [];
 	const tier1 = device.features.has( 'texture-formats-tier1' );
 
-	for ( const [ width, height, layers = 1 ] of [ [ 17, 9 ], [ 192, 108 ], [ 65, 129, 3 ], [ 1917, 1079 ] ] ) {
+	for ( const [ width, height, layers = 1 ] of quick ? [ [ 17, 9 ], [ 65, 129, 3 ] ] : [ [ 17, 9 ], [ 192, 108 ], [ 65, 129, 3 ], [ 1917, 1079 ] ] ) {
 
 		const dimension = layers > 1 ? '2d-array' : '2d';
 		const source = createTexture( device, { width, height, layers, format: 'rgba32float', dimension, storage: false } );
@@ -420,13 +422,13 @@ async function validateReducerBuffer( device ) {
 
 }
 
-export async function validatePacked( device, { onProgress = () => {} } = {} ) {
+export async function validatePacked( device, { quick = false, onProgress = () => {} } = {} ) {
 
 	const results = await validateCodecs( device );
 	onProgress( 'validated packed codecs' );
-	results.push( ...await validateBufferPath( device ) );
+	results.push( ...await validateBufferPath( device, { quick } ) );
 	onProgress( 'validated buffer output path' );
-	results.push( ...await validateReducerBuffer( device ) );
+	results.push( ...await validateReducerBuffer( device, { quick } ) );
 	onProgress( 'validated reducer buffer output' );
 	return results;
 

@@ -31,7 +31,8 @@ try {
 
 	await new Promise( resolve => server.listen( 0, '127.0.0.1', resolve ) );
 	// The full matrix takes minutes; the default 180 s protocol timeout would cut it off.
-	browser = await puppeteer.launch( { headless: ! args.includes( '--headful' ), args: browserArgs, protocolTimeout: 30 * 60 * 1000 } );
+	// SwiftShader --quick took ~29 min before the packed formats on a loaded machine, so allow an hour.
+	browser = await puppeteer.launch( { headless: ! args.includes( '--headful' ), args: browserArgs, protocolTimeout: 60 * 60 * 1000 } );
 	const page = await browser.newPage();
 	const errors = [];
 	page.on( 'pageerror', error => errors.push( error.message ) );

@@ -138,14 +138,17 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 			// The buffer path runs every shape when it is the format's only path (rgb9e5ufloat;
 			// rg11b10ufloat without tier1), else the subset, for each family format plus a few
 			// others with a distinct word layout (bgra byte order, two 16-bit channels, 1–2 float words).
-			const bufferShapes = packed && ! storagePath ? cases : packed || bufferFormats.includes( format ) ? subset : [];
+			// --quick (CI, SwiftShader, where the packed encoders are slow): the buffer path runs
+			// the subset shapes at widths 1, 4 and 6, for the packed formats only.
+			const bufferShapes = packed && ! storagePath && ! quick ? cases : packed || ( bufferFormats.includes( format ) && ! quick ) ? subset : [];
+			const formatBufferSets = quick ? bufferSets.filter( set => set.levels !== 5 ) : bufferSets;
 			const formatCases = storageShapes === cases || bufferShapes === cases ? cases : subset;
 
 			for ( const [ shapeIndex, shape ] of formatCases.entries() ) {
 
 				const [ width, height, layers = 1, dimension ] = shape;
 				const onShape = shapes => shapes.some( s => s.join() === shape.join() );
-				const sets = [ ...( onShape( storageShapes ) ? storageSets : [] ), ...( onShape( bufferShapes ) ? bufferSets : [] ) ];
+				const sets = [ ...( onShape( storageShapes ) ? storageSets : [] ), ...( onShape( bufferShapes ) ? formatBufferSets : [] ) ];
 				if ( sets.length === 0 ) continue;
 				const texture = createTexture( device, { width, height, layers, format, dimension } );
 				// Inputs and first-level references depend only on shape, format,
@@ -223,13 +226,13 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 			// 'packed-source' and 'packed-api' run one part (for debugging).
 			if ( only !== 'packed-api' ) results.push( ...await validateSource( device, { quick, onProgress, packedOnly: true } ) );
-			if ( only !== 'packed-source' ) results.push( ...await validatePacked( device, { onProgress } ) );
+			if ( only !== 'packed-source' ) results.push( ...await validatePacked( device, { quick, onProgress } ) );
 
 		} else if ( only !== 'scalar' ) {
 
 			results.push( ...await validateSource( device, { quick, onProgress } ) );
 			results.push( ...await validateOptions( device ) );
-			results.push( ...await validatePacked( device, { onProgress } ) );
+			results.push( ...await validatePacked( device, { quick, onProgress } ) );
 			const reducer = await validateReducer( device, { quick, onProgress } );
 			results.push( ...reducer );
 			runs += reducer.reduce( ( sum, result ) => sum + ( result.runs ?? 0 ), 0 );
