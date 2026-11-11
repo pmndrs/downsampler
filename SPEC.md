@@ -503,3 +503,38 @@ pmndrs/upscaler replaced both passes because no downsampler existed:
 - **Compatibility mode:** split the read and write views of one texture across dispatches, or use the buffer path.
 
 The fold contract in §4 (idempotent only) stays for folds. Sums and weighted means become reductions in their own right, each with its own oracle. They are defined at odd sizes only under `box` and `zero-weight`.
+
+### 14.1 Generator contract (M2T; agents build against this)
+
+The fold rule is relaxed (owner, 2026-11-11). **Sums, counts and weighted means are reductions** alongside the idempotent folds of §4, each with its own oracle.
+
+**Tool bindings live in `@group(1)`.** The generator owns `@group(0)`: its sampler, source and outputs. A tool passes WGSL declarations for `@group(1)` together with their `GPUBindGroupLayoutEntry[]`, and binds group 1 itself at dispatch. Tool code never collides with ours, and a tool's bind group can be shared across our kernels.
+
+**Hooks** are WGSL strings. Each must define exactly the named function:
+- `fn load( texel: vec2i, layer: u32 ) -> vec4f`: the value of one source texel. It runs only for in-bounds texels; edge policy decides what out-of-bounds texels contribute. Without a hook, the generator reads the source texture (today's behaviour).
+- `fn store( level: u32, texel: vec2i, layer: u32, value: vec4f )`: called once per emitted texel, with `level` counted from the source (1 = half). Without a hook, the generator writes storage textures as today.
+- `fn finish( value: vec4f, weight: f32 )`: scalar reduction only, run by one invocation. `weight` is the total weight, which is the texel count under `'average'`.
+
+**Per-channel reduction**, `reduce: Reduction | [ op, op, op, op ]` with `op` one of:
+- `'sum'`, `'average'`, `'min'`, `'max'`
+- `'weight'`: this channel carries a weight. Under `'weighted'`, the other channels are `Σ wᵢ·vᵢ / Σ wᵢ` when emitted, and the weight channel is emitted as `Σ wᵢ`.
+- `'weighted'`
+
+The existing `'average' | 'min' | 'max' | 'minmax' | { wgsl }` stay valid, and a custom `{ wgsl, kind: 'fold' | 'sum' }` is accepted. Workgroup memory keeps sums unnormalised; normalisation happens only when a level is emitted.
+
+**Levels:** `levels: number[]`, the source-relative levels to emit, e.g. `[ 2, 3 ]` for 4×4 and 8×8 blocks. Levels that aren't emitted are still reduced, but never stored. At most 6 levels per dispatch (the tile limit); longer requests chain dispatches as today.
+
+**Edges:** `edges` takes one of these values:
+- `'exact'` (the current behaviour)
+- `'box'` (area weights, §2.1)
+- `'zero-weight'`: out-of-bounds texels contribute nothing; sizes are `⌈n/2⌉`; averages divide by the in-bounds count.
+- `'clamp'`: SPD/FSR-compatible. Out-of-bounds loads are clamped to the edge; sizes are `⌊n/2⌋`, dropping the last odd row or column. Used for parity fixtures.
+
+`'zero-weight'` and `'clamp'` keep every level in one tile, so batches never end at odd sizes.
+
+**Recording:**
+- `encode( encoder, … )` opens its own passes.
+- `encodePass( pass, … )` records into a caller-owned pass.
+- The generator also exposes `{ wgsl, layout, workgroups( width, height ) }`, so a tool can dispatch the kernel itself.
+
+**Scalar** (`reduceToScalar`): one dispatch writes per-workgroup partials into a storage buffer; a second, single-workgroup dispatch combines them and calls `finish`. That is 2 dispatches at any size, and every texel is counted.
