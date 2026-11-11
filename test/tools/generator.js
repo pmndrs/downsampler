@@ -55,6 +55,7 @@ function scalar( device, label, options ) {
 
 		const reduction = new ScalarReduction( device, options );
 		reduction.kernel(); // compiles both pipelines
+		reduction.combineKernel(); // and the combine-only one
 		return reduction;
 
 	}, reduction => [ reduction.kernel().wgsl ] );
@@ -125,10 +126,14 @@ async function lumaPyramid( device, { scene, tools } ) {
 /**
  * Every texel, one read of the source: Reducer 'zero-weight' [1, 6] with
  * (Σ log luma, Σ luma, mean depth, count) per channel; level 1 stores depth,
- * level 6 one partial per 64×64 tile; a ScalarReduction sums the partials and
- * divides in `finish`.
+ * level 6 one partial per 64×64 tile; a combine-only ScalarReduction
+ * (`partials`) takes the weighted means of the partials over their counts and
+ * calls FSR's `finish`: 2 dispatches.
+ *
+ * `combineOnly: false` is the M2T.3 version, for the comparison: a
+ * ScalarReduction whose load hook reads the partials, 3 dispatches.
  */
-async function lumaPyramidFused( device, { scene, tools } ) {
+async function lumaPyramidFused( device, { scene, tools }, { name = 'generator/luma-pyramid-fused', combineOnly = true } = {} ) {
 
 	const tool = tools.luma( { variant: 'correct' } );
 	const { bindings, load, finish } = tool.parts;
@@ -136,29 +141,45 @@ async function lumaPyramidFused( device, { scene, tools } ) {
 	const partials = device.createBuffer( { label: 'luma tile partials', size: grid[ 0 ] * grid[ 1 ] * 16, usage: GPUBufferUsage.STORAGE } );
 	const constants = uniformBuffer( device, 'luma tile grid', new Uint32Array( [ grid[ 0 ], grid[ 1 ], 0, 0 ] ) );
 	const entries = [ ...tool.entries, { binding: 6, visibility, buffer: { type: 'uniform' } }, { binding: 7, visibility, buffer: { type: 'storage' } } ];
+	const fsrFinish = finish.replace( 'fn finish(', 'fn fsrFinish(' );
 	const wgsl = `${ bindings }
 @group(1) @binding(6) var<uniform> lumaGrid: vec4u;
 @group(1) @binding(7) var<storage, read_write> lumaPartials: array<vec4f>;
 ${ load.replace( 'fn load(', 'fn fsrLoad(' ) }
-${ finish.replace( 'fn finish(', 'fn fsrFinish(' ) }`;
+${ fsrFinish }`;
 	const group = device.createBindGroup( { layout: device.createBindGroupLayout( { entries } ), entries: [ ...tool.groupEntries, { binding: 6, resource: { buffer: constants } }, { binding: 7, resource: { buffer: partials } } ] } );
-	const pyramid = await reducer( device, 'generator luma pyramid (fused)', {
+	const pyramid = await reducer( device, `${ name } pyramid`, {
 		reduction: [ 'sum', 'sum', 'average', 'sum' ], levels: [ 1, 6 ], edges: 'zero-weight', bindings: { wgsl, entries },
 		load: 'fn load(texel: vec2i, layer: u32) -> vec4f { var v = fsrLoad(texel, layer); v.w = 1.0; return v; }',
 		store: `fn store(level: u32, texel: vec2i, layer: u32, value: vec4f) {
 	if (level == 1u) { StoreFarthestDepthMip1(texel, value.z); } else { lumaPartials[u32(texel.y) * lumaGrid.x + u32(texel.x)] = value; }
 }`
 	} );
-	const exposure = await scalar( device, 'generator luma partials', {
-		reduce: 'sum', bindings: { wgsl, entries },
-		load: 'fn load(texel: vec2i, layer: u32) -> vec4f { return lumaPartials[u32(texel.y) * lumaGrid.x + u32(texel.x)]; }',
-		finish: 'fn finish(value: vec4f, weight: f32) { fsrFinish(vec4f(value.xy / value.w, 0.0, 0.0), value.w); }'
-	} );
+	let exposure, run;
+	if ( combineOnly ) {
+
+		// The scalar's group 1 is FSR's own (FrameInfo for finish): the partials are bound by the scalar, so they must not be in it too.
+		exposure = await scalar( device, `${ name } combine`, {
+			reduce: [ 'weighted', 'weighted', 'max', 'weight' ], bindings: { wgsl: `${ bindings }\n${ fsrFinish }`, entries: tool.entries },
+			finish: 'fn finish(value: vec4f, weight: f32) { fsrFinish(vec4f(value.xy, 0.0, 0.0), weight); }'
+		} );
+		run = { partials: { buffer: partials, count: grid[ 0 ] * grid[ 1 ] }, bindGroup: tool.group };
+
+	} else {
+
+		exposure = await scalar( device, `${ name } partials`, {
+			reduce: 'sum', bindings: { wgsl, entries },
+			load: 'fn load(texel: vec2i, layer: u32) -> vec4f { return lumaPartials[u32(texel.y) * lumaGrid.x + u32(texel.x)]; }',
+			finish: 'fn finish(value: vec4f, weight: f32) { fsrFinish(vec4f(value.xy / value.w, 0.0, 0.0), value.w); }'
+		} );
+		run = { size: grid, bindGroup: group };
+
+	}
+
 	const dispatch = { width: scene.width, height: scene.height, bindGroup: group };
-	const run = { size: grid, bindGroup: group };
 	const encodePass = pass => { pyramid.encodePass( pass, dispatch ); exposure.encodePass( pass, run ); };
 	return {
-		name: 'generator/luma-pyramid-fused', pass: 'exposure', dispatches: 3, encodePass, reset: () => tool.reset(), check: lumaCheck( device, tool, encodePass ),
+		name, pass: 'exposure', dispatches: combineOnly ? 2 : 3, encodePass, reset: () => tool.reset(), check: lumaCheck( device, tool, encodePass ),
 		destroy() { tool.destroy(); partials.destroy(); constants.destroy(); }
 	};
 
@@ -415,12 +436,13 @@ const shadingExperiments = [
 
 export const generatorPasses = [
 	{ name: 'generator/luma-pyramid', pass: 'exposure', compareWith: [ 'fsr/luma-pyramid-correct', 'upscaler/exposure' ], milestone: 'M2T.3', create: lumaPyramid },
-	{ name: 'generator/luma-pyramid-fused', pass: 'exposure', compareWith: [ 'fsr/luma-pyramid-correct', 'upscaler/exposure' ], milestone: 'M2T.3', create: lumaPyramidFused },
+	{ name: 'generator/luma-pyramid-fused', pass: 'exposure', compareWith: [ 'fsr/luma-pyramid-correct', 'upscaler/exposure' ], milestone: 'M2T.3', create: ( device, context ) => lumaPyramidFused( device, context ) },
 	{ name: 'generator/luma-pyramid-clamp', pass: 'exposure', compareWith: [ 'fsr/luma-pyramid' ], milestone: 'M2T.3', create: lumaPyramidClamp },
 	{ name: 'generator/upscaler-exposure', pass: 'exposure', compareWith: [ 'upscaler/exposure', 'fsr/luma-pyramid-correct' ], milestone: 'M2T.3', create: ( device, context ) => upscalerExposure( device, context, { taps: false } ) },
 	{ name: 'generator/upscaler-exposure-taps', pass: 'exposure', compareWith: [ 'upscaler/exposure' ], milestone: 'M2T.3', create: ( device, context ) => upscalerExposure( device, context, { taps: true } ) },
 	{ name: 'generator/shading-change-pyramid', pass: 'shading', compareWith: [ 'fsr/shading-change-pyramid', 'upscaler/shading-change' ], milestone: 'M2T.3', create: shadingChangePyramid },
 	{ name: 'generator/upscaler-shading-change', pass: 'shading', compareWith: [ 'upscaler/shading-change', 'fsr/shading-change-total' ], milestone: 'M2T.3', create: ( device, context ) => upscalerShadingChange( device, context ) },
 	// Built only when --only names them.
+	{ name: 'experiment/luma-pyramid-fused-3', pass: 'exposure', compareWith: [ 'generator/luma-pyramid-fused', 'fsr/luma-pyramid-correct' ], milestone: 'experiment', experiment: true, create: ( device, context ) => lumaPyramidFused( device, context, { name: 'experiment/luma-pyramid-fused-3', combineOnly: false } ) },
 	...shadingExperiments.map( options => ( { name: options.name, pass: 'shading', compareWith: [ 'upscaler/shading-change', 'generator/upscaler-shading-change' ], milestone: 'experiment', experiment: true, create: ( device, context ) => upscalerShadingChange( device, context, options ) } ) )
 ];

@@ -103,6 +103,128 @@ export interface ScalarReferenceResult {
 const u = 2 ** - 24;
 const gamma = ( n: number ) => n * u / ( 1 - n * u );
 
+/** Rounding depth of the combine pass over `count` partials: the sequential fold, then the 256-slot tree. */
+export function scalarCombineDepth( count: number ): number {
+
+	return Math.ceil( count / scalarInvocations ) - 1 + Math.log2( scalarInvocations );
+
+}
+
+/**
+ * Combines vector `b` of `source` into vector `a` of `target` (`ops.length`
+ * channels each), in float32: Float32Array stores round, and a sum of two
+ * float32 values computed in float64 and then rounded is correctly rounded.
+ */
+function combiner( ops: readonly ScalarOp[] ) {
+
+	const n = ops.length;
+	return ( target: Float32Array, a: number, source: Float32Array, b: number ) => {
+
+		for ( let c = 0; c < n; c ++ ) {
+
+			const x = target[ a * n + c ], y = source[ b * n + c ];
+			target[ a * n + c ] = ops[ c ] === 'min' ? Math.min( x, y ) : ops[ c ] === 'max' ? Math.max( x, y ) : x + y;
+
+		}
+
+	};
+
+}
+
+/** The combine pass of one layer, in the GPU's order: the per-invocation sequential fold, then the tree. */
+function combinePartials( ops: readonly ScalarOp[], partials: Float32Array, offset: number, count: number ): number[] {
+
+	const n = ops.length;
+	const combine = combiner( ops );
+	const slots = new Float32Array( scalarInvocations * n );
+	for ( let t = 0; t < scalarInvocations; t ++ ) {
+
+		const first = offset + Math.min( t, count - 1 );
+		for ( let c = 0; c < n; c ++ ) slots[ t * n + c ] = isSumOp( ops[ c ] ) && t >= count ? 0 : partials[ first * n + c ];
+		for ( let i = t + scalarInvocations; i < count; i += scalarInvocations ) combine( slots, t, partials, offset + i );
+
+	}
+
+	for ( let stride = scalarInvocations >> 1; stride > 0; stride >>= 1 ) for ( let i = 0; i < stride; i ++ ) combine( slots, i, slots, i + stride );
+	return Array.from( slots.subarray( 0, n ) );
+
+}
+
+interface Exact {
+	/** Per channel: Σ terms (sum-like) or the min/max, in float64. */
+	total: number[];
+	/** Per channel: Σ |terms| (sum-like). */
+	magnitude: number[];
+}
+
+/**
+ * Normalises a GPU-order total and an exact total into a result, with the
+ * error bound for `depth` roundings (see {@link scalarReference}). `count` is
+ * the texel count; `inputs` the number of inputs that carry `absolute` error.
+ */
+function scalarResult( ops: readonly ScalarOp[], total: number[], exactTotals: Exact, count: number, depth: number, absolute: number, relative: number, inputs = count ): ScalarReferenceResult {
+
+	const weightChannel = scalarWeightChannel( ops );
+	const { total: exactTotal, magnitude } = exactTotals;
+	const n = ops.length;
+	const weight = weightChannel >= 0 ? total[ weightChannel ] : Math.fround( count );
+	const exactWeight = weightChannel >= 0 ? exactTotal[ weightChannel ] : count;
+	const weightMagnitude = weightChannel >= 0 ? magnitude[ weightChannel ] : count;
+	const weightBound = weightChannel >= 0 ? gamma( depth ) * weightMagnitude + absolute * inputs + relative * weightMagnitude : 0;
+	const countRounding = count > 2 ** 24 ? u : 0;
+	const value = new Array<number>( n ).fill( 0 ), exact = new Array<number>( n ).fill( 0 ), bound = new Array<number>( n ).fill( 0 );
+
+	for ( let c = 0; c < n; c ++ ) {
+
+		const op = ops[ c ], input = absolute * inputs + relative * magnitude[ c ];
+
+		if ( op === 'min' || op === 'max' ) {
+
+			value[ c ] = total[ c ]; exact[ c ] = exactTotal[ c ];
+			bound[ c ] = absolute + relative * Math.abs( exact[ c ] );
+
+		} else if ( op === 'sum' || op === 'weight' ) {
+
+			value[ c ] = total[ c ]; exact[ c ] = exactTotal[ c ];
+			bound[ c ] = gamma( depth ) * magnitude[ c ] + input;
+
+		} else if ( op === 'average' ) {
+
+			value[ c ] = Math.fround( total[ c ] / Math.fround( count ) ); exact[ c ] = exactTotal[ c ] / count;
+			bound[ c ] = ( gamma( depth ) * magnitude[ c ] + input ) / count + ( u + countRounding ) * Math.abs( exact[ c ] );
+
+		} else {
+
+			value[ c ] = weight === 0 ? 0 : Math.fround( total[ c ] / weight );
+			exact[ c ] = exactWeight === 0 ? 0 : exactTotal[ c ] / exactWeight;
+			bound[ c ] = exactWeight === 0 ? 0 : ( gamma( depth + 1 ) * magnitude[ c ] + input + Math.abs( exact[ c ] ) * weightBound ) / Math.abs( exactWeight ) + u * Math.abs( exact[ c ] );
+
+		}
+
+	}
+
+	return { value, weight, exact, exactWeight, bound, weightBound };
+
+}
+
+/** Exact totals over `length` vectors from `term( i, c )`. */
+function exactOf( ops: readonly ScalarOp[], length: number, term: ( i: number, c: number ) => number ): Exact {
+
+	const total = ops.map( op => op === 'min' ? Infinity : op === 'max' ? - Infinity : 0 );
+	const magnitude = ops.map( () => 0 );
+	for ( let i = 0; i < length; i ++ ) for ( let c = 0; c < ops.length; c ++ ) {
+
+		const v = term( i, c );
+		if ( ops[ c ] === 'min' ) total[ c ] = Math.min( total[ c ], v );
+		else if ( ops[ c ] === 'max' ) total[ c ] = Math.max( total[ c ], v );
+		else { total[ c ] += v; magnitude[ c ] += Math.abs( v ); }
+
+	}
+
+	return { total, magnitude };
+
+}
+
 /**
  * The scalar reduction of `texels` (RGBA floats, layer-major rows, as `toFloats`
  * returns them), one result per layer, combined in the GPU's order with float32
@@ -126,6 +248,7 @@ const gamma = ( n: number ) => n * u / ( 1 - n * u );
 export function scalarReference( texels: ArrayLike<number>, width: number, height: number, layers: number, reduce: ScalarReduce = 'average', options: ScalarReferenceOptions = {} ): ScalarReferenceResult[] {
 
 	const ops = scalarOps( reduce );
+	const n = ops.length;
 	const block = options.block ?? scalarBlock;
 	const absolute = options.inputError?.absolute ?? 0, relative = options.inputError?.relative ?? 0;
 	const weightChannel = scalarWeightChannel( ops );
@@ -136,35 +259,23 @@ export function scalarReference( texels: ArrayLike<number>, width: number, heigh
 	const blockCount = block * block;
 	const depth = scalarDepth( width, height, block );
 	const count = width * height;
+	const combine = combiner( ops );
 	const results: ScalarReferenceResult[] = [];
-
-	// Float32Array stores round to float32; a sum or product of two float32
-	// values computed in float64 and then rounded is correctly rounded.
-	const combineInto = ( target: Float32Array, a: number, b: number ) => {
-
-		for ( let c = 0; c < 4; c ++ ) {
-
-			const x = target[ a * 4 + c ], y = target[ b * 4 + c ];
-			target[ a * 4 + c ] = ops[ c ] === 'min' ? Math.min( x, y ) : ops[ c ] === 'max' ? Math.max( x, y ) : x + y;
-
-		}
-
-	};
 
 	const tree = ( values: Float32Array, length: number ) => {
 
-		for ( let stride = length >> 1; stride > 0; stride >>= 1 ) for ( let i = 0; i < stride; i ++ ) combineInto( values, i, i + stride );
+		for ( let stride = length >> 1; stride > 0; stride >>= 1 ) for ( let i = 0; i < stride; i ++ ) combine( values, i, values, i + stride );
 
 	};
 
-	const values = new Float32Array( blockCount * 4 );
-	const slots = new Float32Array( scalarInvocations * 4 );
-	const partials = new Float32Array( partialCount * 4 );
+	const values = new Float32Array( blockCount * n );
+	const slots = new Float32Array( scalarInvocations * n );
+	const partials = new Float32Array( partialCount * n );
 
 	for ( let layer = 0; layer < layers; layer ++ ) {
 
 		const base = layer * width * height;
-		const texel = ( x: number, y: number, c: number ) => texels[ ( base + y * width + x ) * 4 + c ];
+		const texel = ( x: number, y: number, c: number ) => texels[ ( base + y * width + x ) * n + c ];
 		const term = ( x: number, y: number, c: number ) => ops[ c ] === 'weighted' ? Math.fround( texel( x, y, c ) * texel( x, y, weightChannel ) ) : texel( x, y, c );
 
 		for ( let py = 0; py < gy; py ++ ) for ( let px = 0; px < gx; px ++ ) {
@@ -176,89 +287,77 @@ export function scalarReference( texels: ArrayLike<number>, width: number, heigh
 					const x = px * tile + lx + jx * scalarSide, y = py * tile + ly + jy * scalarSide;
 					const inside = x < width && y < height;
 					const cx = Math.min( x, width - 1 ), cy = Math.min( y, height - 1 );
-					for ( let c = 0; c < 4; c ++ ) values[ ( jy * block + jx ) * 4 + c ] = sums[ c ] && ! inside ? 0 : term( cx, cy, c );
+					for ( let c = 0; c < n; c ++ ) values[ ( jy * block + jx ) * n + c ] = sums[ c ] && ! inside ? 0 : term( cx, cy, c );
 
 				}
 
 				tree( values, blockCount );
-				slots.set( values.subarray( 0, 4 ), ( ly * scalarSide + lx ) * 4 );
+				slots.set( values.subarray( 0, n ), ( ly * scalarSide + lx ) * n );
 
 			}
 
 			tree( slots, scalarInvocations );
-			partials.set( slots.subarray( 0, 4 ), ( py * gx + px ) * 4 );
+			partials.set( slots.subarray( 0, n ), ( py * gx + px ) * n );
 
 		}
 
-		for ( let t = 0; t < scalarInvocations; t ++ ) {
+		const total = combinePartials( ops, partials, 0, partialCount );
+		const at = ( i: number, c: number ) => texels[ ( base + i ) * n + c ];
+		const exact = exactOf( ops, count, ( i, c ) => ops[ c ] === 'weighted' ? at( i, c ) * at( i, weightChannel ) : at( i, c ) );
+		results.push( scalarResult( ops, total, exact, count, depth, absolute, relative ) );
 
-			const first = Math.min( t, partialCount - 1 );
-			for ( let c = 0; c < 4; c ++ ) slots[ t * 4 + c ] = sums[ c ] && t >= partialCount ? 0 : partials[ first * 4 + c ];
-			for ( let i = t + scalarInvocations; i < partialCount; i += scalarInvocations ) {
+	}
 
-				for ( let c = 0; c < 4; c ++ ) {
+	return results;
 
-					const x = slots[ t * 4 + c ], y = partials[ i * 4 + c ];
-					slots[ t * 4 + c ] = ops[ c ] === 'min' ? Math.min( x, y ) : ops[ c ] === 'max' ? Math.max( x, y ) : x + y;
+}
 
-				}
+export interface ScalarCombineReferenceOptions {
+	/**
+	 * Texels behind the partials: the divisor of 'average' channels, and the
+	 * weight passed on without a 'weight' channel. Default 0.
+	 */
+	texels?: number;
+	/**
+	 * Roundings the partials' terms already went through before the combine
+	 * pass (e.g. 12 for a Reducer's level 6: two per level), added to the
+	 * combine depth in the bound. Default 0: the partials are exact inputs.
+	 */
+	partialDepth?: number;
+	/**
+	 * Per channel, Σ|terms| behind the partials, for the bound when
+	 * `partialDepth` > 0 (it is at least Σ|partials|). Default Σ|partials|.
+	 */
+	magnitude?: readonly number[];
+	/** As {@link ScalarReferenceOptions.inputError}, per partial. */
+	inputError?: { absolute?: number, relative?: number };
+}
 
-			}
+/**
+ * A combine-only scalar reduction (`ScalarRun.partials`): `partials` holds
+ * `count` accumulations per layer (`ops.length` floats each, layer-major), as
+ * a tool or a Reducer's store hook wrote them. Sum-like channels hold sums
+ * (for 'weighted' channels Σ w·v), min/max channels the min/max. The result
+ * per layer is combined in the GPU's order, with the exact float64 result and
+ * the bound of {@link scalarReference} at depth `partialDepth` +
+ * {@link scalarCombineDepth}.
+ */
+export function scalarCombineReference( partials: ArrayLike<number>, count: number, layers: number, reduce: ScalarReduce = 'average', options: ScalarCombineReferenceOptions = {} ): ScalarReferenceResult[] {
 
-		}
+	const ops = scalarOps( reduce );
+	const n = ops.length;
+	if ( ! Number.isInteger( count ) || count < 1 ) throw new Error( 'downsampler: a combine needs at least one partial.' );
+	const values = Float32Array.from( partials );
+	const absolute = options.inputError?.absolute ?? 0, relative = options.inputError?.relative ?? 0;
+	const depth = ( options.partialDepth ?? 0 ) + scalarCombineDepth( count );
+	const results: ScalarReferenceResult[] = [];
 
-		tree( slots, scalarInvocations );
-		const total = Array.from( slots.subarray( 0, 4 ) );
+	for ( let layer = 0; layer < layers; layer ++ ) {
 
-		// Exact (float64) totals and the magnitudes the bound needs.
-		const exactTotal = ops.map( op => op === 'min' ? Infinity : op === 'max' ? - Infinity : 0 );
-		const magnitude = [ 0, 0, 0, 0 ];
-		for ( let y = 0; y < height; y ++ ) for ( let x = 0; x < width; x ++ ) for ( let c = 0; c < 4; c ++ ) {
-
-			const v = ops[ c ] === 'weighted' ? texel( x, y, c ) * texel( x, y, weightChannel ) : texel( x, y, c );
-			if ( ops[ c ] === 'min' ) exactTotal[ c ] = Math.min( exactTotal[ c ], v );
-			else if ( ops[ c ] === 'max' ) exactTotal[ c ] = Math.max( exactTotal[ c ], v );
-			else { exactTotal[ c ] += v; magnitude[ c ] += Math.abs( v ); }
-
-		}
-
-		const weight = weightChannel >= 0 ? total[ weightChannel ] : Math.fround( count );
-		const exactWeight = weightChannel >= 0 ? exactTotal[ weightChannel ] : count;
-		const weightMagnitude = weightChannel >= 0 ? magnitude[ weightChannel ] : count;
-		const weightBound = weightChannel >= 0 ? gamma( depth ) * weightMagnitude + absolute * count + relative * weightMagnitude : 0;
-		const countRounding = count > 2 ** 24 ? u : 0;
-		const value = [ 0, 0, 0, 0 ], exact = [ 0, 0, 0, 0 ], bound = [ 0, 0, 0, 0 ];
-
-		for ( let c = 0; c < 4; c ++ ) {
-
-			const op = ops[ c ], input = absolute * count + relative * magnitude[ c ];
-
-			if ( op === 'min' || op === 'max' ) {
-
-				value[ c ] = total[ c ]; exact[ c ] = exactTotal[ c ];
-				bound[ c ] = absolute + relative * Math.abs( exact[ c ] );
-
-			} else if ( op === 'sum' || op === 'weight' ) {
-
-				value[ c ] = total[ c ]; exact[ c ] = exactTotal[ c ];
-				bound[ c ] = gamma( depth ) * magnitude[ c ] + input;
-
-			} else if ( op === 'average' ) {
-
-				value[ c ] = Math.fround( total[ c ] / Math.fround( count ) ); exact[ c ] = exactTotal[ c ] / count;
-				bound[ c ] = ( gamma( depth ) * magnitude[ c ] + input ) / count + ( u + countRounding ) * Math.abs( exact[ c ] );
-
-			} else {
-
-				value[ c ] = weight === 0 ? 0 : Math.fround( total[ c ] / weight );
-				exact[ c ] = exactWeight === 0 ? 0 : exactTotal[ c ] / exactWeight;
-				bound[ c ] = exactWeight === 0 ? 0 : ( gamma( depth + 1 ) * magnitude[ c ] + input + Math.abs( exact[ c ] ) * weightBound ) / Math.abs( exactWeight ) + u * Math.abs( exact[ c ] );
-
-			}
-
-		}
-
-		results.push( { value, weight, exact, exactWeight, bound, weightBound } );
+		const total = combinePartials( ops, values, layer * count, count );
+		const exact = exactOf( ops, count, ( i, c ) => values[ ( layer * count + i ) * n + c ] );
+		if ( options.magnitude !== undefined ) exact.magnitude = ops.map( ( _, c ) => Math.max( exact.magnitude[ c ], options.magnitude![ c ] ) );
+		results.push( scalarResult( ops, total, exact, options.texels ?? 0, depth, absolute, relative, count ) );
 
 	}
 

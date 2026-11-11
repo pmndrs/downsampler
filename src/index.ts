@@ -10,5 +10,5 @@ export { footprint, foldChannel, isBuiltinReduction, isChannelOps, needsTileEdge
 export type { BuiltinReduction, ChannelOp, ChannelOps, CustomReduction, EdgePolicy, PyramidReferenceReduction, Reduction, ReferenceReduction, ResolvedReduction, TileEdgePolicy } from './core/reduction.js';
 export { checkLevels, levelSize, maxTileLevels, pyramidTolerance, reducePyramid, tileDispatch } from './core/pyramid.js';
 export type { PyramidLevel, PyramidReferenceOptions, TileDispatch } from './core/pyramid.js';
-export { isSumOp, scalarBlock, scalarDepth, scalarInvocations, scalarOps, scalarReference, scalarSide, scalarWeightChannel, scalarWorkgroups } from './core/scalar.js';
-export type { ScalarOp, ScalarReduce, ScalarReferenceOptions, ScalarReferenceResult } from './core/scalar.js';
+export { isSumOp, scalarBlock, scalarCombineDepth, scalarCombineReference, scalarDepth, scalarInvocations, scalarOps, scalarReference, scalarSide, scalarWeightChannel, scalarWorkgroups } from './core/scalar.js';
+export type { ScalarCombineReferenceOptions, ScalarOp, ScalarReduce, ScalarReferenceOptions, ScalarReferenceResult } from './core/scalar.js';

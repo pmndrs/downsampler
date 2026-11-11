@@ -2,8 +2,8 @@
 // checked against the CPU oracle: exactly where the values are integers below
 // 2^24 (texel counts, bit sums, coordinates, min/max), and within the oracle's
 // stated error bound for float sums.
-import { fromHalf, scalarReference, toHalf } from '/dist/index.js';
-import { ScalarReduction, scalarResultBytes } from '/dist/webgpu/index.js';
+import { fromHalf, levelSize, scalarCombineReference, scalarReference, toHalf } from '/dist/index.js';
+import { Reducer, ScalarReduction, scalarResultBytes } from '/dist/webgpu/index.js';
 import { createDepthSource, makeData, toFloats, upload } from './gpu.js';
 
 // [ width, height, layers?, viewDimension? ]
@@ -306,11 +306,183 @@ export async function validateScalar( device, { quick = false, onProgress = () =
 	}
 
 	onProgress( 'validated scalar depth' );
+	results.push( ...await validateCombineOnly( device, { quick } ) );
+	onProgress( 'validated scalar combine-only' );
 	results.push( ...await validateExposure( device, { quick } ) );
 	results.push( ...validateScalarOptions( device ) );
 	output.destroy();
 	seedBuffer.destroy();
 	return { results, worst, pairing: `${ pairing.same }/${ pairing.total }` };
+
+}
+
+// Combine-only runs (`ScalarRun.partials`): the combine pass over partials a
+// tool wrote. First tool-written buffers (integers: exact; floats: within the
+// oracle's bound), at counts around the 256-invocation fold and with layers at
+// an offset; then the shape it exists for, a Reducer whose store hook writes
+// its deepest level's accumulations, combined in the same pass (2 dispatches,
+// one read of the source), checked against the whole image's exact result.
+const combineVariants = [
+	{ name: 'sum/average/min/max', reduce: [ 'sum', 'average', 'min', 'max' ], texels: 1000 },
+	{ name: 'weighted', reduce: [ 'weighted', 'weighted', 'max', 'weight' ] },
+	{ name: 'weighted, average', reduce: [ 'weighted', 'average', 'min', 'weight' ], texels: 77 }
+];
+
+const combineBindings = {
+	wgsl: `struct CombineTool { width: u32, height: u32, groupsX: u32, count: u32 }
+@group(1) @binding(0) var<storage, read> toolInput: array<vec4f>;
+@group(1) @binding(1) var<storage, read_write> toolPartials: array<vec4f>;
+@group(1) @binding(2) var<uniform> combineTool: CombineTool;`,
+	entries: [
+		{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+		{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+		{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }
+	]
+};
+// (w·r, g, b, w): the Reducer sums the weighted term itself, takes the min of b.
+const combineLoad = `fn load(texel: vec2i, layer: u32) -> vec4f {
+	let v = toolInput[(layer * combineTool.height + u32(texel.y)) * combineTool.width + u32(texel.x)];
+	return vec4f(v.x * v.w, v.y, v.z, v.w);
+}`;
+const combineStore = deepest => `fn store(level: u32, texel: vec2i, layer: u32, value: vec4f) {
+	if (level == ${ deepest }u) { toolPartials[layer * combineTool.count + u32(texel.y) * combineTool.groupsX + u32(texel.x)] = value; }
+}`;
+
+async function validateCombineOnly( device, { quick } ) {
+
+	const results = [];
+	const output = makeBuffer( device, 256 + 8 * scalarResultBytes );
+	let state = 11;
+	const next = () => ( state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0 ) / 2 ** 32;
+
+	for ( const variant of combineVariants ) {
+
+		const reduction = new ScalarReduction( device, { reduce: variant.reduce } );
+
+		for ( const count of quick ? [ 1, 255, 256, 257, 1000 ] : [ 1, 2, 255, 256, 257, 511, 513, 1000, 2040, 8161 ] ) for ( const layers of [ 1, 3 ] ) for ( const integer of [ true, false ] ) {
+
+			// Partials as a tool writes them, at offset 256 (layer after layer), poison around them.
+			const values = Float32Array.from( { length: count * layers * 4 }, ( _, i ) => {
+
+				const c = i % 4;
+				if ( integer ) return Math.floor( next() * ( c === 3 ? 64 : 4096 ) ) - ( c === 3 ? 0 : 2048 );
+				return c === 3 ? next() * 16 : next() * 512 - 256;
+
+			} );
+			const partials = makeBuffer( device, 256 + values.byteLength + 64 );
+			poisonBuffer( device, partials );
+			device.queue.writeBuffer( partials, 256, values );
+			poisonBuffer( device, output );
+			const texels = variant.texels;
+			run( device, reduction, { partials: { buffer: partials, offset: 256, count }, texels, layers: [ 0, layers ], output: { buffer: output, offset: 256 } }, integer ? 'encode' : 'encodePass' );
+			const actual = await readResults( device, output, 256, layers );
+			const expected = scalarCombineReference( values, count, layers, variant.reduce, { texels } );
+			const label = `scalar combine-only ${ variant.name } ${ count } partials x${ layers } ${ integer ? 'integer' : 'float' }`;
+			// Integer partials below 2^24 sum exactly; only the final division rounds.
+			if ( integer ) actual.forEach( ( result, layer ) => {
+
+				for ( let c = 0; c < 4; c ++ ) if ( Math.abs( result.value[ c ] - expected[ layer ].value[ c ] ) > 2 ** - 22 * Math.abs( expected[ layer ].value[ c ] ) ) throw new Error( `${ label } layer ${ layer } channel ${ c }: actual ${ result.value[ c ] }, expected ${ expected[ layer ].value[ c ] }` );
+				if ( result.weight !== expected[ layer ].weight ) throw new Error( `${ label } layer ${ layer } weight: actual ${ result.weight }, expected ${ expected[ layer ].weight }` );
+
+			} );
+			else checkBound( actual, expected, label );
+			partials.destroy();
+			results.push( { scalar: `combine-only ${ variant.name }`, count, layers, integer } );
+
+		}
+
+	}
+
+	// Reducer → combine in one pass: the Reducer's level `deepest` holds one
+	// accumulation per 2^deepest tile; the scalar combines them.
+	const scalar = new ScalarReduction( device, { reduce: [ 'weighted', 'average', 'min', 'weight' ] } );
+	const shapes = quick ? [ [ 1, 1 ], [ 17, 9 ], [ 65, 129 ], [ 17, 11, 3 ] ] : [ [ 1, 1 ], [ 17, 9 ], [ 63, 65 ], [ 64, 64 ], [ 65, 129 ], [ 255, 257 ], [ 17, 11, 3 ], [ 1920, 1080 ] ];
+	for ( const deepest of [ 4, 6 ] ) {
+
+		const reducer = new Reducer( device, { reduction: [ 'sum', 'sum', 'min', 'sum' ], levels: [ deepest ], edges: 'zero-weight', dimension: '2d-array', load: combineLoad, store: combineStore( deepest ), bindings: combineBindings } );
+
+		for ( const [ width, height, layers = 1 ] of shapes ) {
+
+			const groupsX = levelSize( width, deepest, 'zero-weight' ), count = groupsX * levelSize( height, deepest, 'zero-weight' );
+			const data = Float32Array.from( { length: width * height * layers * 4 }, ( _, i ) => i % 4 === 3 ? ( next() < 0.3 ? 0 : next() ) : next() * 16 - 4 );
+			const input = makeBuffer( device, Math.max( 16, data.byteLength ) );
+			device.queue.writeBuffer( input, 0, data );
+			const partials = makeBuffer( device, count * layers * 16 );
+			poisonBuffer( device, partials );
+			const uniform = device.createBuffer( { size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+			device.queue.writeBuffer( uniform, 0, Uint32Array.of( width, height, groupsX, count ) );
+			const bindGroup = device.createBindGroup( { layout: reducer.bindGroupLayouts[ 1 ], entries: [ input, partials, uniform ].map( ( buffer, binding ) => ( { binding, resource: { buffer } } ) ) } );
+			poisonBuffer( device, output );
+			const encoder = device.createCommandEncoder();
+			const pass = encoder.beginComputePass();
+			reducer.encodePass( pass, { width, height, layers, bindGroup } );
+			scalar.encodePass( pass, { partials: { buffer: partials, count }, texels: width * height, layers: [ 0, layers ], output: { buffer: output, offset: 256 } } );
+			pass.end();
+			device.queue.submit( [ encoder.finish() ] );
+			const actual = await readResults( device, output, 256, layers );
+
+			// Exact over the image; bound: the Reducer's two roundings per level, then the combine.
+			const expected = [];
+			for ( let layer = 0; layer < layers; layer ++ ) {
+
+				const texel = ( i, c ) => data[ ( layer * width * height + i ) * 4 + c ];
+				const tiles = new Float64Array( count * 4 ).fill( 0 );
+				const magnitude = [ 0, 0, 0, 0 ];
+				for ( let y = 0; y < height; y ++ ) for ( let x = 0; x < width; x ++ ) {
+
+					const i = y * width + x, tile = ( y >> deepest ) * groupsX + ( x >> deepest );
+					const terms = [ Math.fround( texel( i, 0 ) * texel( i, 3 ) ), texel( i, 1 ), texel( i, 2 ), texel( i, 3 ) ];
+					for ( let c = 0; c < 4; c ++ ) {
+
+						if ( c === 2 ) tiles[ tile * 4 + c ] = x % ( 1 << deepest ) === 0 && y % ( 1 << deepest ) === 0 ? terms[ c ] : Math.min( tiles[ tile * 4 + c ], terms[ c ] );
+						else tiles[ tile * 4 + c ] += terms[ c ];
+						magnitude[ c ] += Math.abs( terms[ c ] );
+
+					}
+
+				}
+
+				expected.push( scalarCombineReference( tiles, count, 1, scalar.ops, { texels: width * height, partialDepth: 2 * deepest + 1, magnitude } )[ 0 ] );
+
+			}
+
+			checkBound( actual, expected, `scalar Reducer level ${ deepest } → combine ${ width }x${ height }x${ layers }` );
+			for ( const buffer of [ input, partials, uniform ] ) buffer.destroy();
+			results.push( { scalar: `Reducer level ${ deepest } → combine-only`, width, height, layers } );
+
+		}
+
+	}
+
+	// Rejected runs, and what prepare() hands a tool that dispatches it.
+	const partials = makeBuffer( device, 1024 );
+	const average = combineVariants[ 0 ];
+	const reduction = new ScalarReduction( device, { reduce: average.reduce } );
+	const weighted = new ScalarReduction( device, { reduce: combineVariants[ 1 ].reduce } );
+	const texture = createSource( device, 8, 8, 1, 'rgba16float' );
+	for ( const [ target, options, message ] of [
+		[ reduction, { partials: { buffer: partials, count: 4 }, output: { buffer: output } }, 'texels' ],
+		[ reduction, { partials: { buffer: partials, offset: 16, count: 4 }, texels: 9, output: { buffer: output } }, 'offset' ],
+		[ reduction, { partials: { buffer: partials, count: 65 }, texels: 9, output: { buffer: output } }, 'too small' ],
+		[ reduction, { partials: { buffer: partials, count: 16 }, texels: 9, layers: [ 0, 5 ], output: { buffer: output } }, 'too small' ],
+		[ reduction, { partials: { buffer: partials, count: 0 }, texels: 9, output: { buffer: output } }, 'count' ],
+		[ reduction, { partials: { buffer: partials, count: 4 }, texels: 9, texture, output: { buffer: output } }, 'no texture' ],
+		[ reduction, { texture, texels: 9, output: { buffer: output } }, 'combine-only' ],
+		[ weighted, { partials: { buffer: partials, count: 4 }, texels: 0, output: { buffer: output } }, 'positive' ],
+		[ weighted, { partials: { buffer: output, count: 4 } }, 'output buffer' ]
+	] ) {
+
+		const reason = target.unsupportedReason( options );
+		if ( reason === null || ! reason.includes( message ) ) throw new Error( `expected combine-only rejection "${ message }", got ${ reason }` );
+
+	}
+
+	const prepared = weighted.prepare( { partials: { buffer: partials, count: 64 }, layers: [ 2, 1 ], output: { buffer: output } } );
+	if ( prepared.partials !== null || prepared.combineWorkgroups.join() !== '1,1,1' || prepared.combine !== weighted.combineKernel().combine ) throw new Error( 'scalar combine-only prepare(): unexpected pipelines or workgroups' );
+	if ( weighted.combineKernel().layout === weighted.kernel().layout ) throw new Error( 'scalar combine-only: expected its own group-0 layout (no source texture)' );
+	results.push( { option: 'scalar combine-only validation and prepare' } );
+	for ( const resource of [ partials, texture, output ] ) resource.destroy();
+	return results;
 
 }
 

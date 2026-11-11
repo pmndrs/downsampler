@@ -54,7 +54,8 @@ Jitters are (−0.375, −0.1111) for the current frame and (0.125, 0.2222) for 
 | `fsr/shading-change` | The `ShadingChange` consumer: bilinear samples of mips 1–3 at the jittered, `ClampUv`'d position; max of `\|x·y\|`; saturate → R8. Reads the mips `fsr/shading-change-pyramid` stored | 1 |
 | `fsr/shading-change-total` | pyramid (mips 1–3) + consumer: the pair the upscaler's fused pass replaces | 2 |
 | `generator/luma-pyramid` | Every texel, from the library: `Reducer` `'zero-weight'` level 1 (depth, FSR's `store`) + `ScalarReduction` `'average'` with FSR's `load` and `finish`. Checked against the `fsr/luma-pyramid-correct` oracle | 3 (reducer; partials, combine) |
-| `generator/luma-pyramid-fused` | Every texel, one read: `Reducer` `'zero-weight'` [1, 6] with (Σ log luma, Σ luma, mean depth, count); level 6 writes one partial per 64² tile; a `ScalarReduction` sums them and `finish` divides | 3 (reducer; partials, combine) |
+| `generator/luma-pyramid-fused` | Every texel, one read: `Reducer` `'zero-weight'` [1, 6] with (Σ log luma, Σ luma, mean depth, count); level 6 writes one partial per 64² tile; a combine-only `ScalarReduction` (`partials`) takes their weighted means over the counts and calls FSR's `finish` | 2 (reducer; combine) |
+| `experiment/luma-pyramid-fused-3` | The M2T.3 version of the above, for comparison: a `ScalarReduction` with a load hook reads the partials (only with `--only=experiment/luma`) | 3 (reducer; partials, combine) |
 | `generator/luma-pyramid-clamp` | AMD parity: `Reducer` `'clamp'` [1, 6] with FSR's hooks, then a `ScalarReduction` over the top-left `2^(mips−6)` square of mip 6 (`spdLoad`, 0 past it) with FSR's `updateFrameInfo`. Checked against the `fsr/luma-pyramid` oracle | 3 |
 | `generator/upscaler-exposure` | The upscaler's exposure over every texel: `ScalarReduction` of `log2(max(luma, 1e-4))`, `finish` = `luminancePyramid.ts`'s epilogue (extracted verbatim). Own oracle (`exposureOracleEveryTexel`) | 2 |
 | `generator/upscaler-exposure-taps` | The same over the upscaler's 32×32 bilinear taps (`block: 2`, one workgroup): value parity with `upscaler/exposure`'s oracle | 2 |
@@ -185,6 +186,15 @@ How to read these:
 - **Shading change:** the library version of the upscaler's fused pass ties it (0.95–1.02×, within noise) and is 2–2.5× faster than FSR's pyramid + consumer. FSR's pyramid alone runs 0.74–0.86× of the SPD port when built on the `Reducer` (8×8 workgroups over 16² tiles instead of SPD's 256 over 64²).
 - **Exposure:** the upscaler's metering as a `ScalarReduction` is 2–4× faster than its single-invocation loop over **every** texel, and 3–5× faster over the same 1024 taps (identical values within the oracle's bound).
 - **Luma pyramid:** reading the source once (`-fused`) matches FSR's every-texel pass; reading it twice (`Reducer` for depth, then a `ScalarReduction`) costs ~1.4×. AMD parity costs 1.1–1.3× AMD's 2 dispatches: it takes 3 (the window scalar is 2 tiny dispatches).
+
+**Combine-only scalar (2026-11-11; run 2 is `results/tools/m5-pro-combine-only.json`).** `generator/luma-pyramid-fused` now takes 2 dispatches (Reducer, then a combine-only `ScalarReduction` over its tile partials). Two runs, 11 rounds × 16 repeats, load average ~6 on 18 CPUs, same-run ratios:
+
+| Ratio | 960×540 | 1280×720 | 1129×635 | 1707×960 | 1920×1080 |
+|---|---:|---:|---:|---:|---:|
+| `experiment/luma-pyramid-fused-3` ÷ `generator/luma-pyramid-fused` (run 1 / run 2) | 1.23 / 1.23 | 1.19 / 1.18 | (outlier) / 1.20 | 1.12 / 1.11 | 1.11 / 0.92 |
+| `generator/luma-pyramid-fused` ÷ `fsr/luma-pyramid-correct` (run 1 / run 2) | 0.92 / 0.88 | 0.86 / 0.85 | (outlier) / 0.84 | 0.84 / 0.84 | 0.82 / 0.74 |
+
+The outlier is one 3.5× sample of the new fixture at 1129×635 in run 1 (other work on the GPU); 1920×1080 disagreed between runs. The saving is the partials dispatch (a 256-invocation workgroup per 64² tile of partials, ~0.002–0.004 ms here).
 
 **Profiling the shading change** (`--only=experiment/,generator/upscaler-shading,upscaler/shading`, 3 runs, `results/tools/m5-pro-m2t3-experiments-{1,2,3}.json`, load average 22–55; paired ratios against `generator/upscaler-shading-change` at 1707×960 / 1920×1080, the two steady sizes):
 

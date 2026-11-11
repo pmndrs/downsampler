@@ -7,5 +7,5 @@ export { createKernel, kernelLayoutEntries, sizeBinding } from './kernel.js';
 export type { KernelOptions, SourceAccess, ViewDimension } from './kernel.js';
 export type { Reduction, CustomReduction, BuiltinReduction, ChannelOp, ChannelOps, EdgePolicy, TileEdgePolicy } from '../core/reduction.js';
 export { ScalarReduction, createScalarKernel, scalarLayoutEntries, scalarResultBytes } from './scalar.js';
-export type { PreparedScalar, ScalarKernel, ScalarKernelOptions, ScalarReductionOptions, ScalarRun } from './scalar.js';
+export type { PreparedScalar, ScalarCombineKernel, ScalarKernel, ScalarKernelOptions, ScalarReductionOptions, ScalarRun } from './scalar.js';
 export type { ScalarOp, ScalarReduce } from '../core/scalar.js';
