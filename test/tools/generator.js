@@ -249,14 +249,18 @@ async function upscalerExposure( device, { scene, tools }, { taps } ) {
 // memory update and response, written at the signal's 2×2 resolution.
 //
 // Five quantities per block: Σ cur, Σ prev, Σ cur², Σ prev² and max moving.
-// The kernel carries one vec4f, so the flag rides in the sign of the Σ prev²
-// channel (a sum of non-negative terms): a custom 'sum' reduction adds
-// magnitudes and ORs signs. A moving texel contributes −(prev² + 1e-30), so a
-// zero prev² still carries its flag; 1e-30 vanishes in the f32 rounding of
-// any non-black block. (Adding the two variances in one channel does not
-// work: Σ prev² is of the interpolated reprojection while the mean is of the
-// clamped value, so that variance is often negative and the upscaler clamps
-// it at 0 on its own. Measured: 2368 signal texels off at 960×540.)
+// With an 8-channel accumulator (the default, `wide`), the four sums are
+// channels 0–3 and the flag is channel 4, a 'max' (5–7 are unused).
+//
+// `wide: false` is the M2T.3 version, kept as experiment/shading-signbit: one
+// vec4f, so the flag rides in the sign of the Σ prev² channel (a sum of
+// non-negative terms): a custom 'sum' reduction adds magnitudes and ORs signs.
+// A moving texel contributes −(prev² + 1e-30), so a zero prev² still carries
+// its flag; 1e-30 vanishes in the f32 rounding of any non-black block.
+// (Adding the two variances in one channel does not work: Σ prev² is of the
+// interpolated reprojection while the mean is of the clamped value, so that
+// variance is often negative and the upscaler clamps it at 0 on its own.
+// Measured: 2368 signal texels off at 960×540.)
 //
 // Edges: the upscaler clamps loads to the image and emits ⌈n/2^l⌉ blocks
 // (partial blocks repeat the edge texel; 'clamp' with ceil sizes). Expressed
@@ -370,18 +374,46 @@ fn conditioningOf() -> Conditioning {
     return conditioningCache;
 }`;
 
+// The 8-channel hooks: the same WGSL with the flag in channel 4 (DsWide.hi.x).
+function widen( wgsl, steps ) {
+
+	for ( const [ from, to ] of steps ) {
+
+		if ( ! wgsl.includes( from ) ) throw new Error( `upscaler shading change: hook changed (${ JSON.stringify( from ) })` );
+		wgsl = wgsl.replaceAll( from, to );
+
+	}
+
+	return wgsl;
+
+}
+
+const shadingLoadWide = widen( shadingLoad, [
+	[ 'fn load(texel : vec2i, layer : u32) -> vec4f', 'fn load(texel : vec2i, layer : u32) -> DsWide' ],
+	[ 'return vec4f(sums.xyz, select(sums.w, -(sums.w + 1.0e-30), moving > 0.5));', 'return DsWide(sums, vec4f(moving, 0.0, 0.0, 0.0));' ]
+] );
+const shadingStoreWide = widen( shadingStore, [
+	[ 'value : vec4f)', 'value : DsWide)' ],
+	[ 'let moving = value.w < 0.0;', 'let moving = value.hi.x > 0.5;' ],
+	[ 'value.x / 16.0', 'value.lo.x / 16.0' ],
+	[ 'value.x / 64.0', 'value.lo.x / 64.0' ],
+	[ 'blockSums(value)', 'value.lo' ]
+] );
+
 /**
- * Options are for the experiments (`--only=experiment/`): `levels` adds unemitted
- * deeper levels to grow the tile (the store hook ignores them), `cache` hoists
- * the exposure texels, `patch` rewrites the kernel WGSL (self-dispatch).
+ * Options are for the experiments (`--only=experiment/`): `wide: false` is the
+ * sign-bit version (one vec4f), `levels` adds unemitted deeper levels to grow
+ * the tile (the store hook ignores them), `cache` hoists the exposure texels,
+ * `patch` rewrites the kernel WGSL (self-dispatch).
  */
-async function upscalerShadingChange( device, { scene, tools }, { name = 'generator/upscaler-shading-change', levels = [ 2, 3 ], cache = false, patch = null } = {} ) {
+async function upscalerShadingChange( device, { scene, tools }, { name = 'generator/upscaler-shading-change', wide = true, levels = [ 2, 3 ], cache = false, patch = null } = {} ) {
 
 	const shared = tools.upscalerShading();
 	const group = device.createBindGroup( { layout: device.createBindGroupLayout( { entries: shadingEntries } ), entries: shared.groupEntries() } );
 	const pyramid = await reducer( device, name, {
-		reduction: { kind: 'sum', wgsl: shadingReduce }, levels, edges: 'clamp',
-		bindings: { wgsl: shadingTool.replace( 'HOIST', cache ? conditioningCached : conditioningPerCall ), entries: shadingEntries }, load: shadingLoad, store: shadingStore
+		reduction: wide ? [ 'sum', 'sum', 'sum', 'sum', 'max', 'max', 'max', 'max' ] : { kind: 'sum', wgsl: shadingReduce }, levels, edges: 'clamp',
+		bindings: { wgsl: shadingTool.replace( 'HOIST', cache ? conditioningCached : conditioningPerCall ), entries: shadingEntries },
+		load: wide ? shadingLoadWide : shadingLoad, store: wide ? shadingStoreWide : shadingStore
 	} );
 	const sourceTile = Math.max( 16, 2 ** levels[ levels.length - 1 ] ), pad = n => Math.ceil( n / sourceTile ) * sourceTile;
 	const dispatch = { width: pad( scene.width ), height: pad( scene.height ), bindGroup: group };
@@ -427,11 +459,13 @@ function pingPong( wgsl ) {
 
 }
 
+// The M2T.3 profiling experiments ran on the sign-bit version, so they stay on it.
 const shadingExperiments = [
-	{ name: 'experiment/shading-pingpong', patch: pingPong },
-	{ name: 'experiment/shading-cached', cache: true },
-	{ name: 'experiment/shading-tile16', levels: [ 2, 3, 5 ] },
-	{ name: 'experiment/shading-tile16-cached', levels: [ 2, 3, 5 ], cache: true }
+	{ name: 'experiment/shading-signbit', wide: false },
+	{ name: 'experiment/shading-pingpong', wide: false, patch: pingPong },
+	{ name: 'experiment/shading-cached', wide: false, cache: true },
+	{ name: 'experiment/shading-tile16', wide: false, levels: [ 2, 3, 5 ] },
+	{ name: 'experiment/shading-tile16-cached', wide: false, levels: [ 2, 3, 5 ], cache: true }
 ];
 
 export const generatorPasses = [

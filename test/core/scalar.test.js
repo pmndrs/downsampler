@@ -160,6 +160,27 @@ test( 'combine-only: per-tile sums of an image combine to the image result', () 
 
 } );
 
+test( '8 channels: the scalar oracle of 8 channels is its two halves, pairing included', () => {
+
+	assert.equal( scalarOps( 'sum', 8 ).length, 8 );
+	assert.throws( () => scalarOps( [ 'sum', 'sum', 'sum', 'sum' ], 8 ), /channels is 8/ );
+	assert.throws( () => scalarOps( 'sum', 3 ), /4 or 8/ );
+	const [ width, height, layers ] = [ 300, 129, 2 ];
+	const wide = Float32Array.from( { length: width * height * layers * 8 }, ( _, i ) => i % 8 === 6 ? random() : random() * 16 - 4 );
+	const half = from => Float32Array.from( { length: width * height * layers * 4 }, ( _, i ) => wide[ Math.floor( i / 4 ) * 8 + from + i % 4 ] );
+	const lo = [ 'sum', 'average', 'min', 'max' ], hi = [ 'weighted', 'max', 'weight', 'weighted' ];
+	const both = scalarReference( wide, width, height, layers, [ ...lo, ...hi ] );
+	const a = scalarReference( half( 0 ), width, height, layers, lo ), b = scalarReference( half( 4 ), width, height, layers, hi );
+	both.forEach( ( result, layer ) => {
+
+		assert.deepEqual( result.value, [ ...a[ layer ].value, ...b[ layer ].value ] );
+		assert.deepEqual( result.bound, [ ...a[ layer ].bound, ...b[ layer ].bound ] );
+		assert.equal( result.weight, b[ layer ].weight );
+
+	} );
+
+} );
+
 test( 'combine-only: depth, texels and layers', () => {
 
 	assert.equal( scalarCombineDepth( 1 ), 8 );

@@ -256,6 +256,8 @@ shadingChange.encodePass( pass, {                        // or encode( encoder, 
 	outputs: [ 0, 1, 2 ].map( mipLevel => ( { texture: spdMips, mipLevel } ) ),
 } );
 // Self-dispatch: shadingChange.wgsl, .entryPoint, .layout, .pipeline, .bindGroup( dispatch ), .workgroups( w, h, layers ).
+// 8 channels (§14.1 Wide accumulators): reduction: [ 'sum', 'sum', 'sum', 'sum', 'max', … ] (or channels: 8);
+// hooks then use DsWide { lo: vec4f, hi: vec4f }: fn load( … ) -> DsWide, fn store( …, value: DsWide ).
 // Without a load hook: { source: texture | { texture, mipLevel } }. Output textures must be at least each level's size.
 
 import { reducePyramid, levelSize } from 'downsampler';  // the CPU oracle and level sizes
@@ -569,7 +571,7 @@ pmndrs/upscaler replaced both passes because no downsampler existed:
   - **FSR shading-change pyramid** (FSR's hooks, `'clamp'` [1, 2, 3]): 0.74–0.86× the SPD port.
   - **FSR luma pyramid:** every texel with one source read (`Reducer` [1, 6] sums → `ScalarReduction` of the tile partials), 0.89–1.15× FSR's every-texel pass (3 dispatches; 2 since combine-only runs, below). Every texel with two reads, ~1.4×. AMD parity, 1.09–1.31× AMD's pass at 3 dispatches. AMD's top-left `2^mips` window, its zero reads and its f16 mip 6 are reproduced by a `ScalarReduction` over the window of mip 6, to ≤ 1.1e-7. That needs no option, and isn't worth one (§14 above).
 - **API gaps found (M2T.3)**, none blocking:
-  - **Five values per texel.** The upscaler's block statistics are 4 sums plus a max flag, and the kernel carries one `vec4f`. The flag rides in the sign of a non-negative sum, through a custom `'sum'` reduction. Wider accumulators are the clean fix if a second tool needs them.
+  - **Five values per texel.** The upscaler's block statistics are 4 sums plus a max flag, and the kernel carries one `vec4f`. The flag rides in the sign of a non-negative sum, through a custom `'sum'` reduction. Wider accumulators are the clean fix if a second tool needs them. **Done (2026-11-11):** 8-channel accumulators (§14.1 Wide accumulators); the fixture uses them, at 0.86–1.01× the sign-bit version's speed.
   - **An epilogue that needs two levels at once** (signal = max(4×4, 8×8) at the 2×2 resolution). Expressible: store hooks keep workgroup state across levels. That is now a documented guarantee with a GPU test (§14.1 Hooks); no kernel change.
   - **Clamped loads with ⌈n/2^l⌉ blocks.** Expressed with `'clamp'` at a padded size (§14.1 Edges); no option added.
   - **Per-texel side outputs from the load hook** (the upscaler's luma history). This is safe when every texel is loaded exactly once: `'clamp'` at whole source tiles (§14.1 Hooks).
@@ -647,6 +649,15 @@ Group 0 of a tile kernel holds only what it needs:
 Validation: at most one `'weight'` channel, and `'weighted'` needs one. Builtins expand per channel: `'average'`, `'min'` and `'max'` to four of the same, `'minmax'` to min, max, min, max, and the shorthand `'sum'` to four sums. A custom `{ wgsl, kind }` applies to the whole `vec4`:
 - `kind: 'fold'` (default) must be idempotent.
 - `kind: 'sum'` is combined exactly once per counted texel and emitted as is.
+
+**Wide accumulators (8 channels, 2026-11-11).** `channels: 8` (or eight channel ops) carries two `vec4f` per texel, in `Reducer` and `ScalarReduction` alike.
+- **WGSL contract:** the generator declares `struct DsWide { lo: vec4f, hi: vec4f }`, channels 0–3 in `lo` and 4–7 in `hi`. With 8 channels the hooks use it in place of `vec4f`: `fn load( texel, layer ) -> DsWide`, `fn store( level, texel, layer, value: DsWide )`, `fn finish( value: DsWide, weight: f32 )`, and a custom `fn reduce( a: DsWide, b: DsWide ) -> DsWide`. Chosen over two out-parameters or an `array<f32, 8>`: a struct is one value through every hook, the halves stay `vec4f` (so per-half `select`, `min`, `max` and arithmetic stay vector ops), and the shape matches two `rgba` texels or 32 bytes of buffer.
+- **Ops:** any per-channel op on any of the 8 channels, still at most one `'weight'`. Builtins and `'minmax'` expand to 8 with `channels: 8`.
+- **Sources and outputs:** a texture has at most 4 channels, so an 8-channel `Reducer` needs both a load and a store hook. An 8-channel `ScalarReduction` needs a load hook to read an image; without one it only takes combine-only runs (partials of 32 bytes). Output results are `{ value: DsWide, weight: f32 }`, 48 bytes per layer (`resultBytes`, `scalarResultSize( 8 )`).
+- **Cost when unused: none.** Every 4-channel kernel is byte-identical to before (5620 option sets compared).
+- **Workgroup memory doubles:** a 5-level tile takes 8 KiB, a 6-level tile 32 KiB, above the default 16 KiB `maxComputeWorkgroupStorageSize`. The Reducer rejects a tile the device can't hold, naming the limit. The scalar's 256 slots take 8 KiB.
+- **Measured on the upscaler's shading change** (5 values: 4 sums and a max flag, which used to ride in a sign bit through a custom sum). `generator/upscaler-shading-change` now uses `[ 'sum' ×4, 'max' ×4 ]`; the sign-bit version is `experiment/shading-signbit`. Sign-bit ÷ wide, two same-run comparisons on M5 Pro (load average ~9): 0.93 / 0.99 at 960×540, 1.01 / 1.01 at 1280×720, 0.86 / 0.92 at 1129×635, 1.01 / 1.00 at 1707×960, 1.00 / 1.01 at 1920×1080. So the wide kernel ties from 1280×720 up and costs up to ~8–14 % at the small odd size, where its doubled workgroup traffic is not hidden behind the loads. Against the upscaler's hand-fused pass it is 0.89–1.03×.
+- **Oracles:** `reducePyramid( …, { channels: 8 } )`, `scalarReference` and `scalarCombineReference` take 8-channel data (8 floats per texel or partial); core tests check that an 8-channel result equals the two 4-channel halves.
 
 **Accumulation.** Workgroup memory holds unnormalised accumulations: sums, weighted sums `Σ w·v`, min/max, or the custom combine. A level is normalised only when it is emitted.
 - The count that divides an `'average'` is analytic, not stored: the in-bounds part of the block under `'zero-weight'`, `4^l` under `'clamp'`.

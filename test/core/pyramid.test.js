@@ -142,6 +142,42 @@ test( 'tile reductions are validated', () => {
 
 } );
 
+test( '8 channels: ops, builtins and custom reductions resolve to 8; an 8-channel pyramid is its two halves', () => {
+
+	assert.equal( resolveReduction( [ 'sum', 'sum', 'sum', 'sum', 'max', 'max', 'max', 'max' ] ).channels, 8 );
+	assert.deepEqual( resolveReduction( 'minmax', 8 ).ops, [ 'min', 'max', 'min', 'max', 'min', 'max', 'min', 'max' ] );
+	assert.equal( resolveReduction( { wgsl: 'fn reduce(a: DsWide, b: DsWide) -> DsWide { return a; }' }, 8 ).channels, 8 );
+	assert.equal( resolveReduction( 'average' ).channels, 4 );
+	assert.throws( () => resolveReduction( [ 'sum', 'sum', 'sum', 'sum' ], 8 ), /channels is 8/ );
+	assert.throws( () => resolveReduction( 'sum', 6 ), /4 .* or 8/ );
+	assert.throws( () => resolveReduction( Array( 6 ).fill( 'sum' ) ), /four of/ );
+
+	const [ width, height, layers ] = [ 37, 21, 2 ];
+	let state = 7;
+	const wide = Float64Array.from( { length: width * height * layers * 8 }, ( _, i ) => ( state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0 ) % 1000 / ( i % 8 === 5 ? 1000 : 7 ) );
+	const half = from => Float64Array.from( { length: width * height * layers * 4 }, ( _, i ) => wide[ Math.floor( i / 4 ) * 8 + from + i % 4 ] );
+	const lo = [ 'sum', 'average', 'min', 'max' ], hi = [ 'weighted', 'weight', 'weighted', 'max' ];
+	for ( const edges of [ 'zero-weight', 'clamp' ] ) {
+
+		const levels = [ 1, 2, 5 ];
+		const both = reducePyramid( wide, width, height, layers, { reduction: [ ...lo, ...hi ], levels, edges } );
+		const parts = [ reducePyramid( half( 0 ), width, height, layers, { reduction: lo, levels, edges } ), reducePyramid( half( 4 ), width, height, layers, { reduction: hi, levels, edges } ) ];
+		both.forEach( ( level, l ) => {
+
+			for ( let i = 0; i < level.values.length; i ++ ) {
+
+				const part = parts[ ( i % 8 ) >> 2 ][ l ], j = Math.floor( i / 8 ) * 4 + i % 4;
+				assert.equal( level.values[ i ], part.values[ j ], `${ edges } level ${ level.level } value ${ i }` );
+				assert.equal( level.magnitude[ i ], part.magnitude[ j ] );
+
+			}
+
+		} );
+
+	}
+
+} );
+
 test( 'kernels bind only emitted levels; exact kernels reject tile options', () => {
 
 	const options = { edges: 'zero-weight', levels: [ 2, 3 ], format: 'rgba32float', reduction: [ 'sum', 'average', 'min', 'max' ] };

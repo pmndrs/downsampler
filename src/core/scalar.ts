@@ -17,7 +17,8 @@
  */
 
 export type ScalarOp = 'sum' | 'average' | 'min' | 'max' | 'weight' | 'weighted';
-export type ScalarReduce = ScalarOp | readonly [ ScalarOp, ScalarOp, ScalarOp, ScalarOp ];
+/** One op for every channel, or one per channel: four (a `vec4f`), or eight (`DsWide`, SPEC.md §14.1). */
+export type ScalarReduce = ScalarOp | readonly [ ScalarOp, ScalarOp, ScalarOp, ScalarOp ] | readonly [ ScalarOp, ScalarOp, ScalarOp, ScalarOp, ScalarOp, ScalarOp, ScalarOp, ScalarOp ];
 
 const scalarOpNames: readonly ScalarOp[] = [ 'sum', 'average', 'min', 'max', 'weight', 'weighted' ];
 
@@ -28,11 +29,16 @@ export const scalarInvocations = scalarSide * scalarSide;
 /** Default texels per invocation along each axis: 4 × 4, a 64 × 64 tile per workgroup (§4 Scalar reductions). */
 export const scalarBlock = 4;
 
-/** Validated per-channel ops. */
-export function scalarOps( reduce: ScalarReduce = 'average' ): ScalarOp[] {
+/**
+ * Validated per-channel ops. `channels` (4 or 8) sizes a single op; a list
+ * sets it by its length, and must agree with it when it is given.
+ */
+export function scalarOps( reduce: ScalarReduce = 'average', channels?: number ): ScalarOp[] {
 
-	const ops = typeof reduce === 'string' ? [ reduce, reduce, reduce, reduce ] : Array.from( reduce );
-	if ( ops.length !== 4 ) throw new Error( 'downsampler: a scalar reduction takes one op or four (one per channel).' );
+	if ( channels !== undefined && channels !== 4 && channels !== 8 ) throw new Error( `downsampler: channels must be 4 or 8, got ${ JSON.stringify( channels ) }.` );
+	const ops: ScalarOp[] = typeof reduce === 'string' ? Array( channels ?? 4 ).fill( reduce ) : Array.from( reduce );
+	if ( ops.length !== 4 && ops.length !== 8 ) throw new Error( 'downsampler: a scalar reduction takes one op or four (one per channel; eight for 8-channel accumulators).' );
+	if ( channels !== undefined && ops.length !== channels ) throw new Error( `downsampler: ${ ops.length } scalar ops, but channels is ${ channels }.` );
 	for ( const op of ops ) if ( ! scalarOpNames.includes( op ) ) throw new Error( `downsampler: unknown scalar op ${ JSON.stringify( op ) }.` );
 	const weights = ops.filter( op => op === 'weight' ).length;
 	if ( weights > 1 ) throw new Error( 'downsampler: at most one channel can be the weight.' );

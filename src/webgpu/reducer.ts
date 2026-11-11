@@ -1,6 +1,7 @@
 import { formats, isSupportedFormat, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { levelSize, tileDispatch } from '../core/pyramid.js';
-import { resolveReduction, type Reduction, type TileEdgePolicy } from '../core/reduction.js';
+import { tileSize } from '../core/plan.js';
+import { resolveReduction, type Channels, type Reduction, type TileEdgePolicy } from '../core/reduction.js';
 import { createKernel, kernelLayoutEntries, sizeBinding, type KernelOptions, type ViewDimension } from './kernel.js';
 import { checkToolBindings, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolGroupLayouts, toolPipelineLayout, type ToolBindings } from './tool.js';
 
@@ -35,6 +36,14 @@ export interface ReducerOptions {
 	sourceFormat?: string;
 	/** The tool's group-1 bindings, used by its hooks. */
 	bindings?: ToolBindings;
+	/**
+	 * Accumulator channels per texel: 4 (a `vec4f`, default) or 8. With 8, the
+	 * load hook returns, the store hook takes, and a custom reduce combines
+	 * `DsWide { lo: vec4f, hi: vec4f }` (channels 0–3, 4–7), and both hooks are
+	 * required. Eight channel ops imply it. Workgroup memory doubles: 8 KiB
+	 * for 5 levels, 32 KiB for 6 (above the default limit).
+	 */
+	channels?: Channels;
 	label?: string;
 }
 
@@ -108,6 +117,8 @@ export class Reducer {
 	readonly pipeline: GPUComputePipeline;
 	readonly levels: readonly number[];
 	readonly edges: TileEdgePolicy;
+	/** Accumulator channels per texel (4 or 8). */
+	readonly channels: Channels;
 	readonly label: string;
 	private readonly options: ReducerOptions;
 	private readonly cache = new Map<string, Prepared>();
@@ -117,12 +128,15 @@ export class Reducer {
 		const edges = options.edges ?? 'zero-weight';
 		if ( edges !== 'zero-weight' && edges !== 'clamp' ) throw new Error( `downsampler: a Reducer takes edges 'zero-weight' or 'clamp', got ${ JSON.stringify( edges ) }; 'exact' mip chains (a batch per odd size) are Downsampler's.` );
 		const reduction = options.reduction ?? 'average';
-		resolveReduction( reduction );
+		const { channels } = resolveReduction( reduction, options.channels );
 		checkToolBindings( options.bindings );
 		const kernel: KernelOptions = {
 			edges, levels: options.levels, reduction, format: options.format, dimension: options.dimension ?? '2d', sourceFormat: options.sourceFormat,
-			load: options.load, store: options.store, size: options.size, bindings: options.bindings?.wgsl
+			load: options.load, store: options.store, size: options.size, bindings: options.bindings?.wgsl, ...( channels === 8 ? { channels } : {} )
 		};
+		const deepest = options.levels[ options.levels.length - 1 ];
+		const tileBytes = tileSize( deepest ) ** 2 * channels * 4;
+		if ( Number.isInteger( deepest ) && tileBytes > device.limits.maxComputeWorkgroupStorageSize ) throw new Error( `downsampler: ${ deepest } levels of ${ channels }-channel accumulators take ${ tileBytes } bytes of workgroup memory; this device allows ${ device.limits.maxComputeWorkgroupStorageSize } (maxComputeWorkgroupStorageSize). Emit fewer levels or request a higher limit.` );
 
 		if ( options.store === undefined ) {
 
@@ -164,6 +178,7 @@ export class Reducer {
 		this.bindGroupLayouts = cached.bindGroupLayouts;
 		this.pipeline = cached.pipeline;
 		this.levels = [ ...options.levels ];
+		this.channels = channels;
 		this.edges = edges;
 		this.label = label;
 		this.options = { ...options, reduction };

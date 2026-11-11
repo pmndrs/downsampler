@@ -196,6 +196,15 @@ How to read these:
 
 The outlier is one 3.5× sample of the new fixture at 1129×635 in run 1 (other work on the GPU); 1920×1080 disagreed between runs. The saving is the partials dispatch (a 256-invocation workgroup per 64² tile of partials, ~0.002–0.004 ms here).
 
+**8-channel shading change (2026-11-11; `results/tools/m5-pro-wide-{1,2}.json`).** Two runs, 11 rounds × 16 repeats, load average ~9.5 on 18 CPUs, same-run ratios:
+
+| Ratio | 960×540 | 1280×720 | 1129×635 | 1707×960 | 1920×1080 |
+|---|---:|---:|---:|---:|---:|
+| `experiment/shading-signbit` ÷ `generator/upscaler-shading-change` (run 1 / run 2) | 0.93 / 0.99 | 1.01 / 1.01 | 0.86 / 0.92 | 1.01 / 1.00 | 1.00 / 1.01 |
+| `generator/upscaler-shading-change` ÷ `upscaler/shading-change` (run 1 / run 2) | 0.89 / 0.95 | 0.92 / 0.93 | 1.01 / 1.03 | 0.98 / 0.98 | 1.01 / 1.00 |
+
+The wide kernel moves twice the workgroup memory per level; that is hidden behind the loads from 1280×720 up, and costs up to 8–14 % at 1129×635.
+
 **Profiling the shading change** (`--only=experiment/,generator/upscaler-shading,upscaler/shading`, 3 runs, `results/tools/m5-pro-m2t3-experiments-{1,2,3}.json`, load average 22–55; paired ratios against `generator/upscaler-shading-change` at 1707×960 / 1920×1080, the two steady sizes):
 
 | Experiment | What changes | Ratio |
@@ -221,7 +230,7 @@ None moves it outside noise. The pass is bound by its loads (colour, motion, mas
 - **Load:** the per-texel work (luma, the luma-history store, the "moving" flag, `lumaPair`'s reprojection and clamp into the bilinear taps).
 - **Levels [2, 3]** are its 4×4 and 8×8 blocks.
 - **Store:** level 2 updates the mid block memory and keeps its response in tool workgroup memory. Level 3 updates the coarse memory and writes the signal of its 4×4 output texels as max(mid, coarse). This relies on the cross-level guarantee of SPEC §14.1, which the GPU suite checks.
-- **Five values in a `vec4f`:** Σ cur, Σ prev, Σ cur², Σ prev² and max moving. The flag rides in the sign of the Σ prev² channel through a custom `'sum'` reduction. Adding the two variances in one channel instead failed the oracle (2368 texels at 960×540): the upscaler clamps a variance that is often negative, because Σ prev² is of the interpolated reprojection while the mean is of the clamped value.
+- **Five values:** Σ cur, Σ prev, Σ cur², Σ prev² and max moving. Since 2026-11-11 they are an 8-channel accumulator (`DsWide`, SPEC §14.1): the sums in channels 0–3, the flag in channel 4 as a `'max'`. Before (now `experiment/shading-signbit`, which the profiling experiments below also use), they were one `vec4f`, and the flag rode in the sign of the Σ prev² channel through a custom `'sum'` reduction. Adding the two variances in one channel instead failed the oracle (2368 texels at 960×540): the upscaler clamps a variance that is often negative, because Σ prev² is of the interpolated reprojection while the mean is of the clamped value.
 - **Edges:** the upscaler clamps loads and emits ⌈n/2^l⌉ blocks. Here that is `'clamp'` at the size rounded up to whole 16² tiles, a clamp in the load hook and a bounded store. At that size every texel is loaded exactly once, so the history store in the load hook is safe.
 - Signal within 2.6e-5 of the oracle, 0 texels outside; luma history and block memory as the upscaler's.
 

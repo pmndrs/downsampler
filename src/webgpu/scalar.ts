@@ -1,6 +1,7 @@
 import { sampledChannels } from '../core/formats.js';
 import { isSumOp, scalarBlock, scalarInvocations, scalarOps, scalarSide, scalarWeightChannel, scalarWorkgroups, type ScalarOp, type ScalarReduce } from '../core/scalar.js';
 import type { ViewDimension } from './kernel.js';
+import { lanes } from './lanes.js';
 import { checkHooks, checkToolBindings, hookArity, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolPipelineLayout, type ToolBindings } from './tool.js';
 
 export interface ScalarReductionOptions {
@@ -24,6 +25,14 @@ export interface ScalarReductionOptions {
 	bindings?: ToolBindings;
 	/** Texels per invocation along each axis (1, 2, 4 or 8). Default 4: a 64 × 64 tile per workgroup. */
 	block?: number;
+	/**
+	 * Accumulator channels: 4 (a `vec4f`, default) or 8. With 8, `load`
+	 * returns and `finish` takes `DsWide { lo: vec4f, hi: vec4f }` (channels
+	 * 0–3, 4–7), partials are 32 bytes and output results 48
+	 * (`{ value: DsWide, weight: f32 }`). Eight ops imply it. Without a load
+	 * hook, an 8-channel reduction only combines partials (`ScalarRun.partials`).
+	 */
+	channels?: 4 | 8;
 }
 
 export interface ScalarKernelOptions extends ScalarReductionOptions {
@@ -47,11 +56,11 @@ export interface ScalarRun {
 	layers?: readonly [ number, number ];
 	/** The tool's `@group(1)` bind group, required with `bindings`. */
 	bindGroup?: GPUBindGroup;
-	/** Where results go without a `finish` hook. `offset` must be a multiple of 256. */
+	/** Where results go without a `finish` hook (`resultBytes` per layer). `offset` must be a multiple of 256. */
 	output?: { buffer: GPUBuffer, offset?: number };
 	/**
 	 * Combine only: `count` accumulations per layer that a tool (e.g. a
-	 * Reducer's store hook) wrote to `buffer`, one vec4f each, layer after
+	 * Reducer's store hook) wrote to `buffer`, one vec4f each (a DsWide with 8 channels), layer after
 	 * layer from `offset` (a multiple of `minStorageBufferOffsetAlignment`).
 	 * Sum-like channels hold sums ('weighted' channels Σ w·v, 'weight' Σ w),
 	 * min/max channels the min/max. The run records the combine dispatch alone.
@@ -84,7 +93,12 @@ export interface PreparedScalar {
 /** Bytes per result written to `ScalarRun.output`: `struct { value: vec4f, weight: f32 }`. */
 export const scalarResultBytes = 32;
 
-const channels = [ 'x', 'y', 'z', 'w' ];
+/** Bytes per output result for `channels` (4: 32, 8: `{ value: DsWide, weight: f32 }`, 48). */
+export function scalarResultSize( channels: number ): number {
+
+	return channels === 8 ? 48 : scalarResultBytes;
+
+}
 
 /** Bindings of the reduction's own `@group(0)`. */
 export function scalarLayoutEntries( { load, finish, dimension = '2d', combineOnly = false }: Pick<ScalarKernelOptions, 'load' | 'finish' | 'dimension'> & { combineOnly?: boolean } ): GPUBindGroupLayoutEntry[] {
@@ -111,15 +125,20 @@ export function scalarLayoutEntries( { load, finish, dimension = '2d', combineOn
 export function createScalarKernel( options: ScalarKernelOptions = {} ): string {
 
 	const { load, finish, bindings, dimension = '2d', splat = false, block = scalarBlock } = options;
-	const ops = scalarOps( options.reduce );
+	const ops = scalarOps( options.reduce, options.channels );
 	if ( ! [ 1, 2, 4, 8 ].includes( block ) ) throw new Error( 'downsampler: block must be 1, 2, 4 or 8.' );
 	checkHooks( { load, finish } );
 	checkToolBindings( bindings );
 	const weightChannel = scalarWeightChannel( ops );
 	const tile = scalarSide * block;
 	const array = dimension === '2d-array';
+	// The value type (vec4f, or DsWide for 8 channels). An 8-channel reduction
+	// without a load hook has no source to read: it only combines partials.
+	const { type: T, channel: ch, build, halves, join, declarations } = lanes( ops.length as 4 | 8 );
+	const combineOnly = ops.length === 8 && load === undefined;
+	const sumsOf = ( from: number ) => `vec4<bool>(${ ops.slice( from, from + 4 ).map( op => isSumOp( op ) ).join( ', ' ) })`;
 
-	let code = `struct DsParams {
+	let code = `${ declarations }struct DsParams {
 	size: vec2u,
 	firstLayer: u32,
 	groupsX: u32,
@@ -127,15 +146,15 @@ export function createScalarKernel( options: ScalarKernelOptions = {} ): string 
 	count: u32,
 }
 struct DsResult {
-	value: vec4f,
+	value: ${ T },
 	weight: f32,
 }
 @group(0) @binding(0) var<uniform> ds_params: DsParams;
-@group(0) @binding(1) var<storage, read_write> ds_partials: array<vec4f>;
-var<workgroup> ds_slots: array<vec4f, ${ scalarInvocations }>;
+@group(0) @binding(1) var<storage, read_write> ds_partials: array<${ T }>;
+var<workgroup> ds_slots: array<${ T }, ${ scalarInvocations }>;
 `;
 
-	if ( load === undefined ) {
+	if ( load === undefined && ! combineOnly ) {
 
 		code += `@group(0) @binding(2) var ds_source: texture_2d${ array ? '_array' : '' }<f32>;
 fn load(texel: vec2i, layer: u32) -> vec4f {
@@ -150,15 +169,19 @@ fn load(texel: vec2i, layer: u32) -> vec4f {
 	if ( load !== undefined ) code += `\n${ load }\n`;
 	if ( finish !== undefined ) code += `\n${ finish }\n`;
 
-	const combine = ops.map( ( op, c ) => op === 'min' ? `min(a.${ channels[ c ] }, b.${ channels[ c ] })` : op === 'max' ? `max(a.${ channels[ c ] }, b.${ channels[ c ] })` : `a.${ channels[ c ] } + b.${ channels[ c ] }` );
-	const sums = `vec4<bool>(${ ops.map( op => isSumOp( op ) ).join( ', ' ) })`;
-	const term = ops.map( ( op, c ) => op === 'weighted' ? `v.${ channels[ c ] } * v.${ channels[ weightChannel ] }` : `v.${ channels[ c ] }` );
+	const combine = ops.map( ( op, c ) => op === 'min' ? `min(${ ch( 'a', c ) }, ${ ch( 'b', c ) })` : op === 'max' ? `max(${ ch( 'a', c ) }, ${ ch( 'b', c ) })` : `${ ch( 'a', c ) } + ${ ch( 'b', c ) }` );
+	const sums = sumsOf( 0 );
+	const term = ops.map( ( op, c ) => op === 'weighted' ? `${ ch( 'v', c ) } * ${ ch( 'v', weightChannel ) }` : ch( 'v', c ) );
+	// Zero the sum-like channels of a value where `condition` holds (per vec4f half).
+	const zeroSums = ( value: string[], condition: string ) => join( value.map( ( half, i ) => `select(${ half }, vec4f(0), ${ sumsOf( 4 * i ) } & vec4<bool>(${ condition }))` ) );
 
 	code += `
-fn ds_combine(a: vec4f, b: vec4f) -> vec4f {
-	return vec4f(${ combine.join( ', ' ) });
+fn ds_combine(a: ${ T }, b: ${ T }) -> ${ T } {
+	return ${ build( combine ) };
 }
+`;
 
+	if ( ! combineOnly ) code += ops.length === 4 ? `
 // Sum-like channels of off-image texels contribute 0; min and max see the
 // clamped (in-image) texel, a harmless duplicate.
 fn ds_term(texel: vec2u, layer: u32) -> vec4f {
@@ -166,7 +189,17 @@ fn ds_term(texel: vec2u, layer: u32) -> vec4f {
 	let v = load(vec2i(min(texel, ds_params.size - vec2u(1))), layer);
 	return select(vec4f(${ term.join( ', ' ) }), vec4f(0), ${ sums } & vec4<bool>(!inside));
 }
+` : `
+// Sum-like channels of off-image texels contribute 0; min and max see the
+// clamped (in-image) texel, a harmless duplicate.
+fn ds_term(texel: vec2u, layer: u32) -> DsWide {
+	let inside = all(texel < ds_params.size);
+	let v = load(vec2i(min(texel, ds_params.size - vec2u(1))), layer);
+	return ${ zeroSums( [ `vec4f(${ term.slice( 0, 4 ).join( ', ' ) })`, `vec4f(${ term.slice( 4 ).join( ', ' ) })` ], '!inside' ) };
+}
+`;
 
+	code += `
 // Stride-halving tree over the workgroup's 256 slots; the total ends in slot 0.
 fn ds_tree(index: u32) {
 	for (var stride = ${ scalarInvocations / 2 }u; stride > 0u; stride >>= 1u) {
@@ -175,7 +208,9 @@ fn ds_tree(index: u32) {
 	}
 	workgroupBarrier();
 }
+`;
 
+	if ( ! combineOnly ) code += `
 @compute @workgroup_size(${ scalarSide }, ${ scalarSide })
 fn partials(@builtin(local_invocation_id) local: vec3u, @builtin(local_invocation_index) index: u32, @builtin(workgroup_id) group: vec3u) {
 	let origin = group.xy * ${ tile }u + local.xy;
@@ -184,7 +219,7 @@ fn partials(@builtin(local_invocation_id) local: vec3u, @builtin(local_invocatio
 
 	// Adjacent invocations read adjacent texels; each reads block × block of them, 16 apart.
 	let names: string[] = [];
-	for ( let jy = 0; jy < block; jy ++ ) for ( let jx = 0; jx < block; jx ++ ) {
+	if ( ! combineOnly ) for ( let jy = 0; jy < block; jy ++ ) for ( let jx = 0; jx < block; jx ++ ) {
 
 		const name = `v${ jy * block + jx }`;
 		code += `	let ${ name } = ds_term(origin + vec2u(${ jx * scalarSide }u, ${ jy * scalarSide }u), layer);\n`;
@@ -192,7 +227,7 @@ fn partials(@builtin(local_invocation_id) local: vec3u, @builtin(local_invocatio
 
 	}
 
-	for ( let level = 0; names.length > 1; level ++ ) {
+	for ( let level = 0; ! combineOnly && names.length > 1; level ++ ) {
 
 		const half = names.length / 2;
 		const next = names.slice( 0, half ).map( ( _, i ) => `t${ level }_${ i }` );
@@ -202,25 +237,28 @@ fn partials(@builtin(local_invocation_id) local: vec3u, @builtin(local_invocatio
 	}
 
 	const layerArgument = finish !== undefined && hookArity( finish, 'finish' ) >= 3 ? ', ds_params.firstLayer + group.z' : '';
-	const normalise = ops.map( ( op, c ) => op === 'average' ? `total.${ channels[ c ] } / f32(ds_params.count)` : op === 'weighted' ? `select(total.${ channels[ c ] } / weight, 0.0, weight == 0.0)` : `total.${ channels[ c ] }` );
+	const normalise = ops.map( ( op, c ) => op === 'average' ? `${ ch( 'total', c ) } / f32(ds_params.count)` : op === 'weighted' ? `select(${ ch( 'total', c ) } / weight, 0.0, weight == 0.0)` : ch( 'total', c ) );
 
-	code += `	ds_slots[index] = ${ names[ 0 ] };
+	if ( ! combineOnly ) code += `	ds_slots[index] = ${ names[ 0 ] };
 	ds_tree(index);
 	if (index == 0u) { ds_partials[group.z * ds_params.partialCount + group.y * ds_params.groupsX + group.x] = ds_slots[0]; }
 }
+`;
 
+	code += `
 @compute @workgroup_size(${ scalarInvocations })
 fn combine(@builtin(local_invocation_index) index: u32, @builtin(workgroup_id) group: vec3u) {
 	let n = ds_params.partialCount;
 	let base = group.z * n;
-	var value = select(ds_partials[base + min(index, n - 1u)], vec4f(0), ${ sums } & vec4<bool>(index >= n));
+${ ops.length === 4 ? `	var value = select(ds_partials[base + min(index, n - 1u)], vec4f(0), ${ sums } & vec4<bool>(index >= n));` : `	let first = ds_partials[base + min(index, n - 1u)];
+	var value = ${ zeroSums( halves( 'first' ), 'index >= n' ) };` }
 	for (var i = index + ${ scalarInvocations }u; i < n; i += ${ scalarInvocations }u) { value = ds_combine(value, ds_partials[base + i]); }
 	ds_slots[index] = value;
 	ds_tree(index);
 	if (index == 0u) {
 		let total = ds_slots[0];
-		let weight = ${ weightChannel >= 0 ? `total.${ channels[ weightChannel ] }` : 'f32(ds_params.count)' };
-		let result = vec4f(${ normalise.join( ', ' ) });
+		let weight = ${ weightChannel >= 0 ? ch( 'total', weightChannel ) : 'f32(ds_params.count)' };
+		let result = ${ build( normalise ) };
 		${ finish !== undefined ? `finish(result, weight${ layerArgument });` : 'ds_output[group.z] = DsResult(result, weight);' }
 	}
 }
@@ -291,8 +329,10 @@ export class ScalarReduction {
 	readonly options: Readonly<ScalarReductionOptions>;
 	readonly ops: readonly ScalarOp[];
 	readonly block: number;
-	/** Bytes per partial: one vec4f. */
-	readonly partialBytes = 16;
+	/** Bytes per partial: one vec4f, or a DsWide (32) with 8 channels. */
+	readonly partialBytes: number;
+	/** Bytes per output result: 32, or 48 with 8 channels ({@link scalarResultSize}). */
+	readonly resultBytes: number;
 	private readonly toolLayout: GPUBindGroupLayout | undefined;
 	private readonly variants = new Map<string, ScalarKernel>();
 	private combineOnly: ScalarCombineKernel | undefined;
@@ -302,8 +342,10 @@ export class ScalarReduction {
 
 		this.device = device;
 		this.options = { ...options };
-		this.ops = scalarOps( options.reduce );
+		this.ops = scalarOps( options.reduce, options.channels );
 		this.block = options.block ?? scalarBlock;
+		this.partialBytes = this.ops.length * 4;
+		this.resultBytes = scalarResultSize( this.ops.length );
 		createScalarKernel( options ); // validates
 		this.toolLayout = toolBindGroupLayout( device, 'downsampler scalar tool', options.bindings );
 
@@ -316,7 +358,7 @@ export class ScalarReduction {
 
 	}
 
-	/** Bytes the partials buffer needs: one vec4f per workgroup and layer. */
+	/** Bytes the partials buffer needs: one vec4f (DsWide) per workgroup and layer. */
 	partialsBytes( width: number, height: number, layers = 1 ): number {
 
 		const [ x, y ] = scalarWorkgroups( width, height, this.block );
@@ -327,6 +369,7 @@ export class ScalarReduction {
 	/** WGSL, `@group(0)` layout and pipelines for a source shape, for tools that dispatch themselves. */
 	kernel( { dimension = '2d', splat = false }: { dimension?: ViewDimension, splat?: boolean } = {} ): Readonly<ScalarKernel> {
 
+		if ( this.combinesOnly ) throw new Error( 'downsampler: an 8-channel reduction without a load hook only combines partials; use combineKernel().' );
 		if ( this.options.load !== undefined ) dimension = '2d', splat = false;
 		const key = `${ dimension }:${ splat }`;
 		let variant = this.variants.get( key );
@@ -364,11 +407,19 @@ export class ScalarReduction {
 
 	}
 
+	/** An 8-channel reduction without a load hook: it has no source, so it takes combine-only runs only. */
+	get combinesOnly(): boolean {
+
+		return this.ops.length === 8 && this.options.load === undefined;
+
+	}
+
 	/** Why a run can't be recorded, or null. */
 	unsupportedReason( run: ScalarRun ): string | null {
 
 		const { load, finish, bindings } = this.options;
 		const combineOnly = run.partials !== undefined;
+		if ( ! combineOnly && this.combinesOnly ) return 'an 8-channel reduction without a load hook only combines partials (a run needs `partials`)';
 		if ( combineOnly ) {
 
 			const reason = this.partialsReason( run );
@@ -417,7 +468,7 @@ export class ScalarReduction {
 			const offset = run.output.offset ?? 0;
 			if ( offset % 256 !== 0 ) return 'output offset must be a multiple of 256';
 			if ( ( run.output.buffer.usage & GPUBufferUsage.STORAGE ) === 0 ) return 'output buffer needs STORAGE usage';
-			if ( offset + count * scalarResultBytes > run.output.buffer.size ) return 'output buffer is too small';
+			if ( offset + count * this.resultBytes > run.output.buffer.size ) return 'output buffer is too small';
 
 		}
 
@@ -539,7 +590,7 @@ export class ScalarReduction {
 	private outputEntry( run: ScalarRun, layers: number ): GPUBindGroupEntry[] {
 
 		const { output } = run;
-		return output !== undefined && this.options.finish === undefined ? [ { binding: 3, resource: { buffer: output.buffer, offset: output.offset ?? 0, size: layers * scalarResultBytes } } ] : [];
+		return output !== undefined && this.options.finish === undefined ? [ { binding: 3, resource: { buffer: output.buffer, offset: output.offset ?? 0, size: layers * this.resultBytes } } ] : [];
 
 	}
 

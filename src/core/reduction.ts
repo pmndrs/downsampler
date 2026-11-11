@@ -27,12 +27,20 @@ export type BuiltinReduction = 'average' | 'min' | 'max' | 'minmax';
  */
 export type ChannelOp = 'sum' | 'average' | 'min' | 'max' | 'weight' | 'weighted';
 
-export type ChannelOps = readonly [ ChannelOp, ChannelOp, ChannelOp, ChannelOp ];
+/**
+ * Channel ops, one per accumulator channel: four (a `vec4f` per texel), or
+ * eight (two `vec4f`s, the `DsWide` struct of SPEC.md §14.1).
+ */
+export type ChannelOps = readonly [ ChannelOp, ChannelOp, ChannelOp, ChannelOp ] | readonly [ ChannelOp, ChannelOp, ChannelOp, ChannelOp, ChannelOp, ChannelOp, ChannelOp, ChannelOp ];
+
+/** Accumulator channels per texel: one `vec4f`, or two (`DsWide`). */
+export type Channels = 4 | 8;
 
 /** A custom reduction. */
 export interface CustomReduction {
 	/**
-	 * WGSL defining `fn reduce(a: vec4f, b: vec4f) -> vec4f`. Associative and
+	 * WGSL defining `fn reduce(a: vec4f, b: vec4f) -> vec4f` (with 8 channels,
+	 * `fn reduce(a: DsWide, b: DsWide) -> DsWide`). Associative and
 	 * commutative; for kind 'fold' also idempotent. Under 'exact', values are in
 	 * the texture's normalized units.
 	 */
@@ -77,10 +85,11 @@ export type PyramidReferenceReduction = BuiltinReduction | 'sum' | ChannelOps | 
 };
 
 /**
- * A tile reduction resolved: four channel ops, or a custom combine of a kind.
- * Builtins expand to channel ops ('minmax' to min, max, min, max).
+ * A tile reduction resolved: channel ops, or a custom combine of a kind, and
+ * the channel count. Builtins expand to channel ops ('minmax' to min, max, min,
+ * max, …).
  */
-export type ResolvedReduction = { ops: ChannelOps, custom?: undefined } | { ops?: undefined, custom: 'fold' | 'sum' };
+export type ResolvedReduction = { ops: readonly ChannelOp[], custom?: undefined, channels: Channels } | { ops?: undefined, custom: 'fold' | 'sum', channels: Channels };
 
 const channelOps = [ 'sum', 'average', 'min', 'max', 'weight', 'weighted' ];
 
@@ -111,25 +120,39 @@ function checkKind( kind: unknown ): 'fold' | 'sum' {
 
 }
 
-/** Validates a tile reduction and expands builtins to channel ops. */
-export function resolveReduction( reduction: Reduction | PyramidReferenceReduction ): ResolvedReduction {
+/** Validates a channel count (4 or 8). */
+export function checkChannels( channels: unknown ): Channels {
 
-	if ( reduction === 'minmax' ) return { ops: [ 'min', 'max', 'min', 'max' ] };
-	if ( isBuiltinReduction( reduction ) || reduction === 'sum' ) return { ops: [ reduction, reduction, reduction, reduction ] };
+	if ( channels !== 4 && channels !== 8 ) throw new Error( `downsampler: channels must be 4 (one vec4f per texel) or 8 (two, DsWide), got ${ JSON.stringify( channels ) }.` );
+	return channels;
+
+}
+
+/**
+ * Validates a tile reduction and expands builtins to channel ops. `channels`
+ * (4 or 8) sizes builtins and custom reductions; channel ops set it by their
+ * length, and must agree with it when it is given.
+ */
+export function resolveReduction( reduction: Reduction | PyramidReferenceReduction, channels?: number ): ResolvedReduction {
+
 	if ( isChannelOps( reduction ) ) {
 
-		if ( reduction.length !== 4 || ! reduction.every( op => channelOps.includes( op ) ) ) throw new Error( `downsampler: per-channel reductions are four of ${ channelOps.join( ', ' ) }; got ${ JSON.stringify( reduction ) }.` );
+		if ( ( reduction.length !== 4 && reduction.length !== 8 ) || ! reduction.every( op => channelOps.includes( op ) ) ) throw new Error( `downsampler: per-channel reductions are four of ${ channelOps.join( ', ' ) } (or eight, for 8-channel accumulators); got ${ JSON.stringify( reduction ) }.` );
+		if ( channels !== undefined && channels !== reduction.length ) throw new Error( `downsampler: ${ reduction.length } channel ops, but channels is ${ channels }.` );
 		const weights = reduction.filter( op => op === 'weight' ).length;
 		if ( weights > 1 ) throw new Error( 'downsampler: at most one channel can be the \'weight\'.' );
 		if ( weights === 0 && reduction.includes( 'weighted' ) ) throw new Error( 'downsampler: \'weighted\' channels need a \'weight\' channel.' );
-		return { ops: reduction };
+		return { ops: reduction, channels: reduction.length as Channels };
 
 	}
 
+	const count = checkChannels( channels ?? 4 );
+	if ( reduction === 'minmax' ) return { ops: Array.from( { length: count }, ( _, c ) => c % 2 === 0 ? 'min' : 'max' ), channels: count };
+	if ( isBuiltinReduction( reduction ) || reduction === 'sum' ) return { ops: Array<ChannelOp>( count ).fill( reduction ), channels: count };
 	if ( typeof reduction !== 'object' || reduction === null ) throw new Error( `downsampler: unknown reduction ${ JSON.stringify( reduction ) }.` );
 	if ( 'wgsl' in reduction ) reductionKey( reduction );
 	else if ( typeof ( reduction as { reference?: unknown } ).reference !== 'function' ) throw new Error( 'downsampler: a reference custom reduction needs a `reference` function.' );
-	return { custom: checkKind( reduction.kind ) };
+	return { custom: checkKind( reduction.kind ), channels: count };
 
 }
 
@@ -145,7 +168,7 @@ export function reductionKey( reduction: Reduction ): string {
 	}
 
 	if ( typeof reduction !== 'object' || reduction === null || typeof reduction.wgsl !== 'string' ) throw new Error( `downsampler: unknown reduction ${ JSON.stringify( reduction ) }.` );
-	if ( ! /\bfn\s+reduce\s*\(/.test( reduction.wgsl ) ) throw new Error( 'downsampler: a custom reduction must define `fn reduce(a: vec4f, b: vec4f) -> vec4f`.' );
+	if ( ! /\bfn\s+reduce\s*\(/.test( reduction.wgsl ) ) throw new Error( 'downsampler: a custom reduction must define `fn reduce(a: vec4f, b: vec4f) -> vec4f` (`DsWide` with 8 channels).' );
 	return checkKind( reduction.kind ) === 'fold' ? `custom:${ reduction.wgsl }` : `custom-sum:${ reduction.wgsl }`;
 
 }
