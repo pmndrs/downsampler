@@ -39,6 +39,13 @@ export type BatchKernel = 'exact' | 'tail' | 'clamp';
 /** Largest first output a 'tail' batch takes: one 32×32 workgroup tile (16 KiB of vec4f). */
 export const tailTile = 32;
 
+/** Tile of a tail batch: the first output's larger side rounded up to 8, 16 or 32. */
+export function tailTileFor( width: number, height: number ): number {
+
+	return Math.min( tailTile, Math.max( 8, 2 ** Math.ceil( Math.log2( Math.max( width, height ) ) ) ) );
+
+}
+
 export interface PlanOptions {
 	/**
 	 * In place: the source level, with outputs from `baseMipLevel + 1`. With
@@ -171,7 +178,7 @@ export function planBatches( width: number, height: number, options: PlanOptions
 		const tailCount = Math.min( levelsPerDispatch, lastLevel - level + 1 );
 		if ( tail && count < tailCount && outputWidth <= tailTile && outputHeight <= tailTile ) {
 
-			batches.push( { kernel: 'tail', sourceMipLevel: sourceOf( level ), firstMipLevel: level, count: tailCount, outputWidth, outputHeight, tile: tailTile, groupsX: 1, groupsY: 1 } );
+			batches.push( { kernel: 'tail', sourceMipLevel: sourceOf( level ), firstMipLevel: level, count: tailCount, outputWidth, outputHeight, tile: tailTileFor( outputWidth, outputHeight ), groupsX: 1, groupsY: 1 } );
 			level += tailCount;
 			continue;
 

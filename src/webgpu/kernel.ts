@@ -38,6 +38,8 @@ export interface KernelOptions {
 	 * workgroup memory by the same 'exact' rule, odd sizes included.
 	 */
 	tail?: boolean;
+	/** Tail kernels: the tile edge, 8, 16 or 32, at least the first output's larger side. Default 32. */
+	tile?: number;
 	/**
 	 * Format of the texture the first output reads, when it isn't `format` (a
 	 * separate source, e.g. depth32float). Single-channel sources are splatted to
@@ -88,7 +90,7 @@ function tileOptions( options: KernelOptions ) {
 	const access = options.access ?? 'load';
 	if ( access !== 'load' && access !== 'sample' ) throw new Error( `downsampler: unknown access ${ JSON.stringify( access ) }.` );
 	if ( access === 'sample' && ( edges !== 'clamp' || load !== undefined || resolveReduction( reduction ).ops?.some( op => op !== 'average' ) !== false ) ) throw new Error( 'downsampler: tile kernels sample (access "sample") only under \'clamp\', for an all-\'average\' reduction read from a texture; otherwise they read with textureLoad.' );
-	if ( options.tail !== undefined ) throw new Error( 'downsampler: tail is an \'exact\' kernel option.' );
+	if ( options.tail !== undefined || options.tile !== undefined ) throw new Error( 'downsampler: tail and tile are \'exact\' kernel options.' );
 	for ( const [ name, hook ] of Object.entries( { load, store, size } ) ) {
 
 		if ( hook !== undefined && ( typeof hook !== 'string' || ! hookPatterns[ name as keyof typeof hookPatterns ].test( hook ) ) ) throw new Error( `downsampler: the ${ name } hook must be WGSL defining \`fn ${ name }(…)\`.` );
@@ -166,12 +168,12 @@ export function createKernel( options: KernelOptions ): string {
  * block measured ~30–45 % slower. Later levels are 2:1 reductions of the tile in
  * workgroup memory, with clamped reads for unit dimensions and partial tiles.
  *
- * A tail kernel (`tail`) is one workgroup with a 32×32 tile: the first output
+ * A tail kernel (`tail`) is one workgroup with a `tile`² tile (8, 16 or 32): the first output
  * as above, then every further level from the previous one in the tile by the
  * 'exact' rule at any parity (shader bilinear weights for 'average', the
  * `2x … 2x+2` footprint for folds), each quantized as stored.
  */
-function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, tail = false }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
+function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, tail = false, tile: tailEdge = tailTile }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
 
 	reductionKey( reduction );
 	const average = reduction === 'average';
@@ -185,7 +187,9 @@ function createExactKernel( { format, dimension, count, reduction = 'average', a
 	const integer = isIntegerDomain( quantization );
 	const exactLoads = integer && isSupportedFormat( sourceFormat ) && formats[ sourceFormat ].quantization === quantization;
 	const splat = sampledChannels( sourceFormat ) === 1 ? '.xxxx' : '';
-	const tile = tail ? tailTile : tileSize( count );
+	if ( tail && tailEdge !== 8 && tailEdge !== 16 && tailEdge !== 32 ) throw new Error( `downsampler: a tail tile is 8, 16 or 32, got ${ tailEdge }.` );
+	if ( ! tail && tailEdge !== tailTile ) throw new Error( 'downsampler: tile is a tail kernel option.' );
+	const tile = tail ? tailEdge : tileSize( count );
 	const side = workgroupSide( tile );
 	const samples = tile / side;
 
@@ -359,8 +363,8 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
 
 	if ( tail ) {
 
-		// The first output is at most 32×32, so every later level is at most 16×16:
-		// one texel per invocation.
+		// The first output fits the tile, so every later level fits half of it, at
+		// most the workgroup's side: one texel per invocation.
 		for ( let i = 1; i < count; i ++ ) {
 
 			code += `

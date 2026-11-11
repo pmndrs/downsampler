@@ -173,7 +173,12 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 			}
 
-			const formatVariants = variants.filter( variant => ( filterable || ! variant.filterableOnly ) && ( only !== 'odd' || variant.oddSizes || variant.tail ) );
+			// --quick (CI, SwiftShader) runs the 'spd' variants on the family formats and
+			// the tail on rgba8unorm and rgba16float (integer and float16 paths), with two
+			// patterns. SwiftShader takes ~10 s to compile each 32×32-tile tail pipeline.
+			const quickOdd = variant => quick && ( variant.oddSizes || variant.tail );
+			const quickFormats = variant => variant.tail ? [ 'rgba8unorm', 'rgba16float' ] : familyFormats;
+			const formatVariants = variants.filter( variant => ( filterable || ! variant.filterableOnly ) && ( only !== 'odd' || variant.oddSizes || variant.tail ) && ! ( quickOdd( variant ) && ! quickFormats( variant ).includes( format ) ) );
 
 			const formatCases = familyFormats.includes( format ) ? cases : subsetShapes.filter( shape => cases.some( c => c.join() === shape.join() ) );
 
@@ -195,7 +200,7 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 						const result = { width, height, layers, format, levelsPerDispatch: levels, reduction: variant.name, dispatches: 0, maxError: 0 };
 
 						// Reusing one texture with changing input exercises the cached plans.
-						for ( const pattern of variant.patterns ) {
+						for ( const pattern of quickOdd( variant ) ? variant.patterns.filter( pattern => pattern === 'random' || pattern === 'edge' ) : variant.patterns ) {
 
 							if ( ! inputs.has( pattern ) ) {
 
@@ -366,7 +371,9 @@ async function validateSource( device, { quick, onProgress } ) {
 	const downsamplers = levelOptions( device ).flatMap( levels => {
 
 		const exact = new Downsampler( device, { levelsPerDispatch: levels } );
-		return [ { downsampler: exact, mode: 'exact' }, { downsampler: exact, mode: 'spd' }, { downsampler: new Downsampler( device, { levelsPerDispatch: levels, tail: true } ), mode: 'tail' } ];
+		const modes = [ { downsampler: exact, mode: 'exact' }, { downsampler: exact, mode: 'spd' } ];
+		// Tail pipelines compile slowly on SwiftShader; --quick leaves them to the main matrix.
+		return quick ? modes : [ ...modes, { downsampler: new Downsampler( device, { levelsPerDispatch: levels, tail: true } ), mode: 'tail' } ];
 
 	} );
 

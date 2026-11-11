@@ -37,8 +37,9 @@ let browser;
 try {
 
 	await new Promise( resolve => server.listen( 0, '127.0.0.1', resolve ) );
-	// The full matrix takes minutes; the default 180 s protocol timeout would cut it off.
-	browser = await puppeteer.launch( { headless: ! args.includes( '--headful' ), args: browserArgs, protocolTimeout: 30 * 60 * 1000 } );
+	// The full matrix takes up to ~30 minutes on a loaded machine (and SwiftShader --quick about as long);
+	// the default 180 s protocol timeout would cut it off.
+	browser = await puppeteer.launch( { headless: ! args.includes( '--headful' ), args: browserArgs, protocolTimeout: 90 * 60 * 1000 } );
 	const page = await browser.newPage();
 	const errors = [];
 	page.on( 'pageerror', error => errors.push( error.message ) );

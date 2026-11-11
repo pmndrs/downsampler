@@ -1,6 +1,6 @@
 // Backend-neutral core. Backends live in `downsampler/webgpu` (and later others);
 // the three.js adapter lives in `downsampler/three`.
-export { planBatches, mipSize, mipLevelCountFor, tailTile, tileSize, workgroupSide } from './core/plan.js';
+export { planBatches, mipSize, mipLevelCountFor, tailTile, tailTileFor, tileSize, workgroupSide } from './core/plan.js';
 export type { Batch, BatchKernel, PlanOptions, OddSizePolicy } from './core/plan.js';
 export { formats, integerDomains, isIntegerDomain, isSupportedFormat, quantize, roundHalfEven, sampledChannels, toHalf, fromHalf } from './core/formats.js';
 export type { FormatInfo, IntegerQuantization, Quantization, SupportedFormat } from './core/formats.js';

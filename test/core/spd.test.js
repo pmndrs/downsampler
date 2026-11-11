@@ -50,6 +50,8 @@ test( 'the exact tail finishes the chain once a level fits 32×32', () => {
 	assert.deepEqual( shape( plan( 4096, 4096, 6, { tail: true } ) ), shape( plan( 4096, 4096, 6 ) ) );
 	const tail = plan( 1920, 1080, 6, { tail: true } ).pop();
 	assert.deepEqual( [ tail.sourceMipLevel, tail.firstMipLevel, tail.outputWidth, tail.outputHeight, tail.tile, tail.groupsX, tail.groupsY ], [ 5, 6, 30, 16, 32, 1, 1 ] );
+	// The tile follows the first output: 8, 16 or 32.
+	assert.deepEqual( [ plan( 3, 7, 4, { tail: true } )[ 0 ].tile, plan( 31, 17, 6, { tail: true } )[ 0 ].tile, plan( 25, 9, 6, { tail: true } )[ 0 ].tile ], [ 8, 16, 16 ] );
 	// Every render size: 'exact' 5–9 dispatches, with the tail 3–6 (1477×831: 46×25 doesn't fit).
 	for ( const [ width, height ] of renderSizes ) {
 
@@ -67,6 +69,8 @@ test( 'tail kernels: one 32×32 workgroup, same layout as the exact kernel', () 
 	assert.doesNotMatch( exact, /tailStep/ );
 	assert.match( tail, /fn tailStep/ );
 	assert.match( tail, /array<vec4f, 1024>/ );
+	assert.match( createKernel( { format: 'rgba8unorm', count: 3, tail: true, tile: 8 } ), /array<vec4f, 64>;[^]*@workgroup_size\(8, 8\)/ );
+	assert.throws( () => createKernel( { format: 'rgba8unorm', count: 3, tail: true, tile: 12 } ), /8, 16 or 32/ );
 	assert.match( createKernel( { format: 'r32float', count: 3, reduction: 'max', tail: true } ), /odd\.x && odd\.y/ );
 	assert.deepEqual( kernelLayoutEntries( { format: 'rgba8unorm', count: 5, tail: true } ), kernelLayoutEntries( { format: 'rgba8unorm', count: 5 } ) );
 	assert.throws( () => createKernel( { format: 'rgba8unorm', edges: 'clamp', count: 2, tail: true } ), /tail/ );

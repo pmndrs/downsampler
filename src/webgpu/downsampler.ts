@@ -97,6 +97,7 @@ interface BatchKernelKey {
 	reduction: Reduction;
 	sourceFormat: string;
 	kind: BatchKernel;
+	tile: number;
 }
 
 /**
@@ -272,7 +273,7 @@ export class Downsampler {
 			const external = batch.sourceMipLevel === null;
 			const sourceFormat = external ? source!.texture.format : format;
 			const access = this.access( reduction, sourceFormat );
-			const kernel = { format, dimension, count: batch.count, access, reduction, sourceFormat, kind: batch.kernel };
+			const kernel = { format, dimension, count: batch.count, access, reduction, sourceFormat, kind: batch.kernel, tile: batch.tile };
 			const layout = this.layout( kernel );
 			const pipeline = this.pipeline( kernel );
 			const entries: GPUBindGroupEntry[] = access === 'sample' ? [ { binding: 0, resource: this.sampler } ] : [];
@@ -310,9 +311,9 @@ export class Downsampler {
 	 * Reducer's 'clamp' tile kernel emitting every level; folds there load, and
 	 * a custom `{ wgsl }` is a fold.
 	 */
-	private kernelOptions( { format, dimension, count, access, reduction, sourceFormat, kind }: BatchKernelKey ): KernelOptions {
+	private kernelOptions( { format, dimension, count, access, reduction, sourceFormat, kind, tile }: BatchKernelKey ): KernelOptions {
 
-		if ( kind !== 'clamp' ) return { format, dimension, count, reduction, access, sourceFormat, ...( kind === 'tail' ? { tail: true } : {} ) };
+		if ( kind !== 'clamp' ) return { format, dimension, count, reduction, access, sourceFormat, ...( kind === 'tail' ? { tail: true, tile } : {} ) };
 		return { format, dimension, edges: 'clamp', count, reduction, access, sourceFormat };
 
 	}
@@ -330,8 +331,8 @@ export class Downsampler {
 
 	private pipeline( key: BatchKernelKey ): GPUComputePipeline {
 
-		const { format, dimension, count, access, reduction, sourceFormat, kind } = key;
-		const id = `${ kind }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }`;
+		const { format, dimension, count, access, reduction, sourceFormat, kind, tile } = key;
+		const id = `${ kind }${ kind === 'tail' ? tile : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }`;
 		let pipeline = this.pipelines.get( id );
 		if ( pipeline !== undefined ) return pipeline;
 		const label = `downsampler ${ kind }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ typeof reduction === 'string' ? reduction : 'custom' }`;
