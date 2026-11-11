@@ -1,0 +1,1942 @@
+{
+  "date": "2026-11-11T11:16:26.299Z",
+  "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "device": "",
+    "description": "",
+    "isFallbackAdapter": false,
+    "features": [
+      "timestamp-query",
+      "texture-formats-tier1"
+    ],
+    "maxStorageTexturesPerShaderStage": 8
+  },
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36",
+  "formats": {
+    "half1": "r16float",
+    "half2": "rg16float",
+    "unorm1": "r8unorm"
+  },
+  "timestamps": true,
+  "rounds": 11,
+  "repeats": 16,
+  "mutation": false,
+  "results": [
+    {
+      "width": 960,
+      "height": 540,
+      "scene": {
+        "ms": 670,
+        "disoccluded": 0.0006655092592592592,
+        "moving": 0.07581404320987654
+      },
+      "pending": [],
+      "fixtures": {
+        "upscaler/shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 129600,
+                "maxError": 0.000002682209014892578,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 12,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.044876543209876545,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 518400,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 324480,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 32,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.0910845625,
+          "samples": [
+            0.1539013125,
+            0.0745196875,
+            0.0894075,
+            0.1604610625,
+            0.066871375,
+            0.162099125,
+            0.0417103125,
+            0.1168106875,
+            0.0910845625,
+            0.0532231875,
+            0.144724375
+          ]
+        },
+        "generator/upscaler-shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 129600,
+                "maxError": 0.0000028386712074279785,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 12,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.044876543209876545,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 518400,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 324480,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 32,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.054671,
+          "samples": [
+            0.0416191875,
+            0.147838875,
+            0.069991125,
+            0.054671,
+            0.10496975,
+            0.03972075,
+            0.132995375,
+            0.0410201875,
+            0.079267,
+            0.04259825,
+            0.0468274375
+          ]
+        },
+        "experiment/shading-pingpong": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 129600,
+                "maxError": 0.0000028386712074279785,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 12,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.044876543209876545,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 518400,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 324480,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 32,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.0422831875,
+          "samples": [
+            0.163198,
+            0.0567673125,
+            0.040593125,
+            0.039598375,
+            0.039530625,
+            0.0414629375,
+            0.0402675625,
+            0.13704475,
+            0.0440228125,
+            0.0490070625,
+            0.0422831875
+          ]
+        },
+        "experiment/shading-cached": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 129600,
+                "maxError": 0.0000028386712074279785,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 12,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.044876543209876545,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 518400,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 324480,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 32,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.0626396875,
+          "samples": [
+            0.0458665,
+            0.06636875,
+            0.044587875,
+            0.04015825,
+            0.1491435625,
+            0.138464,
+            0.1223888125,
+            0.0488534375,
+            0.042541,
+            0.1454066875,
+            0.0626396875
+          ]
+        },
+        "experiment/shading-tile16": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 129600,
+                "maxError": 0.0000028386712074279785,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 12,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.044876543209876545,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 518400,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 324480,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 32,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.0897278125,
+          "samples": [
+            0.03891875,
+            0.0798790625,
+            0.1042561875,
+            0.1179539375,
+            0.1399093125,
+            0.04118425,
+            0.04112175,
+            0.1508570625,
+            0.1089723125,
+            0.055329875,
+            0.0897278125
+          ]
+        },
+        "experiment/shading-tile16-cached": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 129600,
+                "maxError": 0.0000028386712074279785,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 12,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.044876543209876545,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 518400,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 324480,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 32,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.04135875,
+          "samples": [
+            0.040767625,
+            0.049384625,
+            0.04887425,
+            0.0390254375,
+            0.0397338125,
+            0.03955675,
+            0.04078325,
+            0.04343425,
+            0.041580125,
+            0.0441086875,
+            0.04135875
+          ]
+        },
+        "floor": {
+          "pass": "floor",
+          "dispatches": 1,
+          "check": null,
+          "gpuMs": 0.00100775,
+          "samples": [
+            0.001179625,
+            0.020309625,
+            0.0009479375,
+            0.000973875,
+            0.000953125,
+            0.00100775,
+            0.0009583125,
+            0.0059035625,
+            0.002434875,
+            0.04105925,
+            0.0009479375
+          ]
+        }
+      },
+      "checkMs": 2739,
+      "ratios": {
+        "generator/upscaler-shading-change ÷ upscaler/shading-change": 0.6002224581141289,
+        "experiment/shading-pingpong ÷ upscaler/shading-change": 0.46421903272577064,
+        "experiment/shading-pingpong ÷ generator/upscaler-shading-change": 0.773411635053319,
+        "experiment/shading-cached ÷ upscaler/shading-change": 0.6877091548856042,
+        "experiment/shading-cached ÷ generator/upscaler-shading-change": 1.1457571198624499,
+        "experiment/shading-tile16 ÷ upscaler/shading-change": 0.985104501105772,
+        "experiment/shading-tile16 ÷ generator/upscaler-shading-change": 1.6412323260961024,
+        "experiment/shading-tile16-cached ÷ upscaler/shading-change": 0.4540698101283629,
+        "experiment/shading-tile16-cached ÷ generator/upscaler-shading-change": 0.7565025333357722
+      }
+    },
+    {
+      "width": 1280,
+      "height": 720,
+      "scene": {
+        "ms": 1135,
+        "disoccluded": 0.0005924479166666667,
+        "moving": 0.07595052083333333
+      },
+      "pending": [],
+      "fixtures": {
+        "upscaler/shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 230400,
+                "maxError": 0.000015437602996826172,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 23,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.045208333333333336,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 921600,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 576000,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 57,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.171466125,
+          "samples": [
+            0.172315125,
+            0.075985875,
+            0.0784544375,
+            0.1825101875,
+            0.0884309375,
+            0.1817758125,
+            0.080405,
+            0.1946714375,
+            0.178838375,
+            0.0756525625,
+            0.171466125
+          ]
+        },
+        "generator/upscaler-shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 230400,
+                "maxError": 0.000015437602996826172,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 23,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.045208333333333336,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 921600,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 576000,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 57,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.0861523125,
+          "samples": [
+            0.068840125,
+            0.0763321875,
+            0.203522875,
+            0.0861523125,
+            0.188809625,
+            0.08072275,
+            0.094063625,
+            0.0783243125,
+            0.10629525,
+            0.1619845625,
+            0.0725379375
+          ]
+        },
+        "experiment/shading-pingpong": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 230400,
+                "maxError": 0.000015437602996826172,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 23,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.045208333333333336,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 921600,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 576000,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 57,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.1475993125,
+          "samples": [
+            0.1760520625,
+            0.0721811875,
+            0.1475993125,
+            0.1916793125,
+            0.0788529375,
+            0.1893565,
+            0.1383963125,
+            0.195650625,
+            0.11112075,
+            0.068788,
+            0.20697075
+          ]
+        },
+        "experiment/shading-cached": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 230400,
+                "maxError": 0.000015437602996826172,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 23,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.045208333333333336,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 921600,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 576000,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 57,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.0799493125,
+          "samples": [
+            0.0674520625,
+            0.1632084375,
+            0.1927158125,
+            0.080933625,
+            0.1571746875,
+            0.0784206875,
+            0.0659859375,
+            0.0799493125,
+            0.07082175,
+            0.1833721875,
+            0.0691604375
+          ]
+        },
+        "experiment/shading-tile16": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 230400,
+                "maxError": 0.000015437602996826172,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 23,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.045208333333333336,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 921600,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 576000,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 57,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.1036468125,
+          "samples": [
+            0.1799035,
+            0.0670900625,
+            0.079418125,
+            0.073423375,
+            0.077381625,
+            0.1036468125,
+            0.1814529375,
+            0.1825596875,
+            0.164020875,
+            0.083813875,
+            0.187643
+          ]
+        },
+        "experiment/shading-tile16-cached": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 230400,
+                "maxError": 0.000015437602996826172,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 23,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.045208333333333336,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 921600,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 576000,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 57,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.0996911875,
+          "samples": [
+            0.1075191875,
+            0.14632075,
+            0.1121466875,
+            0.1586929375,
+            0.0996911875,
+            0.0880924375,
+            0.06826975,
+            0.080589875,
+            0.076504125,
+            0.1882731875,
+            0.0746186875
+          ]
+        },
+        "floor": {
+          "pass": "floor",
+          "dispatches": 1,
+          "check": null,
+          "gpuMs": 0.001015625,
+          "samples": [
+            0.0293120625,
+            0.000940125,
+            0.001,
+            0.001348875,
+            0.0167888125,
+            0.001015625,
+            0.007122375,
+            0.0010078125,
+            0.0009115,
+            0.0016536875,
+            0.0009635625
+          ]
+        }
+      },
+      "checkMs": 4175,
+      "ratios": {
+        "generator/upscaler-shading-change ÷ upscaler/shading-change": 0.5024450893726093,
+        "experiment/shading-pingpong ÷ upscaler/shading-change": 0.8608074189581179,
+        "experiment/shading-pingpong ÷ generator/upscaler-shading-change": 1.713236803713191,
+        "experiment/shading-cached ÷ upscaler/shading-change": 0.46626884756391385,
+        "experiment/shading-cached ÷ generator/upscaler-shading-change": 0.9279996111537923,
+        "experiment/shading-tile16 ÷ upscaler/shading-change": 0.6044739886668578,
+        "experiment/shading-tile16 ÷ generator/upscaler-shading-change": 1.2030647755392523,
+        "experiment/shading-tile16-cached ÷ upscaler/shading-change": 0.5814045631462191,
+        "experiment/shading-tile16-cached ÷ generator/upscaler-shading-change": 1.157150453738546
+      }
+    },
+    {
+      "width": 1129,
+      "height": 635,
+      "scene": {
+        "ms": 875,
+        "disoccluded": 0.0006653508435449112,
+        "moving": 0.07575932990661376
+      },
+      "pending": [],
+      "fixtures": {
+        "upscaler/shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 179670,
+                "maxError": 0.000026464462280273438,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 17,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.045839594812712194,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 716915,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 450856,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 45,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.1074436875,
+          "samples": [
+            0.0818919375,
+            0.08136075,
+            0.1585600625,
+            0.1074436875,
+            0.0737410625,
+            0.156622625,
+            0.0711135,
+            0.1727135,
+            0.190478875,
+            0.08261075,
+            0.1199408125
+          ]
+        },
+        "generator/upscaler-shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 179670,
+                "maxError": 0.000026464462280273438,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 17,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.045839594812712194,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 716915,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 450856,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 45,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.0599600625,
+          "samples": [
+            0.05532475,
+            0.0918189375,
+            0.0599600625,
+            0.0528065,
+            0.1247143125,
+            0.0524965625,
+            0.084746125,
+            0.0599131875,
+            0.061150125,
+            0.145229625,
+            0.058056375
+          ]
+        },
+        "experiment/shading-pingpong": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 179670,
+                "maxError": 0.000026464462280273438,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 17,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.045839594812712194,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 716915,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 450856,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 45,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.1035375,
+          "samples": [
+            0.1535731875,
+            0.0583506875,
+            0.0544393125,
+            0.1704686875,
+            0.0531189375,
+            0.1530106875,
+            0.1035375,
+            0.120810625,
+            0.0542544375,
+            0.0714884375,
+            0.1629819375
+          ]
+        },
+        "experiment/shading-cached": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 179670,
+                "maxError": 0.000026464462280273438,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 17,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.045839594812712194,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 716915,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 450856,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 45,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.0627178125,
+          "samples": [
+            0.0528950625,
+            0.054697,
+            0.1033915625,
+            0.0538845625,
+            0.1501904375,
+            0.0590798125,
+            0.0525799375,
+            0.0775899375,
+            0.1388963125,
+            0.1279355625,
+            0.0627178125
+          ]
+        },
+        "experiment/shading-tile16": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 179670,
+                "maxError": 0.000026464462280273438,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 17,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.045839594812712194,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 716915,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 450856,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 45,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.1294068125,
+          "samples": [
+            0.052991375,
+            0.182150875,
+            0.0800170625,
+            0.13574275,
+            0.0606214375,
+            0.1294068125,
+            0.153966375,
+            0.0547205,
+            0.1529195625,
+            0.0740639375,
+            0.1559819375
+          ]
+        },
+        "experiment/shading-tile16-cached": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 179670,
+                "maxError": 0.000026464462280273438,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 17,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.045839594812712194,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 716915,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 450856,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 45,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.0591059375,
+          "samples": [
+            0.056855875,
+            0.0529080625,
+            0.0591059375,
+            0.0619625625,
+            0.1579924375,
+            0.053145,
+            0.059376625,
+            0.16865625,
+            0.075017,
+            0.053652875,
+            0.0584444375
+          ]
+        },
+        "floor": {
+          "pass": "floor",
+          "dispatches": 1,
+          "check": null,
+          "gpuMs": 0.0009739375,
+          "samples": [
+            0.0009739375,
+            0.012507625,
+            0.000953125,
+            0.0009765,
+            0.0009739375,
+            0.000901,
+            0.0008880625,
+            0.0025338125,
+            0.0009530625,
+            0.037848375,
+            0.001005125
+          ]
+        }
+      },
+      "checkMs": 3483,
+      "ratios": {
+        "generator/upscaler-shading-change ÷ upscaler/shading-change": 0.5580603560353418,
+        "experiment/shading-pingpong ÷ upscaler/shading-change": 0.9636443276390715,
+        "experiment/shading-pingpong ÷ generator/upscaler-shading-change": 1.726774384199483,
+        "experiment/shading-cached ÷ upscaler/shading-change": 0.5837272897023382,
+        "experiment/shading-cached ÷ generator/upscaler-shading-change": 1.045993114166617,
+        "experiment/shading-tile16 ÷ upscaler/shading-change": 1.2044152198331801,
+        "experiment/shading-tile16 ÷ generator/upscaler-shading-change": 2.1582167713717775,
+        "experiment/shading-tile16-cached ÷ upscaler/shading-change": 0.5501108429473811,
+        "experiment/shading-tile16-cached ÷ generator/upscaler-shading-change": 0.9857551015728176
+      }
+    },
+    {
+      "width": 1707,
+      "height": 960,
+      "scene": {
+        "ms": 2102,
+        "disoccluded": 0.00026789201327865654,
+        "moving": 0.07578292813903534
+      },
+      "pending": [],
+      "fixtures": {
+        "upscaler/shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 409920,
+                "maxError": 0.000004172325134277344,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 40,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.04537470725995316,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 1638720,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 1025280,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 102,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.5437703125,
+          "samples": [
+            0.8145135625,
+            0.22984025,
+            0.5143984375,
+            0.5437703125,
+            0.5875535625,
+            0.51688275,
+            0.54521825,
+            0.5556711875,
+            0.4663235625,
+            0.414715,
+            0.6418026875
+          ]
+        },
+        "generator/upscaler-shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 409920,
+                "maxError": 0.0000033974647521972656,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 40,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.04537470725995316,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 1638720,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 1025280,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 102,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.5467755,
+          "samples": [
+            0.299813125,
+            0.677083375,
+            0.5467755,
+            0.6045584375,
+            0.473057875,
+            0.4789431875,
+            0.558895125,
+            0.5963919375,
+            0.4797166875,
+            0.2727119375,
+            0.610938625
+          ]
+        },
+        "experiment/shading-pingpong": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 409920,
+                "maxError": 0.0000033974647521972656,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 40,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.04537470725995316,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 1638720,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 1025280,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 102,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.567491375,
+          "samples": [
+            0.2925241875,
+            0.4086448125,
+            0.600279875,
+            0.609607875,
+            0.55609575,
+            0.5568821875,
+            0.593925875,
+            0.567491375,
+            0.5436895625,
+            0.57046525,
+            0.696564875
+          ]
+        },
+        "experiment/shading-cached": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 409920,
+                "maxError": 0.0000033974647521972656,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 40,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.04537470725995316,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 1638720,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 1025280,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 102,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.5609133125,
+          "samples": [
+            0.3267371875,
+            0.3034224375,
+            0.5662049375,
+            0.531392875,
+            0.6054204375,
+            0.5874259375,
+            0.542325,
+            0.58086875,
+            0.5609133125,
+            0.5781083125,
+            0.32593775
+          ]
+        },
+        "experiment/shading-tile16": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 409920,
+                "maxError": 0.0000033974647521972656,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 40,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.04537470725995316,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 1638720,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 1025280,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 102,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.6242951875,
+          "samples": [
+            0.42074625,
+            0.2537383125,
+            0.6242951875,
+            0.6650784375,
+            0.64270375,
+            0.5594393125,
+            0.6560941875,
+            0.6052276875,
+            0.669955875,
+            0.6884244375,
+            0.388121625
+          ]
+        },
+        "experiment/shading-tile16-cached": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 409920,
+                "maxError": 0.0000033974647521972656,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 40,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.04537470725995316,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 1638720,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 1025280,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 102,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.603587125,
+          "samples": [
+            0.4229753125,
+            0.190140375,
+            0.6063475,
+            0.608326625,
+            0.5518353125,
+            0.603587125,
+            0.5564029375,
+            0.671455875,
+            0.64608125,
+            0.6061835,
+            0.3845826875
+          ]
+        },
+        "floor": {
+          "pass": "floor",
+          "dispatches": 1,
+          "check": null,
+          "gpuMs": 0.0361375,
+          "samples": [
+            0.0009323125,
+            0.0009869375,
+            0.0361375,
+            0.038134875,
+            0.0225595625,
+            0.0437024375,
+            0.0029323125,
+            0.0518169375,
+            0.0196116875,
+            0.049671125,
+            0.1068681875
+          ]
+        }
+      },
+      "checkMs": 6500,
+      "ratios": {
+        "generator/upscaler-shading-change ÷ upscaler/shading-change": 1.005526575156675,
+        "experiment/shading-pingpong ÷ upscaler/shading-change": 1.0436233129222185,
+        "experiment/shading-pingpong ÷ generator/upscaler-shading-change": 1.0378873504756523,
+        "experiment/shading-cached ÷ upscaler/shading-change": 1.0315261786197643,
+        "experiment/shading-cached ÷ generator/upscaler-shading-change": 1.0258567044426827,
+        "experiment/shading-tile16 ÷ upscaler/shading-change": 1.148086192182476,
+        "experiment/shading-tile16 ÷ generator/upscaler-shading-change": 1.1417760808595119,
+        "experiment/shading-tile16-cached ÷ upscaler/shading-change": 1.110003821696316,
+        "experiment/shading-tile16-cached ÷ generator/upscaler-shading-change": 1.103903018697802
+      }
+    },
+    {
+      "width": 1920,
+      "height": 1080,
+      "scene": {
+        "ms": 2396,
+        "disoccluded": 0.00024594907407407405,
+        "moving": 0.07577883873456791
+      },
+      "pending": [],
+      "fixtures": {
+        "upscaler/shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 518400,
+                "maxError": 0.000004708766937255859,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 51,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.0450462962962963,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 2073600,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 1296000,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 129,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.6164436875,
+          "samples": [
+            0.5549966875,
+            0.707588125,
+            0.7533895625,
+            0.3242893125,
+            0.615847375,
+            0.6047954375,
+            0.630881,
+            0.6764454375,
+            0.5867775,
+            0.637518875,
+            0.6164436875
+          ]
+        },
+        "generator/upscaler-shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 518400,
+                "maxError": 0.000004708766937255859,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 51,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.0450462962962963,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 2073600,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 1296000,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 129,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.6442921875,
+          "samples": [
+            1.3255969375,
+            0.7273873125,
+            0.8119823125,
+            0.50152625,
+            0.6415813125,
+            0.6426646875,
+            0.6886535625,
+            0.6442921875,
+            0.578558875,
+            0.686080625,
+            0.5095989375
+          ]
+        },
+        "experiment/shading-pingpong": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 518400,
+                "maxError": 0.000004708766937255859,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 51,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.0450462962962963,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 2073600,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 1296000,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 129,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.6815755625,
+          "samples": [
+            1.18016425,
+            0.8017794375,
+            0.728944625,
+            0.6466645625,
+            0.696971125,
+            0.694828,
+            0.6736225625,
+            0.6815755625,
+            0.6460630625,
+            0.597102875,
+            0.2865190625
+          ]
+        },
+        "experiment/shading-cached": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 518400,
+                "maxError": 0.000004708766937255859,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 51,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.0450462962962963,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 2073600,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 1296000,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 129,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.6830208125,
+          "samples": [
+            0.77382675,
+            0.8428386875,
+            0.69582275,
+            0.261334625,
+            0.6116989375,
+            0.6817265625,
+            0.639443375,
+            0.6412923125,
+            0.6830208125,
+            0.69484875,
+            0.7529911875
+          ]
+        },
+        "experiment/shading-tile16": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 518400,
+                "maxError": 0.000004708766937255859,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 51,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.0450462962962963,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 2073600,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 1296000,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 129,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.725231125,
+          "samples": [
+            0.85014075,
+            0.9572588125,
+            0.851872375,
+            0.3249378125,
+            0.6978774375,
+            0.704892875,
+            0.7313013125,
+            0.724356125,
+            0.725231125,
+            0.7326085625,
+            0.724241625
+          ]
+        },
+        "experiment/shading-tile16-cached": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 518400,
+                "maxError": 0.000004708766937255859,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 51,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "examples": [],
+                "firing": 0.0450462962962963,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 2073600,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 1296000,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 129,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.7241139375,
+          "samples": [
+            0.8149276875,
+            0.9890734375,
+            0.8373596875,
+            0.27559475,
+            0.677976625,
+            0.74149125,
+            0.6762396875,
+            0.736718,
+            0.706741875,
+            0.7241139375,
+            0.7114916875
+          ]
+        },
+        "floor": {
+          "pass": "floor",
+          "dispatches": 1,
+          "check": null,
+          "gpuMs": 0.0170674375,
+          "samples": [
+            0.0048515,
+            0.0413925625,
+            0.09759225,
+            0.0011275625,
+            0.01213,
+            0.0272156875,
+            0.0170674375,
+            0.0010859375,
+            0.07011875,
+            0.02970525,
+            0.0011066875
+          ]
+        }
+      },
+      "checkMs": 8018,
+      "ratios": {
+        "generator/upscaler-shading-change ÷ upscaler/shading-change": 1.045176064845339,
+        "experiment/shading-pingpong ÷ upscaler/shading-change": 1.105657461209707,
+        "experiment/shading-pingpong ÷ generator/upscaler-shading-change": 1.0578671846769832,
+        "experiment/shading-cached ÷ upscaler/shading-change": 1.1080019575997362,
+        "experiment/shading-cached ÷ generator/upscaler-shading-change": 1.0601103439578803,
+        "experiment/shading-tile16 ÷ upscaler/shading-change": 1.1764758723399207,
+        "experiment/shading-tile16 ÷ generator/upscaler-shading-change": 1.1256245831787306,
+        "experiment/shading-tile16-cached ÷ upscaler/shading-change": 1.1746635616250023,
+        "experiment/shading-tile16-cached ÷ generator/upscaler-shading-change": 1.123890606697757
+      }
+    }
+  ],
+  "ok": true,
+  "host": {
+    "platform": "darwin 25.6.0",
+    "cpus": 18,
+    "loadAverage": {
+      "before": [
+        21.9169921875,
+        21.5810546875,
+        22.162109375
+      ],
+      "after": [
+        55.04296875,
+        31.2109375,
+        25.724609375
+      ]
+    }
+  },
+  "browserArgs": [
+    "--enable-unsafe-webgpu"
+  ]
+}

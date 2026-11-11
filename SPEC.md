@@ -427,7 +427,7 @@ Build first, benchmark once coverage is broad (decided 2026-11-10). Live status 
    **M2T (tools first, 2026-11-11)**, in this order (details in §14 once the survey lands):
    1. WGSL reduction generator: tool-supplied `load` with its own bindings, per-channel reductions including sums, choice of emitted levels, outputs (texture, buffer, WGSL `store` hook), edge policy. Done: `Reducer` (§14.1); buffer output waits for §6.1.
    2. Reduce-to-scalar in 2 dispatches with an epilogue hook.
-   3. Proof on the upscaler's FSR 3.1 passes as bench fixtures, against an oracle, timed on M5 and by the owner on RTX 3060 / Intel UHD.
+   3. Proof on the upscaler's FSR 3.1 passes as bench fixtures, against an oracle, timed on M5 and by the owner on RTX 3060 / Intel UHD. Done on M5 (§14, M2T.3); RTX 3060 / Intel UHD pending.
    4. Deferred until 1–3 clear: an SPD-style mode, built at least as a measured comparison that justifies, or not, its not being the primary method.
    Then: buffer output + rgb9e5ufloat and rg11b10ufloat (GI formats); layer range + rect; `'box'`, power-of-two destination from a separate source, and the exact tail kernel.
    Deferred, three.js-driven: rgb10a2unorm, sRGB, integer formats.
@@ -551,6 +551,18 @@ pmndrs/upscaler replaced both passes because no downsampler existed:
 - **Fixture ratios** (M5 Pro, one run, load average ~63 on 18 CPUs, so same-run ratios only):
   - FSR's SPD luma pyramid takes 0.32–0.68× the upscaler's single-thread exposure, a 1.5–3× win that grows as size shrinks.
   - FSR's shading-change pyramid plus its consumer takes 2.0–2.4× the upscaler's fused shading-change pass. The upscaler's design is faster for that pass, so the generator must beat the fused pass, not FSR's.
+- **Generator versions (M2T.3, 2026-11-11)**, built from `Reducer` and `ScalarReduction` with only tool code in `test/tools/generator.js`. All 7 pass their oracles at all 5 sizes, and all fail under `--mutate`. Ratios are paired per round over six runs on the M5 Pro (load average 14–30, other agents' GPU work running), 960×540 … 1920×1080 (`test/tools/README.md`):
+  - **Upscaler shading change** as a `Reducer` (its load, levels [2, 3], block memory and response as the store hook): **0.95–1.02×** the hand-fused pass, a tie within noise, and 0.39–0.52× FSR's pyramid + consumer. Four profiling attempts changed nothing beyond noise: exposure texels hoisted, 16×16 workgroups, and one barrier fewer (a kernel patch). The pass is bound by its loads.
+  - **Upscaler exposure** as a `ScalarReduction`: 0.33–0.60× the single-invocation loop over every texel, and 0.22–0.32× over the same 1024 taps (same values).
+  - **FSR shading-change pyramid** (FSR's hooks, `'clamp'` [1, 2, 3]): 0.74–0.86× the SPD port.
+  - **FSR luma pyramid:** every texel with one source read (`Reducer` [1, 6] sums → `ScalarReduction` of the tile partials), 0.89–1.15× FSR's every-texel pass. Every texel with two reads, ~1.4×. AMD parity, 1.09–1.31× AMD's pass at 3 dispatches. AMD's top-left `2^mips` window, its zero reads and its f16 mip 6 are reproduced by a `ScalarReduction` over the window of mip 6, to ≤ 1.1e-7. That needs no option, and isn't worth one (§14 above).
+- **API gaps found (M2T.3)**, none blocking:
+  - **Five values per texel.** The upscaler's block statistics are 4 sums plus a max flag, and the kernel carries one `vec4f`. The flag rides in the sign of a non-negative sum, through a custom `'sum'` reduction. Wider accumulators are the clean fix if a second tool needs them.
+  - **An epilogue that needs two levels at once** (signal = max(4×4, 8×8) at the 2×2 resolution). Expressible: store hooks keep workgroup state across levels. That is now a documented guarantee with a GPU test (§14.1 Hooks); no kernel change.
+  - **Clamped loads with ⌈n/2^l⌉ blocks.** Expressed with `'clamp'` at a padded size (§14.1 Edges); no option added.
+  - **Per-texel side outputs from the load hook** (the upscaler's luma history). This is safe when every texel is loaded exactly once: `'clamp'` at whole source tiles (§14.1 Hooks).
+  - **A Reducer feeding a scalar.** Here it goes through a tool partials buffer and a `ScalarReduction` with a load hook, 3 dispatches. A combine-only entry point that takes external partials would save one tiny dispatch.
+  - **No per-invocation prologue hook.** Hoisting the exposure texels measured 0.98–0.99×, so it isn't needed on Apple.
 
 ### Our other tools
 
@@ -609,7 +621,9 @@ Group 0 of a tile kernel holds only what it needs:
 
 **Hooks** are WGSL strings. Each must define the named function and may define helpers. Identifiers starting with `ds_`, the entry point `main` and the hook names are reserved.
 - `fn load( texel: vec2i, layer: u32 ) -> vec4f`: the value of one source texel. Coordinates are always in bounds: the kernel clamps them, and under `'zero-weight'` it then leaves the clamped duplicates out. So a hook can be called more than once for an edge texel, and must not have side effects. Without a hook, the generator reads the source texture, splatting single-channel formats (`sourceFormat`).
+  - Exception (M2T.3): under `'clamp'`, when the size is a whole number of source tiles (`max(16, 2^deepest)` per axis), every texel is loaded exactly once, so a hook may write a per-texel output there. The upscaler's shading change writes its luma history this way, at a padded size (Edges below).
 - `fn store( level: u32, texel: vec2i, layer: u32, value: vec4f )`: called once per emitted texel inside its level, with `level` counted from the source (1 = half) and `value` normalised. Without a hook, the generator writes storage textures.
+  - **Cross-level state (guaranteed, M2T.3).** Levels are emitted shallow to deep, with a workgroup barrier between levels. The workgroup that emits a texel has emitted all of its in-level descendants, and its texels of any level below 1 form an aligned block of at most 16 × 16. So a store hook may keep `var<workgroup>` state from one level for a deeper one, in slot `texel % 16`. The upscaler's shading change combines its 4×4 and 8×8 responses this way. Descendants past their level are not emitted; under `'zero-weight'` they count 0. Tool workgroup memory adds to the tile's: a 6-level kernel already uses the default 16 KiB.
 - `fn size() -> vec2u` (addition): the source size, for load-hook kernels. Use it when the size comes from the tool's own uniforms, e.g. with dynamic resolution. Without it, the Reducer keeps a 16-byte uniform per size, cached with the bind group, so two sizes in one submit stay correct.
 - `fn finish( value: vec4f, weight: f32 )`: scalar reduction only, run by one invocation. `weight` is the total weight, which is the texel count under `'average'`.
 
@@ -635,7 +649,8 @@ Validation: at most one `'weight'` channel, and `'weighted'` needs one. Builtins
 - `'box'` (area weights, §2.1): not implemented, and not blocked. `edges` is a string union that `createKernel` dispatches on; `'box'` would add its own taps and oracle.
 - `'zero-weight'` (the Reducer's default): out-of-bounds texels contribute nothing; sizes are `⌈n/2^l⌉`; averages divide by the in-bounds count. Every source texel is counted exactly once per level. min/max of it is a conservative Hi-Z with ⌈n/2⌉ sizes.
 - `'clamp'`: SPD/FSR-compatible. Source coordinates are clamped to the edge; sizes are `⌊n/2^l⌋`, at least 1, dropping the last odd row or column. Blocks that reach past the image (unit dimensions, deep levels of small images) count the edge texel more than once, exactly as SPD's clamped loads do inside a 64×64 tile. Used for parity fixtures.
-  - AMD still writes its 1×1 `FrameInfo` from texel (0,0) of a level that is 0 texels tall at ⌊n/2^l⌋ (1280×720, level 10). Parity there needs the scalar's `finish`, not `store`.
+  - AMD still writes its 1×1 `FrameInfo` from texel (0,0) of a level that is 0 texels tall at ⌊n/2^l⌋ (1280×720, level 10). Parity there needs the scalar's `finish`, not `store`. M2T.3 does this with a `ScalarReduction` over the top-left `2^(mips−6)` square of the stored mip 6, reading 0 past it (§14).
+  - **Clamped loads with ⌈n/2^l⌉ blocks** (pmndrs/upscaler, most hand-written block passes): run `'clamp'` on the size rounded up to whole source tiles, clamp to the real size in the load hook, and bound the store hook to the real outputs. No option was added for it: it costs nothing measurable, and one tool needs it so far.
 
 `'zero-weight'` and `'clamp'` keep every level in one tile, so batches never end at odd sizes.
 
@@ -651,6 +666,6 @@ Validation: at most one `'weight'` channel, and `'weighted'` needs one. Builtins
 - For tools that dispatch the kernel themselves: `wgsl`, `entryPoint`, `layout` (the `GPUPipelineLayout`), `bindGroupLayouts`, `pipeline`, `bindGroup( dispatch )` (group 0) and `workgroups( width, height, layers )`.
 - Pipelines are cached per device by WGSL and layouts, so equal Reducers share one. Group-0 bind groups are cached per size and textures (the 16 most recent).
 
-**Verification** (§7): every emitted level of every kernel width (1, 4, 5, 6) is checked against `reducePyramid`, which computes each level straight from the source in f64. The matrix covers both edge policies; channel ops including weights with sky texels; a custom fold and a custom sum; texture and hook paths; 17 shapes (unit, odd, 1D, partial tiles, layers, `2d-array`, 1920×1080); and unemitted levels left poisoned. Two tool shapes (FSR shading change, denoiser weighted mean) and API checks run alongside. A core test checks the oracle against iterated 2×2 reductions of the padded image.
+**Verification** (§7): every emitted level of every kernel width (1, 4, 5, 6) is checked against `reducePyramid`, which computes each level straight from the source in f64. The matrix covers both edge policies; channel ops including weights with sky texels; a custom fold and a custom sum; texture and hook paths; 17 shapes (unit, odd, 1D, partial tiles, layers, `2d-array`, 1920×1080); and unemitted levels left poisoned. Two tool shapes (FSR shading change, denoiser weighted mean), the cross-level store state above (levels [ 2, 3 ], [ 1, 4 ], [ 2, 5 ], both edge policies, 4 shapes) and API checks run alongside. A core test checks the oracle against iterated 2×2 reductions of the padded image.
 
 **Scalar** (`reduceToScalar`): one dispatch writes per-workgroup partials into a storage buffer; a second, single-workgroup dispatch combines them and calls `finish`. That is 2 dispatches at any size, and every texel is counted.

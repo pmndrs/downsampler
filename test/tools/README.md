@@ -1,10 +1,10 @@
 # Tool fixtures: the upscaler's pyramid passes
 
-Reference fixtures and a benchmark for the two SPD passes of the FSR 3.1 upscaler, so a downsampler-generator version (M2T.1 hooks, M2T.2 `reduceToScalar`) can be proven against them. Each pass exists in up to three forms:
+Reference fixtures and a benchmark for the two SPD passes of the FSR 3.1 upscaler, and the downsampler-generator versions of them (M2T.3: `Reducer` and `ScalarReduction`), all proven against CPU oracles. Each pass exists in up to three forms:
 
 1. **upscaler**: what pmndrs/upscaler runs today, copied verbatim.
 2. **fsr**: AMD's pass, ported to WGSL with its quirks reproduced.
-3. **generator**: the downsampler-generator version. These are plug-in points for now (`generator.js`).
+3. **generator**: built from the library (`generator.js`); only tool code (hooks, bindings) is written there.
 
 Every fixture is checked against a CPU oracle before it is timed.
 
@@ -53,6 +53,13 @@ Jitters are (−0.375, −0.1111) for the current frame and (0.125, 0.2222) for 
 | `fsr/shading-change-pyramid-amd` | The same, storing mips 1–6 as AMD does. Needs 6 storage textures | 1 |
 | `fsr/shading-change` | The `ShadingChange` consumer: bilinear samples of mips 1–3 at the jittered, `ClampUv`'d position; max of `\|x·y\|`; saturate → R8. Reads the mips `fsr/shading-change-pyramid` stored | 1 |
 | `fsr/shading-change-total` | pyramid (mips 1–3) + consumer: the pair the upscaler's fused pass replaces | 2 |
+| `generator/luma-pyramid` | Every texel, from the library: `Reducer` `'zero-weight'` level 1 (depth, FSR's `store`) + `ScalarReduction` `'average'` with FSR's `load` and `finish`. Checked against the `fsr/luma-pyramid-correct` oracle | 3 (reducer; partials, combine) |
+| `generator/luma-pyramid-fused` | Every texel, one read: `Reducer` `'zero-weight'` [1, 6] with (Σ log luma, Σ luma, mean depth, count); level 6 writes one partial per 64² tile; a `ScalarReduction` sums them and `finish` divides | 3 (reducer; partials, combine) |
+| `generator/luma-pyramid-clamp` | AMD parity: `Reducer` `'clamp'` [1, 6] with FSR's hooks, then a `ScalarReduction` over the top-left `2^(mips−6)` square of mip 6 (`spdLoad`, 0 past it) with FSR's `updateFrameInfo`. Checked against the `fsr/luma-pyramid` oracle | 3 |
+| `generator/upscaler-exposure` | The upscaler's exposure over every texel: `ScalarReduction` of `log2(max(luma, 1e-4))`, `finish` = `luminancePyramid.ts`'s epilogue (extracted verbatim). Own oracle (`exposureOracleEveryTexel`) | 2 |
+| `generator/upscaler-exposure-taps` | The same over the upscaler's 32×32 bilinear taps (`block: 2`, one workgroup): value parity with `upscaler/exposure`'s oracle | 2 |
+| `generator/shading-change-pyramid` | FSR's shading-change pyramid: `Reducer` `'clamp'` [1, 2, 3] with FSR's `load` and `store` | 1 |
+| `generator/upscaler-shading-change` | The upscaler's fused pass as a `Reducer` (details below). Checked against the `upscaler/shading-change` oracle (signal, luma history, block memory) | 1 |
 | `floor` | One single-invocation dispatch: the device's per-dispatch cost floor | 1 |
 
 The FSR fixtures read the exposure the oracle computes for `fsr/luma-pyramid` on the same scene, so the fixtures stay independent. The upscaler fixtures read the oracle's `upscaler/exposure` output.
@@ -121,6 +128,7 @@ The oracles redo the GPU's float32 arithmetic in JavaScript (`Math.fround` at ea
 | shading SpdMips 1–6 | max(1 f16 ulp, 2^-21) per value; up to 1e-4 × mip-1 values outside | `ComputeMinimumDifference` makes discrete choices (sort, ties in `\|d\| < \|min\|`, a/b advance, `IsUvInside`, `floor`), so one f32 ulp can change the selected difference. A flipped source texel moves one texel per mip, by ¼ as much each mip down. Measured: 0–2 flipped texels per size |
 | FSR `ShadingChange` (R8) | per texel: bilinear-weight bound + 1/255 | GPU bilinear weights are fixed point (≥ 8 fractional bits), so each tap range is allowed 2·2^-8, propagated through `\|x·y\|`. The consumer check reads the GPU's own mips, so it is independent of the pyramid check |
 | `upscaler/exposure` | per output: computed bound | Same bilinear bound per tap, propagated through log2 and averaged over the 1024 taps, plus 1 f16 ulp (rgba16float output) and 1e-5 relative. Also: the dead-band decision must be > 0.01 stops from its threshold |
+| `generator/upscaler-exposure` (every texel) | per output: computed bound | Per texel, the luma dot product (3 f32 roundings) and WGSL `log2` (2^-21 absolute in [0.5, 2], else 3 ulp); the `ScalarReduction` summation bound (γ_D·Σ\|x\|, D = 27); `exp2`; then the same 1 f16 ulp + 1e-5 relative and dead-band margin as above |
 | upscaler signal | 2e-3 absolute; up to 1e-4 outside; jump-gate flips within 1e-4 of the threshold excluded | `E[x²] − E[x]²` in f32 cancels on flat blocks, then goes through ×0.35 and up to ~19× smoothstep slope. Measured: ≤ 3e-5 |
 | upscaler luma history | 2 f32 ulp | A dot product; FMA contraction may differ |
 | upscaler block memory | 1 f16 ulp; up to 1e-4 outside | `pack2x16float` rounding is implementation-defined. Measured: exact |
@@ -154,16 +162,57 @@ How to read these:
 - Storing mips 4–6 costs within noise.
 - The every-texel luma variant is a straightforward reduction (tree over 256 lanes), not tuned. It is the M2T.2 target to beat or match, not a lower bound.
 
-## Plug-in points (`generator.js`)
+### Generator versions (M2T.3, `results/tools/m5-pro-m2t3-{1…6}.json`)
 
-`generatorPasses` lists the generator versions, each with `create( device, context )`. Today every `create` is `null`, and the report lists those versions as pending. `context.tools` hands over the FSR tool halves in SPEC §14.1 shape:
+Apple M5 Pro, Chrome (puppeteer), 2026-11-11. Six runs of `npm run tools` (11 rounds × 16 repeats each), load average 14.5–30 on 18 CPUs, with other agents' GPU work running at the same time (absolute times moved up to 3× between runs). So the ratios below are **paired per round**: a ÷ b of the two samples from the same round (timed back to back in the rotation), median over all 66 rounds. Per-report ratios scatter far more at the middle sizes; 960×540 and 1920×1080 were the steadiest.
 
-- **`tools.luma( { variant: 'correct' | 'amd' } )`** → `{ wgsl, layout, group, reset, check, destroy }`. `wgsl` defines `load`, `store`, `spdLoad` and `finish` for `@group(1)`.
-  - `generator/luma-pyramid` (M2T.2): `reduceToScalar` with edges `'zero-weight'`, level `[1]` stored by the hook, and `finish` for FrameInfo. Check against `variant: 'correct'`.
-  - `generator/luma-pyramid-clamp` (M2T.1): edges `'clamp'` and levels `[1, 6, mips]`. This is parity with AMD; check against `variant: 'amd'`.
-- **`tools.shading( { levels: 3 } )`** → `{ wgsl, layout, group, texture, check, destroy }`.
-  - `generator/shading-change-pyramid` (M2T.1): the custom load, per-channel average, levels `[1, 2, 3]`, edges `'clamp'`. 1 dispatch.
+| Ratio | 960×540 | 1280×720 | 1129×635 | 1707×960 | 1920×1080 |
+|---|---:|---:|---:|---:|---:|
+| `generator/upscaler-shading-change` ÷ `upscaler/shading-change` | 0.96× | 0.98× | 0.95× | 1.02× | 1.01× |
+| `generator/upscaler-shading-change` ÷ `fsr/shading-change-total` | 0.39× | 0.40× | 0.41× | 0.47× | 0.52× |
+| `generator/shading-change-pyramid` ÷ `fsr/shading-change-pyramid` | 0.74× | 0.82× | 0.86× | 0.80× | 0.74× |
+| `generator/shading-change-pyramid` ÷ `upscaler/shading-change` | 1.50× | 1.51× | 1.52× | 1.32× | 1.37× |
+| `generator/upscaler-exposure` ÷ `upscaler/exposure` | 0.33× | 0.32× | 0.36× | 0.48× | 0.60× |
+| `generator/upscaler-exposure-taps` ÷ `upscaler/exposure` | 0.24× | 0.27× | 0.26× | 0.32× | 0.22× |
+| `generator/upscaler-exposure` ÷ `fsr/luma-pyramid-correct` | 0.74× | 0.67× | 0.66× | 0.62× | 0.70× |
+| `generator/luma-pyramid-fused` ÷ `fsr/luma-pyramid-correct` | 1.15× | 1.03× | 1.02× | 0.98× | 0.89× |
+| `generator/luma-pyramid` ÷ `fsr/luma-pyramid-correct` | 1.41× | 1.43× | 1.35× | 1.41× | 1.45× |
+| `generator/luma-pyramid-clamp` ÷ `fsr/luma-pyramid` | 1.31× | 1.18× | 1.24× | 1.10× | 1.09× |
+| `fsr/shading-change-total` ÷ `upscaler/shading-change` (baseline, same runs) | 2.54× | 2.36× | 2.31× | 2.12× | 1.99× |
+| `fsr/luma-pyramid` ÷ `upscaler/exposure` (baseline, same runs) | 0.32× | 0.45× | 0.35× | 0.59× | 0.70× |
 
-A generator fixture compiles its kernel around `tool.wgsl` (the generator owns `@group(0)`), binds `tool.group` at 1, and records its dispatches in `encodePass( pass )`. It returns `{ name, pass, dispatches, encodePass, reset: tool.reset, check: () => tool.check(), destroy }`. The harness then checks it against the same oracle as the FSR fixture, and reports `generator ÷ compareWith` next to the existing ratios.
+How to read these:
+- **Shading change:** the library version of the upscaler's fused pass ties it (0.95–1.02×, within noise) and is 2–2.5× faster than FSR's pyramid + consumer. FSR's pyramid alone runs 0.74–0.86× of the SPD port when built on the `Reducer` (8×8 workgroups over 16² tiles instead of SPD's 256 over 64²).
+- **Exposure:** the upscaler's metering as a `ScalarReduction` is 2–4× faster than its single-invocation loop over **every** texel, and 3–5× faster over the same 1024 taps (identical values within the oracle's bound).
+- **Luma pyramid:** reading the source once (`-fused`) matches FSR's every-texel pass; reading it twice (`Reducer` for depth, then a `ScalarReduction`) costs ~1.4×. AMD parity costs 1.1–1.3× AMD's 2 dispatches: it takes 3 (the window scalar is 2 tiny dispatches).
 
-One contract detail surfaced here. The scalar of AMD's luma pyramid comes from texel (0,0) of a mip whose ⌊h/2^mips⌋ is 0 at 1280×720. A generator that calls `store` only for in-range texels (as §14.1 specifies for `'clamp'`) never emits it. The `'clamp'` parity variant therefore needs `finish`, or an explicit "(0,0) of the last level" rule.
+**Profiling the shading change** (`--only=experiment/,generator/upscaler-shading,upscaler/shading`, 3 runs, `results/tools/m5-pro-m2t3-experiments-{1,2,3}.json`, load average 22–55; paired ratios against `generator/upscaler-shading-change` at 1707×960 / 1920×1080, the two steady sizes):
+
+| Experiment | What changes | Ratio |
+|---|---|---:|
+| `experiment/shading-cached` | exposure texels loaded once per invocation (`var<private>`) instead of per hook call | 0.99× / 0.98× |
+| `experiment/shading-tile16` | 16×16 workgroups over 32² tiles (an unemitted level 5) | 1.11× / 1.02× |
+| `experiment/shading-tile16-cached` | both | 1.04× / 1.01× |
+| `experiment/shading-pingpong` | kernel patch: level 2 to a second workgroup region, one barrier fewer | 1.01× / 0.99× |
+
+None moves it outside noise. The pass is bound by its loads (colour, motion, mask, 4 history taps, block memory), which both versions issue alike; the generator's three barriers and its serial 8×8 tail (4 lanes × 16 signal stores) cost nothing measurable. So the library kernel was left unchanged.
+
+## Generator versions (`generator.js`)
+
+`generatorPasses` lists them, each with `create( device, context )` and the fixtures it is compared with (`compareWith`). `context.tools` hands over the tool halves in SPEC §14.1 shape: `tools.luma( { variant } )` and `tools.shading( { levels } )` (FSR: `parts` = `{ bindings, load, store, finish }` WGSL, layout `entries`, `groupEntries`), `tools.upscalerExposure()` and `tools.upscalerShading()` (the upscaler's resources in binding order, and their checks). The generator owns `@group(0)`; the tool code goes in `@group(1)`. Library objects are built inside a validation scope, and on an error the WGSL is recompiled to name the line. Entries with `experiment: true` are built only when `--only` names them.
+
+**FSR luma pyramid, AMD parity.** Every quirk is reproduced from tool code, without a library option:
+- Level 1 (depth) and level 6 (`rw_spd_mip5`) come from FSR's own `store`, under `'clamp'`.
+- AMD's scalar is texel (0,0) of mip `mips`: the average of mip 6 over `[0, 2^(mips−6))²`, where texels past `rw_spd_mip5` read 0. A `ScalarReduction` of that size with `load = spdLoad` reproduces exactly that: the top-left window, the zero reads and the one f16 rounding at mip 6. Matched to ≤ 1.1e-7 relative.
+- Offering the window as an option isn't worth it: it is a bug (exposure off by up to 19 %, table above), and a tool that wants it can write these two lines.
+
+**Upscaler shading change** (`shadingChange.ts` as a `Reducer`):
+- The upscaler's helper functions (`lumaPair`, `memoryDistance`, `memoryUpdate`, `scaleResponse`, …) and bindings are extracted from the verbatim WGSL; only the hooks are new.
+- **Load:** the per-texel work (luma, the luma-history store, the "moving" flag, `lumaPair`'s reprojection and clamp into the bilinear taps).
+- **Levels [2, 3]** are its 4×4 and 8×8 blocks.
+- **Store:** level 2 updates the mid block memory and keeps its response in tool workgroup memory. Level 3 updates the coarse memory and writes the signal of its 4×4 output texels as max(mid, coarse). This relies on the cross-level guarantee of SPEC §14.1, which the GPU suite checks.
+- **Five values in a `vec4f`:** Σ cur, Σ prev, Σ cur², Σ prev² and max moving. The flag rides in the sign of the Σ prev² channel through a custom `'sum'` reduction. Adding the two variances in one channel instead failed the oracle (2368 texels at 960×540): the upscaler clamps a variance that is often negative, because Σ prev² is of the interpolated reprojection while the mean is of the clamped value.
+- **Edges:** the upscaler clamps loads and emits ⌈n/2^l⌉ blocks. Here that is `'clamp'` at the size rounded up to whole 16² tiles, a clamp in the load hook and a bounded store. At that size every texel is loaded exactly once, so the history store in the load hook is safe.
+- Signal within 2.6e-5 of the oracle, 0 texels outside; luma history and block memory as the upscaler's.
+
+**Upscaler exposure.** `finish` is the epilogue of `luminancePyramid.ts` (host pre-exposure, target, dead band, easing, flags, store), extracted verbatim with `exp2(value.x)` for the loop's mean. The every-texel version meters a different (better) quantity than the upscaler's 32×32 taps, so it has its own oracle; the taps version checks against the upscaler's.

@@ -898,6 +898,97 @@ async function validateTools( device, { quick, onProgress } ) {
 	}
 
 	onProgress( 'validated tool shape: denoiser weighted mean' );
+	results.push( ...await validateCrossLevel( device, { quick } ) );
+	onProgress( 'validated tool shape: cross-level store state' );
+	return results;
+
+}
+
+/**
+ * Store hooks may keep workgroup state from one level to a deeper one (SPEC
+ * §14.1): levels are emitted shallow to deep with a workgroup barrier between
+ * them, and the workgroup that emits a texel has emitted all of its in-level
+ * descendants, inside an aligned block of at most 16 × 16 texels per level
+ * below level 1. The shallow store keeps its values in tool workgroup memory
+ * (slot texel % 16); the deep store sums its descendants from there, skipping
+ * those past the shallow level (not emitted; under 'zero-weight' they count 0).
+ * Both levels and the sum must match the oracle. The upscaler's shading change
+ * takes max(4×4, 8×8) responses this way (test/tools/generator.js).
+ */
+function crossLevelHooks( shallow, deep ) {
+
+	return {
+		wgsl: `struct Cross { shallowWidth: u32, deepWidth: u32, deepOffset: u32, sumOffset: u32, shallowSize: vec2u }
+@group(1) @binding(0) var crossSource: texture_2d<f32>;
+@group(1) @binding(1) var<storage, read_write> crossOut: array<vec4f>;
+@group(1) @binding(2) var<uniform> cross: Cross;`,
+		load: 'fn load(texel: vec2i, layer: u32) -> vec4f { return textureLoad(crossSource, texel, 0); }',
+		store: `var<workgroup> crossShallow: array<vec4f, 256>;
+fn crossSlot(texel: vec2i) -> u32 { return u32(texel.y & 15) * 16u + u32(texel.x & 15); }
+fn store(level: u32, texel: vec2i, layer: u32, value: vec4f) {
+	if (level == ${ shallow }u) {
+		crossShallow[crossSlot(texel)] = value;
+		crossOut[u32(texel.y) * cross.shallowWidth + u32(texel.x)] = value;
+		return;
+	}
+	var sum = vec4f(0.0);
+	for (var y = 0; y < ${ 1 << ( deep - shallow ) }; y++) {
+		for (var x = 0; x < ${ 1 << ( deep - shallow ) }; x++) {
+			let child = texel * ${ 1 << ( deep - shallow ) } + vec2i(x, y);
+			if (all(vec2u(child) < cross.shallowSize)) { sum += crossShallow[crossSlot(child)]; }
+		}
+	}
+	let i = u32(texel.y) * cross.deepWidth + u32(texel.x);
+	crossOut[cross.deepOffset + i] = value;
+	crossOut[cross.sumOffset + i] = sum;
+}`
+	};
+
+}
+
+async function validateCrossLevel( device, { quick } ) {
+
+	const results = [];
+	const entries = [
+		{ binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
+		{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+		{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }
+	];
+
+	// Tiles of 8 ([ 2, 3 ], [ 1, 4 ]) and 16 ([ 2, 5 ]) level-1 texels; a 6-level tile leaves no workgroup memory for vec4f state.
+	for ( const [ shallow, deep ] of [ [ 2, 3 ], [ 1, 4 ], [ 2, 5 ] ] ) for ( const edges of [ 'clamp', 'zero-weight' ] ) {
+
+		const hooks = crossLevelHooks( shallow, deep );
+		const reducer = new Reducer( device, { label: `cross-level ${ shallow }→${ deep } ${ edges }`, reduction: 'sum', levels: [ shallow, deep ], edges, load: hooks.load, store: hooks.store, bindings: { wgsl: hooks.wgsl, entries } } );
+
+		for ( const [ width, height ] of quick ? [ [ 67, 33 ], [ 255, 257 ] ] : [ [ 67, 33 ], [ 192, 108 ], [ 255, 257 ], [ 1917, 1079 ] ] ) {
+
+			const data = reducerData( width, height, 1, 'random', width + 3 * height );
+			const source = createTexture( device, { width, height, format: 'rgba32float', storage: false } );
+			upload( device, source, data );
+			const sizes = [ shallow, deep ].map( level => [ levelSize( width, level, edges ), levelSize( height, level, edges ) ] );
+			const shallowTexels = sizes[ 0 ][ 0 ] * sizes[ 0 ][ 1 ], deepTexels = sizes[ 1 ][ 0 ] * sizes[ 1 ][ 1 ];
+			const out = storageBuffer( device, new Float32Array( ( shallowTexels + 2 * deepTexels ) * 4 ).fill( poisonValue ) );
+			const uniform = device.createBuffer( { size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+			device.queue.writeBuffer( uniform, 0, Uint32Array.of( sizes[ 0 ][ 0 ], sizes[ 1 ][ 0 ], shallowTexels, shallowTexels + deepTexels, ...sizes[ 0 ], 0, 0 ) );
+			const bindGroup = device.createBindGroup( { layout: reducer.bindGroupLayouts[ 1 ], entries: [ source.createView( { baseMipLevel: 0, mipLevelCount: 1 } ), { buffer: out }, { buffer: uniform } ].map( ( resource, binding ) => ( { binding, resource } ) ) } );
+
+			const encoder = device.createCommandEncoder();
+			reducer.encode( encoder, { width, height, bindGroup } );
+			device.queue.submit( [ encoder.finish() ] );
+			const actual = await readBuffer( device, out );
+			const [ expectedShallow, expectedDeep ] = reducePyramid( data, width, height, 1, { reduction: 'sum', levels: [ shallow, deep ], edges } );
+			const label = `cross-level ${ shallow }→${ deep } ${ edges } ${ width }x${ height }`;
+			checkPyramid( actual.subarray( 0, shallowTexels * 4 ), expectedShallow, `${ label } level ${ shallow }` );
+			checkPyramid( actual.subarray( shallowTexels * 4, ( shallowTexels + deepTexels ) * 4 ), expectedDeep, `${ label } level ${ deep }` );
+			checkPyramid( actual.subarray( ( shallowTexels + deepTexels ) * 4 ), expectedDeep, `${ label } level ${ deep } from level-${ shallow } workgroup state` );
+			for ( const resource of [ source, out, uniform ] ) resource.destroy();
+			results.push( { tool: 'cross-level store state', levels: [ shallow, deep ], edges, width, height } );
+
+		}
+
+	}
+
 	return results;
 
 }

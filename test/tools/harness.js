@@ -23,8 +23,8 @@ import { createScene, defaultSizes } from './scene.js';
 import { compile, createTexture, median, outputFormats, requestToolsDevice } from './gpu.js';
 import { createFsrLumaPyramid, createLumaInputs, createLumaTool, lumaOracle } from './fsr-luma-pyramid.js';
 import { createFsrShadingChange, createShadingInputs, createShadingTool } from './fsr-shading-change.js';
-import { createUpscalerExposure } from './upscaler-exposure.js';
-import { createUpscalerShadingChange } from './upscaler-shading-change.js';
+import { createUpscalerExposure, createUpscalerExposureResources } from './upscaler-exposure.js';
+import { createUpscalerShadingChange, createUpscalerShadingResources } from './upscaler-shading-change.js';
 import { generatorPasses } from './generator.js';
 
 export const ratioPairs = [
@@ -34,7 +34,7 @@ export const ratioPairs = [
 	[ 'fsr/shading-change-total', 'upscaler/shading-change' ],
 	[ 'fsr/shading-change-pyramid', 'upscaler/shading-change' ],
 	[ 'fsr/shading-change-pyramid-amd', 'fsr/shading-change-pyramid' ],
-	...generatorPasses.map( entry => [ entry.name, entry.compareWith ] )
+	...generatorPasses.flatMap( entry => entry.compareWith.map( other => [ entry.name, other ] ) )
 ];
 
 async function floorFixture( device ) {
@@ -85,7 +85,7 @@ function run( device, fixture, times = 1 ) {
 }
 
 /** All fixtures for one scene, in dependency order (the FSR consumer reads the FSR pyramid's mips). */
-async function createFixtures( device, scene, formats, owned ) {
+async function createFixtures( device, scene, formats, owned, only ) {
 
 	const colour = createTexture( device, { label: 'scene colour', width: scene.width, height: scene.height, format: 'rgba16float', data: scene.colour } );
 	const lumaInputs = createLumaInputs( device, scene );
@@ -101,13 +101,16 @@ async function createFixtures( device, scene, formats, owned ) {
 		...await createFsrShadingChange( device, scene, shadingInputs, formats )
 	];
 
-	const context = { scene, formats, tools: {
+	const context = { scene, formats, colour, tools: {
 		luma: options => createLumaTool( device, scene, lumaInputs, formats, options ),
-		shading: options => createShadingTool( device, scene, shadingInputs, formats, options )
+		shading: options => createShadingTool( device, scene, shadingInputs, formats, options ),
+		upscalerExposure: () => createUpscalerExposureResources( device, scene, colour ),
+		upscalerShading: () => createUpscalerShadingResources( device, scene, colour )
 	} };
 	const pending = [];
 	for ( const entry of generatorPasses ) {
 
+		if ( entry.experiment && ! only?.some( name => entry.name.startsWith( name ) ) ) continue;
 		const fixture = entry.create ? await entry.create( device, context ) : null;
 		if ( fixture ) fixtures.push( fixture ); else pending.push( `${ entry.name } (${ entry.milestone })` );
 
@@ -149,7 +152,7 @@ export async function runTools( { sizes = defaultSizes, rounds = 11, repeats = 1
 			const scene = createScene( width, height );
 			const sceneMs = performance.now() - started;
 			const owned = [];
-			const { fixtures: all, pending } = await createFixtures( device, scene, formats, owned );
+			const { fixtures: all, pending } = await createFixtures( device, scene, formats, owned, only );
 			const fixtures = only ? all.filter( fixture => fixture.name === 'floor' || only.some( name => fixture.name.startsWith( name ) ) ) : all;
 			const row = { width, height, scene: { ms: Math.round( sceneMs ), ...scene.stats }, pending, fixtures: {} };
 			if ( mutation ) mutate( scene );
