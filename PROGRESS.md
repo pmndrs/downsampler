@@ -9,7 +9,6 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 ## Now
 
 - [ ] M2T.1: reduction generator per SPEC §14.1 (agent, branch `m2t-generator`)
-- [ ] M2T.2: `reduceToScalar` (agent, branch `m2t-scalar`)
 - [ ] M2T.3 groundwork: FSR 3.1 + upscaler fixtures and bench in `test/tools/` (agent, branch `m2t-fixtures`)
 - [ ] Upscaler: parallel exposure, same 1024 taps (agent, upscaler branch `perf/exposure-parallel`, not pushed)
 
@@ -38,6 +37,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] M2T.2: `ScalarReduction`: any size to one value per layer in 2 dispatches, every texel counted; load/finish hooks; 18/18 mutations caught (`50c6368`, `cb6ce7b`)
 - [x] `encodePass()`: record the chain into a caller-owned compute pass, for @pmndrs/reflections (branch `reflections-integration`, `a996cc4`)
 - [x] Tools survey: FSR 3.1.6 SPD passes (AMD source), upscaler, reflections, ssgiDev, Denoiser, webgpu-ddgi, Capsaicin → SPEC §14
 - [x] DIVERGES.md: 21 divergences from SPD, nvpro and the WebGPU community, with effort and impact; readable copy at `docs/diverges.html` (published as an artifact)
@@ -65,6 +65,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Waiting on owner
 
+- Scalar `finish` gained an optional `layer: u32` third parameter for multi-layer runs (not in §14.1): keep?
 - Upscaler exposure: a parallel reduction averages every texel instead of 1024 samples (or FSR's top-left 2^mips square), so values change. Accept for the upscaler, or match one of them for the comparison?
 - M2T.3 cross-device runs: RTX 3060 laptop and Intel UHD timings of the bench fixtures and the upscaler exposure branch (owner, 2026-11-12)
 - Cross-vendor hardware for M3: which NVIDIA/AMD/Intel (Windows) and Android devices are available?
@@ -83,6 +84,8 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 | 2026-11-10 | `619b60d` | Apple M5 Pro, Chrome 148 | full GPU matrix, untrimmed (every format × every shape) | ✅ 10187 cases, 33024 pattern runs, 600 s |
 | 2026-11-10 | `619b60d` | Apple M5 Pro, Chrome 148 | full GPU matrix (family-trimmed) | ✅ 6443 cases, 20752 pattern runs, 361 s |
 | 2026-11-10 | `619b60d` | SwiftShader | quick | ✅ 1729 cases; 12 tier1 formats skipped |
+| 2026-11-11 | `cb6ce7b` | Apple M5 Pro, Chrome 148 | full GPU matrix (agents running concurrently) | ✅ 6774 cases (330 scalar), 310 s |
+| 2026-11-11 | `cb6ce7b` | SwiftShader | quick | ✅ 1660 cases |
 | 2026-11-10 | `a996cc4` | Apple M5 Pro, Chrome (puppeteer) | quick | ✅ 6032 cases, 19456 pattern runs (branch `reflections-integration`) |
 
 ## Notes
