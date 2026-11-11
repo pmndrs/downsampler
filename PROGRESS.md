@@ -8,8 +8,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Now
 
-- [ ] M2T.4: `oddSizes: 'spd'`, exact tail kernel (opt-in), atomic probe, measured (`b4ef2dc`…`55caad2`, branch `m2t-spd`); merge after `m2-gi-formats`
-- [ ] M2.3.4 buffer output + rgb9e5ufloat, M2.3.6 rg11b10ufloat: built and tested (`9d6b00d`, `213cb23`); agent merging `m2-reductions` into `m2-gi-formats` (26 hunks), then I merge back
+- [ ] M2T.4: `oddSizes: 'spd'`, exact tail kernel (opt-in), atomic probe, measured (`b4ef2dc`…`55caad2`, branch `m2t-spd`); agent merging `m2-reductions` into it
 - [ ] CI: confirm the three parallel SwiftShader jobs fit in 45 min on GitHub runners (first push); if `reducer` doesn't, trim its quick shapes on SwiftShader only
 
 ## Next (M2T, tools first: SPEC §11)
@@ -19,7 +18,6 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 - [ ] M2T.2: reduce-to-scalar: any size to one value in 2 dispatches, with an epilogue hook (exposure)
 - [ ] M2T.3: prove it on the upscaler's passes (FSR 3.1 luminance pyramid / exposure, shading change) as bench fixtures in this repo; oracle + M5 timings; RTX 3060 / Intel UHD runs by the owner
 - [ ] M2T.4 (deferred until M2T.1–3 clear): SPD-style mode (`'spd'` odd sizes, clamp/drop edges, single-dispatch-equivalent structure) measured against the other options, to justify, or not, that it isn't the primary method
-- [ ] Tool formats: M2.3.4 buffer output + rgb9e5ufloat, M2.3.6 rg11b10ufloat (GI)
 - [ ] M2.4: layer range + rect
 - [ ] M2.5: `oddSizes: 'box'`, power-of-two destination from a separate source, then the exact tail kernel (SPEC §2.1, §13)
 
@@ -37,6 +35,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] M2.3.4 + M2.3.6: buffer output path (6 levels per dispatch at any storage limit), rgb9e5ufloat, rg11b10ufloat; composes with compatibility mode; Reducer f16 outputs round to nearest even; 12/14 mutations caught, 2 identical on Apple (`9d6b00d`, `213cb23`, `b2ec515`)
 - [x] Tool API: shared group-1 plumbing (`tool.ts`), combine-only scalar (fused luma pyramid 3 → 2 dispatches), 8-channel `DsWide` accumulators, argmin/argmax payload folds, compatibility mode (D4100; 8599 cases on a real compat device); 19/19 mutations caught (`a00e291`…`af98701`)
 - [x] M2T.3: generator versions of every FSR 3.1 and upscaler pass pass their oracles; upscaler shading change ties the hand-fused pass (0.95–1.02×), every-texel exposure 0.33–0.60× of the upscaler's, fused luma pyramid 0.89–1.15× of FSR's every-texel (M5 Pro, loaded, paired ratios; `bfcdaea`)
 - [x] M2T.1: `Reducer` tile kernels: tool hooks in group 1, per-channel sums/weights, level selection, `'zero-weight'`/`'clamp'` edges, self-dispatch; 10/10 mutations caught (`97664d7`, `546692b`)
@@ -101,6 +100,9 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 | 2026-11-11 | `38d2bc1` | Apple M5 Pro, Chrome 148 | full GPU matrix (generator + scalar + reflections merged) | ✅ 8144 cases, 22112 pattern runs, 353 s |
 | 2026-11-11 | `af98701` | Apple M5 Pro, Chrome 148 | full GPU matrix (agent) / compat device | ✅ 9326 cases / ✅ 8599 + 452 scalar |
 | 2026-11-11 | merge of `m2t-api` | Apple M5 Pro, Chrome 148 | quick + `npm run tools --check` | ✅ 8591 cases; fixtures ok |
+| 2026-11-12 | `b2ec515` | Apple M5 Pro, Chrome 148 | full GPU matrix (agent) / compat quick | ✅ 13217 cases, 572 s / ✅ 9449 cases |
+| 2026-11-12 | `b2ec515` | SwiftShader | quick per part (parallel) | ✅ downsampler 1849 / 500 s, reducer 2243 / 991 s, scalar 319 / 86 s |
+| 2026-11-12 | merge of `m2-gi-formats` | Apple M5 Pro, Chrome 148 | quick | ✅ 9538 cases |
 | 2026-11-10 | `a996cc4` | Apple M5 Pro, Chrome (puppeteer) | quick | ✅ 6032 cases, 19456 pattern runs (branch `reflections-integration`) |
 
 ## Notes
