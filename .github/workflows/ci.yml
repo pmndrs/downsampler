@@ -25,7 +25,7 @@ jobs:
   # The quick suite is split into its three parts, run in parallel.
   gpu:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:

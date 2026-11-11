@@ -8,8 +8,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Now
 
-- [ ] M2T.4: `oddSizes: 'spd'`, exact tail kernel (opt-in), atomic probe, measured (`b4ef2dc`…`55caad2`, branch `m2t-spd`); agent merging `m2-reductions` into it
-- [ ] CI: confirm the three parallel SwiftShader jobs fit in 45 min on GitHub runners (first push); if `reducer` doesn't, trim its quick shapes on SwiftShader only
+- [ ] CI: confirm the three parallel SwiftShader jobs fit on GitHub runners (first push; job limit 75 min, protocol timeout 60 min on SwiftShader). `reducer` took 17 min alone on the M5 Pro; if CI is too slow, trim its quick shapes on SwiftShader only
 
 ## Next (M2T, tools first: SPEC §11)
 
@@ -35,6 +34,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] M2T.4: `oddSizes: 'spd'` (average only; folds rejected), exact tail kernel (`tail: true`, opt-in), atomic single-dispatch probe (test-only); both compose with the buffer path and compatibility mode; 12/12 mutations caught (`b4ef2dc`…`1b7e897`)
 - [x] M2.3.4 + M2.3.6: buffer output path (6 levels per dispatch at any storage limit), rgb9e5ufloat, rg11b10ufloat; composes with compatibility mode; Reducer f16 outputs round to nearest even; 12/14 mutations caught, 2 identical on Apple (`9d6b00d`, `213cb23`, `b2ec515`)
 - [x] Tool API: shared group-1 plumbing (`tool.ts`), combine-only scalar (fused luma pyramid 3 → 2 dispatches), 8-channel `DsWide` accumulators, argmin/argmax payload folds, compatibility mode (D4100; 8599 cases on a real compat device); 19/19 mutations caught (`a00e291`…`af98701`)
 - [x] M2T.3: generator versions of every FSR 3.1 and upscaler pass pass their oracles; upscaler shading change ties the hand-fused pass (0.95–1.02×), every-texel exposure 0.33–0.60× of the upscaler's, fused luma pyramid 0.89–1.15× of FSR's every-texel (M5 Pro, loaded, paired ratios; `bfcdaea`)
@@ -69,7 +69,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Waiting on owner
 
-- `'spd'` odd sizes: 0.47–0.66× of `'exact'` time at render sizes (rgba8 average) but drifting footprints and broken Hi-Z (up to 52 % violations on noise). Public opt-in (average only?) or test-only?
+- `'spd'` shipped as a public opt-in for 'average' only (folds rejected), per the coordinator's recommendation: overrule if you want it test-only
 - Exact tail kernel: 1080p 7 → 4 dispatches but ~0.85–1.07× time; keep opt-in until an idle-machine run shows ≥5 %?
 - Payload folds break key ties by the smaller payload (order-independent); OK, or build in position-based ties?
 - Upscaler shading change: 8-channel version ties from 1280×720 up but is 8–14 % slower at 1129×635 than the sign-bit trick; which to keep?
@@ -103,6 +103,9 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 | 2026-11-12 | `b2ec515` | Apple M5 Pro, Chrome 148 | full GPU matrix (agent) / compat quick | ✅ 13217 cases, 572 s / ✅ 9449 cases |
 | 2026-11-12 | `b2ec515` | SwiftShader | quick per part (parallel) | ✅ downsampler 1849 / 500 s, reducer 2243 / 991 s, scalar 319 / 86 s |
 | 2026-11-12 | merge of `m2-gi-formats` | Apple M5 Pro, Chrome 148 | quick | ✅ 9538 cases |
+| 2026-11-12 | `1b7e897` | Apple M5 Pro, Chrome 148 | full GPU matrix (agent) / compat quick | ✅ 18290 cases, 16 min / ✅ 10416 cases |
+| 2026-11-12 | `1b7e897` | SwiftShader | quick per part (one at a time) | ✅ downsampler 2194 / 8.6 min, reducer 2243 / 16.9 min, scalar 319 / 1.4 min |
+| 2026-11-12 | merge of `m2t-spd` | Apple M5 Pro, Chrome 148 | quick + core | ✅ 10445 cases; 67 core |
 | 2026-11-10 | `a996cc4` | Apple M5 Pro, Chrome (puppeteer) | quick | ✅ 6032 cases, 19456 pattern runs (branch `reflections-integration`) |
 
 ## Notes
