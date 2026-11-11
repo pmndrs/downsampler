@@ -2,7 +2,7 @@ import { formats, integerDomains, isIntegerDomain, isSupportedFormat, sampledCha
 import { tileSize, workgroupSide } from '../core/plan.js';
 import { checkLevels } from '../core/pyramid.js';
 import { isBuiltinReduction, needsTileEdges, reductionKey, resolveReduction, type Channels, type CustomReduction, type EdgePolicy, type Reduction } from '../core/reduction.js';
-import { lanes } from './lanes.js';
+import { lanes, payloadCombine } from './lanes.js';
 import { checkHooks } from './tool.js';
 
 export type ViewDimension = '2d' | '2d-array';
@@ -356,7 +356,8 @@ function createTileKernel( options: KernelOptions ): string {
 	const samples = tile / side;
 	const zeroWeight = edges === 'zero-weight';
 	// The value type (vec4f, or DsWide for 8 channels) and its channel accessors.
-	const { type: T, channel: ch, build, declarations } = lanes( channels );
+	const lane = lanes( channels );
+	const { type: T, channel: ch, build, declarations } = lane;
 
 	let code = declarations;
 	if ( load === undefined ) code += `@group(0) @binding(1) var ds_source: texture_2d${ suffix }<f32>;\n`;
@@ -400,7 +401,8 @@ fn ds_size() -> vec2u { return textureDimensions(ds_source); }
 		const ops = resolved.ops;
 		const weight = ops.indexOf( 'weight' );
 		const terms = ops.map( ( op, c ) => op === 'min' || op === 'max' ? `${ op }(${ ch( 'a', c ) }, ${ ch( 'b', c ) })` : `${ ch( 'a', c ) } + ${ ch( 'b', c ) }` );
-		code += `fn ds_combine(a: ${ T }, b: ${ T }) -> ${ T } { return ${ build( terms ) }; }\n`;
+		// Payload folds (argmin/argmax with payload channels) need a comparison first.
+		code += payloadCombine( ops, lane, c => terms[ c ] ) ?? `fn ds_combine(a: ${ T }, b: ${ T }) -> ${ T } { return ${ build( terms ) }; }\n`;
 
 		if ( ops.includes( 'weighted' ) ) {
 

@@ -16,11 +16,15 @@
  * min/max see a duplicate of an in-image texel, which is harmless.
  */
 
-export type ScalarOp = 'sum' | 'average' | 'min' | 'max' | 'weight' | 'weighted';
+import { payloadGroups, payloadWins, type PayloadGroup } from './reduction.js';
+
+/** Per-channel scalar ops: those of a tile reduction (`ChannelOp`), including payload folds. */
+export type ScalarOp = 'sum' | 'average' | 'min' | 'max' | 'weight' | 'weighted' | 'argmin' | 'argmax' | 'payload';
 /** One op for every channel, or one per channel: four (a `vec4f`), or eight (`DsWide`, SPEC.md §14.1). */
 export type ScalarReduce = ScalarOp | readonly [ ScalarOp, ScalarOp, ScalarOp, ScalarOp ] | readonly [ ScalarOp, ScalarOp, ScalarOp, ScalarOp, ScalarOp, ScalarOp, ScalarOp, ScalarOp ];
 
-const scalarOpNames: readonly ScalarOp[] = [ 'sum', 'average', 'min', 'max', 'weight', 'weighted' ];
+const scalarOpNames: readonly ScalarOp[] = [ 'sum', 'average', 'min', 'max', 'weight', 'weighted', 'argmin', 'argmax', 'payload' ];
+const selections = new Set<ScalarOp>( [ 'min', 'max', 'argmin', 'argmax', 'payload' ] );
 
 /** Invocations per workgroup side (16 × 16 = 256). */
 export const scalarSide = 16;
@@ -43,6 +47,7 @@ export function scalarOps( reduce: ScalarReduce = 'average', channels?: number )
 	const weights = ops.filter( op => op === 'weight' ).length;
 	if ( weights > 1 ) throw new Error( 'downsampler: at most one channel can be the weight.' );
 	if ( weights === 0 && ops.includes( 'weighted' ) ) throw new Error( 'downsampler: "weighted" channels need a "weight" channel.' );
+	payloadGroups( ops );
 	return ops;
 
 }
@@ -54,10 +59,10 @@ export function scalarWeightChannel( ops: readonly ScalarOp[] ): number {
 
 }
 
-/** Channels combined by addition (everything except min and max). */
+/** Channels combined by addition (everything but the selections: min, max and payload folds). */
 export function isSumOp( op: ScalarOp ): boolean {
 
-	return op !== 'min' && op !== 'max';
+	return ! selections.has( op );
 
 }
 
@@ -124,10 +129,21 @@ export function scalarCombineDepth( count: number ): number {
 function combiner( ops: readonly ScalarOp[] ) {
 
 	const n = ops.length;
+	const groups = payloadGroups( ops );
+	const grouped = new Set( groups.flatMap( group => [ group.key, ...group.payload ] ) );
 	return ( target: Float32Array, a: number, source: Float32Array, b: number ) => {
+
+		// Payload folds first: b's group replaces a's where b wins.
+		for ( const group of groups ) {
+
+			if ( payloadWins( group, ( v, c ) => v === 'a' ? target[ a * n + c ] : source[ b * n + c ] ) ) continue;
+			for ( const c of [ group.key, ...group.payload ] ) target[ a * n + c ] = source[ b * n + c ];
+
+		}
 
 		for ( let c = 0; c < n; c ++ ) {
 
+			if ( grouped.has( c ) ) continue;
 			const x = target[ a * n + c ], y = source[ b * n + c ];
 			target[ a * n + c ] = ops[ c ] === 'min' ? Math.min( x, y ) : ops[ c ] === 'max' ? Math.max( x, y ) : x + y;
 
@@ -184,7 +200,7 @@ function scalarResult( ops: readonly ScalarOp[], total: number[], exactTotals: E
 
 		const op = ops[ c ], input = absolute * inputs + relative * magnitude[ c ];
 
-		if ( op === 'min' || op === 'max' ) {
+		if ( ! isSumOp( op ) ) {
 
 			value[ c ] = total[ c ]; exact[ c ] = exactTotal[ c ];
 			bound[ c ] = absolute + relative * Math.abs( exact[ c ] );
@@ -213,20 +229,28 @@ function scalarResult( ops: readonly ScalarOp[], total: number[], exactTotals: E
 
 }
 
-/** Exact totals over `length` vectors from `term( i, c )`. */
+/** Exact totals over `length` vectors from `term( i, c )`; payload folds take their winner's values. */
 function exactOf( ops: readonly ScalarOp[], length: number, term: ( i: number, c: number ) => number ): Exact {
 
 	const total = ops.map( op => op === 'min' ? Infinity : op === 'max' ? - Infinity : 0 );
 	const magnitude = ops.map( () => 0 );
-	for ( let i = 0; i < length; i ++ ) for ( let c = 0; c < ops.length; c ++ ) {
+	const groups: PayloadGroup[] = payloadGroups( ops );
+	const winners = groups.map( () => 0 );
+	for ( let i = 0; i < length; i ++ ) {
 
-		const v = term( i, c );
-		if ( ops[ c ] === 'min' ) total[ c ] = Math.min( total[ c ], v );
-		else if ( ops[ c ] === 'max' ) total[ c ] = Math.max( total[ c ], v );
-		else { total[ c ] += v; magnitude[ c ] += Math.abs( v ); }
+		groups.forEach( ( group, g ) => { if ( i > 0 && ! payloadWins( group, ( v, c ) => term( v === 'a' ? winners[ g ] : i, c ) ) ) winners[ g ] = i; } );
+		for ( let c = 0; c < ops.length; c ++ ) {
+
+			const v = term( i, c );
+			if ( ops[ c ] === 'min' ) total[ c ] = Math.min( total[ c ], v );
+			else if ( ops[ c ] === 'max' ) total[ c ] = Math.max( total[ c ], v );
+			else if ( isSumOp( ops[ c ] ) ) { total[ c ] += v; magnitude[ c ] += Math.abs( v ); }
+
+		}
 
 	}
 
+	groups.forEach( ( group, g ) => { for ( const c of [ group.key, ...group.payload ] ) total[ c ] = term( winners[ g ], c ); } );
 	return { total, magnitude };
 
 }

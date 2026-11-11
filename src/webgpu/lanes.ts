@@ -4,7 +4,7 @@
  * the struct `DsWide { lo: vec4f, hi: vec4f }` (channels 0–3 in `lo`, 4–7 in
  * `hi`), which hooks take and return in place of `vec4f`.
  */
-import type { Channels } from '../core/reduction.js';
+import { payloadGroups, type Channels } from '../core/reduction.js';
 
 const xyzw = [ 'x', 'y', 'z', 'w' ];
 
@@ -25,6 +25,38 @@ export interface Lanes {
 	join( halves: readonly string[] ): string;
 	/** Declarations the kernel needs for the type. */
 	declarations: string;
+}
+
+/**
+ * `ds_combine` for channel ops with payload folds (argmin/argmax keys and
+ * their payloads), or null when there are none. `term( c )` is the WGSL that
+ * combines channel c of `a` and `b` for every other op. Each fold gets a
+ * `ds_winsN( a, b ) -> bool`: the lexicographic comparison of (key, payload…),
+ * ties to the smaller payload (core `payloadWins` is the same rule).
+ */
+export function payloadCombine( ops: readonly string[], { type: T, channel: ch, build }: Lanes, term: ( c: number ) => string ): string | null {
+
+	const groups = payloadGroups( ops );
+	if ( groups.length === 0 ) return null;
+	let code = '';
+	const winner = new Map<number, string>();
+	groups.forEach( ( group, g ) => {
+
+		const compare = ( c: number, less: boolean ) => `	if (${ ch( 'a', c ) } != ${ ch( 'b', c ) }) { return ${ ch( 'a', c ) } ${ less ? '<' : '>' } ${ ch( 'b', c ) }; }\n`;
+		code += `// ${ group.kind } of channel ${ group.key }, carrying channel${ group.payload.length === 1 ? '' : 's' } ${ group.payload.join( ', ' ) || '(none)' }: ties go to the smaller payload, in channel order.
+fn ds_wins${ g }(a: ${ T }, b: ${ T }) -> bool {
+${ compare( group.key, group.kind === 'argmin' ) }${ group.payload.map( c => compare( c, true ) ).join( '' ) }	return true;
+}
+`;
+		for ( const c of [ group.key, ...group.payload ] ) winner.set( c, `w${ g }` );
+
+	} );
+	const exprs = ops.map( ( _, c ) => winner.has( c ) ? `select(${ ch( 'b', c ) }, ${ ch( 'a', c ) }, ${ winner.get( c ) })` : term( c ) );
+	return `${ code }fn ds_combine(a: ${ T }, b: ${ T }) -> ${ T } {
+${ groups.map( ( _, g ) => `	let w${ g } = ds_wins${ g }(a, b);\n` ).join( '' ) }	return ${ build( exprs ) };
+}
+`;
+
 }
 
 export function lanes( channels: Channels ): Lanes {

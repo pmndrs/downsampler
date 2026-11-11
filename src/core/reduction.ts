@@ -24,8 +24,74 @@ export type BuiltinReduction = 'average' | 'min' | 'max' | 'minmax';
  * - 'min', 'max'
  * - 'weight': Σ w. This channel weighs the 'weighted' channels.
  * - 'weighted': Σ w·v / Σ w (0 where Σ w = 0). Needs exactly one 'weight' channel.
+ * - 'argmin', 'argmax': the key of a payload fold. The texel with the smallest
+ *   (largest) key wins, and the 'payload' channels that follow the key carry
+ *   that texel's values. Ties go to the smaller payload, compared
+ *   lexicographically in channel order, so the result doesn't depend on the
+ *   order of combination (see {@link payloadGroups}).
+ * - 'payload': carried with the key before it.
  */
-export type ChannelOp = 'sum' | 'average' | 'min' | 'max' | 'weight' | 'weighted';
+export type ChannelOp = 'sum' | 'average' | 'min' | 'max' | 'weight' | 'weighted' | 'argmin' | 'argmax' | 'payload';
+
+/** A payload fold: the key channel, its kind, and the payload channels that follow it. */
+export interface PayloadGroup {
+	key: number;
+	kind: 'argmin' | 'argmax';
+	payload: number[];
+}
+
+/**
+ * The payload folds in a list of channel ops: each 'argmin' or 'argmax' key
+ * with the run of 'payload' channels right after it. Throws for a 'payload'
+ * that doesn't follow a key or another payload.
+ *
+ * The fold is the lexicographic min (argmin) of (key, payload₁, payload₂, …),
+ * or for argmax the max of the key and then the min of the payload: a total
+ * order, so it is associative, commutative and idempotent, and the same at any
+ * tree shape, edge policy or kernel width. Ties on the key go to the smaller
+ * payload; a tool that wants ties broken by position puts a texel index in the
+ * first payload channel. Keys and payloads must not be NaN (comparisons with
+ * NaN are false, which makes the winner order-dependent); −0 and +0 compare
+ * equal, so which of them is returned depends on the order.
+ */
+export function payloadGroups( ops: readonly string[] ): PayloadGroup[] {
+
+	const groups: PayloadGroup[] = [];
+	ops.forEach( ( op, c ) => {
+
+		if ( op === 'argmin' || op === 'argmax' ) groups.push( { key: c, kind: op, payload: [] } );
+		else if ( op === 'payload' ) {
+
+			const group = groups[ groups.length - 1 ];
+			const previous = group === undefined ? - 1 : group.payload.length > 0 ? group.payload[ group.payload.length - 1 ] : group.key;
+			if ( group === undefined || previous !== c - 1 ) throw new Error( `downsampler: a 'payload' channel (${ c }) must follow an 'argmin' or 'argmax' key, or another payload of it; got ${ JSON.stringify( ops ) }.` );
+			group.payload.push( c );
+
+		}
+
+	} );
+	return groups;
+
+}
+
+/**
+ * Does vector `a` win over `b` in a payload fold (`at( vector, channel )` reads
+ * a value)? The CPU form of the kernels' `ds_winsN`.
+ */
+export function payloadWins( group: PayloadGroup, at: ( vector: 'a' | 'b', channel: number ) => number ): boolean {
+
+	const ka = at( 'a', group.key ), kb = at( 'b', group.key );
+	if ( ka !== kb ) return group.kind === 'argmin' ? ka < kb : ka > kb;
+	for ( const c of group.payload ) {
+
+		const pa = at( 'a', c ), pb = at( 'b', c );
+		if ( pa !== pb ) return pa < pb;
+
+	}
+
+	return true;
+
+}
 
 /**
  * Channel ops, one per accumulator channel: four (a `vec4f` per texel), or
@@ -91,7 +157,7 @@ export type PyramidReferenceReduction = BuiltinReduction | 'sum' | ChannelOps | 
  */
 export type ResolvedReduction = { ops: readonly ChannelOp[], custom?: undefined, channels: Channels } | { ops?: undefined, custom: 'fold' | 'sum', channels: Channels };
 
-const channelOps = [ 'sum', 'average', 'min', 'max', 'weight', 'weighted' ];
+const channelOps = [ 'sum', 'average', 'min', 'max', 'weight', 'weighted', 'argmin', 'argmax', 'payload' ];
 
 export function isBuiltinReduction( value: unknown ): value is BuiltinReduction {
 
@@ -142,6 +208,7 @@ export function resolveReduction( reduction: Reduction | PyramidReferenceReducti
 		const weights = reduction.filter( op => op === 'weight' ).length;
 		if ( weights > 1 ) throw new Error( 'downsampler: at most one channel can be the \'weight\'.' );
 		if ( weights === 0 && reduction.includes( 'weighted' ) ) throw new Error( 'downsampler: \'weighted\' channels need a \'weight\' channel.' );
+		payloadGroups( reduction );
 		return { ops: reduction, channels: reduction.length as Channels };
 
 	}

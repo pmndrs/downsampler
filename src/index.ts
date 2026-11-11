@@ -6,8 +6,8 @@ export { formats, integerDomains, isIntegerDomain, isSupportedFormat, quantize, 
 export type { FormatInfo, IntegerQuantization, Quantization, SupportedFormat } from './core/formats.js';
 export { copyReference, reduceReference, tolerance } from './core/reference.js';
 export type { ReferenceLevel, ReferenceOptions } from './core/reference.js';
-export { checkChannels, footprint, foldChannel, isBuiltinReduction, isChannelOps, needsTileEdges, reductionKey, resolveReduction } from './core/reduction.js';
-export type { BuiltinReduction, ChannelOp, ChannelOps, Channels, CustomReduction, EdgePolicy, PyramidReferenceReduction, Reduction, ReferenceReduction, ResolvedReduction, TileEdgePolicy } from './core/reduction.js';
+export { checkChannels, footprint, foldChannel, isBuiltinReduction, isChannelOps, needsTileEdges, payloadGroups, payloadWins, reductionKey, resolveReduction } from './core/reduction.js';
+export type { BuiltinReduction, ChannelOp, ChannelOps, Channels, CustomReduction, PayloadGroup, EdgePolicy, PyramidReferenceReduction, Reduction, ReferenceReduction, ResolvedReduction, TileEdgePolicy } from './core/reduction.js';
 export { checkLevels, levelSize, maxTileLevels, pyramidTolerance, reducePyramid, tileDispatch } from './core/pyramid.js';
 export type { PyramidLevel, PyramidReferenceOptions, TileDispatch } from './core/pyramid.js';
 export { isSumOp, scalarBlock, scalarCombineDepth, scalarCombineReference, scalarDepth, scalarInvocations, scalarOps, scalarReference, scalarSide, scalarWeightChannel, scalarWorkgroups } from './core/scalar.js';

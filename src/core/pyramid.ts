@@ -16,7 +16,7 @@
  * kernel's structure.
  */
 import { tileSize, workgroupSide } from './plan.js';
-import { resolveReduction, type ChannelOp, type PyramidReferenceReduction, type TileEdgePolicy } from './reduction.js';
+import { payloadGroups, payloadWins, resolveReduction, type ChannelOp, type PyramidReferenceReduction, type TileEdgePolicy } from './reduction.js';
 
 /** Most levels one tile dispatch reduces (a 64×64 source tile, as in SPD). */
 export const maxTileLevels = 6;
@@ -102,6 +102,9 @@ export function reducePyramid( source: ArrayLike<number>, width: number, height:
 	const ops: readonly ( ChannelOp | 'fold' | 'custom-sum' )[] = resolved.ops ?? Array( n ).fill( resolved.custom === 'sum' ? 'custom-sum' : 'fold' );
 	const custom = typeof reduction === 'object' && ! Array.isArray( reduction ) ? ( reduction as { reference: ( a: number, b: number, channel: number ) => number } ).reference : null;
 	const weightChannel = ops.indexOf( 'weight' );
+	const groups = resolved.ops === undefined ? [] : payloadGroups( resolved.ops );
+	// Channel → its payload group's index, for the argmin/argmax/payload channels.
+	const groupOf = new Map( groups.flatMap( ( group, g ) => [ group.key, ...group.payload ].map( c => [ c, g ] as [ number, number ] ) ) );
 
 	return levels.map( level => {
 
@@ -131,10 +134,25 @@ export function reducePyramid( source: ArrayLike<number>, width: number, height:
 			const texels = spansX[ x ].length * spansY[ y ].length;
 			let weight = 0;
 			if ( weightChannel >= 0 ) for ( const sy of spansY[ y ] ) for ( const sx of spansX[ x ] ) weight += source[ ( ( layer * height + sy ) * width + sx ) * n + weightChannel ];
+			// Payload folds: the base offset of each group's winning texel in the block.
+			const winners = groups.map( group => {
+
+				let best = - 1;
+				for ( const sy of spansY[ y ] ) for ( const sx of spansX[ x ] ) {
+
+					const base = ( ( layer * height + sy ) * width + sx ) * n;
+					if ( best < 0 || ! payloadWins( group, ( v, c ) => source[ ( v === 'a' ? best : base ) + c ] ) ) best = base;
+
+				}
+
+				return best;
+
+			} );
 
 			for ( let c = 0; c < n; c ++ ) {
 
 				const op = ops[ c ];
+				if ( groupOf.has( c ) ) { values[ index + c ] = source[ winners[ groupOf.get( c )! ] + c ]; continue; }
 				let value = NaN, total = 0, first = true;
 
 				for ( const sy of spansY[ y ] ) for ( const sx of spansX[ x ] ) {

@@ -5,6 +5,7 @@ import { copyReference, formats, fromHalf, isIntegerDomain, levelSize, pyramidTo
 import { Downsampler, Reducer } from '/dist/webgpu/index.js';
 import { createDepthSource, createTexture, makeData, poison, readMip, readMips, toFloats, upload } from './gpu.js';
 import { validateScalar } from './validate-scalar.js';
+import { validatePayload } from './validate-payload.js';
 import { validateWide } from './validate-wide.js';
 
 // [ width, height, layers?, viewDimension? ]: 1×1, 1D tails, odd sizes, partial
@@ -204,6 +205,7 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 			results.push( ...await validateTools( device, { quick, onProgress } ) );
 			results.push( ...await validateReducerOptions( device ) );
 			results.push( ...await validateWide( device, { quick, onProgress } ) );
+			results.push( ...await validatePayload( device, { quick, onProgress } ) );
 
 		}
 

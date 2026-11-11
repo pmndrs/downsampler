@@ -1,7 +1,7 @@
 import { sampledChannels } from '../core/formats.js';
 import { isSumOp, scalarBlock, scalarInvocations, scalarOps, scalarSide, scalarWeightChannel, scalarWorkgroups, type ScalarOp, type ScalarReduce } from '../core/scalar.js';
 import type { ViewDimension } from './kernel.js';
-import { lanes } from './lanes.js';
+import { lanes, payloadCombine } from './lanes.js';
 import { checkHooks, checkToolBindings, hookArity, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolPipelineLayout, type ToolBindings } from './tool.js';
 
 export interface ScalarReductionOptions {
@@ -134,7 +134,8 @@ export function createScalarKernel( options: ScalarKernelOptions = {} ): string 
 	const array = dimension === '2d-array';
 	// The value type (vec4f, or DsWide for 8 channels). An 8-channel reduction
 	// without a load hook has no source to read: it only combines partials.
-	const { type: T, channel: ch, build, halves, join, declarations } = lanes( ops.length as 4 | 8 );
+	const lane = lanes( ops.length as 4 | 8 );
+	const { type: T, channel: ch, build, halves, join, declarations } = lane;
 	const combineOnly = ops.length === 8 && load === undefined;
 	const sumsOf = ( from: number ) => `vec4<bool>(${ ops.slice( from, from + 4 ).map( op => isSumOp( op ) ).join( ', ' ) })`;
 
@@ -175,11 +176,11 @@ fn load(texel: vec2i, layer: u32) -> vec4f {
 	// Zero the sum-like channels of a value where `condition` holds (per vec4f half).
 	const zeroSums = ( value: string[], condition: string ) => join( value.map( ( half, i ) => `select(${ half }, vec4f(0), ${ sumsOf( 4 * i ) } & vec4<bool>(${ condition }))` ) );
 
-	code += `
-fn ds_combine(a: ${ T }, b: ${ T }) -> ${ T } {
+	// Payload folds (argmin/argmax with payload channels) need a comparison first.
+	code += `\n${ payloadCombine( ops, lane, c => combine[ c ] ) ?? `fn ds_combine(a: ${ T }, b: ${ T }) -> ${ T } {
 	return ${ build( combine ) };
 }
-`;
+` }`;
 
 	if ( ! combineOnly ) code += ops.length === 4 ? `
 // Sum-like channels of off-image texels contribute 0; min and max see the

@@ -258,6 +258,8 @@ shadingChange.encodePass( pass, {                        // or encode( encoder, 
 // Self-dispatch: shadingChange.wgsl, .entryPoint, .layout, .pipeline, .bindGroup( dispatch ), .workgroups( w, h, layers ).
 // 8 channels (§14.1 Wide accumulators): reduction: [ 'sum', 'sum', 'sum', 'sum', 'max', … ] (or channels: 8);
 // hooks then use DsWide { lo: vec4f, hi: vec4f }: fn load( … ) -> DsWide, fn store( …, value: DsWide ).
+// Payload folds (§14.1): [ 'argmin', 'payload', 'payload', 'payload' ] = min depth + the normal of that texel;
+// ties go to the smaller payload (put a texel index first for row-major ties). Also in ScalarReduction.
 // Without a load hook: { source: texture | { texture, mipLevel } }. Output textures must be at least each level's size.
 
 import { reducePyramid, levelSize } from 'downsampler';  // the CPU oracle and level sizes
@@ -595,7 +597,7 @@ pmndrs/upscaler replaced both passes because no downsampler existed:
 2. **Average colour chains:** cubes and arrays, sometimes alpha-weighted, sometimes with sRGB output. Mostly covered; sRGB and weighting are missing.
 3. **Fused block statistics:** 2–4 levels in one tile, from a custom load. This is the most common shape and the biggest gap.
    - The reductions are sums or weighted means with a carried weight channel, and off-image texels get weight 0.
-   - Some carry a payload, such as the normal of the min-depth texel.
+   - Some carry a payload, such as the normal of the min-depth texel (payload folds, §14.1, 2026-11-11).
    - None of them are semilattice folds.
 4. **Scalar 1×1:** exposure, SH and statistics, usually into a buffer, with an epilogue.
 5. **uint folds:** "first valid", or max over a packed key.
@@ -603,7 +605,7 @@ pmndrs/upscaler replaced both passes because no downsampler existed:
 **Generator requirements (M2T.1–2).**
 - **Hooks:**
   - **load:** WGSL with the tool's own bindings, returning `vec4f` (later also `vec4u`).
-  - **reduce:** per channel, one of sum, average, weighted average (a channel holds the weight), min, max, or a custom fold. Plus argmin/argmax with a payload.
+  - **reduce:** per channel, one of sum, average, weighted average (a channel holds the weight), min, max, or a custom fold. Plus argmin/argmax with a payload (done: §14.1 Payload folds).
   - **store or epilogue:** WGSL per emitted level.
 - **Level selection:** which levels to emit, and where: texture mips, an atlas, a buffer, or nothing.
 - **Edge policy:** `exact`, `box` (area), `zero-weight` (off-image texels contribute nothing; ceil sizes), and `clamp` (FSR/SPD-compatible, for parity tests).
@@ -645,6 +647,7 @@ Group 0 of a tile kernel holds only what it needs:
 - `'sum'`, `'average'`, `'min'`, `'max'`
 - `'weight'`: this channel carries a weight. Under `'weighted'`, the other channels are `Σ wᵢ·vᵢ / Σ wᵢ` when emitted, and the weight channel is emitted as `Σ wᵢ`.
 - `'weighted'`: `Σ wᵢ·vᵢ / Σ wᵢ`, and `0` where `Σ wᵢ = 0` (an all-sky block).
+- `'argmin'`, `'argmax'`, `'payload'`: a payload fold (Payload folds below).
 
 Validation: at most one `'weight'` channel, and `'weighted'` needs one. Builtins expand per channel: `'average'`, `'min'` and `'max'` to four of the same, `'minmax'` to min, max, min, max, and the shorthand `'sum'` to four sums. A custom `{ wgsl, kind }` applies to the whole `vec4`:
 - `kind: 'fold'` (default) must be idempotent.
@@ -658,6 +661,13 @@ Validation: at most one `'weight'` channel, and `'weighted'` needs one. Builtins
 - **Workgroup memory doubles:** a 5-level tile takes 8 KiB, a 6-level tile 32 KiB, above the default 16 KiB `maxComputeWorkgroupStorageSize`. The Reducer rejects a tile the device can't hold, naming the limit. The scalar's 256 slots take 8 KiB.
 - **Measured on the upscaler's shading change** (5 values: 4 sums and a max flag, which used to ride in a sign bit through a custom sum). `generator/upscaler-shading-change` now uses `[ 'sum' ×4, 'max' ×4 ]`; the sign-bit version is `experiment/shading-signbit`. Sign-bit ÷ wide, two same-run comparisons on M5 Pro (load average ~9): 0.93 / 0.99 at 960×540, 1.01 / 1.01 at 1280×720, 0.86 / 0.92 at 1129×635, 1.01 / 1.00 at 1707×960, 1.00 / 1.01 at 1920×1080. So the wide kernel ties from 1280×720 up and costs up to ~8–14 % at the small odd size, where its doubled workgroup traffic is not hidden behind the loads. Against the upscaler's hand-fused pass it is 0.89–1.03×.
 - **Oracles:** `reducePyramid( …, { channels: 8 } )`, `scalarReference` and `scalarCombineReference` take 8-channel data (8 floats per texel or partial); core tests check that an 8-channel result equals the two 4-channel halves.
+
+**Payload folds (argmin / argmax, 2026-11-11).** Channel ops `'argmin'` and `'argmax'` mark a key; the `'payload'` channels right after it carry the values of the texel whose key wins. ssgiDev's G-buffer downsample (min depth, the normal of the min-depth texel, mean light) is `[ 'argmin', 'payload' ×4, 'average' ×3 ]` with 8 channels.
+- **Rule (decided):** the fold is the lexicographic min of (key, payload₁, payload₂, …) for `'argmin'`; for `'argmax'` the largest key, then the smallest payload. Ties on the key go to the smaller first payload, then the next. That is a total order, so the fold is associative, commutative and idempotent: the result is the same at every tree shape, kernel width, edge policy and in the scalar's different pairing, and the oracles need no model of the GPU's order. Position-based ties are the tool's choice: a texel index as the first payload breaks ties by row-major position, which reproduces ssgiDev's strict-`<` scan exactly (GPU-tested, including its `minD = 1.0` start for all-sky blocks).
+- **Validation:** a `'payload'` must follow a key or another payload of it. Several folds can share one value (`[ 'argmin', 'payload', 'argmax', 'payload' ]`), next to sums, averages and weights. Keys and payloads must not be NaN (comparisons with NaN are false, so the winner would depend on the order); −0 and +0 tie, and either may be returned.
+- **WGSL:** `ds_winsN( a, b ) -> bool` per fold (key compare, then each payload), and `ds_combine` selects the fold's channels from the winner. Payload and key channels are selections: not zeroed off-image in the scalar, not normalised on emission. Kernels without payload ops are byte-identical.
+- **Where:** `Reducer` (texture or hook paths, 4 or 8 channels) and `ScalarReduction` (image and combine-only runs). `Downsampler` rejects them, like other channel ops.
+- **Oracles:** `reducePyramid`, `scalarReference` and `scalarCombineReference` apply the same rule (`payloadWins`, `payloadGroups` in core); a core test checks them against a sort of each block. GPU: 4 variants (argmin and argmax with 3 payloads, two folds in one value, a fold next to an average and a min) × 13 shapes × both edges × 4 level sets, keys in {0…3} and the first payload in {0, 1, 2}, so most texels are decided by ties; the ssgiDev G-buffer shape against its own loop; scalar image and combine-only runs. Everything selected matches exactly.
 
 **Accumulation.** Workgroup memory holds unnormalised accumulations: sums, weighted sums `Σ w·v`, min/max, or the custom combine. A level is normalised only when it is emitted.
 - The count that divides an `'average'` is analytic, not stored: the in-bounds part of the block under `'zero-weight'`, `4^l` under `'clamp'`.

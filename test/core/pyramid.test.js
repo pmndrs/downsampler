@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { levelSize, reducePyramid, resolveReduction, tileDispatch } from '../../dist/index.js';
+import { levelSize, payloadGroups, reducePyramid, resolveReduction, scalarReference, tileDispatch } from '../../dist/index.js';
 import { createKernel, kernelLayoutEntries } from '../../dist/webgpu/kernel.js';
 
 globalThis.GPUShaderStage ??= { COMPUTE: 4 };
@@ -195,5 +195,50 @@ test( 'kernels bind only emitted levels; exact kernels reject tile options', () 
 	assert.throws( () => createKernel( { edges: 'clamp', levels: [ 1 ], load } ), /format/ );
 	assert.throws( () => createKernel( { format: 'rgba8unorm', count: 2, reduction: [ 'sum', 'sum', 'sum', 'sum' ] } ), /per-channel/ );
 	assert.throws( () => createKernel( { format: 'rgba8unorm', count: 2, load } ), /load needs edges/ );
+
+} );
+
+test( 'payload folds: validation, and every level picks the lexicographic winner of its block', () => {
+
+	assert.deepEqual( payloadGroups( [ 'argmin', 'payload', 'argmax', 'payload' ] ), [ { key: 0, kind: 'argmin', payload: [ 1 ] }, { key: 2, kind: 'argmax', payload: [ 3 ] } ] );
+	assert.throws( () => resolveReduction( [ 'payload', 'argmin', 'sum', 'sum' ] ), /must follow/ );
+	assert.throws( () => resolveReduction( [ 'argmin', 'sum', 'payload', 'sum' ] ), /must follow/ );
+
+	// Keys and the first payload take a few values: ties everywhere. The winner, found by
+	// sorting the block's texels (independent of the oracle's scan), must be what it emits.
+	const [ width, height ] = [ 23, 13 ];
+	let state = 3;
+	const next = () => ( state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0 ) >>> 8;
+	const data = Float64Array.from( { length: width * height * 4 }, ( _, i ) => i % 4 === 0 ? next() % 3 : i % 4 === 1 ? next() % 2 : next() % 1000 );
+	for ( const [ kind, sign ] of [ [ 'argmin', 1 ], [ 'argmax', - 1 ] ] ) for ( const edges of [ 'zero-weight', 'clamp' ] ) {
+
+		const result = reducePyramid( data, width, height, 1, { reduction: [ kind, 'payload', 'payload', 'payload' ], levels: [ 1, 2, 3 ], edges } );
+		result.forEach( ( { level, width: w, height: h, values } ) => {
+
+			for ( let y = 0; y < h; y ++ ) for ( let x = 0; x < w; x ++ ) {
+
+				const texels = [];
+				for ( let sy = y << level; sy < ( y + 1 ) << level; sy ++ ) for ( let sx = x << level; sx < ( x + 1 ) << level; sx ++ ) {
+
+					if ( edges === 'zero-weight' && ( sx >= width || sy >= height ) ) continue;
+					const i = ( Math.min( sy, height - 1 ) * width + Math.min( sx, width - 1 ) ) * 4;
+					texels.push( Array.from( data.subarray( i, i + 4 ) ) );
+
+				}
+
+				texels.sort( ( a, b ) => sign * ( a[ 0 ] - b[ 0 ] ) || a[ 1 ] - b[ 1 ] || a[ 2 ] - b[ 2 ] || a[ 3 ] - b[ 3 ] );
+				assert.deepEqual( Array.from( values.subarray( ( y * w + x ) * 4, ( y * w + x ) * 4 + 4 ) ), texels[ 0 ], `${ kind } ${ edges } level ${ level } (${ x }, ${ y })` );
+
+			}
+
+		} );
+
+	}
+
+	// The scalar oracle (its own tree order) agrees with a sort of the whole image.
+	const [ scalar ] = scalarReference( Float32Array.from( data ), width, height, 1, [ 'argmax', 'payload', 'payload', 'payload' ] );
+	const all = Array.from( { length: width * height }, ( _, i ) => Array.from( data.subarray( i * 4, i * 4 + 4 ) ) ).sort( ( a, b ) => b[ 0 ] - a[ 0 ] || a[ 1 ] - b[ 1 ] || a[ 2 ] - b[ 2 ] || a[ 3 ] - b[ 3 ] );
+	assert.deepEqual( scalar.value, all[ 0 ] );
+	assert.deepEqual( scalar.exact, all[ 0 ] );
 
 } );
