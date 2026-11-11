@@ -8,6 +8,9 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Now
 
+- [ ] M2T.4 SPD-style mode + comparison (agent, branch `m2t-spd`)
+- [ ] M2.3.4 buffer output + rgb9e5ufloat, M2.3.6 rg11b10ufloat (agent, branch `m2-gi-formats`)
+- [ ] Tool API follow-ups + compatibility mode (agent, branch `m2t-api`)
 
 ## Next (M2T, tools first: SPEC §11)
 
