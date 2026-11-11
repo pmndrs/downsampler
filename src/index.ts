@@ -8,3 +8,5 @@ export { copyReference, reduceReference, tolerance } from './core/reference.js';
 export type { ReferenceLevel, ReferenceOptions } from './core/reference.js';
 export { footprint, foldChannel, isBuiltinReduction, reductionKey } from './core/reduction.js';
 export type { BuiltinReduction, CustomReduction, Reduction, ReferenceReduction } from './core/reduction.js';
+export { isSumOp, scalarBlock, scalarDepth, scalarInvocations, scalarOps, scalarReference, scalarSide, scalarWeightChannel, scalarWorkgroups } from './core/scalar.js';
+export type { ScalarOp, ScalarReduce, ScalarReferenceOptions, ScalarReferenceResult } from './core/scalar.js';

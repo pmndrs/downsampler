@@ -4,6 +4,7 @@
 import { copyReference, formats, isIntegerDomain, reduceReference, sampledChannels, tolerance } from '/dist/index.js';
 import { Downsampler } from '/dist/webgpu/index.js';
 import { createDepthSource, createTexture, makeData, poison, readMip, readMips, toFloats, upload } from './gpu.js';
+import { validateScalar } from './validate-scalar.js';
 
 // [ width, height, layers?, viewDimension? ]: 1×1, 1D tails, odd sizes, partial
 // workgroups, rectangles, layers, both 2D view variants, and multi-batch sizes.
@@ -83,11 +84,13 @@ export function levelOptions( device ) {
 
 }
 
-export async function validate( device, { onProgress = () => {}, quick = false } = {} ) {
+/** `only`: run one part of the suite ('mips', 'scalar'); default all. */
+export async function validate( device, { onProgress = () => {}, quick = false, only } = {} ) {
 
 	const results = [];
 	const started = performance.now();
-	const cases = quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
+	const cases = only === 'scalar' ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
+	let scalarPrecision = null;
 	let runs = 0;
 	const skipped = [];
 	device.pushErrorScope( 'validation' );
@@ -185,8 +188,21 @@ export async function validate( device, { onProgress = () => {}, quick = false }
 
 		}
 
-		results.push( ...await validateSource( device, { quick, onProgress } ) );
-		results.push( ...await validateOptions( device ) );
+		if ( only !== 'scalar' ) {
+
+			results.push( ...await validateSource( device, { quick, onProgress } ) );
+			results.push( ...await validateOptions( device ) );
+
+		}
+
+		if ( only !== 'mips' ) {
+
+			const scalar = await validateScalar( device, { quick, onProgress } );
+			results.push( ...scalar.results );
+			scalarPrecision = { worst: scalar.worst, pairing: scalar.pairing };
+
+		}
+
 		await device.queue.onSubmittedWorkDone();
 
 	} finally {
@@ -196,7 +212,9 @@ export async function validate( device, { onProgress = () => {}, quick = false }
 
 	}
 
-	return { passed: true, cases: results.length, checks: runs, skipped, ms: Math.round( performance.now() - started ), results };
+	// scalarPrecision: the largest float-sum error seen, as a fraction of the oracle's
+	// bound, and how many results matched the oracle's float32 pairing bit for bit.
+	return { passed: true, cases: results.length, checks: runs, skipped, scalarPrecision, ms: Math.round( performance.now() - started ), results };
 
 }
 

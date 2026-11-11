@@ -1,6 +1,7 @@
 // Headless GPU suite runner.
 //   node test/run.js                     validation suite
 //   node test/run.js --quick             small shapes only
+//   node test/run.js --only=scalar       one part of the suite (mips, scalar)
 //   node test/run.js --bench             validation + benchmark
 //   node test/run.js --bench --sizes=1024x1024,512x512x6 --formats=rgba8unorm --rounds=11 --repeats=16
 //   node test/run.js --output=results/report.json --headful
@@ -13,6 +14,7 @@ import { createServer } from './serve.js';
 const args = process.argv.slice( 2 );
 const value = name => args.find( arg => arg.startsWith( `--${ name }=` ) )?.split( '=' )[ 1 ];
 const options = { bench: args.includes( '--bench' ), quick: args.includes( '--quick' ) };
+if ( value( 'only' ) ) options.only = value( 'only' );
 if ( value( 'sizes' ) ) options.sizes = value( 'sizes' ).split( ',' ).map( size => size.split( 'x' ).map( Number ) );
 if ( value( 'formats' ) ) options.formats = value( 'formats' ).split( ',' );
 if ( value( 'rounds' ) ) options.rounds = Number( value( 'rounds' ) );
@@ -48,6 +50,7 @@ try {
 	const { validation, timing, adapter } = report;
 	console.log( JSON.stringify( adapter ) );
 	console.log( `validation passed: ${ validation.cases } cases, ${ validation.checks } pattern runs, ${ validation.ms } ms` );
+	if ( validation.scalarPrecision ) console.log( `scalar float sums: worst error ${ ( validation.scalarPrecision.worst * 100 ).toFixed( 2 ) } % of the oracle's bound; ${ validation.scalarPrecision.pairing } results equal the oracle's float32 pairing bit for bit` );
 	if ( validation.skipped.length ) console.log( `skipped (feature unavailable): ${ validation.skipped.join( ', ' ) }` );
 
 	if ( timing?.timestamps === false ) console.log( 'timestamp-query unavailable: benchmark skipped' );
