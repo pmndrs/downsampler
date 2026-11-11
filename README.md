@@ -22,7 +22,7 @@ const adapter = await navigator.gpu.requestAdapter();
 const device = await adapter.requestDevice( { requiredLimits: Downsampler.requiredLimits( adapter ) } );
 const downsampler = new Downsampler( device );
 
-// The texture needs TEXTURE_BINDING usage, plus STORAGE_BINDING (or COPY_DST: the buffer output path, below).
+// The texture needs TEXTURE_BINDING | STORAGE_BINDING usage (COPY_DST for the buffer output path, below).
 downsampler.generate( texture );                    // encode + submit
 downsampler.encode( encoder, texture );             // or record into your own encoder
 downsampler.encode( encoder, texture, { baseMipLevel: 2, mipLevelCount: 4 } );
@@ -39,8 +39,8 @@ downsampler.generate( hiZ /* rg32float */, { source: { texture: depthTexture }, 
 
 // GI formats. rgb9e5ufloat can't be a storage texture, so its levels are packed into a
 // buffer and copied in (the texture needs COPY_DST instead of STORAGE_BINDING). The same
-// buffer output path writes rg11b10ufloat without texture-formats-tier1, and any texture
-// without STORAGE_BINDING usage, six levels per dispatch at any storage texture limit.
+// buffer output path writes rg11b10ufloat without texture-formats-tier1, and any 32-bit-word
+// format with output: 'buffer' (opt-in), six levels per dispatch at any storage texture limit.
 downsampler.generate( irradiance /* rgb9e5ufloat */ );
 downsampler.outputPath( irradiance );                // 'buffer'; force one with new Downsampler( device, { output } )
 ```

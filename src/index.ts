@@ -6,9 +6,9 @@ export { bufferWritable, formats, fromHalf, fromUfloat, integerDomains, isIntege
 export type { FormatInfo, IntegerQuantization, PackedQuantization, Quantization, SupportedFormat } from './core/formats.js';
 export { copyReference, reduceReference, tolerance } from './core/reference.js';
 export type { ReferenceLevel, ReferenceOptions, ToleranceTexel } from './core/reference.js';
-export { footprint, foldChannel, isBuiltinReduction, isChannelOps, needsTileEdges, reductionKey, resolveReduction } from './core/reduction.js';
-export type { BuiltinReduction, ChannelOp, ChannelOps, CustomReduction, EdgePolicy, PyramidReferenceReduction, Reduction, ReferenceReduction, ResolvedReduction, TileEdgePolicy } from './core/reduction.js';
+export { checkChannels, footprint, foldChannel, isBuiltinReduction, isChannelOps, needsTileEdges, payloadGroups, payloadWins, reductionKey, resolveReduction } from './core/reduction.js';
+export type { BuiltinReduction, ChannelOp, ChannelOps, Channels, CustomReduction, PayloadGroup, EdgePolicy, PyramidReferenceReduction, Reduction, ReferenceReduction, ResolvedReduction, TileEdgePolicy } from './core/reduction.js';
 export { checkLevels, levelSize, maxTileLevels, pyramidTolerance, reducePyramid, tileDispatch } from './core/pyramid.js';
 export type { PyramidLevel, PyramidReferenceOptions, TileDispatch } from './core/pyramid.js';
-export { isSumOp, scalarBlock, scalarDepth, scalarInvocations, scalarOps, scalarReference, scalarSide, scalarWeightChannel, scalarWorkgroups } from './core/scalar.js';
-export type { ScalarOp, ScalarReduce, ScalarReferenceOptions, ScalarReferenceResult } from './core/scalar.js';
+export { isSumOp, scalarBlock, scalarCombineDepth, scalarCombineReference, scalarDepth, scalarInvocations, scalarOps, scalarReference, scalarSide, scalarWeightChannel, scalarWorkgroups } from './core/scalar.js';
+export type { ScalarCombineReferenceOptions, ScalarOp, ScalarReduce, ScalarReferenceOptions, ScalarReferenceResult } from './core/scalar.js';

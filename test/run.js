@@ -1,11 +1,13 @@
 // Headless GPU suite runner.
 //   node test/run.js                     validation suite
 //   node test/run.js --quick             small shapes only
-//   node test/run.js --only=scalar       one part of the suite (mips, scalar)
+//   node test/run.js --only=scalar       one part of the suite: downsampler, reducer, scalar
+//                                        (a partition; CI runs them in parallel), or mips (downsampler + reducer)
 //   node test/run.js --bench             validation + benchmark
 //   node test/run.js --bench --sizes=1024x1024,512x512x6 --formats=rgba8unorm --rounds=11 --repeats=16
 //   node test/run.js --output=results/report.json --headful
 //   node test/run.js --adapter=swiftshader   software adapter (CI, no GPU)
+//   node test/run.js --compat            on a compatibility-mode device (featureLevel 'compatibility')
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import puppeteer from 'puppeteer';
@@ -13,7 +15,7 @@ import { createServer } from './serve.js';
 
 const args = process.argv.slice( 2 );
 const value = name => args.find( arg => arg.startsWith( `--${ name }=` ) )?.split( '=' )[ 1 ];
-const options = { bench: args.includes( '--bench' ), quick: args.includes( '--quick' ) };
+const options = { bench: args.includes( '--bench' ), quick: args.includes( '--quick' ), compat: args.includes( '--compat' ) };
 if ( value( 'only' ) ) options.only = value( 'only' );
 if ( value( 'sizes' ) ) options.sizes = value( 'sizes' ).split( ',' ).map( size => size.split( 'x' ).map( Number ) );
 if ( value( 'formats' ) ) options.formats = value( 'formats' ).split( ',' );
@@ -31,8 +33,7 @@ try {
 
 	await new Promise( resolve => server.listen( 0, '127.0.0.1', resolve ) );
 	// The full matrix takes minutes; the default 180 s protocol timeout would cut it off.
-	// SwiftShader --quick took ~29 min before the packed formats on a loaded machine, so allow an hour.
-	browser = await puppeteer.launch( { headless: ! args.includes( '--headful' ), args: browserArgs, protocolTimeout: 60 * 60 * 1000 } );
+	browser = await puppeteer.launch( { headless: ! args.includes( '--headful' ), args: browserArgs, protocolTimeout: 30 * 60 * 1000 } );
 	const page = await browser.newPage();
 	const errors = [];
 	page.on( 'pageerror', error => errors.push( error.message ) );

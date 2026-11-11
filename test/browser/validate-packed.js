@@ -2,7 +2,7 @@
 // matrix: the WGSL codecs against the core ones bit for bit (every code point,
 // every rounding boundary), buffer against storage output, the default storage
 // texture limit, and API behaviour.
-import { fromUfloat, packRgb9e5, quantizeTexel, reducePyramid, reduceReference, toUfloat, unpackRgb9e5 } from '/dist/index.js';
+import { fromHalf, fromUfloat, packRgb9e5, quantizeTexel, reducePyramid, reduceReference, toHalf, toUfloat, unpackRgb9e5 } from '/dist/index.js';
 import { Downsampler, packedFloatWgsl, Reducer } from '/dist/webgpu/index.js';
 import { createTexture, makeData, poison, readMips, toFloats, upload } from './gpu.js';
 import { check, checkPyramid, reducerData } from './validate.js';
@@ -412,6 +412,8 @@ async function validateReducerBuffer( device, { quick } ) {
 	if ( new Reducer( device, { levels: [ 1 ], format: 'rgb9e5ufloat' } ).output !== 'buffer' ) throw new Error( 'reducer: rgb9e5ufloat should default to the buffer path' );
 	if ( new Reducer( device, { levels: [ 1 ], format: 'rgba16float' } ).output !== 'storage' ) throw new Error( 'reducer: rgba16float should default to storage' );
 	expectThrow( () => new Reducer( device, { levels: [ 1 ], format: 'rgb9e5ufloat', output: 'storage' } ), 'can\'t be a storage texture', 'reducer rgb9e5 storage' );
+	// 8-channel accumulators need a store hook, so they never reach output textures or the buffer output.
+	expectThrow( () => new Reducer( device, { levels: [ 1 ], format: 'rgba32float', output: 'buffer', channels: 8, load: 'fn load(texel: vec2i, layer: u32) -> DsWide { return DsWide(vec4f(0.0), vec4f(0.0)); }' } ), '8-channel', 'reducer 8 channels with output buffer' );
 	expectThrow( () => new Reducer( device, { levels: [ 1 ], load: 'fn load(texel: vec2i, layer: u32) -> vec4f { return vec4f(0.0); }', store: 'fn store(level: u32, texel: vec2i, layer: u32, value: vec4f) {}', size: 'fn size() -> vec2u { return vec2u(4u); }', output: 'buffer' } ), 'store hook', 'reducer store hook with output' );
 	const source = createTexture( device, { width: 8, height: 8, format: 'rgba32float', storage: false } );
 	const noCopy = device.createTexture( { size: [ 4, 4 ], format: 'rgb9e5ufloat', usage: GPUTextureUsage.TEXTURE_BINDING } );
@@ -422,14 +424,70 @@ async function validateReducerBuffer( device, { quick } ) {
 
 }
 
-export async function validatePacked( device, { quick = false, onProgress = () => {} } = {} ) {
+/**
+ * Reducer float16 texture outputs round to nearest even (quantized with
+ * pack2x16float before the store, as Downsampler does), on both paths: Apple's
+ * textureStore truncates f32 → f16. Each 2×2 block holds one value 1/4, 1/2 or
+ * 3/4 of a half step above a half, so its level-1 average is that value exactly,
+ * and truncation would store the half below it.
+ */
+async function validateReducerHalfRounding( device ) {
 
-	const results = await validateCodecs( device );
-	onProgress( 'validated packed codecs' );
-	results.push( ...await validateBufferPath( device, { quick } ) );
-	onProgress( 'validated buffer output path' );
-	results.push( ...await validateReducerBuffer( device, { quick } ) );
-	onProgress( 'validated reducer buffer output' );
+	const [ width, height ] = [ 64, 16 ];
+	const data = new Float32Array( width * height * 4 );
+	for ( let y = 0; y < height; y ++ ) for ( let x = 0; x < width; x ++ ) for ( let c = 0; c < 4; c ++ ) {
+
+		const block = ( y >> 1 ) * ( width >> 1 ) + ( x >> 1 ) + c;
+		const base = [ 1, 1.5, 3, 0.1, 700 ][ block % 5 ] * ( block % 7 === 0 ? - 1 : 1 );
+		const step = 2 ** ( Math.floor( Math.log2( Math.abs( base ) ) ) - 10 );
+		data[ ( y * width + x ) * 4 + c ] = Math.fround( base + [ 0.25, 0.5, 0.75 ][ block % 3 ] * step * Math.sign( base ) );
+
+	}
+
+	const source = createTexture( device, { width, height, format: 'rgba32float', storage: false } );
+	upload( device, source, data );
+	const input = new Float32Array( ( width / 2 ) * ( height / 2 ) * 4 );
+	for ( let y = 0; y < height / 2; y ++ ) for ( let x = 0; x < width / 2; x ++ ) for ( let c = 0; c < 4; c ++ ) input[ ( y * width / 2 + x ) * 4 + c ] = data[ ( 2 * y * width + 2 * x ) * 4 + c ];
+	const expected = input.map( value => fromHalf( toHalf( value ) ) );
+	// Values that round away from zero: truncation stores the half below them.
+	const truncations = expected.filter( ( value, i ) => Math.abs( value ) > Math.abs( input[ i ] ) ).length;
+	if ( truncations === 0 ) throw new Error( 'reducer f16 rounding: the fixture has no value that truncation would change' );
+	for ( const output of [ 'storage', 'buffer' ] ) {
+
+		const reducer = new Reducer( device, { reduction: 'average', levels: [ 1 ], edges: 'clamp', format: 'rgba16float', output } );
+		const outputs = levelTextures( device, reducer, width, height, 1, 'rgba16float', output === 'storage' );
+		const [ actual ] = await runReducer( device, reducer, source, outputs );
+		actual.forEach( ( value, i ) => { if ( value !== expected[ i ] ) throw new Error( `reducer rgba16float ${ output }: value ${ i } stored ${ value }, round to nearest even gives ${ expected[ i ] } (input ${ input[ i ] })` ); } );
+		outputs.forEach( texture => texture.destroy() );
+
+	}
+
+	source.destroy();
+	return [ { option: `reducer rgba16float outputs round to nearest even (${ truncations } values differ under truncation)` } ];
+
+}
+
+/** `part`: 'downsampler' (codecs, Downsampler buffer path) or 'reducer' (Reducer buffer output, f16 rounding); default both. */
+export async function validatePacked( device, { quick = false, onProgress = () => {}, part } = {} ) {
+
+	const results = [];
+	if ( part !== 'reducer' ) {
+
+		results.push( ...await validateCodecs( device ) );
+		onProgress( 'validated packed codecs' );
+		results.push( ...await validateBufferPath( device, { quick } ) );
+		onProgress( 'validated buffer output path' );
+
+	}
+
+	if ( part !== 'downsampler' ) {
+
+		results.push( ...await validateReducerBuffer( device, { quick } ) );
+		results.push( ...await validateReducerHalfRounding( device ) );
+		onProgress( 'validated reducer buffer output and f16 rounding' );
+
+	}
+
 	return results;
 
 }

@@ -10,14 +10,12 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 - [ ] M2T.4 SPD-style mode + comparison (agent, branch `m2t-spd`)
 - [ ] M2.3.4 buffer output + rgb9e5ufloat, M2.3.6 rg11b10ufloat (agent, branch `m2-gi-formats`)
-- [ ] Tool API follow-ups + compatibility mode (agent, branch `m2t-api`)
+- [ ] CI: confirm the three parallel SwiftShader jobs fit in 45 min on GitHub runners (first push); if `reducer` doesn't, trim its quick shapes on SwiftShader only
 
 ## Next (M2T, tools first: SPEC §11)
 
 - [ ] M2T.1: WGSL reduction generator as the primary product: tool-supplied `load` with its own bindings, per-channel reductions (sum/average/min/max/custom), choice of emitted levels, outputs (texture, buffer, or WGSL `store` hook), edge policy. `Downsampler` and the three adapter become users of it
 - [ ] M2T.4: SPD-style mode, measured against `'exact'`, the tail kernel idea and a single-dispatch atomic prototype (SPEC §2.2)
-- [ ] Tool API follow-ups (SPEC §14 gaps): shared group-1 plumbing for Reducer and ScalarReduction; combine-only scalar entry (Reducer → scalar in 2 dispatches); wider accumulator (>4 channels); payload fold (argmin/argmax)
-- [ ] Compatibility mode: split reads and writes of one texture across dispatches, or use the buffer path (reflections D4100)
 - [ ] M2T.2: reduce-to-scalar: any size to one value in 2 dispatches, with an epilogue hook (exposure)
 - [ ] M2T.3: prove it on the upscaler's passes (FSR 3.1 luminance pyramid / exposure, shading change) as bench fixtures in this repo; oracle + M5 timings; RTX 3060 / Intel UHD runs by the owner
 - [ ] M2T.4 (deferred until M2T.1–3 clear): SPD-style mode (`'spd'` odd sizes, clamp/drop edges, single-dispatch-equivalent structure) measured against the other options, to justify, or not, that it isn't the primary method
@@ -39,6 +37,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] Tool API: shared group-1 plumbing (`tool.ts`), combine-only scalar (fused luma pyramid 3 → 2 dispatches), 8-channel `DsWide` accumulators, argmin/argmax payload folds, compatibility mode (D4100; 8599 cases on a real compat device); 19/19 mutations caught (`a00e291`…`af98701`)
 - [x] M2T.3: generator versions of every FSR 3.1 and upscaler pass pass their oracles; upscaler shading change ties the hand-fused pass (0.95–1.02×), every-texel exposure 0.33–0.60× of the upscaler's, fused luma pyramid 0.89–1.15× of FSR's every-texel (M5 Pro, loaded, paired ratios; `bfcdaea`)
 - [x] M2T.1: `Reducer` tile kernels: tool hooks in group 1, per-channel sums/weights, level selection, `'zero-weight'`/`'clamp'` edges, self-dispatch; 10/10 mutations caught (`97664d7`, `546692b`)
 - [x] Upscaler: parallel exposure, same 1024 taps, 6–10× faster on M5 Pro, output bit-identical on 1440 bench frames (exposure channel); upscaler branch `perf/exposure-parallel` (`22468ae`…`4715027`, not pushed)
@@ -71,6 +70,8 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Waiting on owner
 
+- Payload folds break key ties by the smaller payload (order-independent); OK, or build in position-based ties?
+- Upscaler shading change: 8-channel version ties from 1280×720 up but is 8–14 % slower at 1129×635 than the sign-bit trick; which to keep?
 - How should pmndrs/upscaler consume the library before npm publish: vendored generated WGSL, a git dependency, or wait for publish?
 - Reducer defaults to review: `edges: 'zero-weight'` by default; no rounding between levels (each level reduced from its own source block, rounded once on store)
 - Scalar `finish` gained an optional `layer: u32` third parameter for multi-layer runs (not in §14.1): keep?
@@ -96,6 +97,8 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 | 2026-11-11 | `cb6ce7b` | Apple M5 Pro, Chrome 148 | full GPU matrix (agents running concurrently) | ✅ 6774 cases (330 scalar), 310 s |
 | 2026-11-11 | `cb6ce7b` | SwiftShader | quick | ✅ 1660 cases |
 | 2026-11-11 | `38d2bc1` | Apple M5 Pro, Chrome 148 | full GPU matrix (generator + scalar + reflections merged) | ✅ 8144 cases, 22112 pattern runs, 353 s |
+| 2026-11-11 | `af98701` | Apple M5 Pro, Chrome 148 | full GPU matrix (agent) / compat device | ✅ 9326 cases / ✅ 8599 + 452 scalar |
+| 2026-11-11 | merge of `m2t-api` | Apple M5 Pro, Chrome 148 | quick + `npm run tools --check` | ✅ 8591 cases; fixtures ok |
 | 2026-11-10 | `a996cc4` | Apple M5 Pro, Chrome (puppeteer) | quick | ✅ 6032 cases, 19456 pattern runs (branch `reflections-integration`) |
 
 ## Notes

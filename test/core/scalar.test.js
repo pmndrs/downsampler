@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { scalarDepth, scalarOps, scalarReference, scalarWorkgroups } from '../../dist/index.js';
+import { scalarCombineDepth, scalarCombineReference, scalarDepth, scalarOps, scalarReference, scalarWorkgroups } from '../../dist/index.js';
 
 let state = 3;
 const random = () => ( state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0 ) / 2 ** 32;
@@ -128,5 +128,76 @@ test( 'block size only changes the pairing, not the result beyond the bound', ()
 		assert.ok( Math.abs( result.value[ 0 ] - result.exact[ 0 ] ) <= result.bound[ 0 ] );
 
 	}
+
+} );
+
+test( 'combine-only: per-tile sums of an image combine to the image result', () => {
+
+	// Integer texels: tile sums and their combination are exact, so the combine of
+	// tool-written tile partials equals the whole-image reduction.
+	const [ width, height, tile ] = [ 1477, 831, 64 ];
+	const texels = image( width, height, 1, ( c, i ) => c === 3 ? ( i % 3 === 0 ? 0 : 1 + ( i % 5 ) ) : ( i * ( c + 7 ) ) % 97 - 40 );
+	const gx = Math.ceil( width / tile ), gy = Math.ceil( height / tile ), count = gx * gy;
+	const partials = new Float32Array( count * 4 ).fill( Infinity );
+	for ( let i = 0; i < count; i ++ ) partials[ i * 4 ] = partials[ i * 4 + 1 ] = partials[ i * 4 + 3 ] = 0;
+	for ( let y = 0; y < height; y ++ ) for ( let x = 0; x < width; x ++ ) {
+
+		const i = y * width + x, p = ( Math.floor( y / tile ) * gx + Math.floor( x / tile ) ) * 4;
+		partials[ p ] += texels[ i * 4 ] * texels[ i * 4 + 3 ];
+		partials[ p + 1 ] += texels[ i * 4 + 1 ];
+		partials[ p + 2 ] = Math.min( partials[ p + 2 ], texels[ i * 4 + 2 ] );
+		partials[ p + 3 ] += texels[ i * 4 + 3 ];
+
+	}
+
+	const ops = [ 'weighted', 'average', 'min', 'weight' ];
+	const [ combined ] = scalarCombineReference( partials, count, 1, ops, { texels: width * height } );
+	const [ whole ] = scalarReference( texels, width, height, 1, ops );
+	assert.deepEqual( combined.exact, whole.exact );
+	assert.equal( combined.exactWeight, whole.exactWeight );
+	for ( let c = 0; c < 4; c ++ ) assert.ok( Math.abs( combined.value[ c ] - whole.exact[ c ] ) <= combined.bound[ c ] );
+	assert.equal( combined.value[ 2 ], whole.value[ 2 ] );
+
+} );
+
+test( '8 channels: the scalar oracle of 8 channels is its two halves, pairing included', () => {
+
+	assert.equal( scalarOps( 'sum', 8 ).length, 8 );
+	assert.throws( () => scalarOps( [ 'sum', 'sum', 'sum', 'sum' ], 8 ), /channels is 8/ );
+	assert.throws( () => scalarOps( 'sum', 3 ), /4 or 8/ );
+	const [ width, height, layers ] = [ 300, 129, 2 ];
+	const wide = Float32Array.from( { length: width * height * layers * 8 }, ( _, i ) => i % 8 === 6 ? random() : random() * 16 - 4 );
+	const half = from => Float32Array.from( { length: width * height * layers * 4 }, ( _, i ) => wide[ Math.floor( i / 4 ) * 8 + from + i % 4 ] );
+	const lo = [ 'sum', 'average', 'min', 'max' ], hi = [ 'weighted', 'max', 'weight', 'weighted' ];
+	const both = scalarReference( wide, width, height, layers, [ ...lo, ...hi ] );
+	const a = scalarReference( half( 0 ), width, height, layers, lo ), b = scalarReference( half( 4 ), width, height, layers, hi );
+	both.forEach( ( result, layer ) => {
+
+		assert.deepEqual( result.value, [ ...a[ layer ].value, ...b[ layer ].value ] );
+		assert.deepEqual( result.bound, [ ...a[ layer ].bound, ...b[ layer ].bound ] );
+		assert.equal( result.weight, b[ layer ].weight );
+
+	} );
+
+} );
+
+test( 'combine-only: depth, texels and layers', () => {
+
+	assert.equal( scalarCombineDepth( 1 ), 8 );
+	assert.equal( scalarCombineDepth( 256 ), 8 );
+	assert.equal( scalarCombineDepth( 257 ), 9 );
+	assert.equal( scalarCombineDepth( 2040 ), 15 );
+	// Two layers of three partials; 'average' divides by texels, the weight is texels without a weight channel.
+	const partials = Float32Array.of( 1, 1, 5, 1, 2, 1, 4, 1, 3, 1, 6, 1, 10, 0, 50, 2, 20, 0, 40, 2, 30, 0, 60, 2 );
+	const [ a, b ] = scalarCombineReference( partials, 3, 2, [ 'sum', 'average', 'max', 'sum' ], { texels: 4 } );
+	assert.deepEqual( a.value, [ 6, 0.75, 6, 3 ] );
+	assert.deepEqual( b.value, [ 60, 0, 60, 6 ] );
+	assert.equal( a.weight, 4 );
+	// Float partials: the bound holds, and grows with the partials' own depth.
+	const floats = Float32Array.from( { length: 5000 * 4 }, () => random() * 512 - 256 );
+	const [ plain ] = scalarCombineReference( floats, 5000, 1, 'sum' );
+	const [ deep ] = scalarCombineReference( floats, 5000, 1, 'sum', { partialDepth: 12 } );
+	for ( let c = 0; c < 4; c ++ ) assert.ok( Math.abs( plain.value[ c ] - plain.exact[ c ] ) <= plain.bound[ c ] && deep.bound[ c ] > plain.bound[ c ] );
+	assert.throws( () => scalarCombineReference( floats, 0, 1, 'sum' ), /at least one partial/ );
 
 } );

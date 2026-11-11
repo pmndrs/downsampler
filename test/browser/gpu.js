@@ -2,10 +2,11 @@
 import { formats, fromHalf, integerDomains, isIntegerDomain, isPackedQuantization, isSupportedFormat, packTexel, storageWritable, toHalf, unpackTexel } from '/dist/index.js';
 import { Downsampler } from '/dist/webgpu/index.js';
 
-export async function requestDevice() {
+/** `compat`: a compatibility-mode device (featureLevel 'compatibility', without 'core-features-and-limits'). */
+export async function requestDevice( { compat = false } = {} ) {
 
 	if ( ! navigator.gpu ) throw new Error( 'WebGPU is not available in this browser.' );
-	const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance' } );
+	const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance', ...( compat ? { featureLevel: 'compatibility' } : {} ) } );
 	if ( ! adapter ) throw new Error( 'No WebGPU adapter.' );
 	const timestamps = adapter.features.has( 'timestamp-query' );
 	// Format features are requested when available; float32-filterable is not,
@@ -15,12 +16,13 @@ export async function requestDevice() {
 		requiredFeatures: [ ...optional, ...( timestamps ? [ 'timestamp-query' ] : [] ) ],
 		requiredLimits: Downsampler.requiredLimits( adapter )
 	} );
+	if ( compat && device.features.has( 'core-features-and-limits' ) ) throw new Error( 'compat: the browser gave a core device (it cannot enforce compatibility-mode validation).' );
 	const info = adapter.info || {};
 	return {
 		device,
 		adapter: {
 			vendor: info.vendor, architecture: info.architecture, device: info.device, description: info.description,
-			isFallbackAdapter: info.isFallbackAdapter, timestamps, features: optional,
+			isFallbackAdapter: info.isFallbackAdapter, timestamps, features: optional, compatibility: ! device.features.has( 'core-features-and-limits' ),
 			maxStorageTexturesPerShaderStage: device.limits.maxStorageTexturesPerShaderStage,
 			subgroupMinSize: info.subgroupMinSize, subgroupMaxSize: info.subgroupMaxSize
 		},
@@ -37,9 +39,9 @@ export function mipLevels( width, height ) {
 
 /**
  * `render` adds RENDER_ATTACHMENT (the benchmark's baseline and markers need it; not every format is renderable).
- * `storage` defaults to whether the device can write the format as a storage texture (not rgb9e5ufloat, nor rg11b10ufloat without tier1).
+ * `storage` defaults to whether the device can write the format as a storage texture (not rgb9e5ufloat, nor rg11b10ufloat without tier1, nor rg32float in compatibility mode).
  */
-export function createTexture( device, { width, height, layers = 1, format, dimension = layers > 1 ? '2d-array' : '2d', storage = ! isSupportedFormat( format ) || storageWritable( format, device.features ), render = false } ) {
+export function createTexture( device, { width, height, layers = 1, format, dimension = layers > 1 ? '2d-array' : '2d', storage = ! isSupportedFormat( format ) || ( storageWritable( format, device.features ) && ! ( formats[ format ].coreStorage && ! device.features.has( 'core-features-and-limits' ) ) ), render = false } ) {
 
 	return device.createTexture( {
 		label: `test ${ width }x${ height }x${ layers } ${ format }`,
@@ -258,8 +260,14 @@ export async function createDepthSource( device, { width, height, layers = 1, fo
 
 	} else {
 
-		const staging = device.createTexture( { size: [ width, height, layers ], format: 'r32float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST } );
-		device.queue.writeTexture( { texture: staging }, values, { bytesPerRow: width * 4, rowsPerImage: height }, [ width, height, layers ] );
+		// One staging texture per layer: compatibility mode binds whole textures only.
+		const stagings = Array.from( { length: layers }, ( _, layer ) => {
+
+			const staging = device.createTexture( { size: [ width, height ], format: 'r32float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST } );
+			device.queue.writeTexture( { texture: staging }, values.subarray( layer * width * height, ( layer + 1 ) * width * height ), { bytesPerRow: width * 4, rowsPerImage: height }, [ width, height ] );
+			return staging;
+
+		} );
 		const module = device.createShaderModule( { code: `
 @group(0) @binding(0) var image: texture_2d<f32>;
 @vertex fn vs(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
@@ -271,7 +279,7 @@ export async function createDepthSource( device, { width, height, layers = 1, fo
 
 		for ( let layer = 0; layer < layers; layer ++ ) {
 
-			const layerView = staging.createView( { dimension: '2d', baseArrayLayer: layer, arrayLayerCount: 1 } );
+			const layerView = stagings[ layer ].createView();
 			const pass = encoder.beginRenderPass( { colorAttachments: [], depthStencilAttachment: {
 				view: depth.createView( { dimension: '2d', baseArrayLayer: layer, arrayLayerCount: 1 } ), depthLoadOp: 'clear', depthClearValue: 0.5, depthStoreOp: 'store'
 			} } );
@@ -283,7 +291,7 @@ export async function createDepthSource( device, { width, height, layers = 1, fo
 		}
 
 		device.queue.submit( [ encoder.finish() ] );
-		staging.destroy();
+		for ( const staging of stagings ) staging.destroy();
 
 	}
 

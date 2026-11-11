@@ -1,7 +1,9 @@
 import { formats, integerDomains, isIntegerDomain, isPackedQuantization, isSupportedFormat, sampledChannels, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { tileSize, workgroupSide } from '../core/plan.js';
 import { checkLevels } from '../core/pyramid.js';
-import { isBuiltinReduction, needsTileEdges, reductionKey, resolveReduction, type CustomReduction, type EdgePolicy, type Reduction } from '../core/reduction.js';
+import { isBuiltinReduction, needsTileEdges, reductionKey, resolveReduction, type Channels, type CustomReduction, type EdgePolicy, type Reduction } from '../core/reduction.js';
+import { lanes, payloadCombine } from './lanes.js';
+import { checkHooks } from './tool.js';
 
 export type ViewDimension = '2d' | '2d-array';
 
@@ -54,6 +56,12 @@ export interface KernelOptions {
 	bindings?: string;
 	/** Kernels without a store hook: write storage textures (default) or packed texels into a buffer ({@link OutputPath}). */
 	output?: OutputPath;
+	/**
+	 * Tile kernels: accumulator channels per texel, 4 (a `vec4f`, default) or 8
+	 * (`DsWide { lo: vec4f, hi: vec4f }`, which the load and store hooks and a
+	 * custom reduce then take instead). Eight channels need both hooks.
+	 */
+	channels?: Channels;
 }
 
 /** Group 0 binding of the size uniform (`struct { size: vec2u }`) of tile kernels with a load hook. */
@@ -216,12 +224,6 @@ ${ words.map( ( word, w ) => `	ds_texels[index${ w ? ` + ${ w }u` : '' }] = ${ w
 
 }
 
-const hookPatterns = {
-	load: /\bfn\s+load\s*\(/,
-	store: /\bfn\s+store\s*\(/,
-	size: /\bfn\s+size\s*\(/
-};
-
 /** Validates tile kernel options and resolves their defaults. */
 function tileOptions( options: KernelOptions ) {
 
@@ -232,12 +234,7 @@ function tileOptions( options: KernelOptions ) {
 	const count = levels[ levels.length - 1 ];
 	if ( options.count !== undefined && options.count !== count ) throw new Error( `downsampler: count ${ options.count } must be the deepest emitted level (${ count }).` );
 	if ( options.access === 'sample' ) throw new Error( 'downsampler: tile kernels read their source with textureLoad (access "load").' );
-	for ( const [ name, hook ] of Object.entries( { load, store, size } ) ) {
-
-		if ( hook !== undefined && ( typeof hook !== 'string' || ! hookPatterns[ name as keyof typeof hookPatterns ].test( hook ) ) ) throw new Error( `downsampler: the ${ name } hook must be WGSL defining \`fn ${ name }(…)\`.` );
-
-	}
-
+	checkHooks( { load, store, size } );
 	if ( size !== undefined && load === undefined ) throw new Error( 'downsampler: a size hook replaces the size uniform of a load hook; without a load hook the size is the source texture\'s.' );
 	if ( typeof bindings !== 'string' ) throw new Error( 'downsampler: bindings must be WGSL declarations for @group(1).' );
 	if ( store === undefined && ( format === undefined || ! isSupportedFormat( format ) ) ) throw new Error( `downsampler: output format ${ JSON.stringify( format ) } is not supported; pass a supported format or a store hook.` );
@@ -246,7 +243,10 @@ function tileOptions( options: KernelOptions ) {
 	if ( output !== 'storage' && output !== 'buffer' ) throw new Error( `downsampler: unknown output path ${ JSON.stringify( output ) }; expected 'storage' or 'buffer'.` );
 	if ( store !== undefined && output === 'buffer' ) throw new Error( 'downsampler: a store hook replaces the output textures; output \'buffer\' writes them through a buffer.' );
 	if ( store === undefined && output === 'storage' && ( formats[ format! ] as FormatInfo ).storage === false ) throw new Error( `downsampler: ${ format } can't be a storage texture; use output 'buffer'.` );
-	return { format, dimension, reduction, edges, levels, count, load, store, size, bindings, output, sourceFormat: sourceFormat ?? format ?? 'rgba32float' };
+	const { channels } = resolveReduction( reduction, options.channels );
+	// Eight channels never reach output textures (or the buffer output, which writes them).
+	if ( channels === 8 && ( load === undefined || store === undefined ) ) throw new Error( 'downsampler: 8-channel accumulators need a load hook and a store hook (textures hold at most 4 channels, so neither output textures nor output \'buffer\' can take them).' );
+	return { format, dimension, reduction, edges, levels, count, load, store, size, bindings, output, channels, sourceFormat: sourceFormat ?? format ?? 'rgba32float' };
 
 }
 
@@ -297,7 +297,7 @@ export function createKernel( options: KernelOptions ): string {
 	if ( ( options.edges ?? 'exact' ) !== 'exact' ) return createTileKernel( options );
 	const { reduction = 'average' } = options;
 	if ( needsTileEdges( reduction ) ) throw new Error( 'downsampler: sums, per-channel reductions and custom sums need edges \'zero-weight\' or \'clamp\' (a Reducer); \'exact\' only has meaning for averages and folds.' );
-	for ( const name of [ 'load', 'store', 'size', 'bindings', 'levels' ] as const ) {
+	for ( const name of [ 'load', 'store', 'size', 'bindings', 'levels', 'channels' ] as const ) {
 
 		if ( options[ name ] !== undefined ) throw new Error( `downsampler: ${ name } needs edges 'zero-weight' or 'clamp' (a Reducer).` );
 
@@ -539,19 +539,21 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
  */
 function createTileKernel( options: KernelOptions ): string {
 
-	const { format, dimension, reduction, edges, levels, count, load, store, size, bindings, output, sourceFormat } = tileOptions( options );
+	const { format, dimension, reduction, edges, levels, count, load, store, size, bindings, output, channels, sourceFormat } = tileOptions( options );
 	const buffer = store === undefined && output === 'buffer';
 	const packed = store === undefined && isPackedQuantization( formats[ format! ].quantization ) ? formats[ format! ].quantization as 'rgb9e5ufloat' | 'rg11b10ufloat' : null;
-	const resolved = resolveReduction( reduction );
+	const resolved = resolveReduction( reduction, channels );
 	const array = dimension === '2d-array';
 	const suffix = array ? '_array' : '';
 	const tile = tileSize( count );
 	const side = workgroupSide( tile );
 	const samples = tile / side;
 	const zeroWeight = edges === 'zero-weight';
-	const channels = [ 'x', 'y', 'z', 'w' ];
+	// The value type (vec4f, or DsWide for 8 channels) and its channel accessors.
+	const lane = lanes( channels );
+	const { type: T, channel: ch, build, declarations } = lane;
 
-	let code = '';
+	let code = declarations;
 	if ( load === undefined ) code += `@group(0) @binding(1) var ds_source: texture_2d${ suffix }<f32>;\n`;
 	if ( buffer ) code += bufferOutputWgsl( format!, true );
 	// Packed floats are quantized by our encoder on either path, so stored values never depend on the GPU's conversion.
@@ -564,7 +566,7 @@ function createTileKernel( options: KernelOptions ): string {
 	if ( size !== undefined ) code += `\n// size hook\n${ size }\n`;
 
 	code += `
-var<workgroup> ds_tile: array<vec4f, ${ tile * tile }>;
+var<workgroup> ds_tile: array<${ T }, ${ tile * tile }>;
 `;
 
 	if ( load === undefined ) {
@@ -589,23 +591,19 @@ fn ds_size() -> vec2u { return textureDimensions(ds_source); }
 	let emitted = false;
 	if ( resolved.custom !== undefined ) {
 
-		code += `${ ( reduction as { wgsl: string } ).wgsl }\nfn ds_combine(a: vec4f, b: vec4f) -> vec4f { return reduce(a, b); }\n`;
+		code += `${ ( reduction as { wgsl: string } ).wgsl }\nfn ds_combine(a: ${ T }, b: ${ T }) -> ${ T } { return reduce(a, b); }\n`;
 
 	} else {
 
 		const ops = resolved.ops;
-		const weight = channels[ ops.indexOf( 'weight' ) ];
-		const terms = ops.map( ( op, c ) => {
-
-			const ch = channels[ c ];
-			return op === 'min' || op === 'max' ? `${ op }(a.${ ch }, b.${ ch })` : `a.${ ch } + b.${ ch }`;
-
-		} );
-		code += `fn ds_combine(a: vec4f, b: vec4f) -> vec4f { return vec4f(${ terms.join( ', ' ) }); }\n`;
+		const weight = ops.indexOf( 'weight' );
+		const terms = ops.map( ( op, c ) => op === 'min' || op === 'max' ? `${ op }(${ ch( 'a', c ) }, ${ ch( 'b', c ) })` : `${ ch( 'a', c ) } + ${ ch( 'b', c ) }` );
+		// Payload folds (argmin/argmax with payload channels) need a comparison first.
+		code += payloadCombine( ops, lane, c => terms[ c ] ) ?? `fn ds_combine(a: ${ T }, b: ${ T }) -> ${ T } { return ${ build( terms ) }; }\n`;
 
 		if ( ops.includes( 'weighted' ) ) {
 
-			code += `fn ds_prepare(v: vec4f) -> vec4f { return vec4f(${ ops.map( ( op, c ) => op === 'weighted' ? `v.${ channels[ c ] } * v.${ weight }` : `v.${ channels[ c ] }` ).join( ', ' ) }); }\n`;
+			code += `fn ds_prepare(v: ${ T }) -> ${ T } { return ${ build( ops.map( ( op, c ) => op === 'weighted' ? `${ ch( 'v', c ) } * ${ ch( 'v', weight ) }` : ch( 'v', c ) ) ) }; }\n`;
 			prepare = v => `ds_prepare(${ v })`;
 
 		}
@@ -613,15 +611,14 @@ fn ds_size() -> vec2u { return textureDimensions(ds_source); }
 		if ( ops.includes( 'average' ) || ops.includes( 'weighted' ) ) {
 
 			emitted = true;
-			code += `fn ds_emit(v: vec4f, n: f32) -> vec4f {
-	return vec4f(${ ops.map( ( op, c ) => {
+			code += `fn ds_emit(v: ${ T }, n: f32) -> ${ T } {
+	return ${ build( ops.map( ( op, c ) => {
 
-				const ch = channels[ c ];
-				if ( op === 'average' ) return `v.${ ch } / n`;
-				if ( op === 'weighted' ) return `select(0.0, v.${ ch } / v.${ weight }, v.${ weight } != 0.0)`;
-				return `v.${ ch }`;
+				if ( op === 'average' ) return `${ ch( 'v', c ) } / n`;
+				if ( op === 'weighted' ) return `select(0.0, ${ ch( 'v', c ) } / ${ ch( 'v', weight ) }, ${ ch( 'v', weight ) } != 0.0)`;
+				return ch( 'v', c );
 
-			} ).join( ', ' ) });
+			} ) ) };
 }
 `;
 
@@ -644,7 +641,22 @@ fn ds_count(level: u32, texel: vec2u) -> f32 {
 
 	// 'zero-weight': b, c and d count only when inside the level they come from (a
 	// always is, for any output inside its own level). 'clamp': all four count.
-	code += zeroWeight ? `
+	// (select() takes vectors, so DsWide selects per half.)
+	if ( channels === 8 ) code += zeroWeight ? `
+fn ds_reduce4(a: DsWide, b: DsWide, c: DsWide, d: DsWide, inside: vec2<bool>) -> DsWide {
+	let ab = ds_combine(a, b);
+	let cd = ds_combine(c, d);
+	let top = DsWide(select(a.lo, ab.lo, inside.x), select(a.hi, ab.hi, inside.x));
+	let bottom = DsWide(select(c.lo, cd.lo, inside.x), select(c.hi, cd.hi, inside.x));
+	let both = ds_combine(top, bottom);
+	return DsWide(select(top.lo, both.lo, inside.y), select(top.hi, both.hi, inside.y));
+}
+` : `
+fn ds_reduce4(a: DsWide, b: DsWide, c: DsWide, d: DsWide) -> DsWide {
+	return ds_combine(ds_combine(a, b), ds_combine(c, d));
+}
+`;
+	else code += zeroWeight ? `
 fn ds_reduce4(a: vec4f, b: vec4f, c: vec4f, d: vec4f, inside: vec2<bool>) -> vec4f {
 	let top = select(a, ds_combine(a, b), inside.x);
 	let bottom = select(c, ds_combine(c, d), inside.x);
@@ -660,7 +672,7 @@ fn ds_reduce4(a: vec4f, b: vec4f, c: vec4f, d: vec4f) -> vec4f {
 	// hook only sees in-bounds texels; under 'zero-weight' the clamped duplicates
 	// are then left out.
 	code += `
-fn ds_first(p: vec2u, layer: u32) -> vec4f {
+fn ds_first(p: vec2u, layer: u32) -> ${ T } {
 	let size = ds_size();
 	let last = vec2i(size) - vec2i(1);
 	let lo = min(vec2i(p * 2u), last);
@@ -684,6 +696,10 @@ fn ds_first(p: vec2u, layer: u32) -> vec4f {
 
 		}
 
+		// float16 outputs round to nearest even with pack2x16float before the store, as
+		// Downsampler does: Apple's textureStore truncates f32 → f16 (results/probes/f16-store-rounding.mjs).
+		if ( store === undefined && formats[ format! ].quantization === 'float16' ) return `{ let v = ${ value }; textureStore(ds_out${ level }, vec2i(${ pos })${ array ? ', i32(group.z)' : '' }, vec4f(unpack2x16float(pack2x16float(v.xy)), unpack2x16float(pack2x16float(v.zw)))); }`;
+
 		return store !== undefined ? `store(${ level }u, vec2i(${ pos }), group.z, ${ value });` : `textureStore(ds_out${ level }, vec2i(${ pos })${ array ? ', i32(group.z)' : '' }, ${ value });`;
 
 	};
@@ -691,7 +707,7 @@ fn ds_first(p: vec2u, layer: u32) -> vec4f {
 	code += `
 @compute @workgroup_size(${ side }, ${ side })
 fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group: vec3u) {
-	var value: vec4f;
+	var value: ${ T };
 `;
 	if ( levels.includes( 1 ) ) code += `	let size1 = ${ levelSize( 1 ) };\n`;
 

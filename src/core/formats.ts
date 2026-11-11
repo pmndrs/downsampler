@@ -51,6 +51,8 @@ export interface FormatInfo {
 	feature?: string;
 	/** False for formats that can never be storage textures (rgb9e5ufloat): only the buffer output path writes them. */
 	storage?: false;
+	/** Storage needs 'core-features-and-limits': not available in compatibility mode (rg32float). */
+	coreStorage?: true;
 }
 
 /** Formats supported by the current kernels. See SPEC.md for the planned matrix. */
@@ -77,7 +79,7 @@ export const formats = {
 	// Filtering float32 needs the optional `float32-filterable` feature, so these
 	// always use the load path.
 	r32float: { quantization: 'float32', bytesPerTexel: 4, channels: 1, filterable: false },
-	rg32float: { quantization: 'float32', bytesPerTexel: 8, channels: 2, filterable: false },
+	rg32float: { quantization: 'float32', bytesPerTexel: 8, channels: 2, filterable: false, coreStorage: true },
 	rgba32float: { quantization: 'float32', bytesPerTexel: 16, channels: 4, filterable: false },
 	// Packed HDR formats (GI caches). rgb9e5ufloat is never a storage texture, so
 	// it is always written through the buffer output path; rg11b10ufloat takes

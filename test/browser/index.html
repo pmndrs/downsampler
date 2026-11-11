@@ -33,9 +33,9 @@
 			let report = null;
 
 			// Entry point for the headless runner (test/run.js) and the buttons below.
-			window.runSuite = async ( { bench = false, quick = false, only, sizes, formats, rounds, repeats } = {} ) => {
+			window.runSuite = async ( { bench = false, quick = false, only, sizes, formats, rounds, repeats, compat = false } = {} ) => {
 
-				const { device, adapter, userAgent } = await requestDevice();
+				const { device, adapter, userAgent } = await requestDevice( { compat } );
 				const errors = [];
 				device.addEventListener( 'uncapturederror', event => errors.push( event.error.message ) );
 				device.lost.then( info => { if ( info.reason !== 'destroyed' ) errors.push( `device lost: ${ info.message }` ); } );
