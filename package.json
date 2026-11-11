@@ -23,7 +23,8 @@
     "test:core": "node --test test/core/*.test.js",
     "test:gpu": "node test/run.js",
     "bench": "npm run build && node test/run.js --bench",
-    "lab": "npm run build && node test/serve.js"
+    "lab": "npm run build && node test/serve.js",
+    "tools": "npm run build && node test/tools/run.js"
   },
   "peerDependencies": {
     "three": ">=0.170.0"

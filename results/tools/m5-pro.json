@@ -1,0 +1,2817 @@
+{
+  "date": "2026-11-11T10:38:18.151Z",
+  "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "device": "",
+    "description": "",
+    "isFallbackAdapter": false,
+    "features": [
+      "timestamp-query",
+      "texture-formats-tier1"
+    ],
+    "maxStorageTexturesPerShaderStage": 8
+  },
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36",
+  "formats": {
+    "half1": "r16float",
+    "half2": "rg16float",
+    "unorm1": "r8unorm"
+  },
+  "timestamps": true,
+  "rounds": 11,
+  "repeats": 16,
+  "mutation": false,
+  "results": [
+    {
+      "width": 960,
+      "height": 540,
+      "scene": {
+        "ms": 479,
+        "disoccluded": 0.0006655092592592592,
+        "moving": 0.07581404320987654
+      },
+      "pending": [
+        "generator/luma-pyramid (M2T.2)",
+        "generator/luma-pyramid-clamp (M2T.1)",
+        "generator/shading-change-pyramid (M2T.1)"
+      ],
+      "fixtures": {
+        "upscaler/exposure": {
+          "pass": "exposure",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "exposure.exposure",
+                "actual": 0.97509765625,
+                "expected": 0.9753714847559034,
+                "maxError": 0.00027382850590340624,
+                "unit": "absolute",
+                "tolerance": 0.0005028966147466015,
+                "ok": true
+              },
+              {
+                "output": "exposure.avgLum",
+                "actual": 1.333984375,
+                "expected": 1.3345988802639743,
+                "maxError": 0.0006145052639743298,
+                "unit": "absolute",
+                "tolerance": 0.0026797844697955303,
+                "ok": true
+              },
+              {
+                "output": "exposure.host",
+                "actual": 1,
+                "expected": 1,
+                "maxError": 0,
+                "unit": "absolute",
+                "tolerance": 0,
+                "ok": true
+              }
+            ],
+            "ok": true,
+            "notes": {
+              "target": 0.1348719848801291,
+              "deadbandStops": 2.890337386867171
+            }
+          },
+          "gpuMs": 0.080424625,
+          "samples": [
+            0.0696566875,
+            0.109804,
+            0.0579279375,
+            0.107916,
+            0.1137725625,
+            0.080424625,
+            0.1094159375,
+            0.113410625,
+            0.052909875,
+            0.0541468125,
+            0.05776475
+          ]
+        },
+        "fsr/luma-pyramid": {
+          "pass": "exposure",
+          "dispatches": 2,
+          "check": {
+            "checks": [
+              {
+                "output": "FarthestDepthMip1",
+                "texels": 129600,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure",
+                "actual": 0.06564581394195557,
+                "expected": 0.06564581357460238,
+                "maxError": 5.595988068863186e-9,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma",
+                "actual": 0.46171835064888,
+                "expected": 0.46171835064888,
+                "maxError": 0,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma",
+                "actual": 1.8788909912109375,
+                "expected": 1.8788909912109375,
+                "maxError": 0,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "SPD mip 6 (.xy)",
+                "texels": 120,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure (from reset)",
+                "actual": 0.03866323456168175,
+                "expected": 0.038663236743978,
+                "maxError": 5.644370304221417e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma (from reset)",
+                "actual": 0.9911029934883118,
+                "expected": 0.9911029869017242,
+                "maxError": 6.645714618668744e-9,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma (from reset)",
+                "actual": 1.8788909912109375,
+                "expected": 1.8788909912109375,
+                "maxError": 0,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              }
+            ],
+            "ok": true,
+            "notes": {
+              "mips": 9,
+              "coverage": "[0, 512)² of 960×540"
+            }
+          },
+          "gpuMs": 0.025645,
+          "samples": [
+            0.025645,
+            0.0408685625,
+            0.0289444375,
+            0.0210696875,
+            0.024871625,
+            0.0280434375,
+            0.03411875,
+            0.0357358125,
+            0.0157885625,
+            0.017406,
+            0.0156351875
+          ]
+        },
+        "fsr/luma-pyramid-correct": {
+          "pass": "exposure",
+          "dispatches": 2,
+          "check": {
+            "checks": [
+              {
+                "output": "FarthestDepthMip1",
+                "texels": 129600,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure",
+                "actual": 0.06617342680692673,
+                "expected": 0.06617343213993565,
+                "maxError": 8.059139069711086e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma",
+                "actual": 0.4537131190299988,
+                "expected": 0.4537131253099984,
+                "maxError": 1.3841344411494191e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma",
+                "actual": 1.7801258563995361,
+                "expected": 1.780125945997827,
+                "maxError": 5.033255708009659e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure (from reset)",
+                "actual": 0.038668353110551834,
+                "expected": 0.0386683527984243,
+                "maxError": 8.071911771906024e-9,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma (from reset)",
+                "actual": 0.9909706711769104,
+                "expected": 0.9909706721650421,
+                "maxError": 9.97135147729434e-10,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma (from reset)",
+                "actual": 1.7801258563995361,
+                "expected": 1.780125945997827,
+                "maxError": 5.033255708009659e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              }
+            ],
+            "ok": true,
+            "notes": null
+          },
+          "gpuMs": 0.034913,
+          "samples": [
+            0.050753625,
+            0.0322385625,
+            0.040264375,
+            0.0515010625,
+            0.043858,
+            0.02208,
+            0.0422070625,
+            0.034913,
+            0.01766875,
+            0.0177106875,
+            0.0176976875
+          ]
+        },
+        "upscaler/shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 129600,
+                "maxError": 0.000002682209014892578,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 12,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "firing": 0.044876543209876545,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 518400,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 324480,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 32,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.0756226875,
+          "samples": [
+            0.0821615625,
+            0.0839948125,
+            0.0682974375,
+            0.0744586875,
+            0.149047625,
+            0.078906375,
+            0.0756226875,
+            0.0826173125,
+            0.062899125,
+            0.0607985625,
+            0.064793375
+          ]
+        },
+        "fsr/shading-change-pyramid": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "SpdMips mip 1 (.xy)",
+                "texels": 129600,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 25,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 2 (.xy)",
+                "texels": 32400,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 25,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 3 (.xy)",
+                "texels": 8040,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 25,
+                "worstOutside": 0,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.1579275,
+          "samples": [
+            0.1999575,
+            0.168044375,
+            0.1579275,
+            0.171328125,
+            0.1757628125,
+            0.175143125,
+            0.150370375,
+            0.1540083125,
+            0.1455138125,
+            0.14932325,
+            0.14444575
+          ]
+        },
+        "fsr/shading-change-pyramid-amd": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "SpdMips mip 1 (.xy)",
+                "texels": 129600,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 25,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 2 (.xy)",
+                "texels": 32400,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 25,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 3 (.xy)",
+                "texels": 8040,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 25,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 4 (.xy)",
+                "texels": 1980,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 25,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 5 (.xy)",
+                "texels": 480,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 25,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 6 (.xy)",
+                "texels": 120,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 25,
+                "worstOutside": 0,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.16433875,
+          "samples": [
+            0.175887875,
+            0.1856349375,
+            0.170966125,
+            0.166146,
+            0.1628778125,
+            0.16433875,
+            0.16974225,
+            0.146183,
+            0.1492506875,
+            0.14712275,
+            0.1516435625
+          ]
+        },
+        "fsr/shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "ShadingChange (R8)",
+                "texels": 129600,
+                "maxError": 0.003921598312901509,
+                "unit": "absolute",
+                "tolerance": "bilinear bound + 1/255",
+                "outside": 0,
+                "budget": 12,
+                "worstOutside": 0,
+                "nonZero": 0.2073533950617284,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.0113538125,
+          "samples": [
+            0.0232675,
+            0.0096143125,
+            0.0284835625,
+            0.013161,
+            0.0113538125,
+            0.012249625,
+            0.0135594375,
+            0.010059625,
+            0.00927575,
+            0.009361875,
+            0.0092628125
+          ]
+        },
+        "fsr/shading-change-total": {
+          "pass": "shading",
+          "dispatches": 2,
+          "check": {
+            "checks": [
+              {
+                "output": "ShadingChange (R8)",
+                "texels": 129600,
+                "maxError": 0.003921598312901509,
+                "unit": "absolute",
+                "tolerance": "bilinear bound + 1/255",
+                "outside": 0,
+                "budget": 12,
+                "worstOutside": 0,
+                "nonZero": 0.2073533950617284,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.1786195625,
+          "samples": [
+            0.169341125,
+            0.242198375,
+            0.171890625,
+            0.1848798125,
+            0.2449613125,
+            0.1958741875,
+            0.1786195625,
+            0.24388575,
+            0.1539484375,
+            0.162075625,
+            0.1542919375
+          ]
+        },
+        "floor": {
+          "pass": "floor",
+          "dispatches": 1,
+          "check": null,
+          "gpuMs": 0.0093590625,
+          "samples": [
+            0.01159075,
+            0.0093590625,
+            0.012213125,
+            0.0024426875,
+            0.003249875,
+            0.01159075,
+            0.0125594375,
+            0.0119293125,
+            0.0012864375,
+            0.001302125,
+            0.0013515625
+          ]
+        }
+      },
+      "checkMs": 738,
+      "ratios": {
+        "fsr/luma-pyramid ÷ upscaler/exposure": 0.3188699978395921,
+        "fsr/luma-pyramid-correct ÷ upscaler/exposure": 0.4341083343565481,
+        "fsr/luma-pyramid-correct ÷ fsr/luma-pyramid": 1.3613959836225384,
+        "fsr/shading-change-total ÷ upscaler/shading-change": 2.361983796198727,
+        "fsr/shading-change-pyramid ÷ upscaler/shading-change": 2.0883613796454936,
+        "fsr/shading-change-pyramid-amd ÷ fsr/shading-change-pyramid": 1.04059615963021
+      }
+    },
+    {
+      "width": 1280,
+      "height": 720,
+      "scene": {
+        "ms": 573,
+        "disoccluded": 0.0005924479166666667,
+        "moving": 0.07595052083333333
+      },
+      "pending": [
+        "generator/luma-pyramid (M2T.2)",
+        "generator/luma-pyramid-clamp (M2T.1)",
+        "generator/shading-change-pyramid (M2T.1)"
+      ],
+      "fixtures": {
+        "upscaler/exposure": {
+          "pass": "exposure",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "exposure.exposure",
+                "actual": 0.97509765625,
+                "expected": 0.9753845699439857,
+                "maxError": 0.000286913693985702,
+                "unit": "absolute",
+                "tolerance": 0.0005027418171731735,
+                "ok": true
+              },
+              {
+                "output": "exposure.avgLum",
+                "actual": 1.330078125,
+                "expected": 1.3300660071757842,
+                "maxError": 0.0000121178242158404,
+                "unit": "absolute",
+                "tolerance": 0.0026147926765332564,
+                "ok": true
+              },
+              {
+                "output": "exposure.host",
+                "actual": 1,
+                "expected": 1,
+                "maxError": 0,
+                "unit": "absolute",
+                "tolerance": 0,
+                "ok": true
+              }
+            ],
+            "ok": true,
+            "notes": {
+              "target": 0.13533162942958427,
+              "deadbandStops": 2.885429032451496
+            }
+          },
+          "gpuMs": 0.063788125,
+          "samples": [
+            0.0664416875,
+            0.0485851875,
+            0.0472414375,
+            0.045501875,
+            0.0456086875,
+            0.0453769375,
+            0.087608,
+            0.108178,
+            0.0875194375,
+            0.063788125,
+            0.08822525
+          ]
+        },
+        "fsr/luma-pyramid": {
+          "pass": "exposure",
+          "dispatches": 2,
+          "check": {
+            "checks": [
+              {
+                "output": "FarthestDepthMip1",
+                "texels": 230400,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure",
+                "actual": 0.07511221617460251,
+                "expected": 0.07511221445397084,
+                "maxError": 2.2907481525256224e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma",
+                "actual": 0.327008992433548,
+                "expected": 0.327008992433548,
+                "maxError": 0,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma",
+                "actual": 1.2731237411499023,
+                "expected": 1.2731237411499023,
+                "maxError": 0,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "SPD mip 6 (.xy)",
+                "texels": 220,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure (from reset)",
+                "actual": 0.038749415427446365,
+                "expected": 0.03874941827600509,
+                "maxError": 7.351229641552594e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma (from reset)",
+                "actual": 0.988876461982727,
+                "expected": 0.9888764370538017,
+                "maxError": 2.5209343083044726e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma (from reset)",
+                "actual": 1.2731237411499023,
+                "expected": 1.2731237411499023,
+                "maxError": 0,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              }
+            ],
+            "ok": true,
+            "notes": {
+              "mips": 10,
+              "coverage": "[0, 1024)² of 1280×720"
+            }
+          },
+          "gpuMs": 0.0265204375,
+          "samples": [
+            0.0265204375,
+            0.0178720625,
+            0.0178383125,
+            0.0177914375,
+            0.01915075,
+            0.0403196875,
+            0.037241625,
+            0.0270308125,
+            0.0219345,
+            0.04309575,
+            0.0319735
+          ]
+        },
+        "fsr/luma-pyramid-correct": {
+          "pass": "exposure",
+          "dispatches": 2,
+          "check": {
+            "checks": [
+              {
+                "output": "FarthestDepthMip1",
+                "texels": 230400,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure",
+                "actual": 0.06618105620145798,
+                "expected": 0.06618105161681878,
+                "maxError": 6.927419682908162e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma",
+                "actual": 0.4535979628562927,
+                "expected": 0.4535979878900142,
+                "maxError": 5.518922515751429e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma",
+                "actual": 1.7796807289123535,
+                "expected": 1.779680629438824,
+                "maxError": 5.5894033889044456e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure (from reset)",
+                "actual": 0.0386684276163578,
+                "expected": 0.038668426386464075,
+                "maxError": 3.18061489297541e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma (from reset)",
+                "actual": 0.9909687638282776,
+                "expected": 0.9909687691108789,
+                "maxError": 5.33074454111064e-9,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma (from reset)",
+                "actual": 1.7796807289123535,
+                "expected": 1.779680629438824,
+                "maxError": 5.5894033889044456e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              }
+            ],
+            "ok": true,
+            "notes": null
+          },
+          "gpuMs": 0.0278824375,
+          "samples": [
+            0.0303771875,
+            0.02192675,
+            0.0207184375,
+            0.020322625,
+            0.0203720625,
+            0.0222340625,
+            0.0421581875,
+            0.0537361875,
+            0.054655375,
+            0.0435201875,
+            0.0278824375
+          ]
+        },
+        "upscaler/shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 230400,
+                "maxError": 0.000015437602996826172,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 23,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "firing": 0.045208333333333336,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 921600,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 576000,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 57,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.1037119375,
+          "samples": [
+            0.1266516875,
+            0.09198825,
+            0.0868554375,
+            0.086397125,
+            0.087459625,
+            0.1037119375,
+            0.1465629375,
+            0.1387660625,
+            0.1094305625,
+            0.1023994375,
+            0.109073875
+          ]
+        },
+        "fsr/shading-change-pyramid": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "SpdMips mip 1 (.xy)",
+                "texels": 230400,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 46,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 2 (.xy)",
+                "texels": 57600,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 46,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 3 (.xy)",
+                "texels": 14400,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 46,
+                "worstOutside": 0,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.2273949375,
+          "samples": [
+            0.2771441875,
+            0.195411125,
+            0.2038849375,
+            0.2014474375,
+            0.22830375,
+            0.2312594375,
+            0.2273949375,
+            0.22343925,
+            0.231249,
+            0.2221528125,
+            0.2372125
+          ]
+        },
+        "fsr/shading-change-pyramid-amd": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "SpdMips mip 1 (.xy)",
+                "texels": 230400,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 46,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 2 (.xy)",
+                "texels": 57600,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 46,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 3 (.xy)",
+                "texels": 14400,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 46,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 4 (.xy)",
+                "texels": 3600,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 46,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 5 (.xy)",
+                "texels": 880,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 46,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 6 (.xy)",
+                "texels": 220,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 46,
+                "worstOutside": 0,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.2266136875,
+          "samples": [
+            0.21379875,
+            0.20825725,
+            0.2043068125,
+            0.20628075,
+            0.3039406875,
+            0.2114368125,
+            0.241272375,
+            0.2480874375,
+            0.2504675625,
+            0.2266136875,
+            0.246274875
+          ]
+        },
+        "fsr/shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "ShadingChange (R8)",
+                "texels": 230400,
+                "maxError": 0.003921598312901509,
+                "unit": "absolute",
+                "tolerance": "bilinear bound + 1/255",
+                "outside": 0,
+                "budget": 23,
+                "worstOutside": 0,
+                "nonZero": 0.18977864583333334,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.0126013125,
+          "samples": [
+            0.011895625,
+            0.011802,
+            0.0126013125,
+            0.011783625,
+            0.0391790625,
+            0.0118435625,
+            0.019554375,
+            0.0133019375,
+            0.02066375,
+            0.0276845625,
+            0.01197375
+          ]
+        },
+        "fsr/shading-change-total": {
+          "pass": "shading",
+          "dispatches": 2,
+          "check": {
+            "checks": [
+              {
+                "output": "ShadingChange (R8)",
+                "texels": 230400,
+                "maxError": 0.003921598312901509,
+                "unit": "absolute",
+                "tolerance": "bilinear bound + 1/255",
+                "outside": 0,
+                "budget": 23,
+                "worstOutside": 0,
+                "nonZero": 0.18977864583333334,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.22992875,
+          "samples": [
+            0.2195174375,
+            0.211468125,
+            0.2080931875,
+            0.2088561875,
+            0.2196554375,
+            0.22992875,
+            0.248155125,
+            0.2458634375,
+            0.249254,
+            0.317396125,
+            0.2552669375
+          ]
+        },
+        "floor": {
+          "pass": "floor",
+          "dispatches": 1,
+          "check": null,
+          "gpuMs": 0.001221375,
+          "samples": [
+            0.001138,
+            0.0011614375,
+            0.001221375,
+            0.0012448125,
+            0.0011745,
+            0.0011770625,
+            0.0010755625,
+            0.001526,
+            0.00293225,
+            0.0104086875,
+            0.0046249375
+          ]
+        }
+      },
+      "checkMs": 1123,
+      "ratios": {
+        "fsr/luma-pyramid ÷ upscaler/exposure": 0.415758223023486,
+        "fsr/luma-pyramid-correct ÷ upscaler/exposure": 0.43711015961042904,
+        "fsr/luma-pyramid-correct ÷ fsr/luma-pyramid": 1.0513566188340595,
+        "fsr/shading-change-total ÷ upscaler/shading-change": 2.216994065895259,
+        "fsr/shading-change-pyramid ÷ upscaler/shading-change": 2.192562813706956,
+        "fsr/shading-change-pyramid-amd ÷ fsr/shading-change-pyramid": 0.9965643474362748
+      }
+    },
+    {
+      "width": 1129,
+      "height": 635,
+      "scene": {
+        "ms": 451,
+        "disoccluded": 0.0006653508435449112,
+        "moving": 0.07575932990661376
+      },
+      "pending": [
+        "generator/luma-pyramid (M2T.2)",
+        "generator/luma-pyramid-clamp (M2T.1)",
+        "generator/shading-change-pyramid (M2T.1)"
+      ],
+      "fixtures": {
+        "upscaler/exposure": {
+          "pass": "exposure",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "exposure.exposure",
+                "actual": 0.97509765625,
+                "expected": 0.9753775568351749,
+                "maxError": 0.0002799005851749081,
+                "unit": "absolute",
+                "tolerance": 0.000503416439321819,
+                "ok": true
+              },
+              {
+                "output": "exposure.avgLum",
+                "actual": 1.33203125,
+                "expected": 1.3324915999562945,
+                "maxError": 0.0004603499562945146,
+                "unit": "absolute",
+                "tolerance": 0.0028545273634470983,
+                "ok": true
+              },
+              {
+                "output": "exposure.host",
+                "actual": 1,
+                "expected": 1,
+                "maxError": 0,
+                "unit": "absolute",
+                "tolerance": 0,
+                "ok": true
+              }
+            ],
+            "ok": true,
+            "notes": {
+              "target": 0.13508527934127612,
+              "deadbandStops": 2.888057626577955
+            }
+          },
+          "gpuMs": 0.0430124375,
+          "samples": [
+            0.0446425625,
+            0.044957625,
+            0.04177275,
+            0.0431035,
+            0.041574875,
+            0.0412780625,
+            0.042593125,
+            0.0430124375,
+            0.041580125,
+            0.04425975,
+            0.0483170625
+          ]
+        },
+        "fsr/luma-pyramid": {
+          "pass": "exposure",
+          "dispatches": 2,
+          "check": {
+            "checks": [
+              {
+                "output": "FarthestDepthMip1",
+                "texels": 178788,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure",
+                "actual": 0.07875826209783554,
+                "expected": 0.07875826194468352,
+                "maxError": 1.944583527659115e-9,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma",
+                "actual": 0.27960899472236633,
+                "expected": 0.27960899472236633,
+                "maxError": 0,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma",
+                "actual": 1.0601778030395508,
+                "expected": 1.0601778030395508,
+                "maxError": 0,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "SPD mip 6 (.xy)",
+                "texels": 153,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure (from reset)",
+                "actual": 0.038779791444540024,
+                "expected": 0.03877978852125607,
+                "maxError": 7.538163735932685e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma (from reset)",
+                "actual": 0.9880929589271545,
+                "expected": 0.9880929840027772,
+                "maxError": 2.537779651850568e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma (from reset)",
+                "actual": 1.0601778030395508,
+                "expected": 1.0601778030395508,
+                "maxError": 0,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              }
+            ],
+            "ok": true,
+            "notes": {
+              "mips": 10,
+              "coverage": "[0, 1024)² of 1129×635"
+            }
+          },
+          "gpuMs": 0.0151613125,
+          "samples": [
+            0.0153539375,
+            0.0142784375,
+            0.0154243125,
+            0.0142289375,
+            0.0151613125,
+            0.015356625,
+            0.015340875,
+            0.014301875,
+            0.014281,
+            0.0154190625,
+            0.0144138125
+          ]
+        },
+        "fsr/luma-pyramid-correct": {
+          "pass": "exposure",
+          "dispatches": 2,
+          "check": {
+            "checks": [
+              {
+                "output": "FarthestDepthMip1",
+                "texels": 179670,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure",
+                "actual": 0.06617762893438339,
+                "expected": 0.06617763118535067,
+                "maxError": 3.4014020045270115e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma",
+                "actual": 0.4536496698856354,
+                "expected": 0.4536496721678638,
+                "maxError": 5.030816831305846e-9,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma",
+                "actual": 1.7799773216247559,
+                "expected": 1.7799771527092756,
+                "maxError": 9.489755529314322e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure (from reset)",
+                "actual": 0.03866839408874512,
+                "expected": 0.0386683933533573,
+                "maxError": 1.901780126635291e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma (from reset)",
+                "actual": 0.9909695982933044,
+                "expected": 0.9909696233768521,
+                "maxError": 2.5312125711688963e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma (from reset)",
+                "actual": 1.7799773216247559,
+                "expected": 1.7799771527092756,
+                "maxError": 9.489755529314322e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              }
+            ],
+            "ok": true,
+            "notes": null
+          },
+          "gpuMs": 0.0179554375,
+          "samples": [
+            0.018486625,
+            0.0186924375,
+            0.0179554375,
+            0.017395625,
+            0.018760125,
+            0.0184840625,
+            0.01866125,
+            0.0173305,
+            0.01742425,
+            0.017393,
+            0.0173044375
+          ]
+        },
+        "upscaler/shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 179670,
+                "maxError": 0.000026464462280273438,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 17,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "firing": 0.045839594812712194,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 716915,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 450856,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 45,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.0668765625,
+          "samples": [
+            0.0639365625,
+            0.0700119375,
+            0.0640563125,
+            0.069665625,
+            0.0694495,
+            0.0666031875,
+            0.064889625,
+            0.0668765625,
+            0.068785375,
+            0.0640928125,
+            0.068652625
+          ]
+        },
+        "fsr/shading-change-pyramid": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "SpdMips mip 1 (.xy)",
+                "texels": 178788,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 35,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 2 (.xy)",
+                "texels": 44556,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 35,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 3 (.xy)",
+                "texels": 11139,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 35,
+                "worstOutside": 0,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.1433728125,
+          "samples": [
+            0.1700286875,
+            0.140729625,
+            0.1546616875,
+            0.1387660625,
+            0.1489795,
+            0.142091625,
+            0.1433728125,
+            0.1445395,
+            0.1409145625,
+            0.148279,
+            0.141036875
+          ]
+        },
+        "fsr/shading-change-pyramid-amd": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "SpdMips mip 1 (.xy)",
+                "texels": 178788,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 35,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 2 (.xy)",
+                "texels": 44556,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 35,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 3 (.xy)",
+                "texels": 11139,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 35,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 4 (.xy)",
+                "texels": 2730,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 35,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 5 (.xy)",
+                "texels": 665,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 35,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 6 (.xy)",
+                "texels": 153,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 35,
+                "worstOutside": 0,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.1448936875,
+          "samples": [
+            0.144125375,
+            0.175065125,
+            0.1426696875,
+            0.15406275,
+            0.143641,
+            0.1431098125,
+            0.149263375,
+            0.1448936875,
+            0.1485394375,
+            0.143187875,
+            0.1518414375
+          ]
+        },
+        "fsr/shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "ShadingChange (R8)",
+                "texels": 178788,
+                "maxError": 0.003921598312901509,
+                "unit": "absolute",
+                "tolerance": "bilinear bound + 1/255",
+                "outside": 0,
+                "budget": 17,
+                "worstOutside": 0,
+                "nonZero": 0.20265901514643042,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.0099659375,
+          "samples": [
+            0.0101404375,
+            0.009356625,
+            0.0099973125,
+            0.009182125,
+            0.0095883125,
+            0.0099659375,
+            0.0099191875,
+            0.010044125,
+            0.009971125,
+            0.009299375,
+            0.010315
+          ]
+        },
+        "fsr/shading-change-total": {
+          "pass": "shading",
+          "dispatches": 2,
+          "check": {
+            "checks": [
+              {
+                "output": "ShadingChange (R8)",
+                "texels": 178788,
+                "maxError": 0.003921598312901509,
+                "unit": "absolute",
+                "tolerance": "bilinear bound + 1/255",
+                "outside": 0,
+                "budget": 17,
+                "worstOutside": 0,
+                "nonZero": 0.20265901514643042,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.1544715625,
+          "samples": [
+            0.16007825,
+            0.15294825,
+            0.155359625,
+            0.1544715625,
+            0.15921375,
+            0.1568465,
+            0.15286225,
+            0.1536929375,
+            0.1486644375,
+            0.1581225625,
+            0.1486149375
+          ]
+        },
+        "floor": {
+          "pass": "floor",
+          "dispatches": 1,
+          "check": null,
+          "gpuMs": 0.0010859375,
+          "samples": [
+            0.0010625,
+            0.001148375,
+            0.0010859375,
+            0.0011614375,
+            0.00108075,
+            0.00109375,
+            0.0010703125,
+            0.001138,
+            0.001158875,
+            0.0010859375,
+            0.0010755625
+          ]
+        }
+      },
+      "checkMs": 979,
+      "ratios": {
+        "fsr/luma-pyramid ÷ upscaler/exposure": 0.3524867080597327,
+        "fsr/luma-pyramid-correct ÷ upscaler/exposure": 0.4174475696709818,
+        "fsr/luma-pyramid-correct ÷ fsr/luma-pyramid": 1.184293081486184,
+        "fsr/shading-change-total ÷ upscaler/shading-change": 2.3098011728697925,
+        "fsr/shading-change-pyramid ÷ upscaler/shading-change": 2.1438424335880004,
+        "fsr/shading-change-pyramid-amd ÷ fsr/shading-change-pyramid": 1.0106078340340852
+      }
+    },
+    {
+      "width": 1707,
+      "height": 960,
+      "scene": {
+        "ms": 1075,
+        "disoccluded": 0.00026789201327865654,
+        "moving": 0.07578292813903534
+      },
+      "pending": [
+        "generator/luma-pyramid (M2T.2)",
+        "generator/luma-pyramid-clamp (M2T.1)",
+        "generator/shading-change-pyramid (M2T.1)"
+      ],
+      "fixtures": {
+        "upscaler/exposure": {
+          "pass": "exposure",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "exposure.exposure",
+                "actual": 0.97509765625,
+                "expected": 0.9753932786142894,
+                "maxError": 0.00029562236428937183,
+                "unit": "absolute",
+                "tolerance": 0.00050267089193621,
+                "ok": true
+              },
+              {
+                "output": "exposure.avgLum",
+                "actual": 1.326171875,
+                "expected": 1.3270662418207304,
+                "maxError": 0.0008943668207304079,
+                "unit": "absolute",
+                "tolerance": 0.002583035824084688,
+                "ok": true
+              },
+              {
+                "output": "exposure.host",
+                "actual": 1,
+                "expected": 1,
+                "maxError": 0,
+                "unit": "absolute",
+                "tolerance": 0,
+                "ok": true
+              }
+            ],
+            "ok": true,
+            "notes": {
+              "target": 0.13563753965517245,
+              "deadbandStops": 2.8821715743842065
+            }
+          },
+          "gpuMs": 0.0337104375,
+          "samples": [
+            0.0655354375,
+            0.065012,
+            0.0337416875,
+            0.033515125,
+            0.0333666875,
+            0.0337104375,
+            0.0337963125,
+            0.03378075,
+            0.0336505625,
+            0.0336739375,
+            0.0335385625
+          ]
+        },
+        "fsr/luma-pyramid": {
+          "pass": "exposure",
+          "dispatches": 2,
+          "check": {
+            "checks": [
+              {
+                "output": "FarthestDepthMip1",
+                "texels": 409440,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure",
+                "actual": 0.06884394586086273,
+                "expected": 0.06884394662467348,
+                "maxError": 1.1094813534198142e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma",
+                "actual": 0.4141498804092407,
+                "expected": 0.4141498804092407,
+                "maxError": 0,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma",
+                "actual": 1.701643943786621,
+                "expected": 1.701643943786621,
+                "maxError": 0,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "SPD mip 6 (.xy)",
+                "texels": 390,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure (from reset)",
+                "actual": 0.03869364783167839,
+                "expected": 0.03869364718999962,
+                "maxError": 1.6583569118368295e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma (from reset)",
+                "actual": 0.9903167486190796,
+                "expected": 0.9903167492447332,
+                "maxError": 6.317712393378023e-10,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma (from reset)",
+                "actual": 1.701643943786621,
+                "expected": 1.701643943786621,
+                "maxError": 0,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              }
+            ],
+            "ok": true,
+            "notes": {
+              "mips": 10,
+              "coverage": "[0, 1024)² of 1707×960"
+            }
+          },
+          "gpuMs": 0.0192263125,
+          "samples": [
+            0.0371374375,
+            0.019083,
+            0.019353875,
+            0.0192393125,
+            0.019103875,
+            0.0192263125,
+            0.0191819375,
+            0.0192366875,
+            0.0191325,
+            0.019372125,
+            0.019059625
+          ]
+        },
+        "fsr/luma-pyramid-correct": {
+          "pass": "exposure",
+          "dispatches": 2,
+          "check": {
+            "checks": [
+              {
+                "output": "FarthestDepthMip1",
+                "texels": 409920,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure",
+                "actual": 0.06618902087211609,
+                "expected": 0.06618902024291187,
+                "maxError": 9.506172084095591e-9,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma",
+                "actual": 0.4534775912761688,
+                "expected": 0.45347758867906357,
+                "maxError": 5.7270862285437745e-9,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma",
+                "actual": 1.7795612812042236,
+                "expected": 1.779561216164045,
+                "maxError": 3.6548435639895395e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure (from reset)",
+                "actual": 0.03866850212216377,
+                "expected": 0.03866850333763403,
+                "maxError": 3.143308259310994e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma (from reset)",
+                "actual": 0.990966796875,
+                "expected": 0.990966779086961,
+                "maxError": 1.7950187046756598e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma (from reset)",
+                "actual": 1.7795612812042236,
+                "expected": 1.779561216164045,
+                "maxError": 3.6548435639895395e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              }
+            ],
+            "ok": true,
+            "notes": null
+          },
+          "gpuMs": 0.0220023125,
+          "samples": [
+            0.0436451875,
+            0.02195025,
+            0.0223903125,
+            0.02193975,
+            0.0218408125,
+            0.022062125,
+            0.0220023125,
+            0.0219814375,
+            0.02197625,
+            0.0220256875,
+            0.0220230625
+          ]
+        },
+        "upscaler/shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 409920,
+                "maxError": 0.000004172325134277344,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 40,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "firing": 0.04537470725995316,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 1638720,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 1025280,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 102,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.118360125,
+          "samples": [
+            0.2163769375,
+            0.1213523125,
+            0.1181805,
+            0.118714375,
+            0.115829,
+            0.118909625,
+            0.117753375,
+            0.1221491875,
+            0.11759975,
+            0.118360125,
+            0.117750875
+          ]
+        },
+        "fsr/shading-change-pyramid": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "SpdMips mip 1 (.xy)",
+                "texels": 409440,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 81,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 2 (.xy)",
+                "texels": 102240,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 81,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 3 (.xy)",
+                "texels": 25560,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 81,
+                "worstOutside": 0,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.238334875,
+          "samples": [
+            0.3901295,
+            0.2379443125,
+            0.2414885,
+            0.238334875,
+            0.237277625,
+            0.2385328125,
+            0.2376735,
+            0.2379989375,
+            0.2376890625,
+            0.2390068125,
+            0.244524875
+          ]
+        },
+        "fsr/shading-change-pyramid-amd": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "SpdMips mip 1 (.xy)",
+                "texels": 409440,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 81,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 2 (.xy)",
+                "texels": 102240,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 81,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 3 (.xy)",
+                "texels": 25560,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 81,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 4 (.xy)",
+                "texels": 6360,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 81,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 5 (.xy)",
+                "texels": 1590,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 81,
+                "worstOutside": 0,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 6 (.xy)",
+                "texels": 390,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 81,
+                "worstOutside": 0,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.2502774375,
+          "samples": [
+            0.255821625,
+            0.2512356875,
+            0.3203623125,
+            0.249407625,
+            0.248970125,
+            0.2502774375,
+            0.2483269375,
+            0.249475375,
+            0.248233125,
+            0.25168625,
+            0.25116275
+          ]
+        },
+        "fsr/shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "ShadingChange (R8)",
+                "texels": 409440,
+                "maxError": 0.003921598312901509,
+                "unit": "absolute",
+                "tolerance": "bilinear bound + 1/255",
+                "outside": 0,
+                "budget": 40,
+                "worstOutside": 0,
+                "nonZero": 0.17616256350136772,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.0141560625,
+          "samples": [
+            0.0141065,
+            0.014182125,
+            0.053928875,
+            0.01413,
+            0.0143539375,
+            0.0141560625,
+            0.014028375,
+            0.0141716875,
+            0.0141534375,
+            0.0141665,
+            0.014140375
+          ]
+        },
+        "fsr/shading-change-total": {
+          "pass": "shading",
+          "dispatches": 2,
+          "check": {
+            "checks": [
+              {
+                "output": "ShadingChange (R8)",
+                "texels": 409440,
+                "maxError": 0.003921598312901509,
+                "unit": "absolute",
+                "tolerance": "bilinear bound + 1/255",
+                "outside": 0,
+                "budget": 40,
+                "worstOutside": 0,
+                "nonZero": 0.17616256350136772,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.2528008125,
+          "samples": [
+            0.2528008125,
+            0.254165375,
+            0.2801519375,
+            0.2525118125,
+            0.2540091875,
+            0.2552878125,
+            0.252282625,
+            0.2515221875,
+            0.2511733125,
+            0.2534753125,
+            0.2527201875
+          ]
+        },
+        "floor": {
+          "pass": "floor",
+          "dispatches": 1,
+          "check": null,
+          "gpuMs": 0.000864625,
+          "samples": [
+            0.000859375,
+            0.0008566875,
+            0.000885375,
+            0.000901,
+            0.0008984375,
+            0.00086975,
+            0.000859375,
+            0.000875,
+            0.000861875,
+            0.000864625,
+            0.0008359375
+          ]
+        }
+      },
+      "checkMs": 1425,
+      "ratios": {
+        "fsr/luma-pyramid ÷ upscaler/exposure": 0.5703370803182248,
+        "fsr/luma-pyramid-correct ÷ upscaler/exposure": 0.6526854627739553,
+        "fsr/luma-pyramid-correct ÷ fsr/luma-pyramid": 1.1443854613306634,
+        "fsr/shading-change-total ÷ upscaler/shading-change": 2.135861317314425,
+        "fsr/shading-change-pyramid ÷ upscaler/shading-change": 2.013641629729607,
+        "fsr/shading-change-pyramid-amd ÷ fsr/shading-change-pyramid": 1.050108329718846
+      }
+    },
+    {
+      "width": 1920,
+      "height": 1080,
+      "scene": {
+        "ms": 985,
+        "disoccluded": 0.00024594907407407405,
+        "moving": 0.07577883873456791
+      },
+      "pending": [
+        "generator/luma-pyramid (M2T.2)",
+        "generator/luma-pyramid-clamp (M2T.1)",
+        "generator/shading-change-pyramid (M2T.1)"
+      ],
+      "fixtures": {
+        "upscaler/exposure": {
+          "pass": "exposure",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "exposure.exposure",
+                "actual": 0.97509765625,
+                "expected": 0.9754026844071867,
+                "maxError": 0.00030502815718669307,
+                "unit": "absolute",
+                "tolerance": 0.0005027428867247135,
+                "ok": true
+              },
+              {
+                "output": "exposure.avgLum",
+                "actual": 1.3232421875,
+                "expected": 1.323841509666257,
+                "maxError": 0.0005993221662570214,
+                "unit": "absolute",
+                "tolerance": 0.0025998610412864016,
+                "ok": true
+              },
+              {
+                "output": "exposure.host",
+                "actual": 1,
+                "expected": 1,
+                "maxError": 0,
+                "unit": "absolute",
+                "tolerance": 0,
+                "ok": true
+              }
+            ],
+            "ok": true,
+            "notes": {
+              "target": 0.13596793776724703,
+              "deadbandStops": 2.8786616013346746
+            }
+          },
+          "gpuMs": 0.033127125,
+          "samples": [
+            0.048296125,
+            0.033202625,
+            0.033090625,
+            0.033127125,
+            0.0330411875,
+            0.0332078125,
+            0.033171375,
+            0.0331245,
+            0.03311925,
+            0.0332443125,
+            0.0330854375
+          ]
+        },
+        "fsr/luma-pyramid": {
+          "pass": "exposure",
+          "dispatches": 2,
+          "check": {
+            "checks": [
+              {
+                "output": "FarthestDepthMip1",
+                "texels": 518400,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure",
+                "actual": 0.06566592305898666,
+                "expected": 0.06566592646707112,
+                "maxError": 5.190034827646598e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma",
+                "actual": 0.4614120125770569,
+                "expected": 0.4614120125770569,
+                "maxError": 0,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma",
+                "actual": 1.8777942657470703,
+                "expected": 1.8777942657470703,
+                "maxError": 0,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "SPD mip 6 (.xy)",
+                "texels": 480,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure (from reset)",
+                "actual": 0.038663432002067566,
+                "expected": 0.03866343250892817,
+                "maxError": 1.3109560357419563e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma (from reset)",
+                "actual": 0.9910979270935059,
+                "expected": 0.9910979235787578,
+                "maxError": 3.546317638795768e-9,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma (from reset)",
+                "actual": 1.8777942657470703,
+                "expected": 1.8777942657470703,
+                "maxError": 0,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              }
+            ],
+            "ok": true,
+            "notes": {
+              "mips": 10,
+              "coverage": "[0, 1024)² of 1920×1080"
+            }
+          },
+          "gpuMs": 0.022624625,
+          "samples": [
+            0.0325073125,
+            0.022544,
+            0.0225309375,
+            0.02255175,
+            0.0227886875,
+            0.0227391875,
+            0.022791375,
+            0.0225725625,
+            0.022624625,
+            0.0227939375,
+            0.0224319375
+          ]
+        },
+        "fsr/luma-pyramid-correct": {
+          "pass": "exposure",
+          "dispatches": 2,
+          "check": {
+            "checks": [
+              {
+                "output": "FarthestDepthMip1",
+                "texels": 518400,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure",
+                "actual": 0.06618794798851013,
+                "expected": 0.06618795341500296,
+                "maxError": 8.198610992712713e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma",
+                "actual": 0.4534936845302582,
+                "expected": 0.45349370670744027,
+                "maxError": 4.890295446823151e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma",
+                "actual": 1.779252052307129,
+                "expected": 1.7792520972828807,
+                "maxError": 2.5277897302021022e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure (from reset)",
+                "actual": 0.038668494671583176,
+                "expected": 0.038668493036053145,
+                "maxError": 4.229619264778334e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma (from reset)",
+                "actual": 0.9909670352935791,
+                "expected": 0.9909670454945373,
+                "maxError": 1.0293942907228746e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma (from reset)",
+                "actual": 1.779252052307129,
+                "expected": 1.7792520972828807,
+                "maxError": 2.5277897302021022e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              }
+            ],
+            "ok": true,
+            "notes": null
+          },
+          "gpuMs": 0.02746575,
+          "samples": [
+            0.0399655,
+            0.0274005625,
+            0.02799175,
+            0.027405875,
+            0.0273771875,
+            0.02747875,
+            0.02746575,
+            0.027267875,
+            0.027624625,
+            0.0274839375,
+            0.027418875
+          ]
+        },
+        "upscaler/shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "shading signal (r32float)",
+                "texels": 518400,
+                "maxError": 0.000004708766937255859,
+                "unit": "absolute",
+                "tolerance": 0.002,
+                "outside": 0,
+                "budget": 51,
+                "worstOutside": 0,
+                "gateFlips": 0,
+                "firing": 0.0450462962962963,
+                "ok": true
+              },
+              {
+                "output": "luma history (r32float)",
+                "texels": 2073600,
+                "maxError": 1.7393985866026251,
+                "unit": "f32 ulp",
+                "tolerance": 2,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "block memory (rgba32uint, 8 × f16)",
+                "texels": 1296000,
+                "maxError": 0,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "budget": 129,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.15383625,
+          "samples": [
+            0.19187475,
+            0.15293775,
+            0.15383625,
+            0.1557085625,
+            0.15034925,
+            0.15753925,
+            0.1542814375,
+            0.1501618125,
+            0.1525914375,
+            0.1529404375,
+            0.1539273125
+          ]
+        },
+        "fsr/shading-change-pyramid": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "SpdMips mip 1 (.xy)",
+                "texels": 518400,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 2,
+                "budget": 103,
+                "worstOutside": 0.5,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 2 (.xy)",
+                "texels": 129600,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 2,
+                "budget": 103,
+                "worstOutside": 0.125,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 3 (.xy)",
+                "texels": 32400,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 2,
+                "budget": 103,
+                "worstOutside": 0.03125,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.28849825,
+          "samples": [
+            0.29402675,
+            0.289115375,
+            0.288758625,
+            0.2884799375,
+            0.28892525,
+            0.28849825,
+            0.2876284375,
+            0.287222125,
+            0.2875841875,
+            0.28846175,
+            0.28968825
+          ]
+        },
+        "fsr/shading-change-pyramid-amd": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "SpdMips mip 1 (.xy)",
+                "texels": 518400,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 2,
+                "budget": 103,
+                "worstOutside": 0.5,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 2 (.xy)",
+                "texels": 129600,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 2,
+                "budget": 103,
+                "worstOutside": 0.125,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 3 (.xy)",
+                "texels": 32400,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 2,
+                "budget": 103,
+                "worstOutside": 0.03125,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 4 (.xy)",
+                "texels": 8040,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 2,
+                "budget": 103,
+                "worstOutside": 0.0078125,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 5 (.xy)",
+                "texels": 1980,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 2,
+                "budget": 103,
+                "worstOutside": 0.001953125,
+                "ok": true
+              },
+              {
+                "output": "SpdMips mip 6 (.xy)",
+                "texels": 480,
+                "maxError": 1,
+                "unit": "max(f16 ulp, 2^-21)",
+                "tolerance": 1,
+                "outside": 2,
+                "budget": 103,
+                "worstOutside": 0.00048828125,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.3093130625,
+          "samples": [
+            0.3083286875,
+            0.3208545,
+            0.309078625,
+            0.3728640625,
+            0.3079693125,
+            0.31623475,
+            0.3097479375,
+            0.3075265625,
+            0.3080786875,
+            0.3093130625,
+            0.3098025
+          ]
+        },
+        "fsr/shading-change": {
+          "pass": "shading",
+          "dispatches": 1,
+          "check": {
+            "checks": [
+              {
+                "output": "ShadingChange (R8)",
+                "texels": 518400,
+                "maxError": 0.003921598312901509,
+                "unit": "absolute",
+                "tolerance": "bilinear bound + 1/255",
+                "outside": 0,
+                "budget": 51,
+                "worstOutside": 0,
+                "nonZero": 0.17139853395061727,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.01867425,
+          "samples": [
+            0.0186246875,
+            0.018773125,
+            0.0187028125,
+            0.082394625,
+            0.0187055,
+            0.0186506875,
+            0.0185075625,
+            0.0186481875,
+            0.01867425,
+            0.018661125,
+            0.0187496875
+          ]
+        },
+        "fsr/shading-change-total": {
+          "pass": "shading",
+          "dispatches": 2,
+          "check": {
+            "checks": [
+              {
+                "output": "ShadingChange (R8)",
+                "texels": 518400,
+                "maxError": 0.003921598312901509,
+                "unit": "absolute",
+                "tolerance": "bilinear bound + 1/255",
+                "outside": 0,
+                "budget": 51,
+                "worstOutside": 0,
+                "nonZero": 0.17139853395061727,
+                "ok": true
+              }
+            ],
+            "ok": true
+          },
+          "gpuMs": 0.3091645,
+          "samples": [
+            0.309648875,
+            0.3083625,
+            0.3080005625,
+            0.33292725,
+            0.308646375,
+            0.3095265,
+            0.3090135625,
+            0.307914625,
+            0.3091645,
+            0.3097479375,
+            0.310839
+          ]
+        },
+        "floor": {
+          "pass": "floor",
+          "dispatches": 1,
+          "check": null,
+          "gpuMs": 0.00086975,
+          "samples": [
+            0.0008463125,
+            0.000864625,
+            0.00086975,
+            0.0008723125,
+            0.0008698125,
+            0.0008385625,
+            0.00084375,
+            0.0008515625,
+            0.0008724375,
+            0.0008749375,
+            0.0008801875
+          ]
+        }
+      },
+      "checkMs": 1662,
+      "ratios": {
+        "fsr/luma-pyramid ÷ upscaler/exposure": 0.682963734401944,
+        "fsr/luma-pyramid-correct ÷ upscaler/exposure": 0.8291015293358539,
+        "fsr/luma-pyramid-correct ÷ fsr/luma-pyramid": 1.213975922252855,
+        "fsr/shading-change-total ÷ upscaler/shading-change": 2.0096986243489425,
+        "fsr/shading-change-pyramid ÷ upscaler/shading-change": 1.8753593512582372,
+        "fsr/shading-change-pyramid-amd ÷ fsr/shading-change-pyramid": 1.0721488345249928
+      }
+    }
+  ],
+  "ok": true,
+  "host": {
+    "platform": "darwin 25.6.0",
+    "cpus": 18,
+    "loadAverage": {
+      "before": [
+        62.64697265625,
+        62.71240234375,
+        40.5859375
+      ],
+      "after": [
+        64.59619140625,
+        63.19775390625,
+        41.02001953125
+      ]
+    }
+  },
+  "browserArgs": [
+    "--enable-unsafe-webgpu"
+  ]
+}

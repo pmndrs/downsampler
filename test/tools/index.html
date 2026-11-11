@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>downsampler tool fixtures</title>
+		<link rel="icon" href="data:,">
+		<style>
+			:root { color-scheme: light dark; font: 15px/1.45 system-ui, sans-serif; }
+			body { margin: 0 auto; padding: 16px; max-width: 960px; }
+			button { font: inherit; padding: 8px 14px; margin: 0 8px 8px 0; }
+			pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; background: rgba(127,127,127,.12); padding: 12px; border-radius: 6px; }
+		</style>
+	</head>
+	<body>
+		<h1>downsampler tool fixtures</h1>
+		<p>Upscaler pyramid passes: pmndrs/upscaler today, the FSR 3.1 reference, and (later) the downsampler generator. Checks every fixture against its CPU oracle, then times them. See test/tools/README.md.</p>
+		<button id="check">Check only</button>
+		<button id="bench">Check + benchmark</button>
+		<button id="copy" disabled>Copy JSON report</button>
+		<pre id="status">Ready.</pre>
+		<script type="module">
+			import { runTools } from './harness.js';
+
+			const status = document.getElementById( 'status' );
+			let report = null;
+
+			// Entry point for the headless runner (test/tools/run.js) and the buttons below.
+			window.runTools = options => runTools( { ...options, onProgress: message => { status.textContent = message; console.log( 'PROGRESS ' + message ); } } );
+
+			for ( const id of [ 'check', 'bench' ] ) document.getElementById( id ).onclick = async () => {
+
+				document.querySelectorAll( 'button' ).forEach( button => button.disabled = true );
+
+				try {
+
+					report = await window.runTools( { bench: id === 'bench' } );
+					status.textContent = JSON.stringify( report, ( key, value ) => key === 'samples' ? undefined : value, 2 );
+
+				} catch ( error ) {
+
+					status.textContent = `FAILED\n${ error.stack || error }`;
+
+				} finally {
+
+					document.querySelectorAll( 'button' ).forEach( button => button.disabled = false );
+					document.getElementById( 'copy' ).disabled = report === null;
+
+				}
+
+			};
+
+			document.getElementById( 'copy' ).onclick = () => navigator.clipboard.writeText( JSON.stringify( report, null, 2 ) );
+		</script>
+	</body>
+</html>
