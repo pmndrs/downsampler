@@ -9,7 +9,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 ## Now
 
 - [ ] M2T.4 SPD-style mode + comparison (agent, branch `m2t-spd`)
-- [ ] M2.3.4 buffer output + rgb9e5ufloat, M2.3.6 rg11b10ufloat (agent, branch `m2-gi-formats`)
+- [ ] M2.3.4 buffer output + rgb9e5ufloat, M2.3.6 rg11b10ufloat: built and tested (`9d6b00d`, `213cb23`); agent merging `m2-reductions` into `m2-gi-formats` (26 hunks), then I merge back
 - [ ] CI: confirm the three parallel SwiftShader jobs fit in 45 min on GitHub runners (first push); if `reducer` doesn't, trim its quick shapes on SwiftShader only
 
 ## Next (M2T, tools first: SPEC §11)
@@ -103,6 +103,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Notes
 
+- `textureStore` to rgba16float truncates instead of rounding on the M5 Pro (probe `results/probes/f16-store-rounding.mjs`); Downsampler quantizes first, the Reducer is being fixed to do the same.
 - The dev machine is often loaded (load average 12–18 from other projects): only trust ratios from the same run, and don't update SPEC §8 absolute numbers until it's idle.
 - The full matrix takes about 6 minutes under load (family-trimmed). The six family formats on 2048², 96×4096 and 1920×1080 dominate. If it grows further, run big shapes with fewer patterns or widths.
 - In-tile levels of normalized formats are checked bit-exactly. Before that, a tie-rounding bug in the oracle (present since M1) was hidden by the 2-step tolerance.
