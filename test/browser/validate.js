@@ -407,6 +407,33 @@ async function validateOptions( device ) {
 
 	for ( const texture of [ destination, layered, renderOnly, mipped, ...rejected.map( ( [ source ] ) => source.texture ) ] ) texture.destroy();
 	results.push( { option: 'source validation, mipLevel and replacement' } );
+
+	// encodePass: every batch in one caller-owned pass (odd sizes: several batches)
+	// writes what encode() writes, in place and from a depth source, with layers.
+	for ( const [ width, height, layers, format, options, label ] of [
+		[ 333, 200, 3, 'rgba16float', {}, 'average, 3 layers' ],
+		[ 1917, 1079, 1, 'r32float', { reduction: 'min' }, 'depth min' ],
+	] ) {
+
+		const a = createTexture( device, { width, height, layers, format } ), b = createTexture( device, { width, height, layers, format } );
+		const depth = format === 'r32float' ? await createDepthSource( device, { width, height }, makeData( width, height, 1, 'r32float', 'random', 9, { unit: true } ) ) : null;
+		const data = makeData( width, height, layers, format, 'random', 11 );
+		if ( depth === null ) { upload( device, a, data ); upload( device, b, data ); }
+		const run = { ...options, ...( depth ? { source: { texture: depth.texture } } : {} ) };
+		downsampler.generate( a, run );
+		const encoder = device.createCommandEncoder();
+		const pass = encoder.beginComputePass();
+		downsampler.encodePass( pass, b, run );
+		pass.end();
+		device.queue.submit( [ encoder.finish() ] );
+		if ( downsampler.prepare( b, run ).length < 2 ) throw new Error( `encodePass ${ label }: expected several batches` );
+		const ma = await readMips( device, a, depth ? 0 : 1 ), mb = await readMips( device, b, depth ? 0 : 1 );
+		ma.forEach( ( level, l ) => { if ( level.some( ( value, i ) => ! Object.is( value, mb[ l ][ i ] ) ) ) throw new Error( `encodePass ${ label }: level ${ l } differs from encode()` ); } );
+		for ( const t of [ a, b, depth?.texture ] ) t?.destroy();
+
+	}
+
+	results.push( { option: 'encodePass matches encode' } );
 	return results;
 
 }

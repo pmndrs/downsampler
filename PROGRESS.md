@@ -12,7 +12,6 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Next (M2T, tools first: SPEC §11)
 
-- [ ] Bring in `encodePass()` from branch `reflections-integration` (worktree `../downsampler-reflections`, 2 commits; reflections already links it): needs owner OK
 - [ ] M2T.1: WGSL reduction generator as the primary product: tool-supplied `load` with its own bindings, per-channel reductions (sum/average/min/max/custom), choice of emitted levels, outputs (texture, buffer, or WGSL `store` hook), edge policy. `Downsampler` and the three adapter become users of it
 - [ ] Compatibility mode: split reads and writes of one texture across dispatches, or use the buffer path (reflections D4100)
 - [ ] M2T.2: reduce-to-scalar: any size to one value in 2 dispatches, with an epilogue hook (exposure)
@@ -36,6 +35,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] `encodePass()`: record the chain into a caller-owned compute pass, for @pmndrs/reflections (branch `reflections-integration`, `a996cc4`)
 - [x] Tools survey: FSR 3.1.6 SPD passes (AMD source), upscaler, reflections, ssgiDev, Denoiser, webgpu-ddgi, Capsaicin → SPEC §14
 - [x] DIVERGES.md: 21 divergences from SPD, nvpro and the WebGPU community, with effort and impact; readable copy at `docs/diverges.html` (published as an artifact)
 - [x] M1: kernel, Downsampler, three adapter, tests, device lab, benchmark, CI (`f0f684c`)
@@ -51,6 +51,8 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 ## Decisions (dated; details in SPEC)
 
 - 2026-11-11 · Primary users are our tools (upscaler, denoiser, GI); three.js mipmaps are a beneficiary, not the driver. Speed at render resolutions (non-power-of-two) is a first-class goal; single dispatch is not (WGSL forbids it). Plan reworked into M2T (§11)
+- 2026-11-11 · Fold rule relaxed (owner): sums, counts and weighted means become reductions for the denoiser / GI / upscaler block statistics; idempotent folds keep their contract (§14)
+- 2026-11-11 · `reflections-integration` (`encodePass`) merged into `m2-reductions`
 - 2026-11-11 · SPD-style mode is deferred until M2T.1–3 clear, then built at least as a measured comparison
 - 2026-11-10 · `'exact'` stays the default odd-size policy; `'box'` is added as an opt-in; SPD-style `'fast'` is dropped in favour of the tail kernel (§2.1)
 - 2026-11-10 · Build features first, benchmark once coverage is broad (§11)
@@ -60,7 +62,6 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Waiting on owner
 
-- OK to merge `reflections-integration` (`encodePass`) into `m2-reductions`?
 - Upscaler exposure: a parallel reduction averages every texel instead of 1024 samples (or FSR's top-left 2^mips square), so values change. Accept for the upscaler, or match one of them for the comparison?
 - M2T.3 cross-device runs: RTX 3060 laptop and Intel UHD timings of the bench fixtures
 - Cross-vendor hardware for M3: which NVIDIA/AMD/Intel (Windows) and Android devices are available?
@@ -79,6 +80,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 | 2026-11-10 | `619b60d` | Apple M5 Pro, Chrome 148 | full GPU matrix, untrimmed (every format × every shape) | ✅ 10187 cases, 33024 pattern runs, 600 s |
 | 2026-11-10 | `619b60d` | Apple M5 Pro, Chrome 148 | full GPU matrix (family-trimmed) | ✅ 6443 cases, 20752 pattern runs, 361 s |
 | 2026-11-10 | `619b60d` | SwiftShader | quick | ✅ 1729 cases; 12 tier1 formats skipped |
+| 2026-11-10 | `a996cc4` | Apple M5 Pro, Chrome (puppeteer) | quick | ✅ 6032 cases, 19456 pattern runs (branch `reflections-integration`) |
 
 ## Notes
 

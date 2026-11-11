@@ -158,6 +158,7 @@ downsampler.encode( encoder, texture, {
 	reduction: 'average' | 'min' | 'max' | 'minmax' | { wgsl: 'fn reduce(a: vec4f, b: vec4f) -> vec4f { … }' },
 } );
 downsampler.generate( texture );                         // encode + submit
+downsampler.encodePass( pass, texture, options );        // into a compute pass you own (one timestamp pair)
 downsampler.prepare( texture );                          // planned dispatches (inspection/testing)
 
 import { generateMipmaps, requiredLimits } from 'downsampler/three';
