@@ -1,6 +1,6 @@
 import { formats, isSupportedFormat, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { planBatches, type Batch, type OddSizePolicy } from '../core/plan.js';
-import { reductionKey, type Reduction } from '../core/reduction.js';
+import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
 import { createKernel, kernelLayoutEntries, type SourceAccess, type ViewDimension } from './kernel.js';
 
 export interface DownsamplerOptions {
@@ -221,6 +221,7 @@ export class Downsampler {
 
 		const oddSizes = options.oddSizes ?? 'exact';
 		const reduction = options.reduction ?? 'average';
+		if ( needsTileEdges( reduction ) ) throw new Error( 'downsampler: sums, per-channel reductions and custom sums have no \'exact\' mip-chain meaning; use a Reducer (edges \'zero-weight\' or \'clamp\').' );
 		const sourceMipLevel = source?.mipLevel ?? 0;
 		const key = `${ baseMipLevel }:${ mipLevelCount }:${ oddSizes }:${ reductionKey( reduction ) }:${ source === undefined ? 'self' : `source:${ sourceMipLevel }` }`;
 		let cache = this.plans.get( texture );

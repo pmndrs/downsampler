@@ -173,6 +173,37 @@ downsampler.encode( encoder, hiZ /* rg32float */, { source: { texture: depthText
 downsampler.sourceUnsupportedReason( destination, source, baseMipLevel ); // string | null
 ```
 
+```ts
+// Tile reductions for tools (§14.1): FSR 3.1 shading-change pyramid shape.
+import { Reducer } from 'downsampler/webgpu';
+
+const shadingChange = new Reducer( device, {
+	reduction: [ 'average', 'average', 'sum', 'max' ],   // per channel; 'weight'/'weighted' for weighted means
+	levels: [ 1, 2, 3 ],                                  // emitted levels (1 = half); unemitted ones get no binding
+	edges: 'clamp',                                       // SPD/FSR edges, ⌊n/2⌋ sizes; 'zero-weight' (default): ⌈n/2⌉, every texel once
+	format: 'rg16float',                                  // output textures; or a `store` hook
+	bindings: {                                           // the tool's @group(1)
+		wgsl: '@group(1) @binding(0) var current: texture_2d<f32>; @group(1) @binding(1) var previous: texture_2d<f32>; …',
+		entries: [ { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } }, … ]
+	},
+	load: `fn load( texel: vec2i, layer: u32 ) -> vec4f {
+		let diff = textureLoad( current, texel, 0 ).r * exposure - textureLoad( previous, texel, 0 ).r;
+		return vec4f( diff, sign( diff ), 1.0, abs( diff ) );
+	}`,
+	// store: 'fn store( level: u32, texel: vec2i, layer: u32, value: vec4f ) { … }',
+	// size: 'fn size() -> vec2u { … }',               // with a load hook; default: a uniform the Reducer manages
+} );
+shadingChange.encodePass( pass, {                        // or encode( encoder, … )
+	width: renderWidth, height: renderHeight,            // the load hook's source size
+	bindGroup: toolGroup1,                               // created from shadingChange.bindGroupLayouts[ 1 ]
+	outputs: [ 0, 1, 2 ].map( mipLevel => ( { texture: spdMips, mipLevel } ) ),
+} );
+// Self-dispatch: shadingChange.wgsl, .entryPoint, .layout, .pipeline, .bindGroup( dispatch ), .workgroups( w, h, layers ).
+// Without a load hook: { source: texture | { texture, mipLevel } }. Output textures must be at least each level's size.
+
+import { reducePyramid, levelSize } from 'downsampler';  // the CPU oracle and level sizes
+```
+
 The destination must have `TEXTURE_BINDING | STORAGE_BINDING` usage and a format from `formats`: `rgba8unorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, plus `bgra8unorm` (needs `bgra8unorm-storage`) and `r8unorm`, `rg8unorm`, `r16float`, `rg16float` (need `texture-formats-tier1`). `unsupportedReason` names a missing feature. Its dimension must be `2d`, with `textureBindingViewDimension` either `2d` or `2d-array`.
 
 ### Planned
@@ -192,7 +223,7 @@ downsampler.encode( encoder, destination, {
 |---|---|---|
 | Up to 12 levels from ≤4096² | ✅ | any size, by chaining (2 dispatches up to 4096²) |
 | Single dispatch | ❌ by design | §2.2 |
-| Custom reduction (`SpdReduce4`) | ✅ | average/min/max/minmax + custom WGSL `reduce(a, b)` fold (§4 Reductions). A weighted custom reduction (SPD's `SpdReduce4` used for averages) isn't offered: under `'exact'` it has no defined odd-size meaning. Transforms around an average (premultiply, sRGB) are planned as load/store hooks with §6.1. |
+| Custom reduction (`SpdReduce4`) | ✅ | average/min/max/minmax + custom WGSL `reduce(a, b)` fold (§4 Reductions). A weighted custom reduction (SPD's `SpdReduce4` used for averages) isn't offered under `'exact'`, where it has no defined odd-size meaning; tile kernels (`Reducer`, §14.1) add sums, weighted means and custom sums under `'zero-weight'` and `'clamp'`. Transforms around an average (premultiply, sRGB) are planned as load/store hooks with §6.1. |
 | Load vs. linear-sampler source | ✅ | `textureLoad` path (§4 Source access). `textureGather` for single-channel Hi-Z is an M3 candidate: one gather replaces four loads. |
 | Separate source/destination | ✅ | `source: { texture, mipLevel }`, same size (copy) or half (§4 Separate source). Depth sources supported. |
 | Texture arrays | ✅ all layers | add a layer range; cube maps as 6 layers (2d-array view; not available in compatibility mode) |
@@ -290,6 +321,7 @@ Optimisation: with `float32-filterable`, float32 formats may take the sample pat
 
 - **Reductions:** every shape × width × format case runs `'average'` through the sampler and through loads, plus `'min'`, `'max'`, `'minmax'` and a custom fold. The custom fold depends on the value domain, so it catches unit mix-ups. Folds skip the constant pattern and must match exactly. The `edge` pattern on odd shapes exercises the `2x+2` footprint.
 - **Separate source:** 8 source → destination pairs (depth32float/depth16unorm/r32float → r32float/rg32float Hi-Z, rgba8 ↔ rgba16f conversions), each in copy or half relation. 13 shapes (odd, 1D, NPOT, layers, 512² for multi-batch, 1920×1080), all kernel widths, random/edge/tiles patterns, and the destination poisoned from level 0. The oracle's source values are read back from the source texture, not taken from the fill data. Options cover rejected sources, `source.mipLevel`, and replacing the source texture with the same options.
+- **Tile reductions (`Reducer`, §14.1):** both edge policies × kernel widths 1, 4, 5, 6 (all on SwiftShader too: the hook path needs no storage textures) × 17 shapes × four reductions: sum/average/min/max channels, weighted with a weight channel (a third of the texels weigh 0), a custom fold and a custom sum that counts its combines. Each runs through the texture path (source texture → output textures at exact level sizes) and the hook path (load from a storage buffer, store into an atlas), with complementary level selections, so every level of every width is checked and unemitted levels must stay poisoned. Tolerance: `4e-6 × Σ|terms|` (exact for min/max and folds). Plus the FSR 3.1 shading-change shape (clamp, levels 1–3 into half-resolution rgba16float mips, 1920×1080 and 1917×1077), the denoiser weighted mean (zero-weight, sky weight 0, atlas, sky-only blocks emit 0), and the API: encode, encodePass, self-dispatch and size hook produce identical bits; two sizes in one pass; rejected outputs and options.
 - **Oracle independence:** a core test checks that max chains are conservative: every texel bounds each base texel its normalized area touches, without using `footprint()`.
 
 New features add their own oracle first: each new format family, sRGB, rect, layer range, and `'box'`.
@@ -346,7 +378,7 @@ Build first, benchmark once coverage is broad (decided 2026-11-10). Live status 
 1. **M1 (done):** port the kernel, Downsampler, three adapter, core unit tests, GPU suite, device lab, benchmark and CI.
 2. **M2 (features).** Done: load path and reductions; separate source (Hi-Z) with the float32 formats; formats steps 1–2 (fewer-channel unorm8/float16, bgra8unorm, snorm8, unorm16, snorm16).
    **M2T (tools first, 2026-11-11)**, in this order (details in §14 once the survey lands):
-   1. WGSL reduction generator: tool-supplied `load` with its own bindings, per-channel reductions including sums, choice of emitted levels, outputs (texture, buffer, WGSL `store` hook), edge policy.
+   1. WGSL reduction generator: tool-supplied `load` with its own bindings, per-channel reductions including sums, choice of emitted levels, outputs (texture, buffer, WGSL `store` hook), edge policy. Done: `Reducer` (§14.1); buffer output waits for §6.1.
    2. Reduce-to-scalar in 2 dispatches with an epilogue hook.
    3. Proof on the upscaler's FSR 3.1 passes as bench fixtures, against an oracle, timed on M5 and by the owner on RTX 3060 / Intel UHD.
    4. Deferred until 1–3 clear: an SPD-style mode, built at least as a measured comparison that justifies, or not, its not being the primary method.
@@ -508,33 +540,63 @@ The fold contract in §4 (idempotent only) stays for folds. Sums and weighted me
 
 The fold rule is relaxed (owner, 2026-11-11). **Sums, counts and weighted means are reductions** alongside the idempotent folds of §4, each with its own oracle.
 
-**Tool bindings live in `@group(1)`.** The generator owns `@group(0)`: its sampler, source and outputs. A tool passes WGSL declarations for `@group(1)` together with their `GPUBindGroupLayoutEntry[]`, and binds group 1 itself at dispatch. Tool code never collides with ours, and a tool's bind group can be shared across our kernels.
+**Implemented (M2T.1, 2026-11-11)** as `Reducer` (`src/webgpu/reducer.ts`), on the tile family of `createKernel` (`src/webgpu/kernel.ts`), with the oracle `reducePyramid` (`src/core/pyramid.ts`). The API is in §5. One generator now has two kernel families:
+- **`'exact'`:** mip chains, used by `Downsampler`. Unchanged: its WGSL is byte-identical to before M2T.1 for every format, width, reduction, access and source format (12540 combinations compared).
+- **Tile kernels (`'zero-weight'`, `'clamp'`):** used by `Reducer`. One dispatch reduces every level up to the deepest emitted one inside one workgroup tile, at any size.
 
-**Hooks** are WGSL strings. Each must define exactly the named function:
-- `fn load( texel: vec2i, layer: u32 ) -> vec4f`: the value of one source texel. It runs only for in-bounds texels; edge policy decides what out-of-bounds texels contribute. Without a hook, the generator reads the source texture (today's behaviour).
-- `fn store( level: u32, texel: vec2i, layer: u32, value: vec4f )`: called once per emitted texel, with `level` counted from the source (1 = half). Without a hook, the generator writes storage textures as today.
+**Tool bindings live in `@group(1)`.** The generator owns `@group(0)`. A tool passes WGSL declarations for `@group(1)` together with their `GPUBindGroupLayoutEntry[]` (`bindings: { wgsl, entries }`), and supplies the group-1 bind group at dispatch (`bindGroup`). Tool code never collides with ours, and a tool's bind group works with any of our kernels, because layouts with equal entries are compatible.
+
+Group 0 of a tile kernel holds only what it needs:
+
+| Binding | Resource | Present when |
+|---|---|---|
+| 1 | source texture, `unfilterable-float`, `textureLoad` | no `load` hook |
+| 2 … 2+k−1 | write-only storage texture per emitted level, in `levels` order | no `store` hook |
+| 8 | uniform `{ size: vec2u }` | a `load` hook and no `size` hook |
+
+**Hooks** are WGSL strings. Each must define the named function and may define helpers. Identifiers starting with `ds_`, the entry point `main` and the hook names are reserved.
+- `fn load( texel: vec2i, layer: u32 ) -> vec4f`: the value of one source texel. Coordinates are always in bounds: the kernel clamps them, and under `'zero-weight'` it then leaves the clamped duplicates out. So a hook can be called more than once for an edge texel, and must not have side effects. Without a hook, the generator reads the source texture, splatting single-channel formats (`sourceFormat`).
+- `fn store( level: u32, texel: vec2i, layer: u32, value: vec4f )`: called once per emitted texel inside its level, with `level` counted from the source (1 = half) and `value` normalised. Without a hook, the generator writes storage textures.
+- `fn size() -> vec2u` (addition): the source size, for load-hook kernels. Use it when the size comes from the tool's own uniforms, e.g. with dynamic resolution. Without it, the Reducer keeps a 16-byte uniform per size, cached with the bind group, so two sizes in one submit stay correct.
 - `fn finish( value: vec4f, weight: f32 )`: scalar reduction only, run by one invocation. `weight` is the total weight, which is the texel count under `'average'`.
 
-**Per-channel reduction**, `reduce: Reduction | [ op, op, op, op ]` with `op` one of:
+**Per-channel reduction**, `reduction: Reduction | [ op, op, op, op ]`. It is named `reduction`, not `reduce`, to match `Downsampler`. Each `op` is one of:
 - `'sum'`, `'average'`, `'min'`, `'max'`
 - `'weight'`: this channel carries a weight. Under `'weighted'`, the other channels are `Σ wᵢ·vᵢ / Σ wᵢ` when emitted, and the weight channel is emitted as `Σ wᵢ`.
-- `'weighted'`
+- `'weighted'`: `Σ wᵢ·vᵢ / Σ wᵢ`, and `0` where `Σ wᵢ = 0` (an all-sky block).
 
-The existing `'average' | 'min' | 'max' | 'minmax' | { wgsl }` stay valid, and a custom `{ wgsl, kind: 'fold' | 'sum' }` is accepted. Workgroup memory keeps sums unnormalised; normalisation happens only when a level is emitted.
+Validation: at most one `'weight'` channel, and `'weighted'` needs one. Builtins expand per channel: `'average'`, `'min'` and `'max'` to four of the same, `'minmax'` to min, max, min, max, and the shorthand `'sum'` to four sums. A custom `{ wgsl, kind }` applies to the whole `vec4`:
+- `kind: 'fold'` (default) must be idempotent.
+- `kind: 'sum'` is combined exactly once per counted texel and emitted as is.
 
-**Levels:** `levels: number[]`, the source-relative levels to emit, e.g. `[ 2, 3 ]` for 4×4 and 8×8 blocks. Levels that aren't emitted are still reduced, but never stored. At most 6 levels per dispatch (the tile limit); longer requests chain dispatches as today.
+**Accumulation.** Workgroup memory holds unnormalised accumulations: sums, weighted sums `Σ w·v`, min/max, or the custom combine. A level is normalised only when it is emitted.
+- The count that divides an `'average'` is analytic, not stored: the in-bounds part of the block under `'zero-weight'`, `4^l` under `'clamp'`.
+- Nothing is rounded between levels. So every emitted level is the reduction of its own source block, which is what block statistics need, and texture outputs are rounded once, by the store.
+- This differs on purpose from `Downsampler`'s quantize-as-stored (§4 Quantization). The unorm8 integer-unit guarantees therefore apply to `'exact'` chains only.
 
-**Edges:** `edges` takes one of these values:
-- `'exact'` (the current behaviour)
-- `'box'` (area weights, §2.1)
-- `'zero-weight'`: out-of-bounds texels contribute nothing; sizes are `⌈n/2⌉`; averages divide by the in-bounds count.
-- `'clamp'`: SPD/FSR-compatible. Out-of-bounds loads are clamped to the edge; sizes are `⌊n/2⌋`, dropping the last odd row or column. Used for parity fixtures.
+**Levels:** `levels: number[]`, the source-relative levels to emit, e.g. `[ 2, 3 ]` for 4×4 and 8×8 blocks. Levels must be strictly increasing, from 1 to 6. Levels that aren't emitted are still reduced, but never stored, and get no binding. The tile, and so the workgroup size, follows the deepest emitted level (§4 Tiles).
+- **One dispatch, at most 6 levels.** Chaining beyond 6 isn't implemented for tile kernels. A second batch would have to re-read emitted (normalised) values and recover their counts and weights. The full-chain tool shapes are scalars (M2T.2) or `'exact'` chains (`Downsampler`).
+
+**Edges:** `edges` takes one of these values. Output texel x of level l covers the source block `[x·2^l, (x+1)·2^l)` on each axis.
+- `'exact'`: the current behaviour, `Downsampler` only. A Reducer rejects it, because it ends a batch at every odd size.
+- `'box'` (area weights, §2.1): not implemented, and not blocked. `edges` is a string union that `createKernel` dispatches on; `'box'` would add its own taps and oracle.
+- `'zero-weight'` (the Reducer's default): out-of-bounds texels contribute nothing; sizes are `⌈n/2^l⌉`; averages divide by the in-bounds count. Every source texel is counted exactly once per level. min/max of it is a conservative Hi-Z with ⌈n/2⌉ sizes.
+- `'clamp'`: SPD/FSR-compatible. Source coordinates are clamped to the edge; sizes are `⌊n/2^l⌋`, at least 1, dropping the last odd row or column. Blocks that reach past the image (unit dimensions, deep levels of small images) count the edge texel more than once, exactly as SPD's clamped loads do inside a 64×64 tile. Used for parity fixtures.
 
 `'zero-weight'` and `'clamp'` keep every level in one tile, so batches never end at odd sizes.
 
+**Where `'zero-weight'` outputs go (decided).** ⌈n/2⌉ sizes aren't WebGPU mip sizes (⌊n/2⌋).
+- Output textures must be at least the level's size, and the Reducer checks this. A mip of the source-sized texture is one texel short at odd sizes, so it is rejected with that explanation, rather than silently losing the last row or column.
+- Use separate textures, or an atlas or buffer through the `store` hook (the denoiser's layout).
+- `'clamp'` sizes equal mip sizes, so FSR-style outputs can be the mips of one half-resolution texture.
+- A built-in buffer output waits for §6.1's buffer path.
+
 **Recording:**
-- `encode( encoder, … )` opens its own passes.
-- `encodePass( pass, … )` records into a caller-owned pass.
-- The generator also exposes `{ wgsl, layout, workgroups( width, height ) }`, so a tool can dispatch the kernel itself.
+- `encode( encoder, dispatch )` opens its own pass.
+- `encodePass( pass, dispatch )` records into a caller-owned pass.
+- For tools that dispatch the kernel themselves: `wgsl`, `entryPoint`, `layout` (the `GPUPipelineLayout`), `bindGroupLayouts`, `pipeline`, `bindGroup( dispatch )` (group 0) and `workgroups( width, height, layers )`.
+- Pipelines are cached per device by WGSL and layouts, so equal Reducers share one. Group-0 bind groups are cached per size and textures (the 16 most recent).
+
+**Verification** (§7): every emitted level of every kernel width (1, 4, 5, 6) is checked against `reducePyramid`, which computes each level straight from the source in f64. The matrix covers both edge policies; channel ops including weights with sky texels; a custom fold and a custom sum; texture and hook paths; 17 shapes (unit, odd, 1D, partial tiles, layers, `2d-array`, 1920×1080); and unemitted levels left poisoned. Two tool shapes (FSR shading change, denoiser weighted mean) and API checks run alongside. A core test checks the oracle against iterated 2×2 reductions of the padded image.
 
 **Scalar** (`reduceToScalar`): one dispatch writes per-workgroup partials into a storage buffer; a second, single-workgroup dispatch combines them and calls `finish`. That is 2 dispatches at any size, and every texel is counted.
