@@ -1,8 +1,8 @@
 // GPU correctness suite. Every texel of every generated level is checked against
 // the CPU reference, computed from the GPU's own previous level so permitted
 // rounding differences do not accumulate along the chain.
-import { copyReference, formats, isIntegerDomain, reduceReference, sampledChannels, tolerance } from '/dist/index.js';
-import { Downsampler } from '/dist/webgpu/index.js';
+import { copyReference, formats, fromHalf, isIntegerDomain, levelSize, pyramidTolerance, quantize, reducePyramid, reduceReference, sampledChannels, toHalf, tolerance } from '/dist/index.js';
+import { Downsampler, Reducer } from '/dist/webgpu/index.js';
 import { createDepthSource, createTexture, makeData, poison, readMip, readMips, toFloats, upload } from './gpu.js';
 import { validateScalar } from './validate-scalar.js';
 
@@ -192,6 +192,11 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 			results.push( ...await validateSource( device, { quick, onProgress } ) );
 			results.push( ...await validateOptions( device ) );
+			const reducer = await validateReducer( device, { quick, onProgress } );
+			results.push( ...reducer );
+			runs += reducer.reduce( ( sum, result ) => sum + ( result.runs ?? 0 ), 0 );
+			results.push( ...await validateTools( device, { quick, onProgress } ) );
+			results.push( ...await validateReducerOptions( device ) );
 
 		}
 
@@ -452,6 +457,573 @@ async function validateOptions( device ) {
 	}
 
 	results.push( { option: 'encodePass matches encode' } );
+	return results;
+
+}
+
+// ---------------------------------------------------------------------------
+// Reducer: tile reductions (SPEC §14.1). Every emitted level is checked against
+// `reducePyramid`, which computes it straight from the source in f64.
+
+export const reducerShapes = [
+	[ 1, 1 ], [ 2, 2 ], [ 3, 7 ], [ 7, 4 ], [ 17, 9 ], [ 31, 33 ], [ 64, 64 ], [ 65, 129 ], [ 1, 128 ], [ 128, 1 ], [ 128, 8 ],
+	[ 192, 108 ], [ 255, 257 ], [ 17, 11, 3 ], [ 64, 32, 3 ], [ 32, 16, 1, '2d-array' ], [ 1920, 1080 ]
+];
+
+// Each kernel width reduces levels 1…count; the two paths emit complementary
+// subsets so every level of every width is checked, and every path leaves some
+// level unemitted (its atlas region must stay poisoned, or it gets no binding).
+const textureLevels = { 1: [ 1 ], 4: [ 1, 2, 4 ], 5: [ 2, 5 ], 6: [ 1, 3, 4, 6 ] };
+const hookLevels = { 1: [ 1 ], 4: [ 1, 3, 4 ], 5: [ 1, 3, 4, 5 ], 6: [ 1, 2, 3, 5, 6 ] };
+
+// A custom sum: a + b, plus 1 per combine on y and w, so y and w end at Σv + n − 1
+// for the n texels counted. Skipped or duplicated texels change n.
+const countingSum = 'fn reduce(a: vec4f, b: vec4f) -> vec4f { return a + b + vec4f(0.0, 1.0, 0.0, 1.0); }';
+
+export const reducerVariants = [
+	{ name: 'sum/average/min/max', reduction: [ 'sum', 'average', 'min', 'max' ], patterns: [ 'random', 'edge' ] },
+	{ name: 'weighted', reduction: [ 'weighted', 'weighted', 'weighted', 'weight' ], patterns: [ 'weights' ] },
+	{ name: 'custom fold', reduction: { wgsl: preferHigh.wgsl }, reference: { reference: preferHigh.reference }, patterns: [ 'random' ] },
+	{ name: 'custom sum', reduction: { wgsl: countingSum, kind: 'sum' }, reference: { reference: ( a, b, c ) => a + b + ( c % 2 ), kind: 'sum' }, patterns: [ 'random' ] }
+];
+
+/**
+ * RGBA f32 fixtures (exactly representable): 'random' in [−4, 12), 'edge' non-zero
+ * only on the last row and column, 'weights' rgb in [0, 4) with a weight in
+ * alpha that is 0 for about a third of the texels (sky).
+ */
+function reducerData( width, height, layers, pattern, seed = 1 ) {
+
+	const data = new Float32Array( width * height * layers * 4 );
+	let state = seed;
+	const next = () => ( state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0 ) >>> 8;
+	for ( let layer = 0; layer < layers; layer ++ ) for ( let y = 0; y < height; y ++ ) for ( let x = 0; x < width; x ++ ) for ( let c = 0; c < 4; c ++ ) {
+
+		let value = next() / 2 ** 20 - 4;
+		if ( pattern === 'edge' ) value = x === width - 1 || y === height - 1 ? ( c + layer + 1 ) / 8 : 0;
+		if ( pattern === 'weights' ) value = c < 3 ? next() / 2 ** 22 : ( next() % 3 === 0 ? 0 : next() / 2 ** 24 );
+		data[ ( ( layer * height + y ) * width + x ) * 4 + c ] = value;
+
+	}
+
+	return data;
+
+}
+
+function checkPyramid( actual, expected, label, { slack = 0, quantization = null } = {} ) {
+
+	let maxError = 0;
+	for ( let i = 0; i < expected.values.length; i ++ ) {
+
+		const reference = quantization ? quantize( expected.values[ i ], quantization ) : expected.values[ i ];
+		const limit = pyramidTolerance( expected.magnitude[ i ] ) + slack + ( quantization ? tolerance( reference, quantization ) : 0 );
+		const error = Math.abs( actual[ i ] - reference );
+		if ( ! Number.isFinite( actual[ i ] ) || ! ( error <= limit ) ) throw new Error( `${ label }: value ${ i } (texel ${ i >> 2 } channel ${ i & 3 }), actual ${ actual[ i ] }, expected ${ reference }, error ${ error } > ${ limit }` );
+		maxError = Math.max( maxError, error );
+
+	}
+
+	return maxError;
+
+}
+
+async function readBuffer( device, buffer, size = buffer.size ) {
+
+	const staging = device.createBuffer( { size, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ } );
+	const encoder = device.createCommandEncoder();
+	encoder.copyBufferToBuffer( buffer, 0, staging, 0, size );
+	device.queue.submit( [ encoder.finish() ] );
+	await staging.mapAsync( GPUMapMode.READ );
+	const values = new Float32Array( staging.getMappedRange().slice( 0 ) );
+	staging.unmap();
+	staging.destroy();
+	return values;
+
+}
+
+function storageBuffer( device, data, usage = 0 ) {
+
+	const buffer = device.createBuffer( { size: Math.max( 16, data.byteLength ), usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC | usage } );
+	device.queue.writeBuffer( buffer, 0, data );
+	return buffer;
+
+}
+
+const poisonValue = - 12345.5;
+
+/**
+ * An atlas buffer for levels 1…6 (each level's texels at its own offset), with a
+ * tool uniform describing it, as a tool's store hook would see it.
+ */
+function atlasLayout( width, height, layers, edges ) {
+
+	const levels = [ 1, 2, 3, 4, 5, 6 ].map( level => ( { level, width: levelSize( width, level, edges ), height: levelSize( height, level, edges ) } ) );
+	let offset = 0;
+	for ( const level of levels ) { level.offset = offset; offset += level.width * level.height * layers; }
+	const uniform = new Uint32Array( 28 );
+	uniform.set( [ width, height ] );
+	levels.forEach( ( level, i ) => { uniform[ 4 + i ] = level.offset; uniform[ 12 + i ] = level.width; uniform[ 20 + i ] = level.height; } );
+	return { levels, texels: offset, uniform };
+
+}
+
+// The matrix's tool bindings: the source in a storage buffer, an atlas for the
+// output, and a uniform with the source size and the atlas layout.
+const matrixBindings = {
+	wgsl: `struct Tool { width: u32, height: u32, offset: array<vec4u, 2>, stride: array<vec4u, 2>, rows: array<vec4u, 2> }
+@group(1) @binding(0) var<storage, read> toolInput: array<vec4f>;
+@group(1) @binding(1) var<storage, read_write> toolAtlas: array<vec4f>;
+@group(1) @binding(2) var<uniform> tool: Tool;`,
+	entries: () => [
+		{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+		{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+		{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }
+	]
+};
+const matrixLoad = `fn load(texel: vec2i, layer: u32) -> vec4f {
+	return toolInput[(layer * tool.height + u32(texel.y)) * tool.width + u32(texel.x)];
+}`;
+const matrixStore = `fn store(level: u32, texel: vec2i, layer: u32, value: vec4f) {
+	let i = level - 1u;
+	let row = layer * tool.rows[i / 4u][i % 4u] + u32(texel.y);
+	toolAtlas[tool.offset[i / 4u][i % 4u] + row * tool.stride[i / 4u][i % 4u] + u32(texel.x)] = value;
+}`;
+const matrixSize = 'fn size() -> vec2u { return vec2u(tool.width, tool.height); }';
+
+/** The matrix's tool resources for one shape: input buffer, atlas and uniform. */
+function matrixTool( device, reducer, width, height, layers, edges ) {
+
+	const layout = atlasLayout( width, height, layers, edges );
+	const input = storageBuffer( device, new Float32Array( width * height * layers * 4 ) );
+	const atlas = storageBuffer( device, new Float32Array( layout.texels * 4 ) );
+	const uniform = device.createBuffer( { size: layout.uniform.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+	device.queue.writeBuffer( uniform, 0, layout.uniform );
+	const bindGroup = device.createBindGroup( { layout: reducer.bindGroupLayouts[ 1 ], entries: [ input, atlas, uniform ].map( ( buffer, binding ) => ( { binding, resource: { buffer } } ) ) } );
+	return { layout, input, atlas, uniform, bindGroup, destroy: () => [ input, atlas, uniform ].forEach( buffer => buffer.destroy() ) };
+
+}
+
+/** Levels of an atlas readback, keyed by level. */
+function atlasLevels( values, layout, layers ) {
+
+	return new Map( layout.levels.map( ( { level, width, height, offset } ) => [ level, values.subarray( offset * 4, ( offset + width * height * layers ) * 4 ) ] ) );
+
+}
+
+async function validateReducer( device, { quick, onProgress } ) {
+
+	const results = [];
+	const shapes = quick ? reducerShapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : reducerShapes;
+	const widths = [ 1, 4, 5, 6 ];
+	const reducers = new Map();
+	const reducerFor = ( path, edges, variant, count, dimension ) => {
+
+		const key = `${ path }:${ edges }:${ variant.name }:${ count }:${ dimension }`;
+		if ( ! reducers.has( key ) ) reducers.set( key, new Reducer( device, path === 'texture' ? {
+			reduction: variant.reduction, levels: textureLevels[ count ], edges, format: 'rgba32float', dimension
+		} : {
+			reduction: variant.reduction, levels: hookLevels[ count ], edges, dimension, load: matrixLoad, store: matrixStore,
+			bindings: { wgsl: matrixBindings.wgsl, entries: matrixBindings.entries() }
+		} ) );
+		return reducers.get( key );
+
+	};
+
+	for ( const [ width, height, layers = 1, viewDimension ] of shapes ) {
+
+		const dimension = viewDimension ?? ( layers > 1 ? '2d-array' : '2d' );
+		const source = createTexture( device, { width, height, layers, format: 'rgba32float', dimension, storage: false } );
+		const destroy = [ source ];
+
+		try {
+
+			for ( const edges of [ 'zero-weight', 'clamp' ] ) {
+
+				// Output textures at exactly each level's size (⌈n/2⌉ under zero-weight).
+				const outputs = new Map( [ 1, 2, 3, 4, 5, 6 ].map( level => {
+
+					const texture = device.createTexture( { size: [ levelSize( width, level, edges ), levelSize( height, level, edges ), layers ], format: 'rgba32float', textureBindingViewDimension: dimension, usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST } );
+					destroy.push( texture );
+					return [ level, texture ];
+
+				} ) );
+				const tools = new Map();
+
+				for ( const variant of reducerVariants ) for ( const pattern of variant.patterns ) {
+
+					const data = reducerData( width, height, layers, pattern, width * 7 + height );
+					upload( device, source, data );
+					const expected = reducePyramid( data, width, height, layers, { reduction: variant.reference ?? variant.reduction, levels: [ 1, 2, 3, 4, 5, 6 ], edges } );
+
+					for ( const count of widths ) for ( const path of [ 'texture', 'hook' ] ) {
+
+						const reducer = reducerFor( path, edges, variant, count, dimension );
+						const label = `reducer ${ width }x${ height }x${ layers } ${ edges } ${ variant.name } ${ pattern } L${ count } ${ path }`;
+						const result = { reducer: variant.name, width, height, layers, edges, levels: reducer.levels, path, pattern, runs: 1, maxError: 0 };
+						const encoder = device.createCommandEncoder();
+
+						if ( path === 'texture' ) {
+
+							for ( const level of reducer.levels ) {
+
+								const texture = outputs.get( level );
+								device.queue.writeTexture( { texture }, new Float32Array( texture.width * texture.height * layers * 4 ).fill( poisonValue ), { bytesPerRow: texture.width * 16, rowsPerImage: texture.height }, [ texture.width, texture.height, layers ] );
+
+							}
+
+							reducer.encode( encoder, { source, outputs: reducer.levels.map( level => outputs.get( level ) ) } );
+							device.queue.submit( [ encoder.finish() ] );
+							for ( const level of reducer.levels ) result.maxError = Math.max( result.maxError, checkPyramid( ( await readMips( device, outputs.get( level ), 0, 1 ) )[ 0 ], expected[ level - 1 ], `${ label } level ${ level }` ) );
+
+						} else {
+
+							// Every hook Reducer has an equivalent group-1 layout, so one tool bind group serves them all.
+							if ( ! tools.has( edges ) ) tools.set( edges, matrixTool( device, reducer, width, height, layers, edges ) );
+							const tool = tools.get( edges );
+							device.queue.writeBuffer( tool.input, 0, data );
+							device.queue.writeBuffer( tool.atlas, 0, new Float32Array( tool.layout.texels * 4 ).fill( poisonValue ) );
+							reducer.encode( encoder, { width, height, layers, bindGroup: tool.bindGroup } );
+							device.queue.submit( [ encoder.finish() ] );
+							const levels = atlasLevels( await readBuffer( device, tool.atlas ), tool.layout, layers );
+
+							for ( let level = 1; level <= 6; level ++ ) {
+
+								if ( reducer.levels.includes( level ) ) result.maxError = Math.max( result.maxError, checkPyramid( levels.get( level ), expected[ level - 1 ], `${ label } level ${ level }` ) );
+								else if ( levels.get( level ).some( value => value !== poisonValue ) ) throw new Error( `${ label }: unemitted level ${ level } was stored` );
+
+							}
+
+						}
+
+						results.push( result );
+
+					}
+
+				}
+
+				for ( const tool of tools.values() ) tool.destroy();
+
+			}
+
+			onProgress( `validated reducer ${ width }×${ height }×${ layers }` );
+
+		} finally {
+
+			for ( const texture of destroy ) texture.destroy();
+
+		}
+
+	}
+
+	return results;
+
+}
+
+// ---------------------------------------------------------------------------
+// Tool shapes: the passes M2T exists for, as their tools would write them.
+
+/**
+ * FSR 3.1 shading-change pyramid shape: a custom load from two tool textures
+ * (current luma × exposure against previous luma), a 2-channel average, levels
+ * 1–3 under 'clamp' (SPD's edges), stored to the mips of a half-resolution
+ * texture as FSR's SpdMips. z counts loads (4^l under clamp) and w is max |diff|.
+ */
+const shadingChange = {
+	bindings: {
+		wgsl: `struct Fsr { exposure: f32 }
+@group(1) @binding(0) var fsrCurrent: texture_2d<f32>;
+@group(1) @binding(1) var fsrPrevious: texture_2d<f32>;
+@group(1) @binding(2) var<uniform> fsr: Fsr;`,
+		entries: () => [
+			{ binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
+			{ binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
+			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }
+		]
+	},
+	load: `fn load(texel: vec2i, layer: u32) -> vec4f {
+	let current = textureLoad(fsrCurrent, texel, 0).r * fsr.exposure;
+	let previous = textureLoad(fsrPrevious, texel, 0).r;
+	let diff = current - previous;
+	return vec4f(diff, sign(diff), 1.0, abs(diff));
+}`
+};
+
+/**
+ * Denoiser shape (ReBLUR history fix / FFX block statistics): radiance weighted
+ * by a sky mask from depth (sky = weight 0), mean over non-sky texels, levels
+ * 1–3 under 'zero-weight' (⌈n/2⌉ sizes), stored by a hook into an atlas buffer.
+ */
+const denoiser = {
+	bindings: {
+		wgsl: `struct Atlas { offset: vec4u, stride: vec4u }
+@group(1) @binding(0) var denoiserRadiance: texture_2d<f32>;
+@group(1) @binding(1) var denoiserDepth: texture_2d<f32>;
+@group(1) @binding(2) var<storage, read_write> denoiserAtlas: array<vec4f>;
+@group(1) @binding(3) var<uniform> atlas: Atlas;`,
+		entries: () => [
+			{ binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
+			{ binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
+			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{ binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }
+		]
+	},
+	load: `fn load(texel: vec2i, layer: u32) -> vec4f {
+	let depth = textureLoad(denoiserDepth, texel, 0).r;
+	let radiance = textureLoad(denoiserRadiance, texel, 0).rgb;
+	return vec4f(radiance, select(1.0, 0.0, depth >= 1.0));
+}`,
+	store: `fn store(level: u32, texel: vec2i, layer: u32, value: vec4f) {
+	denoiserAtlas[atlas.offset[level] + u32(texel.y) * atlas.stride[level] + u32(texel.x)] = value;
+}`
+};
+
+function halfTexture( device, width, height, format, values ) {
+
+	const texture = device.createTexture( { size: [ width, height ], format, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST } );
+	const channels = format.startsWith( 'rgba' ) ? 4 : 1;
+	device.queue.writeTexture( { texture }, Uint16Array.from( values, toHalf ), { bytesPerRow: width * channels * 2, rowsPerImage: height }, [ width, height ] );
+	return texture;
+
+}
+
+async function validateTools( device, { quick, onProgress } ) {
+
+	const results = [];
+
+	// Shading change: odd sizes drop the last row/column (SPD), partial tiles repeat the edge.
+	const shading = new Reducer( device, {
+		label: 'fsr shading change', reduction: [ 'average', 'average', 'sum', 'max' ], levels: [ 1, 2, 3 ], edges: 'clamp', format: 'rgba16float',
+		load: shadingChange.load, bindings: { wgsl: shadingChange.bindings.wgsl, entries: shadingChange.bindings.entries() }
+	} );
+
+	for ( const [ width, height ] of quick ? [ [ 192, 108 ], [ 67, 33 ], [ 5, 3 ] ] : [ [ 1920, 1080 ], [ 1917, 1077 ], [ 67, 33 ], [ 5, 3 ] ] ) {
+
+		let state = width + height;
+		const next = () => ( state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0 ) / 2 ** 32;
+		const current = Array.from( { length: width * height }, () => fromHalf( toHalf( next() * 2 ) ) );
+		const previous = Array.from( { length: width * height }, () => fromHalf( toHalf( next() * 3 ) ) );
+		const exposure = 1.5;
+		const base = new Float64Array( width * height * 4 );
+		current.forEach( ( c, i ) => {
+
+			const diff = Math.fround( Math.fround( c * exposure ) - previous[ i ] );
+			base.set( [ diff, Math.sign( diff ), 1, Math.abs( diff ) ], i * 4 );
+
+		} );
+
+		const cur = halfTexture( device, width, height, 'r16float', current ), prev = halfTexture( device, width, height, 'r16float', previous );
+		const uniform = device.createBuffer( { size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+		device.queue.writeBuffer( uniform, 0, Float32Array.of( exposure, 0, 0, 0 ) );
+		// FSR's SpdMips: half resolution, one mip per emitted level; 'clamp' sizes are mip sizes.
+		const mips = device.createTexture( { size: [ width >> 1 || 1, height >> 1 || 1 ], mipLevelCount: Math.min( 3, Math.floor( Math.log2( Math.max( width >> 1 || 1, height >> 1 || 1 ) ) ) + 1 ), format: 'rgba16float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST } );
+		const bindGroup = device.createBindGroup( { layout: shading.bindGroupLayouts[ 1 ], entries: [ { binding: 0, resource: cur.createView() }, { binding: 1, resource: prev.createView() }, { binding: 2, resource: { buffer: uniform } } ] } );
+
+		if ( mips.mipLevelCount === 3 ) {
+
+			poison( device, mips, 0 );
+			const encoder = device.createCommandEncoder();
+			shading.encode( encoder, { width, height, bindGroup, outputs: [ 0, 1, 2 ].map( mipLevel => ( { texture: mips, mipLevel } ) ) } );
+			device.queue.submit( [ encoder.finish() ] );
+			const actual = await readMips( device, mips, 0, 3 );
+			const expected = reducePyramid( base, width, height, 1, { reduction: [ 'average', 'average', 'sum', 'max' ], levels: [ 1, 2, 3 ], edges: 'clamp' } );
+			expected.forEach( ( level, i ) => checkPyramid( actual[ i ], level, `fsr shading change ${ width }x${ height } level ${ level.level }`, { quantization: 'float16' } ) );
+			results.push( { tool: 'fsr shading change', width, height } );
+
+		} else {
+
+			// Too small for three mips of a half-resolution texture: reject the output.
+			let threw = false;
+			try { shading.encode( device.createCommandEncoder(), { width, height, bindGroup, outputs: [ 0, 0, 0 ].map( () => ( { texture: mips, mipLevel: 2 } ) ) } ); } catch { threw = true; }
+			if ( ! threw ) throw new Error( 'fsr shading change: accepted an output mip outside its texture' );
+
+		}
+
+		for ( const resource of [ cur, prev, mips, uniform ] ) resource.destroy();
+
+	}
+
+	onProgress( 'validated tool shape: fsr shading change' );
+
+	// Denoiser weighted mean: sky (depth 1) weighs 0, so sky-only blocks emit 0.
+	const weighted = new Reducer( device, {
+		label: 'denoiser weighted mean', reduction: [ 'weighted', 'weighted', 'weighted', 'weight' ], levels: [ 1, 2, 3 ], edges: 'zero-weight',
+		load: denoiser.load, store: denoiser.store, bindings: { wgsl: denoiser.bindings.wgsl, entries: denoiser.bindings.entries() }
+	} );
+
+	for ( const [ width, height ] of quick ? [ [ 255, 129 ], [ 9, 5 ] ] : [ [ 1920, 1080 ], [ 1917, 1079 ], [ 255, 129 ], [ 9, 5 ] ] ) {
+
+		let state = width * 3 + height;
+		const next = () => ( state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0 ) / 2 ** 32;
+		// The top third is sky, and a fifth of the rest.
+		const sky = Array.from( { length: width * height }, ( _, i ) => Math.floor( i / width ) < height / 3 || next() < 0.2 );
+		const radiance = Array.from( { length: width * height * 4 }, () => fromHalf( toHalf( next() * 8 ) ) );
+		const depth = Float32Array.from( sky, ( isSky ) => isSky ? 1 : Math.fround( next() * 0.99 ) );
+		const base = new Float64Array( width * height * 4 );
+		sky.forEach( ( isSky, i ) => base.set( [ radiance[ i * 4 ], radiance[ i * 4 + 1 ], radiance[ i * 4 + 2 ], isSky ? 0 : 1 ], i * 4 ) );
+
+		const radianceTexture = halfTexture( device, width, height, 'rgba16float', radiance );
+		const depthTexture = device.createTexture( { size: [ width, height ], format: 'r32float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST } );
+		device.queue.writeTexture( { texture: depthTexture }, depth, { bytesPerRow: width * 4, rowsPerImage: height }, [ width, height ] );
+		const layout = atlasLayout( width, height, 1, 'zero-weight' );
+		const atlasBuffer = storageBuffer( device, new Float32Array( layout.texels * 4 ).fill( poisonValue ) );
+		const uniform = device.createBuffer( { size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+		device.queue.writeBuffer( uniform, 0, Uint32Array.of( 0, ...layout.levels.slice( 0, 3 ).map( level => level.offset ), 0, ...layout.levels.slice( 0, 3 ).map( level => level.width ) ) );
+		const bindGroup = device.createBindGroup( { layout: weighted.bindGroupLayouts[ 1 ], entries: [ radianceTexture.createView(), depthTexture.createView(), { buffer: atlasBuffer }, { buffer: uniform } ].map( ( resource, binding ) => ( { binding, resource } ) ) } );
+
+		const encoder = device.createCommandEncoder();
+		weighted.encode( encoder, { width, height, bindGroup } );
+		device.queue.submit( [ encoder.finish() ] );
+		const levels = atlasLevels( await readBuffer( device, atlasBuffer ), layout, 1 );
+		const expected = reducePyramid( base, width, height, 1, { reduction: [ 'weighted', 'weighted', 'weighted', 'weight' ], levels: [ 1, 2, 3 ], edges: 'zero-weight' } );
+		let skyBlocks = 0;
+
+		for ( const level of expected ) {
+
+			const actual = levels.get( level.level );
+			checkPyramid( actual, level, `denoiser ${ width }x${ height } level ${ level.level }` );
+			for ( let i = 0; i < actual.length; i += 4 ) if ( level.values[ i + 3 ] === 0 ) {
+
+				skyBlocks ++;
+				if ( actual[ i ] !== 0 || actual[ i + 1 ] !== 0 || actual[ i + 2 ] !== 0 || actual[ i + 3 ] !== 0 ) throw new Error( `denoiser ${ width }x${ height } level ${ level.level }: a sky-only block emitted ${ Array.from( actual.subarray( i, i + 4 ) ) }` );
+
+			}
+
+		}
+
+		if ( skyBlocks === 0 ) throw new Error( `denoiser ${ width }x${ height }: the fixture has no sky-only block` );
+		for ( let level = 4; level <= 6; level ++ ) if ( levels.get( level ).some( value => value !== poisonValue ) ) throw new Error( `denoiser: level ${ level } was written` );
+		for ( const resource of [ radianceTexture, depthTexture, atlasBuffer, uniform ] ) resource.destroy();
+		results.push( { tool: 'denoiser weighted mean', width, height, skyBlocks } );
+
+	}
+
+	onProgress( 'validated tool shape: denoiser weighted mean' );
+	return results;
+
+}
+
+async function validateReducerOptions( device ) {
+
+	const results = [];
+	const expectThrow = ( run, message, label ) => {
+
+		try { run(); } catch ( error ) {
+
+			if ( ! String( error.message ).includes( message ) ) throw new Error( `${ label }: expected "${ message }", got "${ error.message }"` );
+			return;
+
+		}
+
+		throw new Error( `${ label }: expected an error "${ message }"` );
+
+	};
+
+	// The same reduction recorded with encode(), encodePass() and dispatched by
+	// the tool itself from { wgsl, layout, bindGroup(), workgroups() }; and with a
+	// size hook instead of the Reducer's size uniform. All must match.
+	const [ width, height, layers ] = [ 333, 201, 2 ];
+	const data = reducerData( width, height, layers, 'random', 5 );
+	const options = { reduction: [ 'sum', 'average', 'min', 'max' ], levels: [ 1, 2, 4, 6 ], edges: 'zero-weight', dimension: '2d-array', load: matrixLoad, store: matrixStore };
+	const reducer = new Reducer( device, { ...options, bindings: { wgsl: matrixBindings.wgsl, entries: matrixBindings.entries() } } );
+	const sized = new Reducer( device, { ...options, size: matrixSize, bindings: { wgsl: matrixBindings.wgsl, entries: matrixBindings.entries() } } );
+	const pipeline = device.createComputePipeline( { layout: reducer.layout, compute: { module: device.createShaderModule( { code: reducer.wgsl } ), entryPoint: reducer.entryPoint } } );
+	const expected = reducePyramid( data, width, height, layers, { reduction: options.reduction, levels: options.levels, edges: options.edges } );
+	const readbacks = [];
+
+	for ( const [ mode, target ] of [ [ 'encode', reducer ], [ 'encodePass', reducer ], [ 'self-dispatch', reducer ], [ 'size hook', sized ] ] ) {
+
+		const tool = matrixTool( device, target, width, height, layers, options.edges );
+		device.queue.writeBuffer( tool.input, 0, data );
+		device.queue.writeBuffer( tool.atlas, 0, new Float32Array( tool.layout.texels * 4 ).fill( poisonValue ) );
+		const encoder = device.createCommandEncoder();
+		const dispatch = { width, height, layers, bindGroup: tool.bindGroup };
+		if ( mode === 'encode' || mode === 'size hook' ) target.encode( encoder, dispatch );
+		else {
+
+			const pass = encoder.beginComputePass();
+			if ( mode === 'encodePass' ) target.encodePass( pass, dispatch );
+			else {
+
+				pass.setPipeline( pipeline );
+				pass.setBindGroup( 0, target.bindGroup( dispatch ) );
+				pass.setBindGroup( 1, tool.bindGroup );
+				pass.dispatchWorkgroups( ...target.workgroups( width, height, layers ) );
+
+			}
+
+			pass.end();
+
+		}
+
+		device.queue.submit( [ encoder.finish() ] );
+		const values = await readBuffer( device, tool.atlas );
+		const levels = atlasLevels( values, tool.layout, layers );
+		for ( const level of expected ) checkPyramid( levels.get( level.level ), level, `reducer ${ mode } level ${ level.level }` );
+		readbacks.push( [ mode, values ] );
+		tool.destroy();
+
+	}
+
+	for ( const [ mode, values ] of readbacks.slice( 1 ) ) if ( values.some( ( value, i ) => ! Object.is( value, readbacks[ 0 ][ 1 ][ i ] ) ) ) throw new Error( `reducer ${ mode } differs from encode()` );
+	if ( reducer.bindGroup( { width, height, layers } ) !== reducer.bindGroup( { width, height, layers } ) ) throw new Error( 'reducer: bind groups are not cached' );
+	results.push( { option: 'reducer encode / encodePass / self-dispatch / size hook' } );
+
+	// One Reducer at two sizes in one submit: each dispatch keeps its own size.
+	{
+
+		const sizes = [ [ 37, 21 ], [ 130, 66 ] ];
+		const tools = sizes.map( ( [ w, h ] ) => {
+
+			const tool = matrixTool( device, reducer, w, h, 1, options.edges );
+			const input = reducerData( w, h, 1, 'random', w );
+			device.queue.writeBuffer( tool.input, 0, input );
+			device.queue.writeBuffer( tool.atlas, 0, new Float32Array( tool.layout.texels * 4 ).fill( poisonValue ) );
+			return { tool, input, w, h };
+
+		} );
+		const encoder = device.createCommandEncoder();
+		const pass = encoder.beginComputePass();
+		for ( const { tool, w, h } of tools ) reducer.encodePass( pass, { width: w, height: h, layers: 1, bindGroup: tool.bindGroup } );
+		pass.end();
+		device.queue.submit( [ encoder.finish() ] );
+
+		for ( const { tool, input, w, h } of tools ) {
+
+			const levels = atlasLevels( await readBuffer( device, tool.atlas ), tool.layout, 1 );
+			for ( const level of reducePyramid( input, w, h, 1, { reduction: options.reduction, levels: options.levels, edges: options.edges } ) ) checkPyramid( levels.get( level.level ), level, `reducer two sizes ${ w }x${ h } level ${ level.level }` );
+			tool.destroy();
+
+		}
+
+		results.push( { option: 'reducer: two sizes in one pass' } );
+
+	}
+
+	// Texture outputs must cover their level: a mip of the source size is one texel
+	// short at odd sizes under zero-weight, and fits exactly under clamp.
+	const source = createTexture( device, { width: 17, height: 9, format: 'rgba32float', storage: false } );
+	const mipped = createTexture( device, { width: 17, height: 9, format: 'rgba32float' } );
+	const textureReducer = edges => new Reducer( device, { reduction: 'average', levels: [ 1, 2 ], edges, format: 'rgba32float' } );
+	const mipOutputs = [ 1, 2 ].map( mipLevel => ( { texture: mipped, mipLevel } ) );
+	expectThrow( () => textureReducer( 'zero-weight' ).encode( device.createCommandEncoder(), { source, outputs: mipOutputs } ), 'smaller than the level', 'zero-weight mip outputs' );
+	textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { source, outputs: mipOutputs } );
+	expectThrow( () => textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { source, outputs: mipOutputs.slice( 1 ) } ), 'one output per emitted level', 'output count' );
+	expectThrow( () => textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { outputs: mipOutputs } ), 'pass `source`', 'missing source' );
+	expectThrow( () => new Reducer( device, { reduction: 'average', levels: [ 1, 2 ], format: 'rgba16float' } ).encode( device.createCommandEncoder(), { source, outputs: mipOutputs } ), 'this Reducer writes rgba16float', 'output format' );
+	expectThrow( () => reducer.encode( device.createCommandEncoder(), { width, height, layers } ), 'group-1 bindGroup', 'missing tool bind group' );
+	expectThrow( () => reducer.encode( device.createCommandEncoder(), { layers } ), 'width and height', 'missing size' );
+	expectThrow( () => new Reducer( device, { levels: [ 3, 2 ], format: 'rgba32float' } ), 'strictly increasing', 'unsorted levels' );
+	expectThrow( () => new Reducer( device, { levels: [ 1 ], format: 'rgba32float', edges: 'exact' } ), 'Downsampler', 'exact edges' );
+	expectThrow( () => new Reducer( device, { levels: [ 1 ], format: 'rgba32float', reduction: [ 'weighted', 'sum', 'sum', 'sum' ] } ), 'need a \'weight\'', 'weighted without weight' );
+	expectThrow( () => new Reducer( device, { levels: [ 1 ], load: 'fn sample() {}', store: matrixStore } ), 'load hook', 'bad load hook' );
+	const limit = device.limits.maxStorageTexturesPerShaderStage;
+	if ( limit < 6 ) expectThrow( () => new Reducer( device, { levels: [ 1, 2, 3, 4, 5, 6 ].slice( 0, limit + 1 ), format: 'rgba32float' } ), 'maxStorageTexturesPerShaderStage', 'storage texture limit' );
+	// Sums and channel ops have no 'exact' meaning: Downsampler rejects them.
+	expectThrow( () => new Downsampler( device ).generate( mipped, { reduction: 'sum' } ), 'Reducer', 'Downsampler sum' );
+	expectThrow( () => new Downsampler( device ).generate( mipped, { reduction: [ 'min', 'max', 'min', 'max' ] } ), 'Reducer', 'Downsampler channel ops' );
+	source.destroy();
+	mipped.destroy();
+	results.push( { option: 'reducer validation' } );
 	return results;
 
 }

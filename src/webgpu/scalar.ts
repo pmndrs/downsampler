@@ -6,11 +6,7 @@ import type { ViewDimension } from './kernel.js';
 // validation below duplicate what the M2T.1 generator in kernel.ts needs. Fold
 // them into one shared helper once both land (SPEC §14.1).
 
-/** Tool resources in `@group(1)`: WGSL declarations plus the matching layout entries. */
-export interface ToolBindings {
-	wgsl: string;
-	entries: GPUBindGroupLayoutEntry[];
-}
+import type { ToolBindings } from './reducer.js';
 
 export interface ScalarReductionOptions {
 	/** One op for all channels, or one per channel. Default 'average'. */
