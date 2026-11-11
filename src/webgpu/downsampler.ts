@@ -1,6 +1,7 @@
 import { formats, isSupportedFormat, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { planBatches, type Batch, type OddSizePolicy } from '../core/plan.js';
 import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
+import { isCompatibilityTexture } from './compat.js';
 import { createKernel, kernelLayoutEntries, type SourceAccess, type ViewDimension } from './kernel.js';
 
 export interface DownsamplerOptions {
@@ -16,6 +17,15 @@ export interface DownsamplerOptions {
 	 * 'sample'. Unfilterable formats (float32, depth) and fold reductions always load.
 	 */
 	averageAccess?: SourceAccess;
+	/**
+	 * The compatibility-mode path (SPEC.md §4 Compatibility mode): compatibility
+	 * mode binds a texture through views of one mip range per dispatch, so each
+	 * batch writes per-level scratch textures, and a copy dispatch per level moves
+	 * them into the destination. 'auto' (default) takes it for textures of a
+	 * device without 'core-features-and-limits' (their `textureBindingViewDimension`
+	 * is defined only there); true always; false never.
+	 */
+	compatibility?: boolean | 'auto';
 }
 
 export interface SourceOptions {
@@ -69,6 +79,11 @@ export interface EncodeOptions {
 export interface PreparedBatch extends Batch {
 	pipeline: GPUComputePipeline;
 	bindGroup: GPUBindGroup;
+	/**
+	 * Compatibility-mode path only: this dispatch copies level `firstMipLevel`
+	 * from its scratch texture into the destination (no reduction).
+	 */
+	copy?: boolean;
 }
 
 interface CachedPlan {
@@ -91,27 +106,41 @@ export class Downsampler {
 	readonly device: GPUDevice;
 	readonly levelsPerDispatch: number;
 	readonly averageAccess: SourceAccess | undefined;
+	readonly compatibility: boolean | 'auto';
+	private readonly scratch = new WeakMap<GPUTexture, Map<number, GPUTexture>>();
 	private readonly pipelines = new Map<string, GPUComputePipeline>();
 	private readonly layouts = new Map<string, GPUBindGroupLayout>();
 	private readonly plans = new WeakMap<GPUTexture, Map<string, CachedPlan>>();
 	private readonly sampler: GPUSampler;
 
-	/** Limits to request when creating a device, so six levels fit in one dispatch. */
+	/**
+	 * Limits to request when creating a device, so six levels fit in one
+	 * dispatch: storage textures, and on compatibility-mode adapters (default
+	 * 128) the 256 invocations of the 5- and 6-level kernels and of
+	 * `ScalarReduction` (whose combine workgroup is 256 wide).
+	 */
 	static requiredLimits( adapter: GPUAdapter ): Record<string, number> {
 
-		return { maxStorageTexturesPerShaderStage: Math.max( 4, Math.min( 6, adapter.limits.maxStorageTexturesPerShaderStage ) ) };
+		const limits: Record<string, number> = { maxStorageTexturesPerShaderStage: Math.max( 4, Math.min( 6, adapter.limits.maxStorageTexturesPerShaderStage ) ) };
+		if ( adapter.limits.maxComputeInvocationsPerWorkgroup >= 256 ) limits.maxComputeInvocationsPerWorkgroup = 256;
+		if ( adapter.limits.maxComputeWorkgroupSizeX >= 256 ) limits.maxComputeWorkgroupSizeX = 256;
+		return limits;
 
 	}
 
 	constructor( device: GPUDevice, options: DownsamplerOptions = {} ) {
 
-		const limit = Math.min( 6, device.limits.maxStorageTexturesPerShaderStage );
+		// 5 and 6 levels take 16 × 16 invocations; compatibility mode defaults to 128.
+		const limit = Math.min( device.limits.maxComputeInvocationsPerWorkgroup >= 256 ? 6 : 4, device.limits.maxStorageTexturesPerShaderStage );
 		const levels = options.levelsPerDispatch ?? limit;
 		if ( ! Number.isInteger( levels ) || levels < 1 || levels > limit ) throw new Error( `downsampler: levelsPerDispatch must be an integer from 1 to ${ limit } on this device.` );
 		this.device = device;
 		this.levelsPerDispatch = levels;
 		if ( options.averageAccess !== undefined && options.averageAccess !== 'sample' && options.averageAccess !== 'load' ) throw new Error( 'downsampler: averageAccess must be "sample" or "load".' );
 		this.averageAccess = options.averageAccess;
+		const compatibility = options.compatibility ?? 'auto';
+		if ( compatibility !== 'auto' && typeof compatibility !== 'boolean' ) throw new Error( 'downsampler: compatibility must be true, false or "auto".' );
+		this.compatibility = compatibility;
 		this.sampler = device.createSampler( { label: 'downsampler', minFilter: 'linear', magFilter: 'linear' } );
 
 	}
@@ -122,6 +151,7 @@ export class Downsampler {
 		if ( ! isSupportedFormat( texture.format ) ) return `format ${ texture.format } is not supported`;
 		const feature: string | undefined = ( formats[ texture.format ] as FormatInfo ).feature;
 		if ( feature !== undefined && ! this.device.features.has( feature ) ) return `format ${ texture.format } needs the "${ feature }" device feature`;
+		if ( ( formats[ texture.format ] as FormatInfo ).coreStorage && this.usesCompatibility( texture ) ) return `format ${ texture.format } has no storage in compatibility mode (it needs "core-features-and-limits")`;
 		if ( texture.dimension !== '2d' ) return `dimension ${ texture.dimension } is not supported`;
 		if ( texture.sampleCount !== 1 ) return 'multisampled textures are not supported';
 		if ( ( texture.usage & GPUTextureUsage.STORAGE_BINDING ) === 0 ) return 'texture needs STORAGE_BINDING usage';
@@ -241,7 +271,12 @@ export class Downsampler {
 
 		};
 
-		const batches = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch: this.levelsPerDispatch, oddSizes, fromSource: source !== undefined } ).map( batch => {
+		// Compatibility mode: batches write scratch textures and read written levels from them (SPEC §4).
+		const compat = this.usesCompatibility( texture );
+		const firstWritten = source === undefined ? baseMipLevel + 1 : baseMipLevel;
+		const output = compat ? ( level: number ) => this.scratchView( texture, level, dimension ) : view;
+		const input = ( level: number ) => compat && level >= firstWritten ? this.scratchView( texture, level, dimension ) : view( level );
+		let batches: PreparedBatch[] = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch: this.levelsPerDispatch, oddSizes, fromSource: source !== undefined } ).map( batch => {
 
 			const external = batch.sourceMipLevel === null;
 			const sourceFormat = external ? source!.texture.format : format;
@@ -249,21 +284,75 @@ export class Downsampler {
 			const layout = this.layout( format, dimension, batch.count, access );
 			const pipeline = this.pipeline( format, dimension, batch.count, access, reduction, sourceFormat );
 			const entries: GPUBindGroupEntry[] = access === 'sample' ? [ { binding: 0, resource: this.sampler } ] : [];
-			entries.push( { binding: 1, resource: external ? sourceView() : view( batch.sourceMipLevel! ) } );
-			for ( let i = 0; i < batch.count; i ++ ) entries.push( { binding: i + 2, resource: view( batch.firstMipLevel + i ) } );
+			entries.push( { binding: 1, resource: external ? sourceView() : input( batch.sourceMipLevel! ) } );
+			for ( let i = 0; i < batch.count; i ++ ) entries.push( { binding: i + 2, resource: output( batch.firstMipLevel + i ) } );
 			return { ...batch, pipeline, bindGroup: this.device.createBindGroup( { label: 'downsampler', layout, entries } ) };
 
 		} );
+		if ( compat ) batches = batches.flatMap( batch => [ batch, ...this.compatCopies( texture, batch, dimension, view ) ] );
 
 		cache.set( key, { source: source?.texture, batches } );
 		return batches;
 
 	}
 
-	/** Drop cached bind groups for a destination texture (pipelines stay cached per device). */
+	/**
+	 * Drop cached bind groups for a destination texture (pipelines stay cached
+	 * per device), and destroy its compatibility-mode scratch textures.
+	 */
 	release( texture: GPUTexture ): void {
 
 		this.plans.delete( texture );
+		for ( const scratch of this.scratch.get( texture )?.values() ?? [] ) scratch.destroy();
+		this.scratch.delete( texture );
+
+	}
+
+	/** Whether `texture` takes the compatibility-mode path (see {@link DownsamplerOptions.compatibility}). */
+	usesCompatibility( texture: GPUTexture ): boolean {
+
+		return this.compatibility === 'auto' ? isCompatibilityTexture( this.device, texture ) : this.compatibility;
+
+	}
+
+	/**
+	 * Compatibility mode allows one view (mip range and aspect) of a texture per
+	 * dispatch. So a batch writes each level to a scratch texture of that
+	 * level's size, and one dispatch per level copies it into the destination:
+	 * the 1-level fold kernel on a same-size source, which reads one texel per
+	 * output (an exact copy; an average could turn an Inf neighbour into NaN).
+	 */
+	private compatCopies( texture: GPUTexture, batch: Batch, dimension: ViewDimension, view: ( level: number ) => GPUTextureView ): PreparedBatch[] {
+
+		const format = texture.format as SupportedFormat;
+		const layout = this.layout( format, dimension, 1, 'load' );
+		const pipeline = this.pipeline( format, dimension, 1, 'load', 'max', format );
+		return Array.from( { length: batch.count }, ( _, i ) => {
+
+			const level = batch.firstMipLevel + i;
+			const outputWidth = mipSize( texture.width, level ), outputHeight = mipSize( texture.height, level ), tile = 8;
+			const entries: GPUBindGroupEntry[] = [ { binding: 1, resource: this.scratchView( texture, level, dimension ) }, { binding: 2, resource: view( level ) } ];
+			return {
+				sourceMipLevel: level, firstMipLevel: level, count: 1, outputWidth, outputHeight, tile, groupsX: Math.ceil( outputWidth / tile ), groupsY: Math.ceil( outputHeight / tile ), copy: true,
+				pipeline, bindGroup: this.device.createBindGroup( { label: 'downsampler compat copy', layout, entries } )
+			};
+
+		} );
+
+	}
+
+	/** A view of the scratch texture for `level` of `texture` (compatibility mode), created on first use. */
+	private scratchView( texture: GPUTexture, level: number, dimension: ViewDimension ): GPUTextureView {
+
+		let levels = this.scratch.get( texture );
+		if ( levels === undefined ) this.scratch.set( texture, levels = new Map() );
+		let scratch = levels.get( level );
+		if ( scratch === undefined ) levels.set( level, scratch = this.device.createTexture( {
+			label: `downsampler compat scratch, level ${ level }`, format: texture.format,
+			size: [ mipSize( texture.width, level ), mipSize( texture.height, level ), texture.depthOrArrayLayers ],
+			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING, textureBindingViewDimension: dimension
+		} as GPUTextureDescriptor ) );
+		return scratch.createView( { label: `downsampler compat scratch, level ${ level }`, dimension } );
 
 	}
 

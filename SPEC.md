@@ -142,6 +142,22 @@ Every intermediate level is quantized exactly as stored, so a chain equals level
 - Bind groups are cached per texture and options in a `WeakMap`.
 - `release(texture)` drops a texture's entries early.
 
+### Compatibility mode (2026-11-11, reflections D4100)
+
+WebGPU compatibility mode is a device without `'core-features-and-limits'` (`requestAdapter( { featureLevel: 'compatibility' } )`; three r187 falls back to it). The rules that touch us, from the WebGPU spec (checked against the editor's draft, 2026-11-11):
+- **One view per texture per dispatch.** "All bindings referring to the same GPUTexture must have compatible GPUTextureViews": equal `baseMipLevel`, `mipLevelCount`, `aspect` and swizzle, across all bind groups of a draw or dispatch (dispatch validation). An in-place chain reads level n and writes n+1 … in one dispatch, so it fails there. That is D4100.
+- **View dimension is fixed at creation.** Texture and storage views must have the texture's `textureBindingViewDimension` (bind group creation). A `'cube'` texture can't be written at all (WGSL has no cube storage); a 6-layer `'2d-array'` one can.
+- **Whole textures only:** bound views have `baseArrayLayer` 0 and every layer.
+- **Limits:** 4 storage textures, 128 invocations per workgroup and 128 along x by default (the 5- and 6-level kernels and `ScalarReduction` need 256). `rg32float` has no storage (probed on Chrome 148 compat; every other format in §6.1 has it).
+
+**What `Downsampler` does.** With `compatibility: 'auto'` (default) a texture takes the compatibility path when its device lacks `'core-features-and-limits'` and the texture has a `textureBindingViewDimension` (that attribute exists only on compatibility-mode devices, so older implementations that don't know the feature name stay on the direct path). `true` and `false` force it.
+- Each batch writes its levels to scratch textures, one per level at that level's size (created on first use, kept per destination, destroyed by `release( texture )`). The batch reads the destination only at its source level, or a scratch level, or the separate source. Then one dispatch per level copies the scratch into the destination: the 1-level fold kernel on a same-size source, which reads one texel per output, so the copy is exact (an average with weight 0 would turn an Inf neighbour into NaN). Every dispatch binds one view of each texture.
+- Batches, odd-size planning and results are unchanged: bit-identical to the direct path (GPU-tested on a core device with the path forced, in place, sub-range, depth source and layers, through `encodePass`). `prepare()` lists the copies with `copy: true`.
+- Cost: one extra write and read of every written level (about a third of the base level's bytes) and a dispatch per level. It needs only `STORAGE_BINDING` and `TEXTURE_BINDING`, no copy usages, and it works in a caller-owned pass, which reflections' bake uses.
+- `unsupportedReason` names `rg32float` in compatibility mode. `requiredLimits( adapter )` also asks for 256 invocations and 256 along x where the adapter has them (compat adapters on Chrome report 1024), and the default `levelsPerDispatch` stays at 4 when a device allows fewer than 256 invocations.
+- **`Reducer`** writes only the outputs it's given: in compatibility mode it rejects a source or outputs that share a texture (e.g. FSR-style mips of one texture), with that reason; separate textures or a store hook work. Tile and scalar kernels needing 256 invocations name the limit if the device lacks it.
+- **Verified** on a real compatibility-mode device: headless Chrome 148 on M5 Pro, `featureLevel: 'compatibility'`, device without `'core-features-and-limits'`, with `requiredLimits` (`npm run test:gpu -- --compat`). The full matrix passes there (rg32float reported as skipped). Before the change (the direct path forced), the first case failed with "must not have different views in a single draw/dispatch command" (D4100).
+
 ### Scalar reductions
 
 `ScalarReduction` (`src/webgpu/scalar.ts`, oracle in `src/core/scalar.ts`) reduces an image to one `vec4f` and a weight per layer in two dispatches, as §14.1 asks. Built 2026-11-11 (M2T.2).
@@ -183,7 +199,7 @@ Every intermediate level is quantized exactly as stored, so a chain equals level
 import { Downsampler } from 'downsampler/webgpu';
 
 const device = await adapter.requestDevice( { requiredLimits: Downsampler.requiredLimits( adapter ) } );
-const downsampler = new Downsampler( device );          // { levelsPerDispatch?, averageAccess? }
+const downsampler = new Downsampler( device );          // { levelsPerDispatch?, averageAccess?, compatibility?: 'auto' | boolean } (§4 Compatibility mode)
 downsampler.supports( texture );                         // boolean
 downsampler.unsupportedReason( texture );                // string | null
 downsampler.encode( encoder, texture, {
@@ -383,6 +399,10 @@ Optimisation: with `float32-filterable`, float32 formats may take the sample pat
 - **Reductions:** every shape × width × format case runs `'average'` through the sampler and through loads, plus `'min'`, `'max'`, `'minmax'` and a custom fold. The custom fold depends on the value domain, so it catches unit mix-ups. Folds skip the constant pattern and must match exactly. The `edge` pattern on odd shapes exercises the `2x+2` footprint.
 - **Separate source:** 8 source → destination pairs (depth32float/depth16unorm/r32float → r32float/rg32float Hi-Z, rgba8 ↔ rgba16f conversions), each in copy or half relation. 13 shapes (odd, 1D, NPOT, layers, 512² for multi-batch, 1920×1080), all kernel widths, random/edge/tiles patterns, and the destination poisoned from level 0. The oracle's source values are read back from the source texture, not taken from the fill data. Options cover rejected sources, `source.mipLevel`, and replacing the source texture with the same options.
 - **Tile reductions (`Reducer`, §14.1):** both edge policies × kernel widths 1, 4, 5, 6 (all on SwiftShader too: the hook path needs no storage textures) × 17 shapes × four reductions: sum/average/min/max channels, weighted with a weight channel (a third of the texels weigh 0), a custom fold and a custom sum that counts its combines. Each runs through the texture path (source texture → output textures at exact level sizes) and the hook path (load from a storage buffer, store into an atlas), with complementary level selections, so every level of every width is checked and unemitted levels must stay poisoned. Tolerance: `4e-6 × Σ|terms|` (exact for min/max and folds). Plus the FSR 3.1 shading-change shape (clamp, levels 1–3 into half-resolution rgba16float mips, 1920×1080 and 1917×1077), the denoiser weighted mean (zero-weight, sky weight 0, atlas, sky-only blocks emit 0), and the API: encode, encodePass, self-dispatch and size hook produce identical bits; two sizes in one pass; rejected outputs and options.
+- **8-channel accumulators (`validate-wide.js`):** 13 shapes × both edges × 4 reductions (channel ops with weights, minmax, a custom fold and a counting custom sum on `DsWide`) × 5 level sets through hooks, unemitted levels poisoned; scalar image and combine-only runs; rejections (no hooks, 6 levels over the workgroup-memory limit).
+- **Payload folds (`validate-payload.js`):** argmin/argmax variants with tie-heavy keys × 13 shapes × both edges × 4 level sets (texture path), ssgiDev's G-buffer downsample against its own loop, scalar image and combine-only runs; selections exact.
+- **Combine-only scalar runs (`validate-scalar.js`):** tool-written partials at 1 … 8161 per layer, layers at an offset; a Reducer's level 4 or 6 combined in the same pass against the whole image's exact result.
+- **Compatibility mode:** the whole matrix also runs on a compatibility-mode device (`--compat`), and the compatibility path forced on a core device must match the direct path bit for bit.
 - **Oracle independence:** a core test checks that max chains are conservative: every texel bounds each base texel its normalized area touches, without using `footprint()`.
 
 New features add their own oracle first: each new format family, sRGB, rect, layer range, and `'box'`.
@@ -460,7 +480,7 @@ Build first, benchmark once coverage is broad (decided 2026-11-10). Live status 
 ## 12. Open questions
 
 - Publish as bare `downsampler` or `@pmndrs/downsampler`? (`package.json` currently uses `downsampler`.)
-- Cube maps in compatibility mode: they can't be viewed as 2d-array, so either per-face views or the render fallback.
+- Cube maps in compatibility mode: they can't be viewed as 2d-array, so either per-face views or the render fallback. (2026-11-11: per-face views don't help either; compatibility mode binds whole textures only, and a `'cube'` texture has no storage view. A 6-layer `'2d-array'` texture works, which is what reflections bakes into, then copies to a cube; §4 Compatibility mode.)
 - `'box'` for `'minmax'` and other folds is meaningless (they already use the full footprint). Should `'box'` simply be ignored there, or rejected?
 
 ## 13. Research (2026-11-10)
@@ -585,7 +605,7 @@ pmndrs/upscaler replaced both passes because no downsampler existed:
 | Tool | Pyramid / reduction | Shape | Built today |
 |---|---|---|---|
 | reflections (SSSR port) | Hi-Z from depth, min (max for reverse-Z), r32float, ≤7 levels; `textureLoad` traversal | full chain, separate source | **on downsampler** via `encodePass` (branch `reflections-integration`): 1080p 0.23 → 0.15 ms (M5 Pro) |
-| reflections | probe prefilter source chain, rgba16float cube (6 layers), average; `textureSampleLevel` | full chain | on downsampler; **fails in compatibility mode** (one texture read and written in one dispatch) |
+| reflections | probe prefilter source chain, rgba16float cube (6 layers), average; `textureSampleLevel` | full chain | on downsampler; ~~fails in compatibility mode~~ compatibility path since 2026-11-11 (§4 Compatibility mode; reflections' own compat check not re-run here) |
 | ssgiDev | depth min pyramid, 5 levels, one dispatch per level brute force; optional max pyramid; light pyramid (average rgba16f); G-buffer downsample (min depth, normal of the min texel, mean light) | Hi-Z, chain, fold with payload | hand-written |
 | Denoiser | OIDN auto-exposure: log-mean luma → scalar (f32 buffer); FFX reflections 8×8 luma-weighted radiance mean fused into reproject; ReBLUR-style history-fix mips 1–3 in one LDS dispatch, sum ÷ non-sky count, off-image weight 0, ceil sizes, atlas layout | scalar, fused block stats | hand-written |
 | webgpu-ddgi | material store: alpha-weighted 2×2 average, 9 levels of 256² layers, sRGB via buffer + `copyBufferToTexture`; sky SH 19 sums → scalar (subgroups); radiance cache: r32uint "first valid of 2×2" probe mask (~8 levels), hash-grid tile sums `(rgb·n, n)` 4 levels | chain, scalar, uint fold, block stats | hand-written, one dispatch per level |
@@ -613,7 +633,7 @@ pmndrs/upscaler replaced both passes because no downsampler existed:
   - Into a caller-owned pass (`encodePass`), so one timestamp pair covers the chain.
   - Dispatches only, so a tool can embed the kernel in its own pass order.
 - **Scalar:** partial results per workgroup, then a final dispatch with the epilogue. It writes to a buffer or a texel.
-- **Compatibility mode:** split the read and write views of one texture across dispatches, or use the buffer path.
+- **Compatibility mode:** split the read and write views of one texture across dispatches, or use the buffer path. **Done (2026-11-11)** for `Downsampler` with scratch levels and copy dispatches (§4 Compatibility mode).
 
 The fold contract in §4 (idempotent only) stays for folds. Sums and weighted means become reductions in their own right, each with its own oracle. They are defined at odd sizes only under `box` and `zero-weight`.
 

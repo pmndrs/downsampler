@@ -345,6 +345,8 @@ export class ScalarReduction {
 		this.options = { ...options };
 		this.ops = scalarOps( options.reduce, options.channels );
 		this.block = options.block ?? scalarBlock;
+		const { maxComputeInvocationsPerWorkgroup: invocations, maxComputeWorkgroupSizeX: sizeX } = device.limits;
+		if ( invocations < scalarInvocations || sizeX < scalarInvocations ) throw new Error( `downsampler: a ScalarReduction needs workgroups of ${ scalarInvocations } invocations (${ scalarInvocations } wide); this device allows ${ invocations } (maxComputeInvocationsPerWorkgroup) and ${ sizeX } wide (maxComputeWorkgroupSizeX). Compatibility-mode devices default to 128: request more (Downsampler.requiredLimits).` );
 		this.partialBytes = this.ops.length * 4;
 		this.resultBytes = scalarResultSize( this.ops.length );
 		createScalarKernel( options ); // validates

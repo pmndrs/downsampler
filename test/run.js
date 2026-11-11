@@ -6,6 +6,7 @@
 //   node test/run.js --bench --sizes=1024x1024,512x512x6 --formats=rgba8unorm --rounds=11 --repeats=16
 //   node test/run.js --output=results/report.json --headful
 //   node test/run.js --adapter=swiftshader   software adapter (CI, no GPU)
+//   node test/run.js --compat            on a compatibility-mode device (featureLevel 'compatibility')
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import puppeteer from 'puppeteer';
@@ -13,7 +14,7 @@ import { createServer } from './serve.js';
 
 const args = process.argv.slice( 2 );
 const value = name => args.find( arg => arg.startsWith( `--${ name }=` ) )?.split( '=' )[ 1 ];
-const options = { bench: args.includes( '--bench' ), quick: args.includes( '--quick' ) };
+const options = { bench: args.includes( '--bench' ), quick: args.includes( '--quick' ), compat: args.includes( '--compat' ) };
 if ( value( 'only' ) ) options.only = value( 'only' );
 if ( value( 'sizes' ) ) options.sizes = value( 'sizes' ).split( ',' ).map( size => size.split( 'x' ).map( Number ) );
 if ( value( 'formats' ) ) options.formats = value( 'formats' ).split( ',' );

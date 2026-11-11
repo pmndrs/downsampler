@@ -1,4 +1,5 @@
 export { Downsampler } from './downsampler.js';
+export { isCompatibilityTexture } from './compat.js';
 export type { DownsamplerOptions, EncodeOptions, PreparedBatch, SourceOptions } from './downsampler.js';
 export { Reducer } from './reducer.js';
 export type { ReducerDispatch, ReducerOptions, TextureLevel } from './reducer.js';

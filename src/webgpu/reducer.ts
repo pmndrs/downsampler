@@ -1,7 +1,8 @@
 import { formats, isSupportedFormat, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { levelSize, tileDispatch } from '../core/pyramid.js';
-import { tileSize } from '../core/plan.js';
+import { tileSize, workgroupSide } from '../core/plan.js';
 import { resolveReduction, type Channels, type Reduction, type TileEdgePolicy } from '../core/reduction.js';
+import { isCompatibilityTexture } from './compat.js';
 import { createKernel, kernelLayoutEntries, sizeBinding, type KernelOptions, type ViewDimension } from './kernel.js';
 import { checkToolBindings, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolGroupLayouts, toolPipelineLayout, type ToolBindings } from './tool.js';
 
@@ -135,6 +136,8 @@ export class Reducer {
 			load: options.load, store: options.store, size: options.size, bindings: options.bindings?.wgsl, ...( channels === 8 ? { channels } : {} )
 		};
 		const deepest = options.levels[ options.levels.length - 1 ];
+		const invocations = workgroupSide( tileSize( deepest ) ) ** 2;
+		if ( Number.isInteger( deepest ) && invocations > device.limits.maxComputeInvocationsPerWorkgroup ) throw new Error( `downsampler: ${ deepest } levels take workgroups of ${ invocations } invocations; this device allows ${ device.limits.maxComputeInvocationsPerWorkgroup } (maxComputeInvocationsPerWorkgroup; compatibility mode defaults to 128). Emit at most 4 levels or request a higher limit (Downsampler.requiredLimits).` );
 		const tileBytes = tileSize( deepest ) ** 2 * channels * 4;
 		if ( Number.isInteger( deepest ) && tileBytes > device.limits.maxComputeWorkgroupStorageSize ) throw new Error( `downsampler: ${ deepest } levels of ${ channels }-channel accumulators take ${ tileBytes } bytes of workgroup memory; this device allows ${ device.limits.maxComputeWorkgroupStorageSize } (maxComputeWorkgroupStorageSize). Emit fewer levels or request a higher limit.` );
 
@@ -303,6 +306,9 @@ export class Reducer {
 
 		}
 
+		// Compatibility mode binds one view (mip range) of a texture per dispatch.
+		const textures = [ ...( source ? [ source.texture ] : [] ), ...( outputs ?? [] ).map( output => output.texture ) ];
+		if ( new Set( textures ).size < textures.length && textures.some( texture => isCompatibilityTexture( this.device, texture ) ) ) throw new Error( 'downsampler: in compatibility mode a dispatch binds one view of a texture, so the source and each output level must be separate textures (or use a store hook).' );
 		const prepared = { bindGroup: this.device.createBindGroup( { label: this.label, layout: this.bindGroupLayouts[ 0 ], entries } ), workgroups };
 		this.cache.set( key, prepared );
 		if ( this.cache.size > cacheSize ) this.cache.delete( this.cache.keys().next().value! );

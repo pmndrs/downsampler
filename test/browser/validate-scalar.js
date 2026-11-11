@@ -185,7 +185,9 @@ function run( device, reduction, options, mode = 'encode' ) {
 export async function validateScalar( device, { quick = false, onProgress = () => {} } = {} ) {
 
 	const results = [];
-	const shapes = quick ? scalarShapes.filter( shape => ! big( shape ) ) : scalarShapes;
+	// Compatibility mode defaults to 4096 texels per side (4111×300 is beyond it).
+	const fits = ( [ w, h ] ) => Math.max( w, h ) <= device.limits.maxTextureDimension2D;
+	const shapes = ( quick ? scalarShapes.filter( shape => ! big( shape ) ) : scalarShapes ).filter( fits );
 	const output = makeBuffer( device, 256 + 8 * scalarResultBytes );
 	const seedBuffer = device.createBuffer( { size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
 
