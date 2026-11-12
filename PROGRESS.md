@@ -6,23 +6,18 @@ Live status board. SPEC.md holds the design and the reasons behind it; this file
 
 **For agents:** read this after SPEC.md. When you start a task, move it to *Now* with your branch. When you finish, tick it, add the commit, and log the verification run. Keep entries to one line and link SPEC sections instead of restating them. Anything that needs the owner goes under *Waiting on owner*.
 
-Last updated: 2026-11-11 · Branch: `m2-reductions`
+Last updated: 2026-11-12 · Branch: `m2-reductions`
 
 ## Now
 
-- [ ] Windows runs (owner, RTX 3060 + Intel UHD): verification and cross-vendor timings for what M2/M2T built. Features are done on Apple; this is measurement. Commands: run sheet in `docs/diverges.html` (the artifact)
-- [ ] CI shards like homefig (`--shard=i/N`, duration-balanced, fast/full tiers, timing summaries) (agent, branch `ci-shards`)
-- [ ] CI: confirm the three parallel SwiftShader jobs fit on GitHub runners (first push; job limit 75 min, protocol timeout 60 min on SwiftShader). `reducer` took 17 min alone on the M5 Pro; if CI is too slow, trim its quick shapes on SwiftShader only
+- [ ] Windows runs (owner + a Windows agent, RTX 3060 + Intel UHD): branch `windows-testing`, handoff in `docs/WINDOWS-HANDOFF.md`. Verification, cross-vendor timings, and native D3D12/Vulkan matches (FidelityFX SPD, D3D11 `GenerateMips`, nvpro) for the same sizes
+- [ ] CI: first GitHub run of the shards (`test/ci/README.md`): real shard times, Linux SwiftShader compat device, artifact collection. Then commit its `gpu-durations` artifact
 
-## Next (M2T, tools first: SPEC §11)
+## Next (SPEC §11)
 
-- [ ] M2T.1: WGSL reduction generator as the primary product: tool-supplied `load` with its own bindings, per-channel reductions (sum/average/min/max/custom), choice of emitted levels, outputs (texture, buffer, or WGSL `store` hook), edge policy. `Downsampler` and the three adapter become users of it
-- [ ] M2T.4: SPD-style mode, measured against `'exact'`, the tail kernel idea and a single-dispatch atomic prototype (SPEC §2.2)
-- [ ] M2T.2: reduce-to-scalar: any size to one value in 2 dispatches, with an epilogue hook (exposure)
-- [ ] M2T.3: prove it on the upscaler's passes (FSR 3.1 luminance pyramid / exposure, shading change) as bench fixtures in this repo; oracle + M5 timings; RTX 3060 / Intel UHD runs by the owner
-- [ ] M2T.4 (deferred until M2T.1–3 clear): SPD-style mode (`'spd'` odd sizes, clamp/drop edges, single-dispatch-equivalent structure) measured against the other options, to justify, or not, that it isn't the primary method
+- [ ] Upscaler on the library through a local `file:` reference (owner: the upscaler releases after this is on npm)
 - [ ] M2.4: layer range + rect
-- [ ] M2.5: `oddSizes: 'box'`, power-of-two destination from a separate source, then the exact tail kernel (SPEC §2.1, §13)
+- [ ] M2.5: `oddSizes: 'box'`, power-of-two destination from a separate source (SPEC §2.1, §13)
 
 ## Deferred (three.js-driven)
 
@@ -38,6 +33,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] CI shards like homefig: `--shard=i/N` over 323 SwiftShader case groups, LPT-balanced by `test/ci/durations.json`; 14 core shards (+14 compat on the full tier); `gpu-suite` aggregate checks coverage (`38beb25`, merge `44b25bc`)
 - [x] webgpu-spd 3.0.0 compared (`results/compare/webgpu-spd.md`, DIVERGES #22): its default single-dispatch handoff returned stale levels 7+ on M5 Pro (up to 5 % of frames at render sizes, 25–41 % at 4096²); correct with `maxMipsPerPass: 6`; our `'spd'` 1.2–2.1× faster for the same semantics (`805c21f`)
 - [x] Fixed `--compare=spd` parity check: the atomic probe now rounds f16 before `textureStore`, like the library
 - [x] M2T.4: `oddSizes: 'spd'` (average only; folds rejected), exact tail kernel (`tail: true`, opt-in), atomic single-dispatch probe (test-only); both compose with the buffer path and compatibility mode; 12/12 mutations caught (`b4ef2dc`…`1b7e897`)
@@ -75,21 +71,20 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Waiting on owner
 
-- webgpu-spd bugs found (stale handoff, inverted f16 check, last level unwritten with a separate target, shared mip-6 buffer, >4096² levels unwritten, MinMax clamps max at 0): draft issues for its repo? Nothing is posted without your review
-- `'spd'` shipped as a public opt-in for 'average' only (folds rejected), per the coordinator's recommendation: overrule if you want it test-only
-- Exact tail kernel: 1080p 7 → 4 dispatches but ~0.85–1.07× time; keep opt-in until an idle-machine run shows ≥5 %?
-- Payload folds break key ties by the smaller payload (order-independent); OK, or build in position-based ties?
-- Upscaler shading change: 8-channel version ties from 1280×720 up but is 8–14 % slower at 1129×635 than the sign-bit trick; which to keep?
-- How should pmndrs/upscaler consume the library before npm publish: vendored generated WGSL, a git dependency, or wait for publish?
-- Reducer defaults to review: `edges: 'zero-weight'` by default; no rounding between levels (each level reduced from its own source block, rounded once on store)
-- Scalar `finish` gained an optional `layer: u32` third parameter for multi-layer runs (not in §14.1): keep?
-- Upscaler exposure: a parallel reduction averages every texel instead of 1024 samples (or FSR's top-left 2^mips square), so values change. Accept for the upscaler, or match one of them for the comparison?
-- Review/merge upscaler `perf/exposure-parallel` (based on its `origin/main`); Windows commands are in its `docs/windows-followups.md`
-- M2T.3 cross-device runs: RTX 3060 laptop and Intel UHD timings of the bench fixtures and the upscaler exposure branch (owner, 2026-11-12)
-- Cross-vendor hardware for M3: which NVIDIA/AMD/Intel (Windows) and Android devices are available?
-- Package name: `downsampler` or `@pmndrs/downsampler` (SPEC §12)
-- Review of the gpuweb#5253 comment draft before anything is posted (M5)
+- Payload-fold ties (smaller payload vs position): examples sent 2026-11-12; awaiting a call
+- Reducer defaults (`'zero-weight'` edges, no rounding between levels, scalar `finish` layer argument): impact explained 2026-11-12; awaiting a call
+- Upscaler exposure, every texel vs 1024 taps: pros/cons and sources sent 2026-11-12. Agreed: merge the bit-identical `perf/exposure-parallel` first
+- Review drafts (local only, gitignored, never pushed): `drafts/webgpu-spd-issues.md` (6 issues), `drafts/gpuweb-5253-comment.md` (numbers to fill from Windows)
+- Upscaler branch `perf/exposure-parallel` is local only: push it to pmndrs/upscaler so the Windows agent can run its measurements, or skip that run
 
+## Decided (owner, 2026-11-12)
+
+- Upscaler uses the library through a local reference until npm; the upscaler releases after this is published
+- Package: npm `downsampler` (unscoped; free on 2026-11-12), else `@pmndrs/downsampler`; GitHub `pmndrs/downsampler`
+- Devices: RTX 3060 laptop + Intel UHD now (maybe more NVIDIA); wider coverage after publish
+- `oddSizes: 'spd'` stays a public opt-in
+- Tail kernel stays opt-in, documented
+- Upscaler shading change keeps the 8-channel version (documented); the sign-bit version stays an experiment
 ## Verification log
 
 | Date | Commit | Device | Suite | Result |
@@ -114,6 +109,8 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 | 2026-11-12 | `1b7e897` | SwiftShader | quick per part (one at a time) | ✅ downsampler 2194 / 8.6 min, reducer 2243 / 16.9 min, scalar 319 / 1.4 min |
 | 2026-11-12 | merge of `m2t-spd` | Apple M5 Pro, Chrome 148 | quick + core | ✅ 10445 cases; 67 core |
 | 2026-11-10 | `a996cc4` | Apple M5 Pro, Chrome (puppeteer) | quick | ✅ 6032 cases, 19456 pattern runs (branch `reflections-integration`) |
+| 2026-11-12 | `38beb25` | SwiftShader | quick, unsharded, `--record-durations` | ✅ 4784 cases, 323 groups, 25.4 min; shards 1, 7, 14 of 14 match their recorded case counts (21, 301, 366) |
+| 2026-11-12 | `44b25bc` | Apple M5 Pro, Chrome 148 | quick (unsharded) + `--list --shards=14` | ✅ 10475 cases, 25548 pattern runs; partition disjoint and covering |
 
 ## Notes
 

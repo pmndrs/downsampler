@@ -24,6 +24,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { loadavg } from 'node:os';
 import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer';
 import { assignShards, parseShard, partitionProblems, shardLoads } from './ci/shard.js';
 import { createServer } from './serve.js';
@@ -45,7 +46,7 @@ const loadBefore = loadavg();
 const startedAt = Date.now();
 
 // Shards: recorded per-group durations balance them (round-robin without any).
-const durationsPath = value( 'durations' ) ?? new URL( './ci/durations.json', import.meta.url ).pathname;
+const durationsPath = value( 'durations' ) ?? fileURLToPath( new URL( './ci/durations.json', import.meta.url ) );
 const recorded = existsSync( durationsPath ) ? JSON.parse( readFileSync( durationsPath, 'utf8' ) ) : { groups: {} };
 const durations = Object.fromEntries( Object.entries( recorded.groups ).map( ( [ id, group ] ) => [ id, group.ms ] ) );
 const list = args.includes( '--list' );

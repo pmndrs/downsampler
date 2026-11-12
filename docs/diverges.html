@@ -187,6 +187,7 @@ footer { color: var(--muted); font-size: 13px; display: grid; gap: 6px; max-widt
 
 	<section class="panel" aria-labelledby="runs-title">
 		<h2 id="runs-title">Windows run sheet</h2>
+		<p>A Windows agent runs these from the <code>windows-testing</code> branch, following <code>docs/WINDOWS-HANDOFF.md</code>. That doc also asks for native D3D12/Vulkan matches on the same GPU: FidelityFX SPD, D3D11 <code>GenerateMips</code>, nvpro and FSR 3.1. The commands below are the core of it.</p>
 		<p>On the laptop with the RTX 3060 and Intel UHD. <code>--power=high</code> or <code>--power=low</code> picks the GPU; each run prints the adapter it used. Close other GPU apps and plug in power: these numbers become the cross-vendor baseline.</p>
 		<div class="runs" id="runs"></div>
 	</section>
@@ -494,18 +495,17 @@ function render() {
 render();
 
 const decisions = [
-	{ q: 'How should pmndrs/upscaler use the library before it is on npm?', blocking: true, meta: 'Blocks switching the upscaler\'s exposure (and optionally shading change) to the library.',
-		rec: '<strong>Recommend:</strong> vendor the generated WGSL into the upscaler for now (the library emits plain WGSL strings, the same plan as the three.js PR), and switch to the npm package at M5. A git dependency works too but needs a build step in its CI.' },
-	{ q: 'Package name: downsampler or @pmndrs/downsampler?', blocking: false, meta: 'Needed by M5 (publish).', rec: '<strong>Recommend:</strong> @pmndrs/downsampler, alongside @pmndrs/upscaler.' },
-	{ q: 'Which NVIDIA / AMD / Intel (Windows) and Android devices can we test on?', blocking: false, meta: 'Decides M3 coverage and whether compute or render passes should be the default per vendor (entry 17).', rec: '<strong>Today:</strong> RTX 3060 laptop and Intel UHD. AMD and Android unknown.' },
-	{ q: 'Keep oddSizes: \'spd\' public (average only), or make it test-only?', blocking: false, meta: 'Up to 2× faster at render sizes; drifting footprints; folds rejected.', rec: '<strong>Recommend:</strong> public opt-in for colour chains (bloom, luma, exposure). Shipped that way.' },
-	{ q: 'Make the exact tail kernel the default?', blocking: false, meta: '1080p 7 → 4 dispatches but only 0.85–1.07× the time on a loaded Mac.', rec: '<strong>Recommend:</strong> keep opt-in; default only if Windows or an idle Mac shows ≥5 %.' },
-	{ q: 'Upscaler shading change: 8-channel version or the sign-bit trick?', blocking: false, meta: 'Tie from 1280×720 up; 8-channel is 8–14 % slower at 1129×635.', rec: '<strong>Recommend:</strong> 8-channel (maintainable); switch to the trick only if Windows shows the gap holding.' },
-	{ q: 'Upscaler exposure: meter every texel, or keep the 1024 taps?', blocking: false, meta: 'Every texel is a better estimate but changes values; the taps version is bit-identical.', rec: '<strong>Recommend:</strong> merge the bit-identical perf/exposure-parallel branch first, then decide on every-texel separately.' },
-	{ q: 'Payload folds: smaller-payload ties, or position ties?', blocking: false, meta: 'Ties are rare with continuous depth.', rec: '<strong>Recommend:</strong> keep smaller-payload ties (order-independent, free); put a texel index first when position matters.' },
-	{ q: 'Reducer defaults: edges \'zero-weight\', no rounding between levels; scalar finish gets a layer argument', blocking: false, meta: 'API review.', rec: '<strong>Recommend:</strong> keep all three.' },
-	{ q: 'Draft bug reports for webgpu-spd?', blocking: false, meta: 'Found on M5 Pro: stale levels 7+ from the single-dispatch handoff, inverted f16 check, last level unwritten with a separate target, shared mip-6 buffer, levels unwritten above 4096², MinMax clamps max at 0 (results/compare/webgpu-spd.md).', rec: '<strong>Recommend:</strong> yes, as drafts for your review; one issue per bug, with the repro from our bench. Nothing is posted without you.' },
-	{ q: 'Review the gpuweb#5253 comment draft before anything is posted', blocking: false, meta: 'M5, after cross-vendor data exists.', rec: 'Nothing is posted without your review.' },
+	{ q: 'How should pmndrs/upscaler use the library before it is on npm?', done: 'Local reference (file:) until npm; the upscaler releases after this is published.', meta: '', rec: '' },
+	{ q: 'Package name', done: 'npm downsampler (unscoped; free on 2026-11-12), else @pmndrs/downsampler. GitHub pmndrs/downsampler.', meta: '', rec: '' },
+	{ q: 'Devices', done: 'RTX 3060 laptop + Intel UHD now through the windows-testing branch and a Windows agent, which also builds native D3D12/Vulkan matches. Wider coverage after publish.', meta: '', rec: '' },
+	{ q: 'oddSizes: \'spd\' public or test-only?', done: 'Public opt-in.', meta: '', rec: '' },
+	{ q: 'Tail kernel default?', done: 'Stays opt-in, documented. Revisit if Windows shows ≥5 %.', meta: '', rec: '' },
+	{ q: 'Upscaler shading change: 8-channel or sign bit?', done: '8-channel, documented; the sign-bit version stays an experiment.', meta: '', rec: '' },
+	{ q: 'Upscaler exposure: every texel or the 1024 taps?', blocking: false, meta: 'Every texel is FSR\'s approach: a steadier estimate, but the exposure values change. The taps version is bit-identical and already 6–10× faster.', rec: '<strong>Agreed:</strong> merge the bit-identical perf/exposure-parallel first. Every texel is a separate decision (pros and cons sent 2026-11-12).' },
+	{ q: 'Payload folds: smaller-payload ties, or position ties?', blocking: false, meta: 'Ties are rare with continuous depth. Examples sent 2026-11-12.', rec: '<strong>Recommend:</strong> keep smaller-payload ties (order-independent, free); put a texel index first when position matters.' },
+	{ q: 'Reducer defaults: zero-weight edges, no rounding between levels, scalar finish layer argument', blocking: false, meta: 'Impact explained 2026-11-12.', rec: '<strong>Recommend:</strong> keep all three.' },
+	{ q: 'webgpu-spd bug reports', blocking: false, meta: 'Six issues drafted in drafts/webgpu-spd-issues.md (local, gitignored, never pushed). We don\'t use the library; the bench vendors a copy for comparison only.', rec: 'Waiting on your review.' },
+	{ q: 'gpuweb#5253 comment', blocking: false, meta: 'Drafted in drafts/gpuweb-5253-comment.md (local only), with placeholders for the Windows numbers.', rec: 'Waiting on your review, after the Windows numbers.' },
 ];
 const runs = [
 	{ title: '1. Upscaler: parallel exposure (pmndrs/upscaler, branch perf/exposure-parallel)', note: 'Confirms the 6–10× exposure speedup off Apple and that DXC compile time stays at or under 39 ms. Run in the upscaler repo on that branch.',
@@ -519,9 +519,9 @@ const runs = [
 ];
 document.getElementById( 'decisions' ).innerHTML = decisions.map( d => `
 	<div class="decision${ d.blocking ? ' blocking' : '' }">
-		<div class="q">${ esc( d.q ) }${ d.blocking ? ' <span class="pill v-risk">blocking</span>' : '' }</div>
-		<div class="meta">${ esc( d.meta ) }</div>
-		<div class="rec">${ d.rec }</div>
+		<div class="q">${ esc( d.q ) }${ d.blocking ? ' <span class="pill v-risk">blocking</span>' : '' }${ d.done ? ' <span class="pill v-keep">decided</span>' : '' }</div>
+		${ d.done ? `<div class="rec">${ esc( d.done ) }</div>` : `<div class="meta">${ esc( d.meta ) }</div>
+		<div class="rec">${ d.rec }</div>` }
 	</div>` ).join( '' );
 document.getElementById( 'runs' ).innerHTML = runs.map( ( r, i ) => `
 	<div class="run">
