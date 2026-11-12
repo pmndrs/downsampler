@@ -91,6 +91,24 @@ for ( const [ tag, label ] of [ [ 'rtx3060', 'RTX 3060 Laptop' ], [ 'intel-uhd',
 		}
 		out( '' );
 
+		// Owner decisions of 2026-11-12: sampler vs shader weights ('load'), and the cost of
+		// rounding f16 to nearest even ('nearest', the default) against the device's conversion.
+		if ( Object.values( ours ).some( row => row.exactLoad !== undefined ) ) {
+
+			out( `Decision data, ${ format }: sampler vs shader weights, f16 rounding (ms; ratios above 1: the first is slower):` );
+			out( '' );
+			out( '| Size | `exact` (sample) | `exactLoad` | load ÷ sample | `tail` | `tailLoad` | tailLoad ÷ tail | `exactDevice` (f16 via pack2x16float) | nearest ÷ device |' );
+			out( '|---|---|---|---|---|---|---|---|---|' );
+			for ( const [ w, h ] of sizes ) {
+
+				const o = ours[ `${ format } ${ w }x${ h }` ] ?? {};
+				out( `| ${ w }×${ h } | ${ ms( o.exact ) } | ${ ms( o.exactLoad ) } | ${ ratio( o.exactLoad, o.exact ) } | ${ ms( o.tail ) } | ${ ms( o.tailLoad ) } | ${ ratio( o.tailLoad, o.tail ) } | ${ ms( o.exactDevice ) } | ${ format === 'rgba16float' ? ratio( o.exact, o.exactDevice ) : 'n/a' } |` );
+
+			}
+			out( '' );
+
+		}
+
 	}
 
 	out( '### r32float, max (Hi-Z): ms per full chain' );

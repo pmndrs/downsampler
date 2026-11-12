@@ -3,7 +3,7 @@ import { outputBufferLayout, tileSize, workgroupSide } from '../core/plan.js';
 import { levelSize, tileDispatch } from '../core/pyramid.js';
 import { resolveReduction, type Channels, type Reduction, type TileEdgePolicy } from '../core/reduction.js';
 import { isCompatibilityTexture } from './compat.js';
-import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, sizeBinding, type KernelOptions, type OutputPath, type ViewDimension } from './kernel.js';
+import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, sizeBinding, type F16Rounding, type KernelOptions, type OutputPath, type ViewDimension } from './kernel.js';
 import { checkToolBindings, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolGroupLayouts, toolPipelineLayout, type ToolBindings } from './tool.js';
 
 export type { ToolBindings } from './tool.js';
@@ -42,12 +42,18 @@ export interface ReducerOptions {
 	 * 'buffer': packed texels into a buffer the Reducer owns, then a
 	 * `copyBufferToTexture` per level (SPEC.md §6.1). Default 'storage' when the
 	 * device can write `format` as a storage texture, else 'buffer' (rgb9e5ufloat;
-	 * rg11b10ufloat without texture-formats-tier1). float16 outputs round to
-	 * nearest even on both paths (quantized before the store). Buffer outputs need COPY_DST
+	 * rg11b10ufloat without texture-formats-tier1). float16 outputs are rounded
+	 * before the store on both paths (`f16Rounding`). Buffer outputs need COPY_DST
 	 * usage instead of STORAGE_BINDING; `encode` records the copies, and after
 	 * `encodePass` or a self-dispatch call `encodeCopies` once the pass has ended.
 	 */
 	output?: OutputPath;
+	/**
+	 * float16 output formats (no store hook): 'nearest' (default) rounds to nearest even
+	 * in the shader, the same on every GPU; 'device' uses `pack2x16float`, which
+	 * truncates on D3D12. See {@link F16Rounding}.
+	 */
+	f16Rounding?: F16Rounding;
 	/**
 	 * Accumulator channels per texel: 4 (a `vec4f`, default) or 8. With 8, the
 	 * load hook returns, the store hook takes, and a custom reduce combines
@@ -170,7 +176,7 @@ export class Reducer {
 
 		const kernel: KernelOptions = {
 			edges, levels: options.levels, reduction, format, dimension: options.dimension ?? '2d', sourceFormat: options.sourceFormat,
-			load: options.load, store: options.store, size: options.size, bindings: options.bindings?.wgsl, output, ...( channels === 8 ? { channels } : {} )
+			load: options.load, store: options.store, size: options.size, bindings: options.bindings?.wgsl, output, f16Rounding: options.f16Rounding, ...( channels === 8 ? { channels } : {} )
 		};
 		const deepest = options.levels[ options.levels.length - 1 ];
 		const invocations = workgroupSide( tileSize( deepest ) ) ** 2;

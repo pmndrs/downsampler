@@ -2,7 +2,7 @@ import { bufferWritable, formats, isSupportedFormat, type FormatInfo, type Suppo
 import { outputBufferLayout, planBatches, tailTile, type Batch, type BatchKernel, type OddSizePolicy } from '../core/plan.js';
 import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
 import { isCompatibilityTexture } from './compat.js';
-import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
+import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, type F16Rounding, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
 
 export interface DownsamplerOptions {
 	/**
@@ -52,6 +52,13 @@ export interface DownsamplerOptions {
 	 * compatibility mode. Default false (SPEC.md §2.1).
 	 */
 	tail?: boolean;
+	/**
+	 * float16 formats: how each level is rounded to a half, before it is stored and
+	 * before the next level reads it. 'nearest' (default): round to nearest even in the
+	 * shader, the same on every GPU. 'device': the device's own conversion
+	 * (`pack2x16float`), which truncates on D3D12. See {@link F16Rounding}.
+	 */
+	f16Rounding?: F16Rounding;
 }
 
 export interface SourceOptions {
@@ -174,6 +181,7 @@ export class Downsampler {
 	readonly averageAccess: SourceAccess | undefined;
 	readonly compatibility: boolean | 'auto';
 	readonly tail: boolean;
+	readonly f16Rounding: F16Rounding;
 	private readonly scratch = new WeakMap<GPUTexture, Map<number, GPUTexture>>();
 	private readonly pipelines = new Map<string, GPUComputePipeline>();
 	private readonly layouts = new Map<string, GPUBindGroupLayout>();
@@ -214,6 +222,9 @@ export class Downsampler {
 		if ( compatibility !== 'auto' && typeof compatibility !== 'boolean' ) throw new Error( 'downsampler: compatibility must be true, false or "auto".' );
 		this.compatibility = compatibility;
 		this.tail = options.tail ?? false;
+		const f16Rounding = options.f16Rounding ?? 'nearest';
+		if ( f16Rounding !== 'nearest' && f16Rounding !== 'device' ) throw new Error( 'downsampler: f16Rounding must be "nearest" or "device".' );
+		this.f16Rounding = f16Rounding;
 		this.sampler = device.createSampler( { label: 'downsampler', minFilter: 'linear', magFilter: 'linear' } );
 
 	}
@@ -540,8 +551,9 @@ export class Downsampler {
 	 */
 	private kernelOptions( { format, dimension, count, access, reduction, sourceFormat, output, kind, tile }: BatchKernelKey ): KernelOptions {
 
-		if ( kind !== 'clamp' ) return { format, dimension, count, reduction, access, sourceFormat, output, ...( kind === 'tail' ? { tail: true, tile } : {} ) };
-		return { format, dimension, edges: 'clamp', count, reduction, access, sourceFormat, output };
+		const { f16Rounding } = this;
+		if ( kind !== 'clamp' ) return { format, dimension, count, reduction, access, sourceFormat, output, f16Rounding, ...( kind === 'tail' ? { tail: true, tile } : {} ) };
+		return { format, dimension, edges: 'clamp', count, reduction, access, sourceFormat, output, f16Rounding };
 
 	}
 

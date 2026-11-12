@@ -597,8 +597,16 @@ static double timeD3D12( Gpu & gpu, Variant & variant, int repeats ) {
 	CHECK( gpu.queryReadback->Map( 0, &range, ( void ** ) &stamps ) );
 	const uint64_t start = stamps[ 0 ], end = stamps[ 1 ];
 	gpu.queryReadback->Unmap( 0, nullptr );
-	if ( end < start ) { fprintf( stderr, "invalid timestamps %llu %llu\n", start, end ); exit( 1 ); }
-	return double( end - start ) / double( gpu.frequency ) * 1000.0 / repeats;
+	// Intel UHD's D3D12 timestamps are a 36-bit counter (19.2 MHz: wraps every hour): take the
+	// difference modulo 2^36 when the start fits 36 bits. Anything else backwards is an error.
+	uint64_t ticks = end - start;
+	if ( end < start ) {
+
+		if ( start >> 36 ) { fprintf( stderr, "invalid timestamps %llu %llu\n", start, end ); exit( 1 ); }
+		ticks = ( end - start ) & ( ( 1ull << 36 ) - 1 );
+
+	}
+	return double( ticks ) / double( gpu.frequency ) * 1000.0 / repeats;
 
 }
 

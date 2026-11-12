@@ -18,6 +18,17 @@ export type ViewDimension = '2d' | '2d-array';
  */
 export type SourceAccess = 'sample' | 'load';
 
+/**
+ * How float16 outputs are rounded from the f32 working values before they are stored:
+ * - 'nearest' (default): round to nearest even in the shader with integer math
+ *   ({@link float16Wgsl}), so stored halves are the same on every GPU and match the
+ *   CPU oracles. The store then writes an exact half, which no conversion changes.
+ * - 'device': WGSL `pack2x16float`, the device's own conversion. Cheaper, but its
+ *   rounding varies: D3D12 (NVIDIA, Intel) truncates toward zero, Metal rounds
+ *   (results/probes/f16-store-rounding.mjs, results/windows/correctness.md).
+ */
+export type F16Rounding = 'nearest' | 'device';
+
 export interface KernelOptions {
 	/** Storage format of the output levels. Required unless a `store` hook writes them. */
 	format?: SupportedFormat;
@@ -71,6 +82,8 @@ export interface KernelOptions {
 	bindings?: string;
 	/** Kernels without a store hook: write storage textures (default) or packed texels into a buffer ({@link OutputPath}). */
 	output?: OutputPath;
+	/** float16 output formats: how values are rounded before the store ({@link F16Rounding}). Default 'nearest'. */
+	f16Rounding?: F16Rounding;
 	/**
 	 * Tile kernels: accumulator channels per texel, 4 (a `vec4f`, default) or 8
 	 * (`DsWide { lo: vec4f, hi: vec4f }`, which the load and store hooks and a
@@ -207,7 +220,7 @@ function packedWords( format: SupportedFormat, normalized = false ): string[] {
 			return Array.from( { length: channels / 2 }, ( _, w ) => `${ unsigned( ch[ 2 * w ], '0xffffu' ) } | (${ unsigned( ch[ 2 * w + 1 ], '0xffffu' ) } << 16u)` );
 		case 'float16':
 			if ( channels < 2 ) break;
-			return Array.from( { length: channels / 2 }, ( _, w ) => `pack2x16float(v.${ ch[ 2 * w ] }${ ch[ 2 * w + 1 ] })` );
+			return Array.from( { length: channels / 2 }, ( _, w ) => `ds_pack_f16(v.${ ch[ 2 * w ] }${ ch[ 2 * w + 1 ] })` );
 		case 'float32':
 			return ch.slice( 0, channels ).map( c => `bitcast<u32>(v.${ c })` );
 		case 'rgb9e5ufloat':
@@ -222,14 +235,56 @@ function packedWords( format: SupportedFormat, normalized = false ): string[] {
 }
 
 /**
+ * WGSL for float16 rounding ({@link F16Rounding}), shared by every kernel that stores float16:
+ * - `ds_pack_f16(v: vec2f) -> u32`: two halves, as `pack2x16float` packs them
+ * - `ds_round_f16(v: vec4f) -> vec4f`: each channel rounded to a half, as f32
+ * 'nearest' rounds with integer math on the float's bits (mirrors core `toHalf`, bit for
+ * bit: NaN → 0x7e00, ≥ 65520 → infinity, subnormals rounded); 'device' uses `pack2x16float`.
+ */
+export function float16Wgsl( rounding: F16Rounding = 'nearest' ): string {
+
+	if ( rounding !== 'nearest' && rounding !== 'device' ) throw new Error( `downsampler: f16Rounding must be 'nearest' or 'device', got ${ JSON.stringify( rounding ) }.` );
+	if ( rounding === 'device' ) return `fn ds_pack_f16(v: vec2f) -> u32 { return pack2x16float(v); }
+fn ds_round_f16(v: vec4f) -> vec4f { return vec4f(unpack2x16float(pack2x16float(v.xy)), unpack2x16float(pack2x16float(v.zw))); }
+`;
+	return `fn ds_half_bits(x: f32) -> u32 {
+	let b = bitcast<u32>(x);
+	let sign = (b >> 16u) & 0x8000u;
+	let a = b & 0x7fffffffu;
+	if (a > 0x7f800000u) { return sign | 0x7e00u; }
+	if (a >= 0x477ff000u) { return sign | 0x7c00u; }
+	if (a >= 0x38800000u) {
+		let m = a - 0x38000000u;
+		return sign | ((m + 0xfffu + ((m >> 13u) & 1u)) >> 13u);
+	}
+	let e = a >> 23u;
+	if (e < 102u) { return sign; }
+	let mantissa = (a & 0x7fffffu) | 0x800000u;
+	let shift = 126u - e;
+	let halfway = 1u << (shift - 1u);
+	let remainder = mantissa & ((1u << shift) - 1u);
+	var q = mantissa >> shift;
+	if (remainder > halfway || (remainder == halfway && (q & 1u) == 1u)) { q += 1u; }
+	return sign | q;
+}
+fn ds_pack_f16(v: vec2f) -> u32 { return ds_half_bits(v.x) | (ds_half_bits(v.y) << 16u); }
+fn ds_round_f16(v: vec4f) -> vec4f { return vec4f(unpack2x16float(ds_pack_f16(v.xy)), unpack2x16float(ds_pack_f16(v.zw))); }
+`;
+
+}
+
+/**
  * WGSL for the buffer output path (see {@link OutputPath}): the layout uniform,
  * the buffer, and `fn ds_put(i: u32, texel: vec2u, layer: u32, v: vec4f)`, which
  * writes level i's texel. Shared by every kernel family that writes buffers.
+ * float16 formats include {@link float16Wgsl} with `f16Rounding`, unless it is
+ * false (the caller defines `ds_pack_f16` itself).
  */
-export function bufferOutputWgsl( format: SupportedFormat, normalized = false ): string {
+export function bufferOutputWgsl( format: SupportedFormat, normalized = false, f16Rounding: F16Rounding | false = 'nearest' ): string {
 
 	const words = packedWords( format, normalized );
-	return `struct DsOutput { size: vec2u, offset: array<vec4u, 2>, stride: array<vec4u, 2>, rows: array<vec4u, 2> }
+	const half = formats[ format ].quantization === 'float16' && f16Rounding !== false ? float16Wgsl( f16Rounding ) : '';
+	return `${ half }struct DsOutput { size: vec2u, offset: array<vec4u, 2>, stride: array<vec4u, 2>, rows: array<vec4u, 2> }
 @group(0) @binding(${ outputLayoutBinding }) var<uniform> ds_output: DsOutput;
 @group(0) @binding(${ outputBufferBinding }) var<storage, read_write> ds_texels: array<u32>;
 fn ds_put(i: u32, texel: vec2u, layer: u32, v: vec4f) {
@@ -242,7 +297,8 @@ ${ words.map( ( word, w ) => `	ds_texels[index${ w ? ` + ${ w }u` : '' }] = ${ w
 /** Validates tile kernel options and resolves their defaults. */
 function tileOptions( options: KernelOptions ) {
 
-	const { format, dimension = '2d', reduction = 'average', edges, load, store, size, bindings = '', sourceFormat } = options;
+	const { format, dimension = '2d', reduction = 'average', edges, load, store, size, bindings = '', sourceFormat, f16Rounding = 'nearest' } = options;
+	if ( f16Rounding !== 'nearest' && f16Rounding !== 'device' ) throw new Error( `downsampler: f16Rounding must be 'nearest' or 'device', got ${ JSON.stringify( f16Rounding ) }.` );
 	if ( edges !== 'zero-weight' && edges !== 'clamp' ) throw new Error( `downsampler: unknown edge policy ${ JSON.stringify( edges ) }; expected 'exact', 'zero-weight' or 'clamp'.` );
 	const levels = options.levels ?? Array.from( { length: options.count ?? 0 }, ( _, i ) => i + 1 );
 	checkLevels( levels );
@@ -264,7 +320,7 @@ function tileOptions( options: KernelOptions ) {
 	const { channels } = resolveReduction( reduction, options.channels );
 	// Eight channels never reach output textures (or the buffer output, which writes them).
 	if ( channels === 8 && ( load === undefined || store === undefined ) ) throw new Error( 'downsampler: 8-channel accumulators need a load hook and a store hook (textures hold at most 4 channels, so neither output textures nor output \'buffer\' can take them).' );
-	return { format, dimension, reduction, edges, access, levels, count, load, store, size, bindings, output, channels, sourceFormat: sourceFormat ?? format ?? 'rgba32float' };
+	return { format, dimension, reduction, edges, access, levels, count, load, store, size, bindings, output, channels, sourceFormat: sourceFormat ?? format ?? 'rgba32float', f16Rounding };
 
 }
 
@@ -342,7 +398,7 @@ export function createKernel( options: KernelOptions ): string {
  * tile by the 'exact' rule at any parity (shader bilinear weights for 'average',
  * the `2x … 2x+2` footprint for folds), each quantized as stored.
  */
-function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage', tail = false, tile: tailEdge = tailTile }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
+function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage', tail = false, tile: tailEdge = tailTile, f16Rounding = 'nearest' }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
 
 	reductionKey( reduction );
 	const average = reduction === 'average';
@@ -369,7 +425,8 @@ var<workgroup> tile: array<vec4f, ${ tile * tile }>;
 	const buffer = output === 'buffer';
 	if ( output !== 'storage' && ! buffer ) throw new Error( `downsampler: unknown output path ${ JSON.stringify( output ) }; expected 'storage' or 'buffer'.` );
 	if ( ! buffer && ( formats[ format ] as FormatInfo ).storage === false ) throw new Error( `downsampler: ${ format } can't be a storage texture; use output 'buffer'.` );
-	if ( buffer ) code += bufferOutputWgsl( format );
+	if ( quantization === 'float16' ) code += float16Wgsl( f16Rounding );
+	if ( buffer ) code += bufferOutputWgsl( format, false, false );
 	else for ( let i = 0; i < count; i ++ ) code += `@group(0) @binding(${ i + 2 }) var mip${ i }: texture_storage_2d${ suffix }<${ format }, write>;\n`;
 
 	// Intermediate levels are quantized exactly as they would be stored.
@@ -395,9 +452,7 @@ fn quantize(value: vec4f) -> vec4f {
 
 		code += `
 const SCALE = 1.0;
-fn quantize(value: vec4f) -> vec4f {
-	return vec4f(unpack2x16float(pack2x16float(value.xy)), unpack2x16float(pack2x16float(value.zw)));
-}
+fn quantize(value: vec4f) -> vec4f { return ds_round_f16(value); }
 `;
 
 	} else if ( isPackedQuantization( quantization ) ) {
@@ -623,8 +678,9 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
  */
 function createTileKernel( options: KernelOptions ): string {
 
-	const { format, dimension, reduction, edges, access, levels, count, load, store, size, bindings, output, channels, sourceFormat } = tileOptions( options );
+	const { format, dimension, reduction, edges, access, levels, count, load, store, size, bindings, output, channels, sourceFormat, f16Rounding } = tileOptions( options );
 	const buffer = store === undefined && output === 'buffer';
+	const half = store === undefined && formats[ format! ].quantization === 'float16';
 	const packed = store === undefined && isPackedQuantization( formats[ format! ].quantization ) ? formats[ format! ].quantization as 'rgb9e5ufloat' | 'rg11b10ufloat' : null;
 	const resolved = resolveReduction( reduction, channels );
 	const array = dimension === '2d-array';
@@ -640,7 +696,8 @@ function createTileKernel( options: KernelOptions ): string {
 	let code = declarations;
 	if ( access === 'sample' ) code += '@group(0) @binding(0) var ds_sampler: sampler;\n';
 	if ( load === undefined ) code += `@group(0) @binding(1) var ds_source: texture_2d${ suffix }<f32>;\n`;
-	if ( buffer ) code += bufferOutputWgsl( format!, true );
+	if ( half ) code += float16Wgsl( f16Rounding );
+	if ( buffer ) code += bufferOutputWgsl( format!, true, false );
 	// Packed floats are quantized by our encoder on either path, so stored values never depend on the GPU's conversion.
 	if ( packed !== null ) code += packedFloatWgsl( packed );
 	if ( store === undefined && ! buffer ) levels.forEach( ( level, i ) => code += `@group(0) @binding(${ i + 2 }) var ds_out${ level }: texture_storage_2d${ suffix }<${ format }, write>;\n` );
@@ -789,9 +846,9 @@ fn ds_first(p: vec2u, layer: u32) -> ${ T } {
 
 		}
 
-		// float16 outputs round to nearest even with pack2x16float before the store, as
-		// Downsampler does: Apple's textureStore truncates f32 → f16 (results/probes/f16-store-rounding.mjs).
-		if ( store === undefined && formats[ format! ].quantization === 'float16' ) return `{ let v = ${ value }; textureStore(ds_out${ level }, vec2i(${ pos })${ array ? ', i32(group.z)' : '' }, vec4f(unpack2x16float(pack2x16float(v.xy)), unpack2x16float(pack2x16float(v.zw)))); }`;
+		// float16 outputs are rounded before the store (f16Rounding), as Downsampler does:
+		// textureStore truncates f32 → f16 on Apple and D3D12 (results/probes/f16-store-rounding.mjs).
+		if ( half ) return `textureStore(ds_out${ level }, vec2i(${ pos })${ array ? ', i32(group.z)' : '' }, ds_round_f16(${ value }));`;
 
 		return store !== undefined ? `store(${ level }u, vec2i(${ pos }), group.z, ${ value });` : `textureStore(ds_out${ level }, vec2i(${ pos })${ array ? ', i32(group.z)' : '' }, ${ value });`;
 

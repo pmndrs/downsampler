@@ -34,6 +34,13 @@ function compareStrategies( device ) {
 		// and also timed spdMax and atomicMax.
 		if ( reduction !== 'average' ) continue;
 		strategies.spd = { ...run( exact, { reduction, oddSizes: 'spd' } ), parity: false };
+		// Windows decisions (2026-11-12, results/windows/correctness.md): shader weights instead of
+		// the sampler ('load', identical on every GPU), and the device's own f16 conversion
+		// ('device', the cost of rounding to nearest even; the same as exact for non-f16 formats).
+		const load = new Downsampler( device, { averageAccess: 'load' } ), tailLoad = new Downsampler( device, { averageAccess: 'load', tail: true } );
+		strategies.exactLoad = { ...run( load, { reduction } ), parity: true };
+		strategies.tailLoad = { ...run( tailLoad, { reduction } ), parity: true };
+		strategies.exactDevice = { ...run( new Downsampler( device, { f16Rounding: 'device' } ), { reduction } ), parity: true };
 		{
 
 			// All batches in one compute pass (encodePass), as a tool records them:
