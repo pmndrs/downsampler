@@ -504,6 +504,7 @@ const decisions = [
 	{ q: 'Upscaler exposure: meter every texel, or keep the 1024 taps?', blocking: false, meta: 'Every texel is a better estimate but changes values; the taps version is bit-identical.', rec: '<strong>Recommend:</strong> merge the bit-identical perf/exposure-parallel branch first, then decide on every-texel separately.' },
 	{ q: 'Payload folds: smaller-payload ties, or position ties?', blocking: false, meta: 'Ties are rare with continuous depth.', rec: '<strong>Recommend:</strong> keep smaller-payload ties (order-independent, free); put a texel index first when position matters.' },
 	{ q: 'Reducer defaults: edges \'zero-weight\', no rounding between levels; scalar finish gets a layer argument', blocking: false, meta: 'API review.', rec: '<strong>Recommend:</strong> keep all three.' },
+	{ q: 'Draft bug reports for webgpu-spd?', blocking: false, meta: 'Found on M5 Pro: stale levels 7+ from the single-dispatch handoff, inverted f16 check, last level unwritten with a separate target, shared mip-6 buffer, levels unwritten above 4096², MinMax clamps max at 0 (results/compare/webgpu-spd.md).', rec: '<strong>Recommend:</strong> yes, as drafts for your review; one issue per bug, with the repro from our bench. Nothing is posted without you.' },
 	{ q: 'Review the gpuweb#5253 comment draft before anything is posted', blocking: false, meta: 'M5, after cross-vendor data exists.', rec: 'Nothing is posted without your review.' },
 ];
 const runs = [
