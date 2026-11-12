@@ -17,7 +17,7 @@
 // allows (6 + direct ≤ maxStorageTexturesPerShaderStage); the rest go to a
 // packed buffer and are copied into the texture ('texture ready'). The counter
 // resets itself, as SPD's does, so no clear is recorded per chain.
-import { createKernel } from '/dist/webgpu/kernel.js';
+import { createKernel, float16Wgsl } from '/dist/webgpu/kernel.js';
 
 const formatWords = { rgba8unorm: 1, rgba16float: 2 };
 const entry = '@compute @workgroup_size(16, 16)\nfn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group: vec3u) {';
@@ -90,7 +90,7 @@ export class AtomicSpd {
 
 		}
 
-		const pack = value => words === 1 ? `pack4x8unorm(${ value })` : `vec2u(pack2x16float(${ value }.xy), pack2x16float(${ value }.zw))`;
+		const pack = value => words === 1 ? `pack4x8unorm(${ value })` : `vec2u(ds_pack_f16(${ value }.xy), ds_pack_f16(${ value }.zw))`;
 		const unpack = address => words === 1 ? `unpack4x8unorm(atomicLoad(&spd_state[${ address }]))` : `vec4f(unpack2x16float(atomicLoad(&spd_state[${ address }])), unpack2x16float(atomicLoad(&spd_state[${ address } + 1u])))`;
 
 		let bindings = '';
@@ -98,17 +98,18 @@ export class AtomicSpd {
 		bindings += '// 0: completion counter; then the packed level-6 texel of each workgroup.\n@group(1) @binding(12) var<storage, read_write> spd_state: array<atomic<u32>>;\n';
 		if ( packed.length ) bindings += '@group(1) @binding(13) var<storage, read_write> spd_packed: array<u32>;\n';
 
-		// float16 stores round to nearest even first, as the library's kernels do: textureStore
-		// alone truncates on some devices (Apple M5 Pro, results/probes/f16-store-rounding.mjs).
-		const stored = words === 1 ? 'value' : 'vec4f(unpack2x16float(pack2x16float(value.xy)), unpack2x16float(pack2x16float(value.zw)))';
+		// float16 stores and payloads round to nearest even first with the library's helper
+		// (f16Rounding 'nearest'): textureStore truncates on Apple and D3D12, pack2x16float on D3D12.
+		const half = words === 1 ? '' : float16Wgsl( 'nearest' );
+		const stored = words === 1 ? 'value' : 'ds_round_f16(value)';
 		const storeLevels = ( base, count ) => Array.from( { length: count }, ( _, i ) => `	if (level == ${ i + 1 }u) { textureStore(spd_mip${ base + i + 1 }, texel, ${ stored }); }\n` ).join( '' );
-		const publish = words === 1 ? '		atomicStore(&spd_state[address], pack4x8unorm(value));\n' : '		let p = vec2u(pack2x16float(value.xy), pack2x16float(value.zw));\n		atomicStore(&spd_state[address], p.x);\n		atomicStore(&spd_state[address + 1u], p.y);\n';
-		const phase1Store = `fn store(level: u32, texel: vec2i, layer: u32, value: vec4f) {
+		const publish = words === 1 ? '		atomicStore(&spd_state[address], pack4x8unorm(value));\n' : '		let p = vec2u(ds_pack_f16(value.xy), ds_pack_f16(value.zw));\n		atomicStore(&spd_state[address], p.x);\n		atomicStore(&spd_state[address + 1u], p.y);\n';
+		const phase1Store = `${ half }fn store(level: u32, texel: vec2i, layer: u32, value: vec4f) {
 ${ storeLevels( 0, 6 ) }	if (level == 6u) {
 		let address = 1u + (u32(texel.y) * ${ groupsX }u + u32(texel.x)) * ${ words }u;
 ${ publish }	}
 }`;
-		const tailStore = `fn store(level: u32, texel: vec2i, layer: u32, value: vec4f) {
+		const tailStore = `${ half }fn store(level: u32, texel: vec2i, layer: u32, value: vec4f) {
 ${ storeLevels( 6, direct ) }${ packed.map( ( { level, offset, bytesPerRow } ) => `	if (level == ${ level - 6 }u) {
 		let address = ${ offset / 4 }u + u32(texel.y) * ${ bytesPerRow / 4 }u + u32(texel.x) * ${ words }u;
 ${ words === 1 ? '		spd_packed[address] = pack4x8unorm(value);' : '		let p = ' + pack( 'value' ) + ';\n		spd_packed[address] = p.x;\n		spd_packed[address + 1u] = p.y;' }

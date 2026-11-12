@@ -1,0 +1,45 @@
+{
+  "updatedAt": "2026-11-12T11:24:12.019Z",
+  "samples": 91,
+  "loadedSamples": 73,
+  "loadedThresholdPercent": 70,
+  "smMhz": {
+    "min": 210,
+    "median": 1552,
+    "max": 2047
+  },
+  "memMhz": {
+    "min": 405,
+    "median": 7151,
+    "max": 7151
+  },
+  "smMhzLoaded": {
+    "min": 900,
+    "median": 1522,
+    "max": 2047
+  },
+  "memMhzLoaded": {
+    "min": 7151,
+    "median": 7151,
+    "max": 7151
+  },
+  "utilizationPercent": {
+    "min": 0,
+    "median": 87,
+    "max": 98
+  },
+  "temperatureCLoaded": {
+    "min": 75,
+    "median": 86,
+    "max": 89
+  },
+  "thermalLimitedShare": 0.589041095890411,
+  "powerCappedShare": 0.410958904109589,
+  "sampleIntervalMs": 200,
+  "start": {
+    "temperatureC": 62,
+    "coolBelowC": 70,
+    "waitedSeconds": 5,
+    "capped": false
+  }
+}
