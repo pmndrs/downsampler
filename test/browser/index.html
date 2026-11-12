@@ -29,15 +29,18 @@
 			import { validate } from './validate.js';
 			import { benchmark } from '../bench/bench.js';
 			import { quality } from '../bench/quality.js';
+			import { checkWebgpuSpd } from '../bench/webgpu-spd.js';
 
 			const status = document.getElementById( 'status' );
 			let report = null;
 
 			// Entry point for the headless runner (test/run.js) and the buttons below.
 			// `compare: 'spd'` times the odd-size strategies (M2T.4); `quality` measures 'spd' against 'exact'.
-			window.runSuite = async ( { bench = false, quick = false, only, sizes, formats, rounds, repeats, compat = false, compare, quality: measureQuality = false, skipValidation = false } = {} ) => {
+			window.runSuite = async ( { bench = false, quick = false, only, sizes, formats, rounds, repeats, compat = false, compare, quality: measureQuality = false, skipValidation = false, webgpuSpdCheck = false, frames } = {} ) => {
 
-				const { device, adapter, userAgent } = await requestDevice( { compat, maxStorageTextures: compare === 'spd' } );
+				// webgpu-spd (results/compare/webgpu-spd.md) runs with the features and limits it uses: subgroups, shader-f16, the adapter's storage texture limit.
+				const webgpuSpd = compare === 'webgpu-spd' || webgpuSpdCheck;
+				const { device, adapter, userAgent } = await requestDevice( { compat, maxStorageTextures: compare === 'spd' || webgpuSpd, features: webgpuSpd ? [ 'subgroups', 'shader-f16' ] : [] } );
 				const errors = [];
 				device.addEventListener( 'uncapturederror', event => errors.push( event.error.message ) );
 				device.lost.then( info => { if ( info.reason !== 'destroyed' ) errors.push( `device lost: ${ info.message }` ); } );
@@ -48,9 +51,10 @@
 					const validation = skipValidation ? { passed: true, cases: 0, checks: 0, skipped: [], ms: 0, results: [] } : await validate( device, { onProgress: progress, quick, only } );
 					const timing = bench ? await benchmark( device, { sizes, formats, rounds, repeats, compare, onProgress: progress } ) : null;
 					const qualityResults = measureQuality ? await quality( device, { sizes, formats, onProgress: progress } ) : null;
+					const webgpuSpdResults = webgpuSpdCheck ? await checkWebgpuSpd( device, { sizes, formats, frames, onProgress: progress } ) : null;
 					await device.queue.onSubmittedWorkDone();
 					if ( errors.length ) throw new Error( errors.join( '\n' ) );
-					return { date: new Date().toISOString(), adapter, userAgent, validation, timing, quality: qualityResults };
+					return { date: new Date().toISOString(), adapter, userAgent, validation, timing, quality: qualityResults, webgpuSpd: webgpuSpdResults };
 
 				} finally {
 

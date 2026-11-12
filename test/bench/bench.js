@@ -10,6 +10,7 @@ import { createTexture, makeData, median, readMip, readMips, upload } from '../b
 import { AtomicSpd } from './atomic-spd.js';
 import { createRenderBaseline } from './render-baseline.js';
 import { timeGpu } from './timing.js';
+import { compareSpdSizes, firstUnitStep, webgpuSpdVariants } from './webgpu-spd.js';
 
 export const defaultSizes = [ [ 256, 256 ], [ 512, 512 ], [ 1024, 1024 ], [ 2048, 2048 ], [ 4096, 4096 ], [ 1920, 1080 ], [ 512, 512, 6 ] ];
 
@@ -130,10 +131,86 @@ async function checkAtomic( device, { atomic, reduction }, exact, width, height,
 
 }
 
+/**
+ * webgpu-spd (results/compare/webgpu-spd.md) against 'exact', the tail kernel,
+ * `oddSizes: 'spd'` and render passes. Averages for rgba8unorm/rgba16float,
+ * max (Hi-Z) for every format, r32float max only. Before timing, each
+ * webgpu-spd variant is compared with our 'spd' (average; format tolerance)
+ * or with wspd6 (max; exact) on every level above its first unit step (where
+ * WGSL leaves its out-of-bounds reads implementation-defined): levels 1–6 must
+ * match; mismatches from level 7 on, which depend on its atomic handoff, are
+ * recorded in `checks` (they occur on this device: results/compare/webgpu-spd.md).
+ */
+function webgpuSpdStrategies( device, format ) {
+
+	const exact = new Downsampler( device ), tail = new Downsampler( device, { tail: true } );
+	const variants = webgpuSpdVariants( device );
+	const run = ( downsampler, options ) => ( { passes: texture => downsampler.prepare( texture, options ).length, encode: ( encoder, texture ) => downsampler.encode( encoder, texture, options ) } );
+	const spd = ( variant, config, against ) => ( {
+		passes: texture => variant.pass( texture, config ).numPasses,
+		encode: ( encoder, texture ) => variant.encode( encoder, texture, config ),
+		parity: false,
+		check: async ( textures, name ) => {
+
+			const texture = textures[ name ], reference = textures[ against ];
+			const unit = firstUnitStep( texture.width, texture.height, texture.mipLevelCount - 1 );
+			const [ a, b ] = [ await readMips( device, texture, 1, Math.min( unit, texture.mipLevelCount ) ), await readMips( device, reference, 1, Math.min( unit, texture.mipLevelCount ) ) ];
+			const quantization = { rgba8unorm: 'unorm8', rgba16float: 'float16', r32float: 'float32' }[ format ];
+			// Levels 1–6 come from one workgroup's own tile and must match. Levels from 7 on
+			// depend on the handoff (or on a level that did): mismatches there are recorded,
+			// not fatal, since the timing is still that of the same work.
+			const mismatches = {};
+			a.forEach( ( level, l ) => level.forEach( ( value, i ) => {
+
+				const limit = config.filter ? 0 : tolerance( b[ l ][ i ], quantization );
+				if ( Math.abs( value - b[ l ][ i ] ) <= limit ) return;
+				if ( l + 1 <= 6 ) throw new Error( `${ name } ${ texture.width }x${ texture.height } ${ format } level ${ l + 1 } value ${ i }: ${ value } vs ${ against } ${ b[ l ][ i ] }` );
+				mismatches[ l + 1 ] = ( mismatches[ l + 1 ] ?? 0 ) + 1;
+
+			} ) );
+			return { against, levelsCompared: a.length, mismatches };
+
+		}
+	} );
+	const strategies = {};
+	if ( format !== 'r32float' ) {
+
+		strategies.exact = { ...run( exact, {} ), parity: true };
+		strategies.render = createRenderBaseline( device );
+		strategies.tail = { ...run( tail, {} ), parity: true };
+		strategies.spd = { ...run( exact, { oddSizes: 'spd' } ), parity: false };
+		for ( const [ name, variant ] of Object.entries( variants ) ) strategies[ name ] = spd( variant, {}, 'spd' );
+
+	}
+
+	strategies.exactMax = { ...run( exact, { reduction: 'max' } ), parity: false };
+	// wspd6 has no handoff; its own correctness is in the check run (results/compare/webgpu-spd-check.json).
+	strategies.wspd6Max = { ...spd( variants.wspd6, { filter: 'max' }, null ), check: undefined };
+	strategies.wspdMax = spd( variants.wspd, { filter: 'max' }, 'wspd6Max' );
+	return { strategies, reference: name => name.endsWith( 'Max' ) ? 'exactMax' : 'exact' };
+
+}
+
 export async function benchmark( device, { sizes, formats: benchFormats = defaultFormats, rounds = 11, repeats = 16, compare, onProgress = () => {} } = {} ) {
 
 	if ( ! device.features.has( 'timestamp-query' ) ) return { timestamps: false, results: [] };
-	sizes ??= compare === 'spd' ? compareSizes : defaultSizes;
+	sizes ??= compare === 'spd' ? compareSizes : compare === 'webgpu-spd' ? compareSpdSizes : defaultSizes;
+	if ( compare === 'webgpu-spd' ) {
+
+		// Strategies differ per format (r32float has no render baseline or average), so measure per format.
+		const all = { timestamps: true, rounds, repeats, strategies: [], results: [] };
+		for ( const format of benchFormats ) {
+
+			const part = await measure( device, webgpuSpdStrategies( device, format ), { sizes, benchFormats: [ format ], rounds, repeats, onProgress } );
+			all.strategies = [ ...new Set( [ ...all.strategies, ...part.strategies ] ) ];
+			all.results.push( ...part.results );
+
+		}
+
+		return all;
+
+	}
+
 	const limit = Math.min( 6, device.limits.maxStorageTexturesPerShaderStage );
 	if ( compare === 'spd' ) return measure( device, compareStrategies( device ), { sizes, benchFormats, rounds, repeats, onProgress } );
 	const strategies = { render: createRenderBaseline( device ) };
@@ -156,7 +233,7 @@ export async function benchmark( device, { sizes, formats: benchFormats = defaul
 
 }
 
-async function measure( device, { strategies, exact }, { sizes, benchFormats, rounds, repeats, onProgress } ) {
+async function measure( device, { strategies, exact, reference }, { sizes, benchFormats, rounds, repeats, onProgress } ) {
 
 	const names = Object.keys( strategies );
 	const results = [];
@@ -188,9 +265,11 @@ async function measure( device, { strategies, exact }, { sizes, benchFormats, ro
 
 				// Parity with the baseline on the timed input (a sanity check; the
 				// validation suite is the correctness oracle).
-				const last = textures.render.mipLevelCount - 1;
-				const baseline = await readMip( device, textures.render, last );
-				for ( const name of names.slice( 1 ).filter( name => strategies[ name ].parity !== false ) ) {
+				const baselineName = 'render' in textures ? 'render' : names[ 0 ];
+				const last = textures[ baselineName ].mipLevelCount - 1;
+				const baseline = await readMip( device, textures[ baselineName ], last );
+				for ( const name of names.filter( name => strategies[ name ].check ) ) checks[ name ] = await strategies[ name ].check( textures, name );
+				for ( const name of names.filter( name => name !== baselineName && strategies[ name ].parity !== false ) ) {
 
 					const actual = await readMip( device, textures[ name ], last );
 					const error = Math.max( ...actual.map( ( value, i ) => Math.abs( value - baseline[ i ] ) ) );
@@ -209,7 +288,7 @@ async function measure( device, { strategies, exact }, { sizes, benchFormats, ro
 
 					for ( const name of [ ...order.slice( round % order.length ), ...order.slice( 0, round % order.length ) ] ) {
 
-						const texture = textures[ name === 'marker' ? 'render' : name ];
+						const texture = textures[ name === 'marker' ? baselineName : name ];
 						const encode = name === 'marker' ? () => {} : encoder => strategies[ name ].encode( encoder, texture );
 						samples[ name ].push( await timeGpu( device, texture, encode, repeats ) );
 
@@ -220,7 +299,10 @@ async function measure( device, { strategies, exact }, { sizes, benchFormats, ro
 				const marker = median( samples.marker );
 				const gpuMs = Object.fromEntries( names.map( name => [ name, median( samples[ name ] ) - marker ] ) );
 				const passes = Object.fromEntries( names.map( name => [ name, strategies[ name ].passes( textures[ name ] ) ] ) );
-				const result = { width, height, layers, format, passes, gpuMs, markerMs: marker, samples, checks };
+				// Paired per-round ratios to the reference strategy (rounds rotate order, so
+				// both samples of a pair come from the same round), median over rounds.
+				const ratios = reference ? Object.fromEntries( names.map( name => [ name, median( samples[ name ].map( ( value, round ) => ( value - marker ) / ( samples[ reference( name ) ][ round ] - marker ) ) ) ] ) ) : undefined;
+				const result = { width, height, layers, format, passes, gpuMs, ratios, markerMs: marker, samples, checks };
 				results.push( result );
 				onProgress( result );
 

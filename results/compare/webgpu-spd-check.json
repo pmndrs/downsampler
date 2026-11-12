@@ -1,0 +1,4058 @@
+{
+  "date": "2026-11-12T03:06:59.142Z",
+  "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "device": "",
+    "description": "",
+    "isFallbackAdapter": false,
+    "timestamps": true,
+    "features": [
+      "texture-formats-tier1",
+      "bgra8unorm-storage",
+      "subgroups",
+      "shader-f16"
+    ],
+    "compatibility": false,
+    "maxStorageTexturesPerShaderStage": 8,
+    "subgroupMinSize": 32,
+    "subgroupMaxSize": 32,
+    "adapterFeatures": [
+      "bgra8unorm-storage",
+      "chromium-experimental-subgroup-matrix",
+      "clip-distances",
+      "core-features-and-limits",
+      "depth-clip-control",
+      "depth32float-stencil8",
+      "dual-source-blending",
+      "float32-blendable",
+      "float32-filterable",
+      "indirect-first-instance",
+      "primitive-index",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-component-swizzle",
+      "texture-compression-astc",
+      "texture-compression-astc-sliced-3d",
+      "texture-compression-bc",
+      "texture-compression-bc-sliced-3d",
+      "texture-compression-etc2",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+    ],
+    "maxTextureDimension2D": 8192
+  },
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36",
+  "validation": {
+    "passed": true,
+    "cases": 0,
+    "checks": 0,
+    "skipped": [],
+    "ms": 0,
+    "results": []
+  },
+  "timing": null,
+  "quality": null,
+  "webgpuSpd": {
+    "variants": {
+      "wspd": {
+        "mipsPerPass": 8,
+        "subgroups": true
+      },
+      "wspd6": {
+        "mipsPerPass": 6,
+        "subgroups": true
+      },
+      "wspdNoSg": {
+        "mipsPerPass": 8,
+        "subgroups": false
+      }
+    },
+    "average": [
+      {
+        "width": 960,
+        "height": 540,
+        "format": "rgba8unorm",
+        "mips": 9,
+        "firstUnitStep": null,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 674184,
+              "values": 690620,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 673014,
+              "values": 690620,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 674181,
+              "values": 690620,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 673036,
+              "values": 690620,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 674184,
+              "values": 690620,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 673014,
+              "values": 690620,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          }
+        }
+      },
+      {
+        "width": 1129,
+        "height": 635,
+        "format": "rgba8unorm",
+        "mips": 10,
+        "firstUnitStep": 10,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 929966,
+              "values": 952292,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0.003921598196029663,
+                  "relative": 0.007874075116164558
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 928235,
+              "values": 952292,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 929965,
+              "values": 952292,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0,
+                  "relative": 0
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 928254,
+              "values": 952292,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 929963,
+              "values": 952292,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0,
+                  "relative": 0
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 928235,
+              "values": 952292,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          }
+        }
+      },
+      {
+        "width": 1280,
+        "height": 720,
+        "format": "rgba8unorm",
+        "mips": 10,
+        "firstUnitStep": 10,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 1199245,
+              "values": 1228648,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0.003921598196029663,
+                  "relative": 0.007874075116164558
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 1197133,
+              "values": 1228648,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 1199240,
+              "values": 1228648,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0,
+                  "relative": 0
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 1197157,
+              "values": 1228648,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 1199245,
+              "values": 1228648,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0.003921598196029663,
+                  "relative": 0.007874075116164558
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 1197133,
+              "values": 1228648,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          }
+        }
+      },
+      {
+        "width": 1707,
+        "height": 960,
+        "format": "rgba8unorm",
+        "mips": 10,
+        "firstUnitStep": 10,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 2130889,
+              "values": 2182768,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0,
+                  "relative": 0
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 2127324,
+              "values": 2182768,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 2130883,
+              "values": 2182768,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0,
+                  "relative": 0
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 2127382,
+              "values": 2182768,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 2130889,
+              "values": 2182768,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0,
+                  "relative": 0
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 2127324,
+              "values": 2182768,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          }
+        }
+      },
+      {
+        "width": 1920,
+        "height": 1080,
+        "format": "rgba8unorm",
+        "mips": 10,
+        "firstUnitStep": null,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 2698140,
+              "values": 2764220,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 2693158,
+              "values": 2764220,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 2698133,
+              "values": 2764220,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 2693218,
+              "values": 2764220,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 2698140,
+              "values": 2764220,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 2693158,
+              "values": 2764220,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          }
+        }
+      },
+      {
+        "width": 1024,
+        "height": 1024,
+        "format": "rgba8unorm",
+        "mips": 10,
+        "firstUnitStep": null,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 1364985,
+              "values": 1398100,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 1362327,
+              "values": 1398100,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 1364980,
+              "values": 1398100,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 1362356,
+              "values": 1398100,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 1364985,
+              "values": 1398100,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 1362327,
+              "values": 1398100,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          }
+        }
+      },
+      {
+        "width": 2048,
+        "height": 2048,
+        "format": "rgba8unorm",
+        "mips": 11,
+        "firstUnitStep": null,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 5459369,
+              "values": 5592404,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 5449878,
+              "values": 5592404,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 5459348,
+              "values": 5592404,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 5450016,
+              "values": 5592404,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 5459369,
+              "values": 5592404,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 5449878,
+              "values": 5592404,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          }
+        }
+      },
+      {
+        "width": 4096,
+        "height": 4096,
+        "format": "rgba8unorm",
+        "mips": 12,
+        "firstUnitStep": null,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 21836340,
+              "values": 22369620,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 21797358,
+              "values": 22369620,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 21836290,
+              "values": 22369620,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 21798018,
+              "values": 22369620,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 21836301,
+              "values": 22369620,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 21797334,
+              "values": 22369620,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          }
+        }
+      },
+      {
+        "width": 256,
+        "height": 256,
+        "format": "rgba8unorm",
+        "mips": 8,
+        "firstUnitStep": null,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 85286,
+              "values": 87380,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 85126,
+              "values": 87380,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 1
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 85290,
+              "values": 87380,
+              "worst": 0.9999999403953552,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 85129,
+              "values": 87380,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 85287,
+              "values": 87380,
+              "worst": 1.000007539987564,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 85127,
+              "values": 87380,
+              "worst": 1.000007539987564
+            },
+            "dispatches": 1
+          }
+        }
+      },
+      {
+        "width": 960,
+        "height": 540,
+        "format": "rgba16float",
+        "mips": 9,
+        "firstUnitStep": null,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 675855,
+              "values": 690620,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 675822,
+              "values": 690620,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 675873,
+              "values": 690620,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 675789,
+              "values": 690620,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 675855,
+              "values": 690620,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 675822,
+              "values": 690620,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          }
+        }
+      },
+      {
+        "width": 1129,
+        "height": 635,
+        "format": "rgba16float",
+        "mips": 10,
+        "firstUnitStep": 10,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 931813,
+              "values": 952292,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0.0078125,
+                  "relative": 0.0019762845849802257
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 931790,
+              "values": 952292,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 931827,
+              "values": 952292,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0.00390625,
+                  "relative": 0.0009881422924901129
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 931740,
+              "values": 952292,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 931813,
+              "values": 952292,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0.0078125,
+                  "relative": 0.0019762845849802257
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 931790,
+              "values": 952292,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          }
+        }
+      },
+      {
+        "width": 1280,
+        "height": 720,
+        "format": "rgba16float",
+        "mips": 10,
+        "firstUnitStep": 10,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 1201972,
+              "values": 1228648,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0.015625,
+                  "relative": 0.003933136676499527
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 1201940,
+              "values": 1228648,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 1201997,
+              "values": 1228648,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0.00390625,
+                  "relative": 0.0009866798223976403
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 1201867,
+              "values": 1228648,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 1201972,
+              "values": 1228648,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0.015625,
+                  "relative": 0.003933136676499527
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 1201940,
+              "values": 1228648,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          }
+        }
+      },
+      {
+        "width": 1707,
+        "height": 960,
+        "format": "rgba16float",
+        "mips": 10,
+        "firstUnitStep": 10,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 2135312,
+              "values": 2182768,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0.00390625,
+                  "relative": 0.0009842519685039353
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 2135260,
+              "values": 2182768,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 2135374,
+              "values": 2182768,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0.00390625,
+                  "relative": 0.000983284169124854
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 2135129,
+              "values": 2182768,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 2135312,
+              "values": 2182768,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [
+              {
+                "level": 10,
+                "size": "1x1",
+                "values": 4,
+                "poisoned": 0,
+                "zeroMismatches": 4,
+                "zeroAlpha1Mismatches": 4,
+                "clampMismatches": 0,
+                "vsOursSpd": {
+                  "worst": 0.00390625,
+                  "relative": 0.0009842519685039353
+                }
+              }
+            ],
+            "vsOursSpd": {
+              "identical": 2135260,
+              "values": 2182768,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          }
+        }
+      },
+      {
+        "width": 1920,
+        "height": 1080,
+        "format": "rgba16float",
+        "mips": 10,
+        "firstUnitStep": null,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 2704471,
+              "values": 2764220,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 2704400,
+              "values": 2764220,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 2704524,
+              "values": 2764220,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 2704205,
+              "values": 2764220,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 2704471,
+              "values": 2764220,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 2704400,
+              "values": 2764220,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          }
+        }
+      },
+      {
+        "width": 1024,
+        "height": 1024,
+        "format": "rgba16float",
+        "mips": 10,
+        "firstUnitStep": null,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 1367886,
+              "values": 1398100,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 1367837,
+              "values": 1398100,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 1367907,
+              "values": 1398100,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 1367736,
+              "values": 1398100,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 1367886,
+              "values": 1398100,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 1367837,
+              "values": 1398100,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          }
+        }
+      },
+      {
+        "width": 2048,
+        "height": 2048,
+        "format": "rgba16float",
+        "mips": 11,
+        "firstUnitStep": null,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 5471316,
+              "values": 5592404,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 5471127,
+              "values": 5592404,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 5471441,
+              "values": 5592404,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 5470738,
+              "values": 5592404,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 5471316,
+              "values": 5592404,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 5471127,
+              "values": 5592404,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          }
+        }
+      },
+      {
+        "width": 4096,
+        "height": 4096,
+        "format": "rgba16float",
+        "mips": 12,
+        "firstUnitStep": null,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 21882246,
+              "values": 22369620,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 21881408,
+              "values": 22369620,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 21882795,
+              "values": 22369620,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 21880035,
+              "values": 22369620,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 21882246,
+              "values": 22369620,
+              "worst": 0.0078125,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 21881408,
+              "values": 22369620,
+              "worst": 0.0078125
+            },
+            "dispatches": 2
+          }
+        }
+      },
+      {
+        "width": 256,
+        "height": 256,
+        "format": "rgba16float",
+        "mips": 8,
+        "firstUnitStep": null,
+        "variants": {
+          "wspd": {
+            "inBounds": {
+              "mismatches": 2,
+              "exact": 85535,
+              "values": 87380,
+              "worst": 0.03125,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 85534,
+              "values": 87380,
+              "worst": 0.03125
+            },
+            "dispatches": 1
+          },
+          "wspd6": {
+            "inBounds": {
+              "mismatches": 0,
+              "exact": 85545,
+              "values": 87380,
+              "worst": 0.00390625,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 85537,
+              "values": 87380,
+              "worst": 0.00390625
+            },
+            "dispatches": 2
+          },
+          "wspdNoSg": {
+            "inBounds": {
+              "mismatches": 6,
+              "exact": 85534,
+              "values": 87380,
+              "worst": 0.05859375,
+              "poisoned": 0
+            },
+            "unit": [],
+            "vsOursSpd": {
+              "identical": 85533,
+              "values": 87380,
+              "worst": 0.05859375
+            },
+            "dispatches": 1
+          }
+        }
+      }
+    ],
+    "hiz": [
+      {
+        "width": 960,
+        "height": 540,
+        "mips": 9,
+        "firstUnitStep": null,
+        "reductions": {
+          "max": {
+            "exact": {
+              "violations": 0,
+              "texels": 172655,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 2543,
+              "texels": 172655,
+              "worstLevelFraction": 1,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 172655,
+                "values": 172655,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspd6": {
+              "violations": 2543,
+              "texels": 172655,
+              "worstLevelFraction": 1,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 172655,
+                "values": 172655,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspdNoSg": {
+              "violations": 2543,
+              "texels": 172655,
+              "worstLevelFraction": 1,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 172655,
+                "values": 172655,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            }
+          },
+          "min": {
+            "exact": {
+              "violations": 0,
+              "texels": 172655,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 2576,
+              "texels": 172655,
+              "worstLevelFraction": 1,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 172655,
+                "values": 172655,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspd6": {
+              "violations": 2576,
+              "texels": 172655,
+              "worstLevelFraction": 1,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 172655,
+                "values": 172655,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspdNoSg": {
+              "violations": 2576,
+              "texels": 172655,
+              "worstLevelFraction": 1,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 172655,
+                "values": 172655,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            }
+          }
+        }
+      },
+      {
+        "width": 1129,
+        "height": 635,
+        "mips": 10,
+        "firstUnitStep": 10,
+        "reductions": {
+          "max": {
+            "exact": {
+              "violations": 0,
+              "texels": 238074,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 123789,
+              "texels": 238074,
+              "worstLevelFraction": 0.5568326733337808,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 238073,
+                "values": 238073,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 0,
+                  "zeroAlpha1Mismatches": 0,
+                  "clampMismatches": 0
+                }
+              ]
+            },
+            "wspd6": {
+              "violations": 123789,
+              "texels": 238074,
+              "worstLevelFraction": 0.5568326733337808,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 238073,
+                "values": 238073,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 0,
+                  "zeroAlpha1Mismatches": 0,
+                  "clampMismatches": 0
+                }
+              ]
+            },
+            "wspdNoSg": {
+              "violations": 123789,
+              "texels": 238074,
+              "worstLevelFraction": 0.5568326733337808,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 238073,
+                "values": 238073,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 0,
+                  "zeroAlpha1Mismatches": 0,
+                  "clampMismatches": 0
+                }
+              ]
+            }
+          },
+          "min": {
+            "exact": {
+              "violations": 0,
+              "texels": 238074,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 123524,
+              "texels": 238074,
+              "worstLevelFraction": 0.5562453855963487,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 238073,
+                "values": 238073,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 1,
+                  "zeroAlpha1Mismatches": 1,
+                  "clampMismatches": 0
+                }
+              ]
+            },
+            "wspd6": {
+              "violations": 123524,
+              "texels": 238074,
+              "worstLevelFraction": 0.5562453855963487,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 238073,
+                "values": 238073,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 1,
+                  "zeroAlpha1Mismatches": 1,
+                  "clampMismatches": 0
+                }
+              ]
+            },
+            "wspdNoSg": {
+              "violations": 123524,
+              "texels": 238074,
+              "worstLevelFraction": 0.5562453855963487,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 238073,
+                "values": 238073,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 1,
+                  "zeroAlpha1Mismatches": 1,
+                  "clampMismatches": 0
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "width": 1280,
+        "height": 720,
+        "mips": 10,
+        "firstUnitStep": 10,
+        "reductions": {
+          "max": {
+            "exact": {
+              "violations": 0,
+              "texels": 307163,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 228,
+              "texels": 307163,
+              "worstLevelFraction": 0.4,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 307162,
+                "values": 307162,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 0,
+                  "zeroAlpha1Mismatches": 0,
+                  "clampMismatches": 0
+                }
+              ]
+            },
+            "wspd6": {
+              "violations": 228,
+              "texels": 307163,
+              "worstLevelFraction": 0.4,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 307162,
+                "values": 307162,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 0,
+                  "zeroAlpha1Mismatches": 0,
+                  "clampMismatches": 0
+                }
+              ]
+            },
+            "wspdNoSg": {
+              "violations": 228,
+              "texels": 307163,
+              "worstLevelFraction": 0.4,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 307162,
+                "values": 307162,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 0,
+                  "zeroAlpha1Mismatches": 0,
+                  "clampMismatches": 0
+                }
+              ]
+            }
+          },
+          "min": {
+            "exact": {
+              "violations": 0,
+              "texels": 307163,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 245,
+              "texels": 307163,
+              "worstLevelFraction": 0.5,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 307162,
+                "values": 307162,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 1,
+                  "zeroAlpha1Mismatches": 1,
+                  "clampMismatches": 0
+                }
+              ]
+            },
+            "wspd6": {
+              "violations": 245,
+              "texels": 307163,
+              "worstLevelFraction": 0.5,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 307162,
+                "values": 307162,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 1,
+                  "zeroAlpha1Mismatches": 1,
+                  "clampMismatches": 0
+                }
+              ]
+            },
+            "wspdNoSg": {
+              "violations": 245,
+              "texels": 307163,
+              "worstLevelFraction": 0.5,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 307162,
+                "values": 307162,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 1,
+                  "zeroAlpha1Mismatches": 1,
+                  "clampMismatches": 0
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "width": 1707,
+        "height": 960,
+        "mips": 10,
+        "firstUnitStep": 10,
+        "reductions": {
+          "max": {
+            "exact": {
+              "violations": 0,
+              "texels": 545693,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 176380,
+              "texels": 545693,
+              "worstLevelFraction": 0.5,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 545692,
+                "values": 545692,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 0,
+                  "zeroAlpha1Mismatches": 0,
+                  "clampMismatches": 0
+                }
+              ]
+            },
+            "wspd6": {
+              "violations": 176380,
+              "texels": 545693,
+              "worstLevelFraction": 0.5,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 545692,
+                "values": 545692,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 0,
+                  "zeroAlpha1Mismatches": 0,
+                  "clampMismatches": 0
+                }
+              ]
+            },
+            "wspdNoSg": {
+              "violations": 176380,
+              "texels": 545693,
+              "worstLevelFraction": 0.5,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 545692,
+                "values": 545692,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 0,
+                  "zeroAlpha1Mismatches": 0,
+                  "clampMismatches": 0
+                }
+              ]
+            }
+          },
+          "min": {
+            "exact": {
+              "violations": 0,
+              "texels": 545693,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 176343,
+              "texels": 545693,
+              "worstLevelFraction": 1,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 545692,
+                "values": 545692,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 1,
+                  "zeroAlpha1Mismatches": 1,
+                  "clampMismatches": 0
+                }
+              ]
+            },
+            "wspd6": {
+              "violations": 176343,
+              "texels": 545693,
+              "worstLevelFraction": 1,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 545692,
+                "values": 545692,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 1,
+                  "zeroAlpha1Mismatches": 1,
+                  "clampMismatches": 0
+                }
+              ]
+            },
+            "wspdNoSg": {
+              "violations": 176343,
+              "texels": 545693,
+              "worstLevelFraction": 1,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 545692,
+                "values": 545692,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": [
+                {
+                  "level": 10,
+                  "size": "1x1",
+                  "values": 1,
+                  "poisoned": 0,
+                  "zeroMismatches": 1,
+                  "zeroAlpha1Mismatches": 1,
+                  "clampMismatches": 0
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "width": 1920,
+        "height": 1080,
+        "mips": 10,
+        "firstUnitStep": null,
+        "reductions": {
+          "max": {
+            "exact": {
+              "violations": 0,
+              "texels": 691055,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 2410,
+              "texels": 691055,
+              "worstLevelFraction": 0.30416666666666664,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 691055,
+                "values": 691055,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspd6": {
+              "violations": 2410,
+              "texels": 691055,
+              "worstLevelFraction": 0.30416666666666664,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 691055,
+                "values": 691055,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspdNoSg": {
+              "violations": 2410,
+              "texels": 691055,
+              "worstLevelFraction": 0.30416666666666664,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 691055,
+                "values": 691055,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            }
+          },
+          "min": {
+            "exact": {
+              "violations": 0,
+              "texels": 691055,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 2376,
+              "texels": 691055,
+              "worstLevelFraction": 0.3020833333333333,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 691055,
+                "values": 691055,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspd6": {
+              "violations": 2376,
+              "texels": 691055,
+              "worstLevelFraction": 0.3020833333333333,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 691055,
+                "values": 691055,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspdNoSg": {
+              "violations": 2376,
+              "texels": 691055,
+              "worstLevelFraction": 0.3020833333333333,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 691055,
+                "values": 691055,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            }
+          }
+        }
+      },
+      {
+        "width": 1024,
+        "height": 1024,
+        "mips": 10,
+        "firstUnitStep": null,
+        "reductions": {
+          "max": {
+            "exact": {
+              "violations": 0,
+              "texels": 349525,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 0,
+              "texels": 349525,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 349525,
+                "values": 349525,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspd6": {
+              "violations": 0,
+              "texels": 349525,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 349525,
+                "values": 349525,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspdNoSg": {
+              "violations": 0,
+              "texels": 349525,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 349525,
+                "values": 349525,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            }
+          },
+          "min": {
+            "exact": {
+              "violations": 0,
+              "texels": 349525,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 0,
+              "texels": 349525,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 349525,
+                "values": 349525,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspd6": {
+              "violations": 0,
+              "texels": 349525,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 349525,
+                "values": 349525,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspdNoSg": {
+              "violations": 0,
+              "texels": 349525,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 349525,
+                "values": 349525,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            }
+          }
+        }
+      },
+      {
+        "width": 2048,
+        "height": 2048,
+        "mips": 11,
+        "firstUnitStep": null,
+        "reductions": {
+          "max": {
+            "exact": {
+              "violations": 0,
+              "texels": 1398101,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 0,
+              "texels": 1398101,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 1398101,
+                "values": 1398101,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspd6": {
+              "violations": 0,
+              "texels": 1398101,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 1398101,
+                "values": 1398101,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspdNoSg": {
+              "violations": 0,
+              "texels": 1398101,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 1398101,
+                "values": 1398101,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            }
+          },
+          "min": {
+            "exact": {
+              "violations": 0,
+              "texels": 1398101,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 0,
+              "texels": 1398101,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 1398101,
+                "values": 1398101,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspd6": {
+              "violations": 0,
+              "texels": 1398101,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 1398101,
+                "values": 1398101,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspdNoSg": {
+              "violations": 0,
+              "texels": 1398101,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 1398101,
+                "values": 1398101,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            }
+          }
+        }
+      },
+      {
+        "width": 4096,
+        "height": 4096,
+        "mips": 12,
+        "firstUnitStep": null,
+        "reductions": {
+          "max": {
+            "exact": {
+              "violations": 0,
+              "texels": 5592405,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 0,
+              "texels": 5592405,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 5592405,
+                "values": 5592405,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspd6": {
+              "violations": 0,
+              "texels": 5592405,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 5592405,
+                "values": 5592405,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspdNoSg": {
+              "violations": 0,
+              "texels": 5592405,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 5592405,
+                "values": 5592405,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            }
+          },
+          "min": {
+            "exact": {
+              "violations": 0,
+              "texels": 5592405,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 0,
+              "texels": 5592405,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 5592405,
+                "values": 5592405,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspd6": {
+              "violations": 0,
+              "texels": 5592405,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 5592405,
+                "values": 5592405,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspdNoSg": {
+              "violations": 0,
+              "texels": 5592405,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 5592405,
+                "values": 5592405,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            }
+          }
+        }
+      },
+      {
+        "width": 256,
+        "height": 256,
+        "mips": 8,
+        "firstUnitStep": null,
+        "reductions": {
+          "max": {
+            "exact": {
+              "violations": 0,
+              "texels": 21845,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 0,
+              "texels": 21845,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 21845,
+                "values": 21845,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspd6": {
+              "violations": 0,
+              "texels": 21845,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 21845,
+                "values": 21845,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspdNoSg": {
+              "violations": 0,
+              "texels": 21845,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 21845,
+                "values": 21845,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            }
+          },
+          "min": {
+            "exact": {
+              "violations": 0,
+              "texels": 21845,
+              "worstLevelFraction": 0
+            },
+            "wspd": {
+              "violations": 0,
+              "texels": 21845,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 21845,
+                "values": 21845,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspd6": {
+              "violations": 0,
+              "texels": 21845,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 21845,
+                "values": 21845,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            },
+            "wspdNoSg": {
+              "violations": 0,
+              "texels": 21845,
+              "worstLevelFraction": 0,
+              "oracle": {
+                "mismatches": 0,
+                "exact": 21845,
+                "values": 21845,
+                "worst": 0,
+                "poisoned": 0
+              },
+              "unit": []
+            }
+          }
+        }
+      }
+    ],
+    "stress": [
+      {
+        "width": 960,
+        "height": 540,
+        "format": "rgba8unorm",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-9",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 1,
+              "badBytes": 12
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-9",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-9",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 7,
+              "badBytes": 101
+            },
+            "submits": {
+              "badFrames": 5,
+              "badBytes": 63
+            }
+          }
+        }
+      },
+      {
+        "width": 1129,
+        "height": 635,
+        "format": "rgba8unorm",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 4,
+              "badBytes": 104
+            },
+            "submits": {
+              "badFrames": 3,
+              "badBytes": 138
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 5,
+              "badBytes": 208
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          }
+        }
+      },
+      {
+        "width": 1280,
+        "height": 720,
+        "format": "rgba8unorm",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 8,
+              "badBytes": 126
+            },
+            "submits": {
+              "badFrames": 4,
+              "badBytes": 71
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [
+              {
+                "input": 1,
+                "run": 0,
+                "bytes": 14
+              }
+            ],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 7,
+              "badBytes": 274
+            },
+            "submits": {
+              "badFrames": 13,
+              "badBytes": 381
+            }
+          }
+        }
+      },
+      {
+        "width": 1707,
+        "height": 960,
+        "format": "rgba8unorm",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 10,
+              "badBytes": 445
+            },
+            "submits": {
+              "badFrames": 10,
+              "badBytes": 329
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 11,
+              "badBytes": 614
+            },
+            "submits": {
+              "badFrames": 4,
+              "badBytes": 184
+            }
+          }
+        }
+      },
+      {
+        "width": 1920,
+        "height": 1080,
+        "format": "rgba8unorm",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 13,
+              "badBytes": 473
+            },
+            "submits": {
+              "badFrames": 9,
+              "badBytes": 583
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 6,
+              "badBytes": 213
+            },
+            "submits": {
+              "badFrames": 13,
+              "badBytes": 795
+            }
+          }
+        }
+      },
+      {
+        "width": 1024,
+        "height": 1024,
+        "format": "rgba8unorm",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 5,
+              "badBytes": 171
+            },
+            "submits": {
+              "badFrames": 3,
+              "badBytes": 73
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 10,
+              "badBytes": 426
+            },
+            "submits": {
+              "badFrames": 3,
+              "badBytes": 151
+            }
+          }
+        }
+      },
+      {
+        "width": 2048,
+        "height": 2048,
+        "format": "rgba8unorm",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-11",
+            "isolatedDiffer": [
+              {
+                "input": 2,
+                "run": 0,
+                "bytes": 111
+              }
+            ],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 10,
+              "badBytes": 785
+            },
+            "submits": {
+              "badFrames": 11,
+              "badBytes": 658
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-11",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-11",
+            "isolatedDiffer": [
+              {
+                "input": 0,
+                "run": 0,
+                "bytes": 69
+              },
+              {
+                "input": 3,
+                "run": 0,
+                "bytes": 76
+              }
+            ],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 37,
+              "badBytes": 1686
+            },
+            "submits": {
+              "badFrames": 34,
+              "badBytes": 1330
+            }
+          }
+        }
+      },
+      {
+        "width": 4096,
+        "height": 4096,
+        "format": "rgba8unorm",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-12",
+            "isolatedDiffer": [
+              {
+                "input": 2,
+                "run": 0,
+                "bytes": 89
+              }
+            ],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 64,
+              "badBytes": 6628
+            },
+            "submits": {
+              "badFrames": 93,
+              "badBytes": 5776
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-12",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-12",
+            "isolatedDiffer": [
+              {
+                "input": 2,
+                "run": 0,
+                "bytes": 90
+              }
+            ],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 99,
+              "badBytes": 9908
+            },
+            "submits": {
+              "badFrames": 106,
+              "badBytes": 12417
+            }
+          }
+        }
+      },
+      {
+        "width": 256,
+        "height": 256,
+        "format": "rgba8unorm",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-8",
+            "isolatedDiffer": [
+              {
+                "input": 0,
+                "run": 0,
+                "bytes": 1
+              },
+              {
+                "input": 1,
+                "run": 0,
+                "bytes": 11
+              },
+              {
+                "input": 2,
+                "run": 0,
+                "bytes": 11
+              },
+              {
+                "input": 3,
+                "run": 0,
+                "bytes": 11
+              }
+            ],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 183,
+              "badBytes": 1625
+            },
+            "submits": {
+              "badFrames": 197,
+              "badBytes": 2046
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-8",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-8",
+            "isolatedDiffer": [
+              {
+                "input": 0,
+                "run": 0,
+                "bytes": 4
+              },
+              {
+                "input": 1,
+                "run": 0,
+                "bytes": 11
+              },
+              {
+                "input": 2,
+                "run": 0,
+                "bytes": 11
+              },
+              {
+                "input": 3,
+                "run": 0,
+                "bytes": 12
+              }
+            ],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 141,
+              "badBytes": 1147
+            },
+            "submits": {
+              "badFrames": 198,
+              "badBytes": 2083
+            }
+          }
+        }
+      },
+      {
+        "width": 960,
+        "height": 540,
+        "format": "rgba16float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-9",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 2,
+              "badBytes": 144
+            },
+            "submits": {
+              "badFrames": 1,
+              "badBytes": 37
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-9",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-9",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 3,
+              "badBytes": 60
+            },
+            "submits": {
+              "badFrames": 4,
+              "badBytes": 102
+            }
+          }
+        }
+      },
+      {
+        "width": 1129,
+        "height": 635,
+        "format": "rgba16float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 2,
+              "badBytes": 38
+            },
+            "submits": {
+              "badFrames": 1,
+              "badBytes": 41
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 1,
+              "badBytes": 68
+            },
+            "submits": {
+              "badFrames": 3,
+              "badBytes": 115
+            }
+          }
+        }
+      },
+      {
+        "width": 1280,
+        "height": 720,
+        "format": "rgba16float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 2,
+              "badBytes": 27
+            },
+            "submits": {
+              "badFrames": 4,
+              "badBytes": 91
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 3,
+              "badBytes": 100
+            },
+            "submits": {
+              "badFrames": 6,
+              "badBytes": 285
+            }
+          }
+        }
+      },
+      {
+        "width": 1707,
+        "height": 960,
+        "format": "rgba16float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 8,
+              "badBytes": 526
+            },
+            "submits": {
+              "badFrames": 10,
+              "badBytes": 871
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 7,
+              "badBytes": 1147
+            },
+            "submits": {
+              "badFrames": 2,
+              "badBytes": 625
+            }
+          }
+        }
+      },
+      {
+        "width": 1920,
+        "height": 1080,
+        "format": "rgba16float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 15,
+              "badBytes": 878
+            },
+            "submits": {
+              "badFrames": 7,
+              "badBytes": 922
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 6,
+              "badBytes": 257
+            },
+            "submits": {
+              "badFrames": 6,
+              "badBytes": 981
+            }
+          }
+        }
+      },
+      {
+        "width": 1024,
+        "height": 1024,
+        "format": "rgba16float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 8,
+              "badBytes": 287
+            },
+            "submits": {
+              "badFrames": 4,
+              "badBytes": 139
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 7,
+              "badBytes": 302
+            },
+            "submits": {
+              "badFrames": 7,
+              "badBytes": 319
+            }
+          }
+        }
+      },
+      {
+        "width": 2048,
+        "height": 2048,
+        "format": "rgba16float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-11",
+            "isolatedDiffer": [
+              {
+                "input": 2,
+                "run": 0,
+                "bytes": 171
+              }
+            ],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 33,
+              "badBytes": 2780
+            },
+            "submits": {
+              "badFrames": 31,
+              "badBytes": 2905
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-11",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-11",
+            "isolatedDiffer": [
+              {
+                "input": 2,
+                "run": 0,
+                "bytes": 45
+              }
+            ],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 45,
+              "badBytes": 3816
+            },
+            "submits": {
+              "badFrames": 42,
+              "badBytes": 3052
+            }
+          }
+        }
+      },
+      {
+        "width": 4096,
+        "height": 4096,
+        "format": "rgba16float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-12",
+            "isolatedDiffer": [
+              {
+                "input": 3,
+                "run": 0,
+                "bytes": 302
+              }
+            ],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 102,
+              "badBytes": 15234
+            },
+            "submits": {
+              "badFrames": 105,
+              "badBytes": 15270
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-12",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-12",
+            "isolatedDiffer": [
+              {
+                "input": 0,
+                "run": 0,
+                "bytes": 166
+              },
+              {
+                "input": 1,
+                "run": 0,
+                "bytes": 44
+              },
+              {
+                "input": 2,
+                "run": 0,
+                "bytes": 26
+              },
+              {
+                "input": 3,
+                "run": 0,
+                "bytes": 234
+              }
+            ],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 99,
+              "badBytes": 18828
+            },
+            "submits": {
+              "badFrames": 105,
+              "badBytes": 23806
+            }
+          }
+        }
+      },
+      {
+        "width": 256,
+        "height": 256,
+        "format": "rgba16float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-8",
+            "isolatedDiffer": [
+              {
+                "input": 0,
+                "run": 0,
+                "bytes": 12
+              },
+              {
+                "input": 1,
+                "run": 0,
+                "bytes": 24
+              },
+              {
+                "input": 2,
+                "run": 0,
+                "bytes": 24
+              },
+              {
+                "input": 3,
+                "run": 0,
+                "bytes": 24
+              }
+            ],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 134,
+              "badBytes": 1991
+            },
+            "submits": {
+              "badFrames": 198,
+              "badBytes": 4275
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-8",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-8",
+            "isolatedDiffer": [
+              {
+                "input": 0,
+                "run": 0,
+                "bytes": 12
+              },
+              {
+                "input": 1,
+                "run": 0,
+                "bytes": 24
+              },
+              {
+                "input": 2,
+                "run": 0,
+                "bytes": 24
+              },
+              {
+                "input": 3,
+                "run": 0,
+                "bytes": 24
+              }
+            ],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 86,
+              "badBytes": 1297
+            },
+            "submits": {
+              "badFrames": 198,
+              "badBytes": 4291
+            }
+          }
+        }
+      },
+      {
+        "width": 960,
+        "height": 540,
+        "format": "r32float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-9",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-9",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-9",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          }
+        }
+      },
+      {
+        "width": 1129,
+        "height": 635,
+        "format": "r32float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          }
+        }
+      },
+      {
+        "width": 1280,
+        "height": 720,
+        "format": "r32float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          }
+        }
+      },
+      {
+        "width": 1707,
+        "height": 960,
+        "format": "r32float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          }
+        }
+      },
+      {
+        "width": 1920,
+        "height": 1080,
+        "format": "r32float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          }
+        }
+      },
+      {
+        "width": 1024,
+        "height": 1024,
+        "format": "r32float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-10",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          }
+        }
+      },
+      {
+        "width": 2048,
+        "height": 2048,
+        "format": "r32float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-11",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-11",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-11",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          }
+        }
+      },
+      {
+        "width": 4096,
+        "height": 4096,
+        "format": "r32float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-12",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-12",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-12",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          }
+        }
+      },
+      {
+        "width": 256,
+        "height": 256,
+        "format": "r32float",
+        "variants": {
+          "wspd": {
+            "frames": 256,
+            "levels": "5-8",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspd6": {
+            "frames": 256,
+            "levels": "5-8",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          },
+          "wspdNoSg": {
+            "frames": 256,
+            "levels": "5-8",
+            "isolatedDiffer": [],
+            "isolatedRuns": 12,
+            "encoder": {
+              "badFrames": 0,
+              "badBytes": 0
+            },
+            "submits": {
+              "badFrames": 0,
+              "badBytes": 0
+            }
+          }
+        }
+      }
+    ],
+    "probes": {
+      "targetDefault": {
+        "lastLevelUnwritten": true,
+        "value": [
+          0.8999999761581421,
+          0.10000000149011612
+        ]
+      },
+      "targetNumMips11": {
+        "lastLevelUnwritten": false,
+        "value": [
+          7.748603820800781e-7,
+          0.9999998807907104
+        ]
+      },
+      "minMaxNegative": {
+        "inputRange": [
+          -7,
+          -1
+        ],
+        "level1Max": 0
+      },
+      "halfPrecisionWithF16": {
+        "deviceHasShaderF16": true,
+        "validationError": null,
+        "warnings": [],
+        "bitIdenticalToF32": true
+      },
+      "halfPrecisionWithoutF16": {
+        "validationError": "Error while parsing WGSL: :27:8 error: extension 'f16' is not allowed in the current environment\nenable f16;\n       ^^^\n\n\n - While calling [Device].CreateShaderModule([ShaderModuleDescriptor]).\n",
+        "thrown": null,
+        "warnings": [
+          "[sanitizeScalarType]: half precision requested but the device feature 'shader-f16' is not enabled, falling back to full precision"
+        ]
+      },
+      "stripAfterOtherTexture": {
+        "size": "2048x64",
+        "level": "7 (16x1; histogram of red over 16 texels x 16 trials)",
+        "expectedIfOwnRowVisible": {
+          "black": 64,
+          "white": 191
+        },
+        "observed": {
+          "one encoder, after black": {
+            "0": 13,
+            "32": 8,
+            "64": 235
+          },
+          "one encoder, after white": {
+            "191": 248,
+            "223": 6,
+            "255": 2
+          },
+          "separate submits, after black": {
+            "0": 192,
+            "32": 29,
+            "64": 35
+          },
+          "separate submits, after white": {
+            "191": 45,
+            "223": 47,
+            "255": 164
+          }
+        }
+      },
+      "subRectAfterOtherTexture": {
+        "size": "1024x1024, rect [0,0]+[512,512]",
+        "level": 7,
+        "texels": 64,
+        "fromOtherTexture": 48,
+        "note": "B is white everywhere; A (black) ran in between"
+      },
+      "over4096": [
+        {
+          "level": 7,
+          "size": "64²",
+          "texels": 4096,
+          "unwritten": 3072,
+          "differFromWspd6": 3084
+        },
+        {
+          "level": 8,
+          "size": "32²",
+          "texels": 1024,
+          "unwritten": 768,
+          "differFromWspd6": 777
+        },
+        {
+          "level": 9,
+          "size": "16²",
+          "texels": 256,
+          "unwritten": 192,
+          "differFromWspd6": 196
+        },
+        {
+          "level": 10,
+          "size": "8²",
+          "texels": 64,
+          "unwritten": 48,
+          "differFromWspd6": 48
+        },
+        {
+          "level": 11,
+          "size": "4²",
+          "texels": 16,
+          "unwritten": 12,
+          "differFromWspd6": 12
+        },
+        {
+          "level": 12,
+          "size": "2²",
+          "texels": 4,
+          "unwritten": 3,
+          "differFromWspd6": 3
+        },
+        {
+          "level": 13,
+          "size": "1²",
+          "texels": 1,
+          "unwritten": 0,
+          "differFromWspd6": 1
+        }
+      ]
+    }
+  },
+  "loadAverage": {
+    "before": [
+      7.2255859375,
+      18.91552734375,
+      207.41162109375
+    ],
+    "after": [
+      6.40087890625,
+      10.07177734375,
+      119.5244140625
+    ]
+  },
+  "browserArgs": [
+    "--enable-unsafe-webgpu"
+  ]
+}

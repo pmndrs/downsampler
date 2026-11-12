@@ -12,7 +12,7 @@ Each entry says what they do, what we do, why, what it would take to converge, a
 
 Effort: **S** is under a day, **M** a few days including oracle and GPU cases, **L** a week or more.
 
-Last updated: 2026-11-11 (M2T.4: entries 1–3 measured)
+Last updated: 2026-11-12 (entry 22: webgpu-spd 3.0.0 measured side by side)
 
 ## Summary
 
@@ -39,6 +39,7 @@ Last updated: 2026-11-11 (M2T.4: entries 1–3 measured)
 | 19 | Timestamp benchmark only | `greggman`, nvpro | Planned (M3) | S–M | — | Credibility of every claim |
 | 20 | API conventions: mip count, levels written, no counter buffer | SPD | Keep | S (docs) | — | — |
 | 21 | No size or level cap | SPD | Keep | — | — | — |
+| 22 | webgpu-spd 3.0.0, measured side by side ([results](results/compare/webgpu-spd.md)) | webgpu-spd | Keep | — | Its default handoff gave stale levels 7+ in up to 77 % of frames; Hi-Z up to 52 % non-conservative | Measured: our `'spd'` 1.2–2.1× faster than its handoff-free mode at render sizes |
 
 ## Dispatch structure
 
@@ -48,6 +49,7 @@ Last updated: 2026-11-11 (M2T.4: entries 1–3 measured)
 - **Why:**
   - The WGSL memory model doesn't guarantee the handoff: atomics are relaxed and barriers are workgroup-scoped (SPEC §2.2).
   - webgpu-spd#7 saw missing mips on M1 and "fixed" it with a `storageBarrier`, which isn't guaranteed in WGSL either.
+  - Observed since (2026-11-12, entry 22): webgpu-spd 3.0.0's handoff, with plain-store payloads, read stale mip-6 data on the M5 Pro in up to 77 % of frames.
   - It is slower, measured twice (below).
 - **Effort to converge:** S. A measurement-only probe is in this repo: `test/bench/atomic-spd.js` (M2T.4). It is the library's 6-level `'clamp'` tile kernel plus an atomic level-6 payload, a self-resetting ticket and a tail reduced by the last workgroup.
 - **Quality:** converging could produce stale or missing levels on hardware that reorders. On the M5 Pro, the probe reproduced `'spd'` on 4 changing inputs at all 22 size/format pairs, with its counter reset. That is evidence for one device, not a proof.
@@ -244,3 +246,32 @@ Last updated: 2026-11-11 (M2T.4: entries 1–3 measured)
 - **They:** SPD handles at most 4096² and 12 levels.
 - **We:** handle any size, by chaining batches.
 - **Verdict:** keep.
+
+## Side-by-side comparisons
+
+### 22. webgpu-spd 3.0.0, measured side by side
+- **They:** webgpu-spd (`JolifantoBambla`, npm 3.0.0, git `adc666e`) is a WGSL port of SPD.
+  - It generates min(`maxStorageTexturesPerShaderStage`, 12) mips per pass. Above 6 mips per pass it uses SPD's atomic last-workgroup handoff, with mip 6 in a shared f32 buffer, or in a read-write texture when the format allows one.
+  - It uses subgroup quads when available.
+  - It has a simple API (`generateMipmaps`, `preparePass` → `SPDPass.encode( pass )`), integer and tier1 formats including rgb10a2, sub-rectangles, and a 4-way custom filter.
+- **We:** the `'exact'` default, `oddSizes: 'spd'` in ⌈mips/6⌉ dispatches, and no cross-workgroup communication (entries 1–3).
+- **Measured** (Apple M5 Pro, Chrome, 2026-11-12; details, tables and method in [results/compare/webgpu-spd.md](results/compare/webgpu-spd.md)):
+  - **Correctness:** with ≤ 6 mips per pass it matches our SPD oracle on every in-bounds level, at all 9 sizes, in both formats.
+  - **Stale levels:** its default here (8 mips per pass) returned stale levels 7+ in up to 5 % of frames at render sizes, 25–41 % at 4096² and up to 77 % at 256² (256 frames per case). Isolated runs disagreed too, and the bench's parity check caught it.
+    - The read-write texture path (r32float) and 6 mips per pass had no failures.
+    - This confirms entry 1's memory-model argument on real hardware.
+  - **Hi-Z:** SPD odd sizes leave 0.07–52 % of min/max texels non-conservative at render sizes; ours has 0 under `'exact'`.
+  - **Other defects found:**
+    - `halfPrecision` is non-functional: a no-op with `shader-f16`, a shader error without it.
+    - A separate target's last level is unwritten by default.
+    - The shared mip-6 buffer leaks other textures' data into strips and sub-rect updates.
+    - Above 4096² with more than 6 mips per pass, 3/4 of levels 7+ are never written.
+  - **Performance:** same-run ratios to `'exact'`, load average 11–20.
+    - Its default: 1.16–1.32× (rgba8) and 0.95–1.41× (rgba16f) at render sizes, 1.5–2.0× at 1024².
+    - Its handoff-free mode: 0.81–1.25×.
+    - Our `'spd'`, with the same semantics and dispatch count: 0.50–0.85×, so 1.2–2.1× faster.
+    - The handoff costs 1.1–1.25× over 6 mips per pass. Its subgroup path is 1.05–1.36× slower than its own non-subgroup path.
+    - Its one dispatch (256²): 0.91×, against 0.90× for our `'spd'` in two.
+- **Where it is ahead:** a simpler API, integer formats and rgb10a2, sub-rectangles, a smaller bundle (8.3 KB gzipped against 13.9 KB for `Downsampler`), and it is released.
+- **Effort to converge:** none planned. Integer formats, rgb10a2 and sub-rectangles are already on our plan (M2.3.3, M2.3.7, M2.4).
+- **Verdict:** keep. For webgpu-spd users: set `maxMipsPerPass: 6`, and don't use it for Hi-Z at odd sizes. This is input for the planned webgpu-spd#7 comment (SPEC §13, Consequences item 5).

@@ -10,6 +10,9 @@
 //   node test/run.js --bench --compare=spd --skip-validation   M2T.4: exact / tail / spd / atomic probe / render
 //   node test/run.js --quality --skip-validation              M2T.4: 'spd' vs 'exact' per level, Hi-Z violations
 //   node test/run.js --compat            on a compatibility-mode device (featureLevel 'compatibility')
+//   node test/run.js --bench --compare=webgpu-spd --formats=rgba8unorm,rgba16float,r32float --skip-validation
+//                                        webgpu-spd 3.0.0 vs exact / tail / spd / render (results/compare/webgpu-spd.md)
+//   node test/run.js --webgpu-spd-check --skip-validation [--frames=64]   its correctness against our oracles
 import { mkdir, writeFile } from 'node:fs/promises';
 import { loadavg } from 'node:os';
 import { dirname } from 'node:path';
@@ -27,6 +30,8 @@ if ( value( 'repeats' ) ) options.repeats = Number( value( 'repeats' ) );
 if ( value( 'compare' ) ) options.compare = value( 'compare' );
 if ( args.includes( '--quality' ) ) options.quality = true;
 if ( args.includes( '--skip-validation' ) ) options.skipValidation = true;
+if ( args.includes( '--webgpu-spd-check' ) ) options.webgpuSpdCheck = true;
+if ( value( 'frames' ) ) options.frames = Number( value( 'frames' ) );
 const loadBefore = loadavg();
 
 const browserArgs = [ '--enable-unsafe-webgpu' ];
@@ -76,6 +81,14 @@ try {
 			...Object.fromEntries( names.map( name => [ name, `${ row.gpuMs[ name ].toFixed( 4 ) } (${ ( row.gpuMs[ name ] / row.gpuMs[ name.endsWith( 'Max' ) ? 'exactMax' : 'exact' ] ).toFixed( 2 ) })` ] ) )
 		} ) ) );
 
+	} else if ( timing?.results.length && options.compare === 'webgpu-spd' ) {
+
+		// Paired per-round ratios to 'exact' (averages) and 'exactMax' (max).
+		console.table( timing.results.map( row => ( {
+			size: `${ row.width }x${ row.height }`, format: row.format,
+			...Object.fromEntries( Object.keys( row.gpuMs ).map( name => [ name, `${ row.gpuMs[ name ].toFixed( 4 ) } ×${ row.ratios[ name ].toFixed( 2 ) } [${ row.passes[ name ] }]` ] ) )
+		} ) ) );
+
 	} else if ( timing?.results.length ) {
 
 		const names = timing.strategies;
@@ -99,6 +112,27 @@ try {
 			'tail-exact max': level.tailVsExact.max.toFixed( 4 ),
 			'max violations e/s/t': `${ level.maxViolations.exact }/${ level.maxViolations.spd }/${ level.maxViolations.tail }`
 		} ) ) ) );
+
+	}
+
+	if ( report.webgpuSpd ) {
+
+		const w = report.webgpuSpd;
+		console.log( 'webgpu-spd variants:', JSON.stringify( w.variants ) );
+		console.table( w.average.flatMap( row => Object.entries( row.variants ).map( ( [ name, v ] ) => ( {
+			size: `${ row.width }x${ row.height }`, format: row.format, variant: name, dispatches: v.dispatches, 'unit step': row.firstUnitStep,
+			'in-bounds mismatches': `${ v.inBounds.mismatches } / ${ v.inBounds.values }`, exact: v.inBounds.exact, poisoned: v.inBounds.poisoned, 'worst (steps)': v.inBounds.worst.toFixed( 2 ),
+			'= ours spd': `${ v.vsOursSpd.identical } / ${ v.vsOursSpd.values } (worst ${ v.vsOursSpd.worst.toFixed( 3 ) })`,
+			'unit levels': v.unit.map( u => `L${ u.level } ${ u.size } zero:${ u.zeroMismatches } z1:${ u.zeroAlpha1Mismatches } clamp:${ u.clampMismatches } vs ours ${ u.vsOursSpd?.relative.toFixed( 2 ) }` ).join( '; ' )
+		} ) ) ) );
+		console.table( w.hiz.flatMap( row => Object.entries( row.reductions ).flatMap( ( [ reduction, entry ] ) => Object.entries( entry ).map( ( [ name, v ] ) => ( {
+			size: `${ row.width }x${ row.height }`, reduction, strategy: name, violations: `${ v.violations } / ${ v.texels }`, 'worst level': `${ ( v.worstLevelFraction * 100 ).toFixed( 2 ) } %`,
+			oracle: v.oracle ? `${ v.oracle.mismatches } / ${ v.oracle.values } (poisoned ${ v.oracle.poisoned })` : '—',
+			unit: v.unit ? v.unit.map( u => `L${ u.level } zero:${ u.zeroMismatches } clamp:${ u.clampMismatches }` ).join( '; ' ) : '—'
+		} ) ) ) ) );
+		console.table( w.stress.flatMap( row => Object.entries( row.variants ).map( ( [ name, v ] ) => ( { size: `${ row.width }x${ row.height }`, format: row.format, variant: name, levels: v.levels, 'bad frames (one encoder)': `${ v.encoder.badFrames } / ${ v.frames }`, 'bad frames (submit each)': `${ v.submits.badFrames } / ${ v.frames }`, 'isolated runs ≠ majority': `${ v.isolatedDiffer.length } / ${ v.isolatedRuns }` } ) ) ) );
+		console.log( 'probes:', JSON.stringify( w.probes, null, 1 ) );
+		if ( w.validationError ) console.log( 'GPU validation error during the check:', w.validationError );
 
 	}
 
