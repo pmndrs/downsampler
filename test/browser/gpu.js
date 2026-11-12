@@ -5,8 +5,9 @@ import { Downsampler } from '/dist/webgpu/index.js';
 /**
  * `compat`: a compatibility-mode device (featureLevel 'compatibility', without 'core-features-and-limits').
  * `maxStorageTextures`: request the adapter's storage texture limit (the atomic probe's tail levels), not just six.
+ * `features`: extra optional features to request when the adapter has them (webgpu-spd uses 'subgroups' and 'shader-f16').
  */
-export async function requestDevice( { compat = false, maxStorageTextures = false } = {} ) {
+export async function requestDevice( { compat = false, maxStorageTextures = false, features = [] } = {} ) {
 
 	if ( ! navigator.gpu ) throw new Error( 'WebGPU is not available in this browser.' );
 	const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance', ...( compat ? { featureLevel: 'compatibility' } : {} ) } );
@@ -14,7 +15,7 @@ export async function requestDevice( { compat = false, maxStorageTextures = fals
 	const timestamps = adapter.features.has( 'timestamp-query' );
 	// Format features are requested when available; float32-filterable is not,
 	// so float32 formats keep exercising the load path.
-	const optional = [ 'texture-formats-tier1', 'bgra8unorm-storage' ].filter( feature => adapter.features.has( feature ) );
+	const optional = [ 'texture-formats-tier1', 'bgra8unorm-storage', ...features ].filter( feature => adapter.features.has( feature ) );
 	const device = await adapter.requestDevice( {
 		requiredFeatures: [ ...optional, ...( timestamps ? [ 'timestamp-query' ] : [] ) ],
 		requiredLimits: maxStorageTextures ? { maxStorageTexturesPerShaderStage: adapter.limits.maxStorageTexturesPerShaderStage } : Downsampler.requiredLimits( adapter )
@@ -27,7 +28,8 @@ export async function requestDevice( { compat = false, maxStorageTextures = fals
 			vendor: info.vendor, architecture: info.architecture, device: info.device, description: info.description,
 			isFallbackAdapter: info.isFallbackAdapter, timestamps, features: optional, compatibility: ! device.features.has( 'core-features-and-limits' ),
 			maxStorageTexturesPerShaderStage: device.limits.maxStorageTexturesPerShaderStage,
-			subgroupMinSize: info.subgroupMinSize, subgroupMaxSize: info.subgroupMaxSize
+			subgroupMinSize: info.subgroupMinSize, subgroupMaxSize: info.subgroupMaxSize,
+			adapterFeatures: [ ...adapter.features ].sort(), maxTextureDimension2D: device.limits.maxTextureDimension2D
 		},
 		userAgent: navigator.userAgent
 	};

@@ -613,6 +613,7 @@ Reference material, mostly for after M2–M3: prior art and the standards discus
 ### Community prior art (WebGPU)
 
 - [webgpu-spd](https://github.com/JolifantoBambla/webgpu-spd) (`JolifantoBambla`, 2024): a WGSL SPD port, single dispatch with the atomic handoff; see the #7 note below.
+  - 3.0.0 measured side by side on the M5 Pro (2026-11-12): its handoff returned stale levels, and our `'spd'` was 1.2–2.1× faster at render sizes ([results/compare/webgpu-spd.md](results/compare/webgpu-spd.md), DIVERGES #22).
 - `davidar`'s SPD port (2022, gpuweb#386): 0.3–0.4 ms against about 2 ms for repeated blits.
 - `greggman`'s compute generator (gpuweb#5253, 2025): 4 levels per dispatch, faster on Mac and slower on NVIDIA/D3D12. It also covers his render-pass approach and his per-frame throughput method.
 - [`Volcomix`'s fiddle](https://jsfiddle.net/1w9L6u07/) (2026): video frame → pyramid with quad/subgroup ops (see below).
