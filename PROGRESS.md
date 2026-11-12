@@ -2,12 +2,17 @@
 
 Live status board. SPEC.md holds the design and the reasons behind it; this file holds where things stand.
 
+**For the owner:** open decisions and the Windows run sheet are also in the artifact (`docs/diverges.html`), with a recommendation on each.
+
 **For agents:** read this after SPEC.md. When you start a task, move it to *Now* with your branch. When you finish, tick it, add the commit, and log the verification run. Keep entries to one line and link SPEC sections instead of restating them. Anything that needs the owner goes under *Waiting on owner*.
 
 Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Now
 
+- [ ] Windows runs (owner, RTX 3060 + Intel UHD): verification and cross-vendor timings for what M2/M2T built. Features are done on Apple; this is measurement. Commands: run sheet in `docs/diverges.html` (the artifact)
+- [ ] CI shards like homefig (`--shard=i/N`, duration-balanced, fast/full tiers, timing summaries) (agent, branch `ci-shards`)
+- [ ] Comparison with webgpu-spd: correctness, timings, feature table, pros/cons (agent, branch `compare-webgpu-spd`)
 - [ ] CI: confirm the three parallel SwiftShader jobs fit on GitHub runners (first push; job limit 75 min, protocol timeout 60 min on SwiftShader). `reducer` took 17 min alone on the M5 Pro; if CI is too slow, trim its quick shapes on SwiftShader only
 
 ## Next (M2T, tools first: SPEC §11)

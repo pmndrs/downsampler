@@ -122,6 +122,34 @@ td a:hover { color: var(--accent); text-decoration: underline; }
 .impact .k { font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); display: block; margin-bottom: 2px; }
 .empty { color: var(--muted); padding: 20px; text-align: center; }
 footer { color: var(--muted); font-size: 13px; display: grid; gap: 6px; max-width: 72ch; }
+
+/* status, decisions, run sheet */
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: grid; gap: 14px; }
+.panel > p { color: var(--muted); font-size: 13.5px; max-width: 70ch; }
+.phases { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.phase { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.phase h3 { font-size: 15px; }
+.phase p { font-size: 13px; color: var(--muted); margin: 0; }
+.st { font: 600 11px var(--mono); letter-spacing: 0.04em; text-transform: uppercase; border-radius: 4px; padding: 2px 7px; justify-self: start; }
+.st-done { color: var(--planned); background: var(--planned-bg); }
+.st-now { color: var(--candidate); background: var(--candidate-bg); }
+.st-next { color: var(--keep); background: var(--keep-bg); }
+.decisions { display: grid; gap: 10px; }
+.decision { border: 1px solid var(--line); border-left: 3px solid var(--candidate); border-radius: 8px; padding: 12px 16px; display: grid; gap: 6px; min-width: 0; }
+.decision.blocking { border-left-color: var(--risk); }
+.decision .q { font-weight: 600; }
+.decision .meta { font-size: 13px; color: var(--muted); }
+.decision .rec { font-size: 13.5px; }
+.decision .rec strong { color: var(--fg); }
+.runs { display: grid; gap: 12px; }
+.run { display: grid; gap: 6px; min-width: 0; }
+.run h3 { font-size: 15px; }
+.run p { font-size: 13px; color: var(--muted); margin: 0; max-width: 72ch; }
+.cmd { display: flex; gap: 8px; align-items: stretch; min-width: 0; }
+.cmd pre { flex: 1 1 auto; min-width: 0; margin: 0; overflow-x: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font: 12.5px/1.5 var(--mono); }
+.copy { font: 500 12px var(--body); border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 6px; padding: 0 12px; cursor: pointer; flex: 0 0 auto; }
+.copy:hover { border-color: var(--muted); }
+.copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 560px) {
 	.facts { grid-template-columns: 1fr; gap: 2px; }
 	.facts dd { margin-bottom: 8px; }
@@ -131,11 +159,37 @@ footer { color: var(--muted); font-size: 13px; display: grid; gap: 6px; max-widt
 
 <div class="wrap">
 	<header>
-		<span class="eyebrow">downsampler · research ledger · 2026-11-11 (M2T.4)</span>
+		<span class="eyebrow">downsampler · research ledger · updated 2026-11-12</span>
 		<h1>Where we diverge from SPD, nvpro and the WebGPU community</h1>
 		<p>Every place this library does something different from AMD FidelityFX SPD, nvpro_pyramid, the WebGPU community ports and the gpuweb #386 / #5253 requests. Each entry gives the reason, the effort to converge, and the quality and performance effect.</p>
 		<p><strong>Performance labels:</strong> <em>measured</em> means Apple M5 Pro runs from SPEC §2.2, §4 and §8. Nothing has been measured on NVIDIA, AMD or Intel yet, so everything else is an <em>estimate</em> or <em>unknown</em>.</p>
 	</header>
+
+	<section class="panel" aria-labelledby="phases-title">
+		<h2 id="phases-title">Where it stands</h2>
+		<p>Features are built and tested on the Apple M5 Pro. What's left before M3 tuning is measurement on other vendors: the two risk entries (17, 18) and every performance claim depend on it.</p>
+		<div class="phases">
+			<div class="phase"><span class="st st-done">done</span><h3>M1 · core</h3><p>Kernel, Downsampler, three.js adapter, GPU suite, device lab, bench.</p></div>
+			<div class="phase"><span class="st st-done">done</span><h3>M2 · features</h3><p>Reductions, separate source (Hi-Z), 21 formats incl. rgb9e5 and rg11b10 via the buffer path, compatibility mode, encodePass.</p></div>
+			<div class="phase"><span class="st st-done">done</span><h3>M2T · tools first</h3><p>Reducer (hooks, sums, weights, 8 channels, payload folds, level selection), ScalarReduction, FSR 3.1 and upscaler fixtures, 'spd' mode and tail kernel measured.</p></div>
+			<div class="phase"><span class="st st-now">now</span><h3>Windows runs</h3><p>Cross-vendor timings for the upscaler exposure branch, the tool fixtures and the SPD comparison. Run sheet below.</p></div>
+			<div class="phase"><span class="st st-next">next</span><h3>M2.4 / M2.5</h3><p>Layer range and rect; 'box' odd sizes; power-of-two destination from a separate source.</p></div>
+			<div class="phase"><span class="st st-next">next</span><h3>M3 · dial in</h3><p>Throughput bench, STORAGE_BINDING cost, a cheaper exact kernel (~20 % headroom at 1024²), subgroups with fallback, fp16.</p></div>
+			<div class="phase"><span class="st st-next">later</span><h3>M4 · docs, M5 · ship</h3><p>Usage docs and examples; npm publish, tools as consumers, three.js PR, gpuweb comment (your review first).</p></div>
+		</div>
+	</section>
+
+	<section class="panel" aria-labelledby="decisions-title">
+		<h2 id="decisions-title">Waiting on you</h2>
+		<p>Each has my recommendation; the code currently follows it, so nothing is blocked unless marked. The same list lives under "Waiting on owner" in PROGRESS.md.</p>
+		<div class="decisions" id="decisions"></div>
+	</section>
+
+	<section class="panel" aria-labelledby="runs-title">
+		<h2 id="runs-title">Windows run sheet</h2>
+		<p>On the laptop with the RTX 3060 and Intel UHD. <code>--power=high</code> or <code>--power=low</code> picks the GPU; each run prints the adapter it used. Close other GPU apps and plug in power: these numbers become the cross-vendor baseline.</p>
+		<div class="runs" id="runs"></div>
+	</section>
 
 	<section class="strip" aria-labelledby="strip-title">
 		<div class="strip-head">
@@ -428,4 +482,48 @@ function render() {
 		</article>` ).join( '' );
 }
 render();
+
+const decisions = [
+	{ q: 'How should pmndrs/upscaler use the library before it is on npm?', blocking: true, meta: 'Blocks switching the upscaler\'s exposure (and optionally shading change) to the library.',
+		rec: '<strong>Recommend:</strong> vendor the generated WGSL into the upscaler for now (the library emits plain WGSL strings, the same plan as the three.js PR), and switch to the npm package at M5. A git dependency works too but needs a build step in its CI.' },
+	{ q: 'Package name: downsampler or @pmndrs/downsampler?', blocking: false, meta: 'Needed by M5 (publish).', rec: '<strong>Recommend:</strong> @pmndrs/downsampler, alongside @pmndrs/upscaler.' },
+	{ q: 'Which NVIDIA / AMD / Intel (Windows) and Android devices can we test on?', blocking: false, meta: 'Decides M3 coverage and whether compute or render passes should be the default per vendor (entry 17).', rec: '<strong>Today:</strong> RTX 3060 laptop and Intel UHD. AMD and Android unknown.' },
+	{ q: 'Keep oddSizes: \'spd\' public (average only), or make it test-only?', blocking: false, meta: 'Up to 2× faster at render sizes; drifting footprints; folds rejected.', rec: '<strong>Recommend:</strong> public opt-in for colour chains (bloom, luma, exposure). Shipped that way.' },
+	{ q: 'Make the exact tail kernel the default?', blocking: false, meta: '1080p 7 → 4 dispatches but only 0.85–1.07× the time on a loaded Mac.', rec: '<strong>Recommend:</strong> keep opt-in; default only if Windows or an idle Mac shows ≥5 %.' },
+	{ q: 'Upscaler shading change: 8-channel version or the sign-bit trick?', blocking: false, meta: 'Tie from 1280×720 up; 8-channel is 8–14 % slower at 1129×635.', rec: '<strong>Recommend:</strong> 8-channel (maintainable); switch to the trick only if Windows shows the gap holding.' },
+	{ q: 'Upscaler exposure: meter every texel, or keep the 1024 taps?', blocking: false, meta: 'Every texel is a better estimate but changes values; the taps version is bit-identical.', rec: '<strong>Recommend:</strong> merge the bit-identical perf/exposure-parallel branch first, then decide on every-texel separately.' },
+	{ q: 'Payload folds: smaller-payload ties, or position ties?', blocking: false, meta: 'Ties are rare with continuous depth.', rec: '<strong>Recommend:</strong> keep smaller-payload ties (order-independent, free); put a texel index first when position matters.' },
+	{ q: 'Reducer defaults: edges \'zero-weight\', no rounding between levels; scalar finish gets a layer argument', blocking: false, meta: 'API review.', rec: '<strong>Recommend:</strong> keep all three.' },
+	{ q: 'Review the gpuweb#5253 comment draft before anything is posted', blocking: false, meta: 'M5, after cross-vendor data exists.', rec: 'Nothing is posted without your review.' },
+];
+const runs = [
+	{ title: '1. Upscaler: parallel exposure (pmndrs/upscaler, branch perf/exposure-parallel)', note: 'Confirms the 6–10× exposure speedup off Apple and that DXC compile time stays at or under 39 ms. Run in the upscaler repo on that branch.',
+		cmd: 'node scripts/measure-exposure-parallel.mjs --power-preference high-performance --expected-vendor nvidia\nnode scripts/measure-exposure-parallel.mjs --power-preference low-power --expected-vendor intel\nnode scripts/measure-exposure-compile.mjs\nnode scripts/run-benchmark.mjs --smoke --ratios 1,1.5,2,3 --blocks 4 --warmup 240 --samples 300 --variant baseline --comparison exposure-serial-v1' },
+	{ title: '2. Downsampler: correctness on both GPUs', note: 'The full suite takes about 15–25 minutes per GPU. Any failure here matters more than any timing.',
+		cmd: 'npm ci\nnpm run build\nnpm run test:gpu -- --power=high\nnpm run test:gpu -- --power=low' },
+	{ title: '3. Downsampler: tool fixtures (FSR 3.1 and upscaler passes vs the library)', note: 'Answers whether the library still ties or beats the upscaler\'s hand-written passes on NVIDIA and Intel, and settles the 8-channel question.',
+		cmd: 'npm run tools -- --power=high --output=results/tools/rtx3060.json\nnpm run tools -- --power=low --output=results/tools/intel-uhd.json' },
+	{ title: '4. Downsampler: SPD comparison and render-pass baseline (entries 1–3, 17)', note: 'exact vs spd vs tail vs single-dispatch atomic vs render passes. This is the run that tells us if compute loses to render passes on NVIDIA/D3D12.',
+		cmd: 'npm run bench -- --compare=spd --skip-validation --power=high --output=results/spd/rtx3060.json\nnpm run bench -- --compare=spd --skip-validation --power=low --output=results/spd/intel-uhd.json' },
+];
+document.getElementById( 'decisions' ).innerHTML = decisions.map( d => `
+	<div class="decision${ d.blocking ? ' blocking' : '' }">
+		<div class="q">${ esc( d.q ) }${ d.blocking ? ' <span class="pill v-risk">blocking</span>' : '' }</div>
+		<div class="meta">${ esc( d.meta ) }</div>
+		<div class="rec">${ d.rec }</div>
+	</div>` ).join( '' );
+document.getElementById( 'runs' ).innerHTML = runs.map( ( r, i ) => `
+	<div class="run">
+		<h3>${ esc( r.title ) }</h3>
+		<p>${ esc( r.note ) }</p>
+		<div class="cmd"><pre id="cmd-${ i }">${ esc( r.cmd ) }</pre><button class="copy" type="button" id="copy-${ i }" data-target="cmd-${ i }">Copy</button></div>
+	</div>` ).join( '' );
+document.querySelectorAll( '.copy' ).forEach( b => b.addEventListener( 'click', () => {
+	const text = document.getElementById( b.dataset.target ).textContent;
+	const done = () => { b.textContent = 'Copied'; setTimeout( () => { b.textContent = 'Copy'; }, 1500 ); };
+	try {
+		navigator.clipboard.writeText( text ).then( done, () => select( b.dataset.target ) );
+	} catch ( e ) { select( b.dataset.target ); }
+} ) );
+function select( id ) { const r = document.createRange(); r.selectNodeContents( document.getElementById( id ) ); const sel = getSelection(); sel.removeAllRanges(); sel.addRange( r ); }
 </script>
