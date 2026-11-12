@@ -11,13 +11,23 @@ Every job ran alone under the shared GPU lock (`results/windows/run-benches.sh`,
 | RTX 3060 Laptop | 32.0.15.9200 (NVIDIA 592.00) | AC, plan "Turbo" |
 | Intel UHD (gen-12lp) | 31.0.101.5333 | AC; no clock telemetry (nvidia-smi only) |
 
-## Caveat: the RTX ran at different clocks for WebGPU and native
+## RTX clocks: unlocked vs locked (measured)
 
-The bench lock sampled the RTX at a median 1460–1630 MHz under load in the native jobs (marked INVALID: thermal throttling in
-41–74 % of samples, power limit 26–65 %) but only 622–915 MHz in the WebGPU jobs (VALID: no throttling): the browser's short
-bursts don't ramp this laptop GPU. So **same-run ratios hold** (variants rotate every round; run-to-run within ±5 % for most
-sizes, `native-tables.md` last table) but **WebGPU ÷ native ratios on the RTX overstate the gap** by an unknown factor. Locking
-the clocks (`nvidia-smi -lgc`, admin) for both would fix it.
+Unlocked, the bench lock sampled the RTX at a median 1460–1630 MHz in the native jobs (throttling in 41–74 % of samples) but
+only 620–920 MHz in the WebGPU jobs: the browser's short bursts don't ramp this laptop GPU. Rerun with the clocks locked
+(`nvidia-smi -lgc 1200,1200`, all three jobs VALID at a steady 1200 MHz, no throttling or power limit; `*-locked.json`):
+
+| RTX, medians over 960×540 … 2560×1440 (rgba8 / rgba16f) | unlocked | locked 1200 MHz |
+|---|---|---|
+| ours `'spd'` ÷ AMD SPD best variant | 1.70 / 2.21 | **1.26 / 1.27** |
+| ours `'exact'` ÷ nvpro_pyramid (Vulkan) | 1.41 / 2.18 | **1.20 / 1.06** |
+| ours `'exact'` ÷ D3D12 render passes | 2.64 / 2.53 | **1.78 / 1.25** |
+| WebGPU render passes ÷ the same D3D12 render passes | 2.01 / 2.29 | **1.45 / 1.34** |
+| `'load'` ÷ `'sample'` (same run) | 1.13 / 1.10 | 1.14 / 1.04 |
+| D3D12 render ÷ AMD SPD best (native only) | 1.27 / 1.27 | 1.31 / 1.32 |
+
+Same-run and native-only ratios don't move; **cross-run WebGPU ÷ native ratios were overstated 1.2–2×**. Rule: lock the clocks
+(admin; reset with `nvidia-smi -rgc`) for any WebGPU-vs-native comparison on this laptop; same-run ratios don't need it.
 
 ## Decision data (medians over 960×540 … 2560×1440; range in brackets)
 
