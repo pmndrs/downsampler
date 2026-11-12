@@ -129,21 +129,27 @@ function checkLevel( actual, expected, label ) {
 // Each kernel width reduces 1…count; complementary selections across variants, so every level is checked.
 const wideLevels = [ [ 1 ], [ 1, 3, 4 ], [ 2, 4 ], [ 1, 2, 3, 5 ], [ 3, 5 ] ];
 
-async function validateWideReducer( device, { quick } ) {
+// Case groups (test/ci/shard.js): edges × variant × level selection, over every shape.
+async function validateWideReducer( device, { quick, select } ) {
 
 	const results = [];
 	const shapes = quick ? wideShapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : wideShapes;
+	const groupId = ( edges, variant, levels ) => `wide/reducer/${ edges }/${ variant.name.replace( /[^a-z0-9]+/gi, '-' ).replace( /^-|-$/g, '' ) }/L${ levels.join( '' ) }`;
+	const wanted = ( edges, variant ) => wideLevels.filter( levels => select.has( groupId( edges, variant, levels ) ) );
 
 	for ( const [ width, height, layers = 1 ] of shapes ) for ( const edges of [ 'zero-weight', 'clamp' ] ) {
 
+		if ( ! wideVariants.some( variant => wanted( edges, variant ).length > 0 ) ) continue;
 		const data = wideData( width, height, layers, width * 13 + height );
 		let tool = null;
 
 		for ( const variant of wideVariants ) {
 
+			const selected = wanted( edges, variant );
+			if ( selected.length === 0 ) continue;
 			const expected = reducePyramid( data, width, height, layers, { reduction: variant.reference ?? variant.reduction, levels: [ 1, 2, 3, 4, 5 ], edges, channels: 8 } );
 
-			for ( const levels of wideLevels ) {
+			for ( const levels of selected ) results.push( ...await select.run( groupId( edges, variant, levels ), async () => {
 
 				const reducer = new Reducer( device, { reduction: variant.reduction, channels: variant.channels, levels, edges, dimension: layers > 1 ? '2d-array' : '2d', load: wideLoad, store: wideStore, bindings: { wgsl: wideBindings.wgsl, entries: wideBindings.entries() } } );
 				if ( reducer.channels !== 8 ) throw new Error( 'wide reducer: expected 8 channels' );
@@ -170,9 +176,9 @@ async function validateWideReducer( device, { quick } ) {
 
 				}
 
-				results.push( { reducer: variant.name, width, height, layers, edges, levels, path: 'wide', maxError } );
+				return [ { reducer: variant.name, width, height, layers, edges, levels, path: 'wide', maxError } ];
 
-			}
+			} ) );
 
 		}
 
@@ -289,12 +295,13 @@ function validateWideOptions( device ) {
 
 }
 
-export async function validateWide( device, { quick = false, onProgress = () => {} } = {} ) {
+/** `select`: the case-group gate (test/ci/shard.js); default all. */
+export async function validateWide( device, { quick = false, onProgress = () => {}, select = { has: () => true, run: async ( id, fn ) => fn() } } = {} ) {
 
-	const results = [ ...await validateWideReducer( device, { quick } ) ];
+	const results = [ ...await validateWideReducer( device, { quick, select } ) ];
 	onProgress( 'validated wide reducer' );
-	results.push( ...await validateWideScalar( device, { quick } ) );
-	results.push( ...validateWideOptions( device ) );
+	results.push( ...await select.run( 'wide/scalar', () => validateWideScalar( device, { quick } ) ) );
+	results.push( ...await select.run( 'wide/options', async () => validateWideOptions( device ) ) );
 	onProgress( 'validated wide scalar' );
 	return results;
 

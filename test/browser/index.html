@@ -36,7 +36,8 @@
 
 			// Entry point for the headless runner (test/run.js) and the buttons below.
 			// `compare: 'spd'` times the odd-size strategies (M2T.4); `quality` measures 'spd' against 'exact'.
-			window.runSuite = async ( { bench = false, quick = false, only, sizes, formats, rounds, repeats, compat = false, compare, quality: measureQuality = false, skipValidation = false, webgpuSpdCheck = false, frames } = {} ) => {
+			// `shard` ({ index, total }), `durations` and `list`: CI shards of the validation suite (test/ci/README.md).
+			window.runSuite = async ( { bench = false, quick = false, only, sizes, formats, rounds, repeats, compat = false, compare, quality: measureQuality = false, skipValidation = false, webgpuSpdCheck = false, frames, shard, durations, list = false } = {} ) => {
 
 				// webgpu-spd (results/compare/webgpu-spd.md) runs with the features and limits it uses: subgroups, shader-f16, the adapter's storage texture limit.
 				const webgpuSpd = compare === 'webgpu-spd' || webgpuSpdCheck;
@@ -48,7 +49,7 @@
 
 				try {
 
-					const validation = skipValidation ? { passed: true, cases: 0, checks: 0, skipped: [], ms: 0, results: [] } : await validate( device, { onProgress: progress, quick, only } );
+					const validation = skipValidation ? { passed: true, cases: 0, checks: 0, skipped: [], ms: 0, results: [] } : await validate( device, { onProgress: progress, quick, only, shard, durations, list } );
 					const timing = bench ? await benchmark( device, { sizes, formats, rounds, repeats, compare, onProgress: progress } ) : null;
 					const qualityResults = measureQuality ? await quality( device, { sizes, formats, onProgress: progress } ) : null;
 					const webgpuSpdResults = webgpuSpdCheck ? await checkWebgpuSpd( device, { sizes, formats, frames, onProgress: progress } ) : null;

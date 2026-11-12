@@ -4,10 +4,59 @@ on:
   push:
     branches: [ main ]
   pull_request:
+  schedule:
+    # Weekly full tier: catches Chrome and SwiftShader drift between pushes.
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # A newer push to a PR supersedes its run; a run on main always finishes.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Fast tier on PRs: the core suite, sharded. Full tier on main, the schedule and manual runs:
+# the core suite plus the same suite on a compatibility-mode device, both sharded.
+env:
+  TEST_TIER: ${{ github.event_name == 'pull_request' && 'fast' || 'full' }}
 
 jobs:
-  test:
+  # Shard counts per tier (test/ci/README.md): each SwiftShader shard aims at ≤ 10 min.
+  layout:
+    name: layout
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      core: ${{ steps.layout.outputs.core }}
+      core_count: ${{ steps.layout.outputs.core_count }}
+      compat: ${{ steps.layout.outputs.compat }}
+      compat_count: ${{ steps.layout.outputs.compat_count }}
+    steps:
+      - id: layout
+        name: Choose shard layout
+        run: |
+          if [ "$TEST_TIER" = full ]; then core=14; compat=14; else core=14; compat=0; fi
+          list() { [ "$1" -gt 0 ] && echo "[$(seq -s, 1 "$1")]" || echo '[]'; }
+          {
+            echo "core=$(list "$core")"
+            echo "core_count=$core"
+            echo "compat=$(list "$compat")"
+            echo "compat_count=$compat"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "## Test layout"
+            echo ""
+            echo "- Tier: \`$TEST_TIER\`"
+            echo "- GPU suite (SwiftShader, --quick): $core core shards, $compat compatibility-mode shards"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  core:
+    name: core
+    needs: layout
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,18 +67,28 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm run test:core
+      # The real listing (from the browser) splits into disjoint shards that cover it; warns
+      # when groups have no recorded duration. Runs nothing on the GPU.
+      - name: Check the shard partitions
+        env:
+          CORE_COUNT: ${{ needs.layout.outputs.core_count }}
+          COMPAT_COUNT: ${{ needs.layout.outputs.compat_count }}
+        run: |
+          node test/run.js --quick --adapter=swiftshader --list --shards="$CORE_COUNT"
+          if [ "$COMPAT_COUNT" != 0 ]; then node test/run.js --quick --adapter=swiftshader --compat --list --shards="$COMPAT_COUNT"; fi
 
-  # Software WebGPU (SwiftShader, 4 storage textures): covers the 1- and
-  # 4-level texture kernels (the Reducer's store-hook path runs 5 and 6 too).
-  # Timing and the full matrix need real GPUs (device lab, local runs).
-  # The quick suite is split into its three parts, run in parallel.
+  # Software WebGPU (SwiftShader, 4 storage textures): covers the 1- and 4-level texture kernels
+  # (the Reducer's store-hook path runs 5 and 6 too). Timing and the full matrix need real GPUs
+  # (device lab, local runs). 75 min is a safety net only: shards aim at ≤ 10 min.
   gpu:
+    name: gpu (${{ matrix.shard }}/${{ strategy.job-total }})
+    needs: layout
     runs-on: ubuntu-latest
     timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
-        part: [ downsampler, reducer, scalar ]
+        shard: ${{ fromJSON(needs.layout.outputs.core) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,4 +97,100 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: node test/run.js --quick --adapter=swiftshader --only=${{ matrix.part }}
+      - name: Run GPU suite shard
+        run: |
+          started=$(date +%s)
+          set +e
+          node test/run.js --quick --adapter=swiftshader --shard=${{ matrix.shard }}/${{ strategy.job-total }} --timing=ci-timing.json
+          status=$?
+          set -e
+          node test/ci/report.js shard ci-timing.json >> "$GITHUB_STEP_SUMMARY" || echo "No timing written (the runner failed before the suite started)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Step wall time: $(( $(date +%s) - started )) s" >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gpu-timing-core-${{ matrix.shard }}
+          path: ci-timing.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  # Compatibility mode (featureLevel 'compatibility'): Chrome's SwiftShader adapter gives a
+  # compatibility-mode device, so the Downsampler runs its scratch-and-copy path everywhere.
+  gpu-compat:
+    name: gpu-compat (${{ matrix.shard }}/${{ strategy.job-total }})
+    needs: layout
+    if: needs.layout.outputs.compat_count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.layout.outputs.compat) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Run GPU suite shard (compatibility mode)
+        run: |
+          started=$(date +%s)
+          set +e
+          node test/run.js --quick --adapter=swiftshader --compat --shard=${{ matrix.shard }}/${{ strategy.job-total }} --timing=ci-timing.json
+          status=$?
+          set -e
+          node test/ci/report.js shard ci-timing.json >> "$GITHUB_STEP_SUMMARY" || echo "No timing written (the runner failed before the suite started)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Step wall time: $(( $(date +%s) - started )) s" >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gpu-timing-compat-${{ matrix.shard }}
+          path: ci-timing.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  # The stable check for branch protection, like homefig's full-suite: it fails unless every shard
+  # job passed, and unless the shards' case groups are disjoint and cover the suite's listing.
+  gpu-suite:
+    name: gpu-suite
+    needs: [ layout, gpu, gpu-compat ]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Confirm every shard job passed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          COMPAT_COUNT: ${{ needs.layout.outputs.compat_count }}
+        run: |
+          require=layout,gpu
+          if [ "$COMPAT_COUNT" != 0 ]; then require=$require,gpu-compat; fi
+          node test/ci/report.js needs --require="$require"
+      - uses: actions/download-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          pattern: gpu-timing-*
+          path: timing
+      - name: Check shard coverage and summarize
+        if: always()
+        shell: bash
+        run: |
+          cp test/ci/durations.json durations.json
+          node test/ci/report.js aggregate timing --core=${{ needs.layout.outputs.core_count || 0 }} --compat=${{ needs.layout.outputs.compat_count || 0 }} --write-durations=durations.json | tee -a "$GITHUB_STEP_SUMMARY"
+      # This run's per-group times merged into the committed ones: download and commit it to rebalance.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gpu-durations
+          path: durations.json
+          if-no-files-found: ignore
+          retention-days: 30
