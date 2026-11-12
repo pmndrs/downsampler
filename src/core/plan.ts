@@ -73,6 +73,8 @@ export interface PlanOptions {
 	tail?: boolean;
 	/** Largest tail tile (8, 16 or 32): 8 where a workgroup has fewer than 256 invocations. Default 32. */
 	tailMaxTile?: number;
+	/** 'exact' batches: the smallest tile (8, 16 or 32), above what the level count needs. Default 8. */
+	exactMinTile?: number;
 }
 
 export interface Batch {
@@ -126,7 +128,8 @@ export function workgroupSide( tile: number ): number {
 
 export function planBatches( width: number, height: number, options: PlanOptions ): Batch[] {
 
-	const { baseMipLevel = 0, mipLevelCount, levelsPerDispatch, oddSizes = 'exact', fromSource = false, copySource = false, tail = false, tailMaxTile = tailTile } = options;
+	const { baseMipLevel = 0, mipLevelCount, levelsPerDispatch, oddSizes = 'exact', fromSource = false, copySource = false, tail = false, tailMaxTile = tailTile, exactMinTile = 8 } = options;
+	if ( exactMinTile !== 8 && exactMinTile !== 16 && exactMinTile !== 32 ) throw new Error( 'downsampler: exactMinTile must be 8, 16 or 32.' );
 	if ( oddSizes !== 'exact' && oddSizes !== 'spd' ) throw new Error( `downsampler: odd size policy "${ oddSizes }" is not implemented.` );
 	if ( ! Number.isInteger( levelsPerDispatch ) || levelsPerDispatch < 1 || levelsPerDispatch > 6 ) throw new Error( 'downsampler: levelsPerDispatch must be an integer from 1 to 6.' );
 	if ( oddSizes === 'spd' && tail ) throw new Error( 'downsampler: the tail kernel is an \'exact\' plan; \'spd\' chains never end a batch at odd sizes.' );
@@ -186,7 +189,7 @@ export function planBatches( width: number, height: number, options: PlanOptions
 
 		}
 
-		const tile = tileSize( count );
+		const tile = Math.max( exactMinTile, tileSize( count ) );
 		batches.push( {
 			kernel: 'exact', sourceMipLevel: sourceOf( level ), firstMipLevel: level, count, outputWidth, outputHeight, tile,
 			groupsX: Math.ceil( outputWidth / tile ), groupsY: Math.ceil( outputHeight / tile )

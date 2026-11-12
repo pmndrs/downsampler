@@ -22,6 +22,10 @@ explained and the owner decided what to change.
   Sampled levels allow 1.5 weight steps of 1/256 per axis times the local contrast, at any weight, including the texel
   below the footprint (NVIDIA rounds each 2D tap weight; Intel truncates axis weights, even at exact halves and zeros). Shader weights (`averageAccess: 'load'`, in-tile and
   tail levels) keep the strict model. Owner decision: keep `'sample'` the default, document `'load'` (README).
+- **`exactTile` (default 32 on hardware adapters with 256 invocations, else 8).** `'exact'` batches of up to four levels
+  ran 8 × 8 workgroups, up to 1.6× slower on Intel and 1.3× on the RTX; they now use the 6-level kernel's 32 × 32 tile, and
+  level sizes are derived instead of queried from storage textures. Same results (full RTX matrix). `--compare=render` and
+  `--dawn-features=` added to the bench (timings.md, "Render passes vs `'exact'`").
 - **Docs:** README "Identical results on every GPU" (`averageAccess`, `f16Rounding`); SPEC §Quantization and findings.
 
 ## Files
@@ -45,7 +49,8 @@ explained and the owner decided what to change.
 - **Ours vs webgpu-spd:** 1.6× faster in rgba8 on the RTX (level in rgba16f), 2.7–3.5× faster on Intel, where subgroups hurt.
   Its handoff showed 0 stale frames of 41,472 on each GPU (up to 77 % on the M5).
 - **Platform paths:** on the RTX compute SPD beats render passes / `GenerateMips` by 15–30 %; on Intel render passes and
-  `GenerateMips` beat every compute variant by ~27 % in rgba8 (a case for a per-device render fallback, DIVERGES #17).
+  `GenerateMips` beat every compute variant by ~27 % in rgba8. In WebGPU, after the exact-tile fix, our `'exact'` is 1.04×
+  render passes on Intel and 1.19× on the RTX in rgba8 (the tail kernel 0.98× there); no render path needed (DIVERGES #17).
 - **Process:** the full suite took 35+ min in one page on this laptop (CPU-bound oracles); `test/parallel.js` runs it in
   15–17 min, `--quick` in 2. No run over 30 min (owner).
 

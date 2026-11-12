@@ -8,6 +8,7 @@
 //   node test/run.js --output=results/report.json --headful
 //   node test/run.js --adapter=swiftshader   software adapter (CI, no GPU)
 //   node test/run.js --bench --compare=spd --skip-validation   M2T.4: exact / tail / spd / atomic probe / render
+//   node test/run.js --bench --compare=render --skip-validation   DIVERGES #17: render passes, then 'exact'; level 1 alone
 //   node test/run.js --quality --skip-validation              M2T.4: 'spd' vs 'exact' per level, Hi-Z violations
 //   node test/run.js --compat            on a compatibility-mode device (featureLevel 'compatibility')
 //   node test/run.js --power=low         force the low-power GPU (default high); for laptops with two GPUs
@@ -64,6 +65,9 @@ if ( value( 'adapter' ) === 'swiftshader' ) browserArgs.push( '--use-webgpu-adap
 // --power=high|low picks the GPU on machines with two (e.g. a laptop's NVIDIA and Intel; see
 // test/gpu-choice.js for Windows); the printed adapter info confirms which one ran.
 browserArgs.push( ...gpuChoiceArgs( value( 'power' ) ) );
+// Measurement only: Dawn toggles, e.g. --dawn-features=disable_robustness,skip_validation to see how
+// much of a gap to native is the browser's bounds checks and validation.
+if ( value( 'dawn-features' ) ) browserArgs.push( `--enable-dawn-features=${ value( 'dawn-features' ) }` );
 
 const server = createServer();
 let browser;
@@ -146,9 +150,9 @@ try {
 			...Object.fromEntries( names.map( name => [ name, `${ row.gpuMs[ name ].toFixed( 4 ) } (${ ( row.gpuMs[ name ] / row.gpuMs[ name.endsWith( 'Max' ) ? 'exactMax' : 'exact' ] ).toFixed( 2 ) })` ] ) )
 		} ) ) );
 
-	} else if ( timing?.results.length && options.compare === 'webgpu-spd' ) {
+	} else if ( timing?.results.length && ( options.compare === 'webgpu-spd' || options.compare === 'render' ) ) {
 
-		// Paired per-round ratios to 'exact' (averages) and 'exactMax' (max).
+		// Paired per-round ratios to 'exact' (averages) and 'exactMax' (max); 'render': to render passes.
 		console.table( timing.results.map( row => ( {
 			size: `${ row.width }x${ row.height }`, format: row.format,
 			...Object.fromEntries( Object.keys( row.gpuMs ).map( name => [ name, `${ row.gpuMs[ name ].toFixed( 4 ) } ×${ row.ratios[ name ].toFixed( 2 ) } [${ row.passes[ name ] }]` ] ) )

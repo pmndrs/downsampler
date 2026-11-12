@@ -200,10 +200,12 @@ A batch reads one source level and writes up to `levelsPerDispatch` consecutive 
 
 | Levels in batch | Workgroup | First-output tile | Source tile | Workgroup memory |
 |---|---|---|---|---|
-| ≤ 4 | 8×8 | 8×8 | 16×16 | 1 KiB |
+| ≤ 4 | 8×8 (`'exact'`: 16×16 by default, below) | 8×8 (`'exact'`: 32×32) | 16×16 (64×64) | 1 KiB (16 KiB) |
 | 5 | 16×16 | 16×16 | 32×32 | 4 KiB |
 | 6 | 16×16 | 32×32 (2×2 per invocation) | 64×64 (as in SPD) | 16 KiB (default limit) |
 | tail (any count) | 8×8 or 16×16 | 8, 16 or 32, the first output's larger side rounded up | — (one workgroup) | 1–16 KiB |
+
+**`'exact'` batches use a 32×32 tile at any level count** (`exactTile`, default 32 where a workgroup can have 256 invocations; 8 in compatibility mode and on fallback adapters). Same results; 8×8 workgroups were 1.2–1.6× slower on Intel UHD and up to 1.3× on an RTX 3060 at render sizes (results/windows/timings.md, 2026-11-13). Level sizes inside a batch are derived from the first output, not queried per level with `textureDimensions` on a storage texture (5–25 % on Intel, rgba8). Not yet re-measured on Apple. Tile kernels (`Reducer`, `'spd'` batches under 5 levels) still follow the level count.
 
 Tail tiles follow the first output, not the level count: SwiftShader took 30 s or more to compile each 32×32-tile pipeline, and an 8×8 tail of a small image doesn't need one.
 

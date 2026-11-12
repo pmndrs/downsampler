@@ -40,6 +40,8 @@ for gpu in rtx3060:high intel-uhd:low; do
 	job "native-d3d12-$tag" $D3D12 --power=$power --output=$OUT/native-d3d12-$tag.json
 	job "native-vk-$tag" $VK --power=$power --output=$OUT/native-vk-$tag.json
 	job "$tag-webgpu-spd" npm run bench -- --compare=webgpu-spd --formats=rgba8unorm,rgba16float,r32float --sizes=$SPD_SIZES --skip-validation --power=$power --output=$OUT/$tag-webgpu-spd.json
+	job "$tag-render-exact32" npm run bench -- --compare=render --skip-validation --power=$power --output=$OUT/$tag-render-exact32.json
+	job "$tag-render-unsafe" npm run bench -- --compare=render --skip-validation --power=$power --dawn-features=disable_robustness,skip_validation --output=$OUT/$tag-render-unsafe.json
 	job "$tag-bench" npm run bench -- --skip-validation --power=$power --output=$OUT/$tag-bench.json
 	job "$tag-tools" npm run tools -- --power=$power --output=$OUT/$tag-tools.json
 	job "$tag-webgpu-spd-check" node test/run.js --webgpu-spd-check --skip-validation --frames=256 --power=$power --output=$OUT/$tag-webgpu-spd-check.json

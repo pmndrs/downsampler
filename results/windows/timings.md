@@ -100,3 +100,42 @@ Same-run ratios against our modes (no clock question); against native AMD SPD th
   submit per frame; isolated runs all agree). On the M5 Pro its default handoff returned stale levels 7+ in up to 77 % of
   frames (DIVERGES #22): the race is real on Apple, not observed on NVIDIA or Intel here. Its min/max are non-conservative
   on both (dropped edges), as on the M5. One probe variant (`enable f16`) fails to compile without `shader-f16`.
+
+## Render passes vs `'exact'`, and the exact kernel's tile (2026-11-13, `--compare=render`)
+
+DIVERGES #17 asked whether a render-pass path should replace `'exact'` on Windows. `npm run bench -- --compare=render
+--skip-validation` times render passes, `'exact'`, `'spd'`, the tail kernel, the buffer output path, render passes for the
+first K levels then `'exact'` (`hybrid1`–`3`, same results), and level 1 alone (`renderL1`, `exactL1`). Clocks unlocked
+(RTX median 1425–1867 MHz under load; Intel has no telemetry), idle machine, 11 rounds × 16 repeats, paired per-round ratios.
+Files: `*-render.json` (8×8 tiles, before the changes below), `*-render-unsafe.json` (Dawn toggles), `*-render-exact32.json`
+(final, new default).
+
+**Render passes for the large levels don't help.** `hybrid1`–`3` cost the same as `'exact'` or more on the RTX (1.24–1.30×
+render in rgba8 vs 1.29×). At 4096² level 1 alone costs the same either way (`renderL1` ÷ `exactL1` 1.00); at render sizes
+a compute dispatch carries ~10 µs more fixed cost than a render pass, and `'exact'`'s first batch already writes several levels.
+
+**Dawn's checks are not the gap.** `--dawn-features=disable_robustness,skip_validation` (new `test/run.js` flag) moved every
+strategy together within noise: RTX 1.00 ± 0.02, Intel ± 10 % (its run-to-run spread). Chrome doesn't report whether a toggle
+took effect, so this is "no change seen", not a confirmed ablation.
+
+**The cause on Intel was the exact kernel's workgroup.** Batches of up to four levels ran 8 × 8 workgroups (tile 8). With a
+32 × 32 tile (16 × 16 invocations, 2 × 2 texels each, the 6-level kernel's shape) and level sizes derived instead of queried
+with `textureDimensions` on storage textures, `'exact'` (medians over 960×540 … 2560×1440, range in brackets):
+
+| | RTX rgba8 | RTX rgba16f | Intel rgba8 | Intel rgba16f |
+|---|---|---|---|---|
+| new ÷ old (`exact` ÷ `exact8`, same run) | **0.95** (0.78–0.99) | 1.03 (0.97–1.07) | **0.81** (0.61–0.97) | **0.94** (0.65–1.00) |
+| `'exact'` ÷ render, old (8 × 8) | 1.34 | 1.04 | 1.62 | 0.98 |
+| `'exact'` ÷ render, new | 1.19 | 1.06 | **1.04** | **0.66** |
+| tail kernel ÷ render (new tiles) | **0.98** | **0.90** | 1.02 | 0.63 |
+| tail ÷ `'exact'` | 0.82 (0.71–0.93) | 0.90 (0.81–0.96) | 0.97 | 0.97 |
+| `'spd'` ÷ render | 0.75 | 0.75 | 0.78 | 0.68 |
+
+- Powers of two plan the same 6-level batches either way (1.00–1.06 at 1024² and 4096²: noise).
+- Intel's largest gains are at 1280×720, 1920×1080 and 2560×1440 (0.61–0.74). The size queries alone were worth 5–25 % there
+  (rgba8, measured before the tile change). RTX rgba16f is 1.03, inside the 5 % noise line but leaning slower.
+- With the tail kernel, `'exact'` now ties or beats render passes on the RTX (0.98 / 0.90). On Intel the tail adds little
+  (0.97). That re-opens the tail default (owner decided opt-in on M5 data; PROGRESS *Waiting on owner*).
+- Default now: `exactTile` 32 where a workgroup can have 256 invocations, on hardware adapters; 8 in compatibility mode and on
+  fallback adapters (SwiftShader compiles 32 × 32-tile pipelines slowly). Verified: RTX full matrix 18,292 cases, RTX and Intel
+  quick, SwiftShader CI shard 2/14 (default stays 8, 32 s); only the known FSR fixtures fail. Not yet measured on the M5 Pro.

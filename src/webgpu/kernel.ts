@@ -51,7 +51,11 @@ export interface KernelOptions {
 	 * workgroup memory by the same 'exact' rule, odd sizes included.
 	 */
 	tail?: boolean;
-	/** Tail kernels: the tile edge, 8, 16 or 32, at least the first output's larger side. Default 32. */
+	/**
+	 * The tile edge, 8, 16 or 32. Tail kernels: at least the first output's larger
+	 * side, default 32. Exact kernels: at least what `count` levels need (8 up to four
+	 * levels, then 16 and 32), which is the default.
+	 */
 	tile?: number;
 	/**
 	 * Format of the texture the first output reads, when it isn't `format` (a
@@ -408,7 +412,7 @@ export function createKernel( options: KernelOptions ): string {
  * tile by the 'exact' rule at any parity (shader bilinear weights for 'average',
  * the `2x … 2x+2` footprint for folds), each quantized as stored.
  */
-function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage', tail = false, tile: tailEdge = tailTile, f16Rounding = 'nearest' }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
+function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage', tail = false, tile: tileOption, f16Rounding = 'nearest' }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
 
 	reductionKey( reduction );
 	const average = reduction === 'average';
@@ -422,9 +426,9 @@ function createExactKernel( { format, dimension, count, reduction = 'average', a
 	const integer = isIntegerDomain( quantization );
 	const exactLoads = integer && isSupportedFormat( sourceFormat ) && formats[ sourceFormat ].quantization === quantization;
 	const splat = sampledChannels( sourceFormat ) === 1 ? '.xxxx' : '';
-	if ( tail && tailEdge !== 8 && tailEdge !== 16 && tailEdge !== 32 ) throw new Error( `downsampler: a tail tile is 8, 16 or 32, got ${ tailEdge }.` );
-	if ( ! tail && tailEdge !== tailTile ) throw new Error( 'downsampler: tile is a tail kernel option.' );
-	const tile = tail ? tailEdge : tileSize( count );
+	const tile = tileOption ?? ( tail ? tailTile : tileSize( count ) );
+	if ( tile !== 8 && tile !== 16 && tile !== 32 ) throw new Error( `downsampler: a tile is 8, 16 or 32, got ${ tile }.` );
+	if ( ! tail && tile < tileSize( count ) ) throw new Error( `downsampler: ${ count } levels need a tile of at least ${ tileSize( count ) }, got ${ tile }.` );
 	const side = workgroupSide( tile );
 	const samples = tile / side;
 
@@ -563,7 +567,10 @@ fn first(pos: vec2u, size: vec2u, layer: u32) -> vec4f {
 	if ( buffer ) code += `
 fn ds_level_size(i: u32) -> vec2u { return max(ds_output.size >> vec2u(i), vec2u(1u)); }
 `;
-	const dims = ( i: number ) => buffer ? `ds_level_size(${ i }u)` : `textureDimensions(mip${ i })`;
+	// Later sizes are derived from the first (floored halves, at least 1), not queried:
+	// textureDimensions on a storage texture is a resource query per call (5–25 % of the
+	// chain on Intel UHD, rgba8; results/windows/timings.md).
+	const dims = ( i: number ) => buffer ? `ds_level_size(${ i }u)` : i === 0 ? 'textureDimensions(mip0)' : `max(size0 >> vec2u(${ i }u), vec2u(1u))`;
 	const put = ( i: number, pos: string ) => buffer ? `ds_put(${ i }u, ${ pos }, group.z, value);` : `textureStore(mip${ i }, vec2i(${ pos })${ layer }, value / SCALE);`;
 
 	if ( tail ) {

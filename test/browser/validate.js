@@ -767,6 +767,50 @@ async function validateOptions( device ) {
 
 	results.push( { option: 'encodePass matches encode' } );
 
+	// exactTile: the workgroup shape of 'exact' batches changes no bits. 16 and 32 need
+	// 256 invocations, and are skipped on software adapters (slow 32×32-tile compiles).
+	{
+
+		const big = device.limits.maxComputeInvocationsPerWorkgroup >= 256 && device.adapterInfo?.isFallbackAdapter !== true;
+		for ( const bad of [ 4, 12, 64, ...( device.limits.maxComputeInvocationsPerWorkgroup >= 256 ? [] : [ 16, 32 ] ) ] ) {
+
+			let threw = false;
+			try { new Downsampler( device, { exactTile: bad } ); } catch { threw = true; }
+			if ( ! threw ) throw new Error( `exactTile ${ bad } was accepted` );
+
+		}
+
+		const tiles = [ 8, ...( big ? [ 16, 32 ] : [] ) ].map( tile => [ tile, new Downsampler( device, { exactTile: tile } ) ] );
+		for ( const [ width, height, layers, format, options, label ] of [
+			[ 333, 200, 3, 'rgba16float', {}, 'average, 3 layers' ],
+			[ 1280, 720, 1, 'rgba8unorm', {}, 'average 1280×720' ],
+			[ 1917, 1079, 1, 'r32float', { reduction: 'max' }, 'max' ],
+			[ 255, 257, 1, 'rgba8unorm', { reduction: 'minmax' }, 'minmax' ],
+		] ) {
+
+			const data = makeData( width, height, layers, format, 'random', 12 );
+			const reference = createTexture( device, { width, height, layers, format } );
+			upload( device, reference, data );
+			downsampler.generate( reference, options );
+			const expected = await readMips( device, reference, 1 );
+			reference.destroy();
+			for ( const [ tile, owner ] of tiles ) {
+
+				const texture = createTexture( device, { width, height, layers, format } );
+				upload( device, texture, data );
+				owner.generate( texture, options );
+				const actual = await readMips( device, texture, 1 );
+				texture.destroy();
+				actual.forEach( ( level, l ) => { if ( level.some( ( value, i ) => ! Object.is( value, expected[ l ][ i ] ) ) ) throw new Error( `exactTile ${ tile } ${ label }: level ${ l + 1 } differs from the default (${ downsampler.exactTile })` ); } );
+
+			}
+
+		}
+
+		results.push( { option: `exactTile ${ tiles.map( ( [ tile ] ) => tile ).join( '/' ) } match the default (${ downsampler.exactTile })` } );
+
+	}
+
 	// The compatibility-mode path (scratch level per batch output, a copy dispatch
 	// per level) writes the same bits as the direct path: in place, from a depth
 	// source, with layers, through encode and encodePass. On core devices only

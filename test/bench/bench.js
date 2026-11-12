@@ -69,6 +69,46 @@ function compareStrategies( device ) {
 
 }
 
+/** The native harnesses' sizes (results/windows/native-tables.md). */
+export const renderCompareSizes = [ [ 960, 540 ], [ 1129, 635 ], [ 1280, 720 ], [ 1707, 960 ], [ 1920, 1080 ], [ 2560, 1440 ], [ 1024, 1024 ], [ 4096, 4096 ] ];
+
+/**
+ * `compare: 'render'` (DIVERGES #17): where render passes beat 'exact' compute.
+ * `hybrid<K>` renders levels 1..K and finishes with 'exact' from level K: the same
+ * results as both (render passes sample texel centres with normalized coordinates,
+ * as 'exact' does). `hybridSpd1` finishes with 'spd' instead (different semantics).
+ * `renderL1` / `exactL1` write only level 1, isolating the largest level; `exactBuffer`
+ * writes through the buffer output path, isolating storage-texture writes.
+ * Ratios are paired per round against render passes.
+ */
+function renderStrategies( device ) {
+
+	const exact = new Downsampler( device ), buffer = new Downsampler( device, { output: 'buffer' } );
+	const render = createRenderBaseline( device );
+	const run = ( downsampler, options ) => ( { passes: texture => downsampler.prepare( texture, options ).length, encode: ( encoder, texture ) => downsampler.encode( encoder, texture, options ) } );
+	const strategies = { render, exact: { ...run( exact, {} ), parity: true }, spd: { ...run( exact, { oddSizes: 'spd' } ), parity: false }, exactBuffer: { ...run( buffer, {} ), parity: true } };
+	const hybrid = ( levels, oddSizes ) => ( {
+		parity: oddSizes === 'exact',
+		passes: texture => Math.min( levels, texture.mipLevelCount - 1 ) + ( levels < texture.mipLevelCount - 1 ? exact.prepare( texture, { baseMipLevel: levels, oddSizes } ).length : 0 ),
+		encode: ( encoder, texture ) => {
+
+			render.encodeLevels( encoder, texture, 1, levels );
+			if ( levels < texture.mipLevelCount - 1 ) exact.encode( encoder, texture, { baseMipLevel: levels, oddSizes } );
+
+		}
+	} );
+	for ( const levels of [ 1, 2, 3 ] ) strategies[ `hybrid${ levels }` ] = hybrid( levels, 'exact' );
+	strategies.hybridSpd1 = hybrid( 1, 'spd' );
+	strategies.renderL1 = { parity: false, passes: () => 1, encode: ( encoder, texture ) => render.encodeLevels( encoder, texture, 1, 1 ) };
+	strategies.exactL1 = { ...run( exact, { mipLevelCount: 2 } ), parity: false };
+	// Workgroup shape: 'exact' batches default to 32 × 32 tiles (16 × 16 invocations);
+	// exact8 is the previous default for batches of up to four levels.
+	strategies.exact8 = { ...run( new Downsampler( device, { exactTile: 8 } ), {} ), parity: true };
+	strategies.tail = { ...run( new Downsampler( device, { tail: true } ), {} ), parity: true };
+	return { strategies, reference: () => 'render' };
+
+}
+
 /**
  * Before timing, the atomic probe must reproduce `oddSizes: 'spd'` on four
  * changing inputs (stale payloads would show), with its counter reset: levels
@@ -218,7 +258,8 @@ function webgpuSpdStrategies( device, format ) {
 export async function benchmark( device, { sizes, formats: benchFormats = defaultFormats, rounds = 11, repeats = 16, compare, onProgress = () => {} } = {} ) {
 
 	if ( ! device.features.has( 'timestamp-query' ) ) return { timestamps: false, results: [] };
-	sizes ??= compare === 'spd' ? compareSizes : compare === 'webgpu-spd' ? compareSpdSizes : defaultSizes;
+	sizes ??= compare === 'spd' ? compareSizes : compare === 'webgpu-spd' ? compareSpdSizes : compare === 'render' ? renderCompareSizes : defaultSizes;
+	if ( compare === 'render' ) return measure( device, renderStrategies( device ), { sizes, benchFormats, rounds, repeats, onProgress } );
 	if ( compare === 'webgpu-spd' ) {
 
 		// Strategies differ per format (r32float has no render baseline or average), so measure per format.

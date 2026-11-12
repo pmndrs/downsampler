@@ -17,6 +17,7 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
   - [x] Timings, native + `--compare=spd` on both GPUs ([results/windows/timings.md](results/windows/timings.md)); RTX WebGPU ran at 620–920 MHz vs native ~1600, so cross-API ratios there wait for locked clocks
   - [x] webgpu-spd: timings and 256-frame check on both GPUs (0 stale frames of 41,472 each); our `'spd'` 1.6× / 3.5× faster than its default (RTX / Intel, rgba8) ([timings.md](results/windows/timings.md))
   - [x] Sampler tolerance model (`ReferenceOptions.weights`) and exact converting copies (branch `f16-rounding`)
+  - [x] Render passes vs `'exact'` (`--compare=render`, DIVERGES #17): rendering the large levels doesn't help; Dawn's robustness/validation toggles change nothing. The cause on Intel was 8×8 exact workgroups: `exactTile` 32 default (hardware adapters with 256 invocations) + derived level sizes, `'exact'` 0.81× / 0.94× of before on Intel, 0.95× / 1.03× on the RTX (rgba8 / rgba16f). Verified: RTX full 18,292 cases, RTX + Intel quick, SwiftShader shard 2/14; only the FSR fixtures fail ([timings.md](results/windows/timings.md))
   - [ ] Remaining handoff jobs: `bench`, `tools` per GPU (prepared in `run-benches.sh`, 25 min cap each)
   - Handoff summary: [results/windows/README.md](results/windows/README.md); library changes are on branch `f16-rounding`
   - [x] `test/parallel.js`: the suite in capped parallel shards, one summary; full matrix 35+ → 17 min, quick 4.6 → 2 min (RTX 3060)
@@ -85,7 +86,9 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
 - Upscaler exposure, every texel vs 1024 taps: pros/cons and sources sent 2026-11-12. Agreed: merge the bit-identical `perf/exposure-parallel` first
 - Review drafts (local only, gitignored, never pushed): `drafts/webgpu-spd-issues.md` (6 issues), `drafts/gpuweb-5253-comment.md` (numbers to fill from Windows)
 - Upscaler branch `perf/exposure-parallel` is local only: push it to pmndrs/upscaler so the Windows agent can run its measurements, or skip that run
-- Windows, render fallback (DIVERGES #17, now measured): in WebGPU, render passes beat our `'exact'` default in rgba8 by 25 % (RTX) and 71 % (Intel); `'spd'` beats render everywhere. Build a per-device / per-format render path in the adapters before the three.js default?
+- Windows, render fallback (DIVERGES #17): answered by measurement, no render path needed. After the exact-tile fix, `'exact'` ÷ render passes is 1.19 / 1.04 in rgba8 (RTX / Intel) and 1.06 / 0.66 in rgba16f
+- Tail kernel default (re-ask; decided opt-in on M5 data): on Windows with the new tiles, tail ÷ `'exact'` is 0.82 / 0.90 on the RTX (rgba8 / rgba16f) and 0.97 / 0.97 on Intel, and it beats render passes on the RTX (0.98 / 0.90). Make it the default, or per-device?
+- M5 Pro: re-run `npm run bench -- --compare=render --skip-validation` to confirm the `exactTile` 32 default doesn't regress Apple (`exact8` is the old shape in the same run)
 - Windows, f16 rounding cost: `'nearest'` now rounds with an f32 add (owner asked to try it): 14 % on Intel (was 29 %), noise on the RTX, bit-exact on both. Keep, or default to `'device'` on some devices?
 
 ## Decided (owner, 2026-11-12)

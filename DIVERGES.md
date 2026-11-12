@@ -34,7 +34,7 @@ Last updated: 2026-11-13 (Windows: RTX 3060 Laptop and Intel UHD, native D3D12/V
 | 14 | No `texture_external` source | fiddle | Candidate | M | None | Saves one full-frame copy per frame |
 | 15 | No sub-rectangle yet | SPD | Planned (M2.4) | M | Depends on the snapping decision | Saves work on partial updates |
 | 16 | sRGB via scratch copy or buffer, not a UNORM alias | SPD | Planned (M2.3.5) | M | Same results | Extra copy of levels 1+ |
-| 17 | Compute only; no per-device render fallback | `greggman`, `toji` | Risk (M3), measured | M | None | Windows: render passes beat our `'exact'` in rgba8 (1.25× NVIDIA, 1.71× Intel); `'spd'` beats render everywhere |
+| 17 | Compute only; no per-device render fallback | `greggman`, `toji` | Risk (M3), reduced | M | None | Windows: with 32×32 exact tiles (2026-11-13) `'exact'` ÷ render is 1.19 / 1.04 in rgba8 (NVIDIA / Intel), the tail kernel 0.98 / 1.02; `'spd'` beats render everywhere |
 | 18 | Needs `STORAGE_BINDING` on the texture | gpuweb#5253 (`Kangz`) | Risk, reduced | — | None | No measurable cost on NVIDIA or Intel (D3D12); Apple, AMD unmeasured |
 | 19 | Timestamp benchmark only | `greggman`, nvpro | Planned (M3) | S–M | — | Credibility of every claim |
 | 20 | API conventions: mip count, levels written, no counter buffer | SPD | Keep | S (docs) | — | — |
@@ -217,9 +217,10 @@ Last updated: 2026-11-13 (Windows: RTX 3060 Laptop and Intel UHD, native D3D12/V
 - **Effort:** M. Collect cross-vendor data (M3), then either choose the path per device in the adapters or add a render-pass backend here (SPEC §3 leaves room for one).
 - **Performance (measured):**
   - **Apple M5 Pro:** 1.3–27× faster than render passes.
-  - **Windows, WebGPU, same run** (Chrome 148, D3D12; medians at render sizes; results/windows/timings.md): our default `'exact'` ÷ WebGPU render passes is **1.25 (rgba8) / 1.06 (rgba16f) on an RTX 3060 Laptop** and **1.71 / 0.94 on Intel UHD**: render passes win rgba8 on both. `'spd'` is 0.74 / 0.76 and 0.85 / 0.72 (faster than render everywhere); the tail kernel 1.06 / 0.90 and 1.75 / 0.99.
+  - **Windows, WebGPU, same run** (Chrome 148, D3D12; medians at render sizes; results/windows/timings.md): with 8 × 8 exact workgroups, our default `'exact'` ÷ WebGPU render passes was **1.25 (rgba8) / 1.06 (rgba16f) on an RTX 3060 Laptop** and **1.71 / 0.94 on Intel UHD**. Most of Intel's gap was our kernel: with 32 × 32 exact tiles (the default since 2026-11-13) it is **1.19 / 1.06 on the RTX and 1.04 / 0.66 on Intel**. The tail kernel is now 0.98 / 0.90 and 1.02 / 0.63; `'spd'` 0.75 / 0.75 and 0.78 / 0.68.
+  - **Render passes for the large levels, then `'exact'`** (same results) cost as much as `'exact'` or more: render passes aren't cheaper per texel (4096² level 1 ties), only per dependent step (~10 µs less than a compute dispatch on the RTX at render sizes).
   - **Native platform paths** (D3D12): on the RTX, AMD SPD beats render passes by 27–31 % and `GenerateMips` by 15–20 %; on Intel, render passes and `GenerateMips` beat every SPD variant by ~27 % in rgba8 (level in rgba16f). nvpro's Vulkan compute is 3–5× slower than `vkCmdBlitImage` on Intel. Nothing like `greggman`'s 10× on NVIDIA.
-- **Verdict:** risk, now measured: render passes beat our `'exact'` default for rgba8 on Windows (by 25 % on NVIDIA, 70 % on Intel). A per-device or per-format render fallback in the adapters is worth building before the three.js default is decided.
+- **Verdict:** risk, reduced. After the tile fix only RTX rgba8 still favours render passes (by 19 %), and the tail kernel closes that (0.98). The lever is fewer dependent dispatches (the tail kernel, or exact batches across odd sizes), not a render-pass path; a render fallback stays for textures we can't write.
 
 ### 18. Textures need `STORAGE_BINDING`
 - **They:** render-pass generators need only `RENDER_ATTACHMENT`. `Kangz` flagged that adding storage usage to sampled textures has an unmeasured cost.
