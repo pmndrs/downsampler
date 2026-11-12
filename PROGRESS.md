@@ -12,7 +12,6 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 - [ ] Windows runs (owner, RTX 3060 + Intel UHD): verification and cross-vendor timings for what M2/M2T built. Features are done on Apple; this is measurement. Commands: run sheet in `docs/diverges.html` (the artifact)
 - [ ] CI shards like homefig (`--shard=i/N`, duration-balanced, fast/full tiers, timing summaries) (agent, branch `ci-shards`)
-- [ ] Comparison with webgpu-spd: correctness, timings, feature table, pros/cons (agent, branch `compare-webgpu-spd`)
 - [ ] CI: confirm the three parallel SwiftShader jobs fit on GitHub runners (first push; job limit 75 min, protocol timeout 60 min on SwiftShader). `reducer` took 17 min alone on the M5 Pro; if CI is too slow, trim its quick shapes on SwiftShader only
 
 ## Next (M2T, tools first: SPEC §11)
@@ -39,6 +38,8 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] webgpu-spd 3.0.0 compared (`results/compare/webgpu-spd.md`, DIVERGES #22): its default single-dispatch handoff returned stale levels 7+ on M5 Pro (up to 5 % of frames at render sizes, 25–41 % at 4096²); correct with `maxMipsPerPass: 6`; our `'spd'` 1.2–2.1× faster for the same semantics (`805c21f`)
+- [x] Fixed `--compare=spd` parity check: the atomic probe now rounds f16 before `textureStore`, like the library
 - [x] M2T.4: `oddSizes: 'spd'` (average only; folds rejected), exact tail kernel (`tail: true`, opt-in), atomic single-dispatch probe (test-only); both compose with the buffer path and compatibility mode; 12/12 mutations caught (`b4ef2dc`…`1b7e897`)
 - [x] M2.3.4 + M2.3.6: buffer output path (6 levels per dispatch at any storage limit), rgb9e5ufloat, rg11b10ufloat; composes with compatibility mode; Reducer f16 outputs round to nearest even; 12/14 mutations caught, 2 identical on Apple (`9d6b00d`, `213cb23`, `b2ec515`)
 - [x] Tool API: shared group-1 plumbing (`tool.ts`), combine-only scalar (fused luma pyramid 3 → 2 dispatches), 8-channel `DsWide` accumulators, argmin/argmax payload folds, compatibility mode (D4100; 8599 cases on a real compat device); 19/19 mutations caught (`a00e291`…`af98701`)
@@ -74,6 +75,7 @@ Last updated: 2026-11-11 · Branch: `m2-reductions`
 
 ## Waiting on owner
 
+- webgpu-spd bugs found (stale handoff, inverted f16 check, last level unwritten with a separate target, shared mip-6 buffer, >4096² levels unwritten, MinMax clamps max at 0): draft issues for its repo? Nothing is posted without your review
 - `'spd'` shipped as a public opt-in for 'average' only (folds rejected), per the coordinator's recommendation: overrule if you want it test-only
 - Exact tail kernel: 1080p 7 → 4 dispatches but ~0.85–1.07× time; keep opt-in until an idle-machine run shows ≥5 %?
 - Payload folds break key ties by the smaller payload (order-independent); OK, or build in position-based ties?

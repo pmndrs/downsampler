@@ -98,7 +98,10 @@ export class AtomicSpd {
 		bindings += '// 0: completion counter; then the packed level-6 texel of each workgroup.\n@group(1) @binding(12) var<storage, read_write> spd_state: array<atomic<u32>>;\n';
 		if ( packed.length ) bindings += '@group(1) @binding(13) var<storage, read_write> spd_packed: array<u32>;\n';
 
-		const storeLevels = ( base, count ) => Array.from( { length: count }, ( _, i ) => `	if (level == ${ i + 1 }u) { textureStore(spd_mip${ base + i + 1 }, texel, value); }\n` ).join( '' );
+		// float16 stores round to nearest even first, as the library's kernels do: textureStore
+		// alone truncates on some devices (Apple M5 Pro, results/probes/f16-store-rounding.mjs).
+		const stored = words === 1 ? 'value' : 'vec4f(unpack2x16float(pack2x16float(value.xy)), unpack2x16float(pack2x16float(value.zw)))';
+		const storeLevels = ( base, count ) => Array.from( { length: count }, ( _, i ) => `	if (level == ${ i + 1 }u) { textureStore(spd_mip${ base + i + 1 }, texel, ${ stored }); }\n` ).join( '' );
 		const publish = words === 1 ? '		atomicStore(&spd_state[address], pack4x8unorm(value));\n' : '		let p = vec2u(pack2x16float(value.xy), pack2x16float(value.zw));\n		atomicStore(&spd_state[address], p.x);\n		atomicStore(&spd_state[address + 1u], p.y);\n';
 		const phase1Store = `fn store(level: u32, texel: vec2i, layer: u32, value: vec4f) {
 ${ storeLevels( 0, 6 ) }	if (level == 6u) {
