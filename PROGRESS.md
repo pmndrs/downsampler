@@ -11,9 +11,11 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
 ## Now
 
 - [ ] Windows runs (owner + a Windows agent, RTX 3060 + Intel UHD): branch `windows-testing`, handoff in `docs/WINDOWS-HANDOFF.md`. Verification, cross-vendor timings, and native D3D12/Vulkan matches (FidelityFX SPD, D3D11 `GenerateMips`, nvpro) for the same sizes
-  - [x] Correctness: RTX full + quick + compat quick, Intel quick, all groups run; failures traced to f16 truncation and sampler precision ([results/windows/correctness.md](results/windows/correctness.md)); Intel-only deviations open
+  - [x] Correctness: RTX full + quick + compat quick, Intel quick, all groups run; failures traced to f16 truncation and sampler precision, both explained by probes ([results/windows/correctness.md](results/windows/correctness.md))
   - [x] Native harnesses built (`native/`): D3D12 AMD SPD (8 variants), D3D12 render, D3D11 `GenerateMips`, Vulkan nvpro + blit; level dumps at 1129×635 match our oracles ([native-semantics-rtx3060.json](results/windows/native-semantics-rtx3060.json))
-  - [ ] Timings (library + native, `results/windows/run-benches.sh`): held for the owner's go-ahead after the correctness failures
+  - [x] `f16Rounding` (branch `f16-rounding`, `1af33de`): RTX full matrix 287 → 85 failures, every f16 one gone on both GPUs
+  - [x] Timings, native + `--compare=spd` on both GPUs ([results/windows/timings.md](results/windows/timings.md)); RTX WebGPU ran at 620–920 MHz vs native ~1600, so cross-API ratios there wait for locked clocks
+  - [ ] Remaining handoff jobs: `--compare=webgpu-spd`, `bench`, `tools`, `--webgpu-spd-check` per GPU (prepared in `run-benches.sh`)
   - [x] `test/parallel.js`: the suite in capped parallel shards, one summary; full matrix 35+ → 17 min, quick 4.6 → 2 min (RTX 3060)
 - [ ] CI: first GitHub run of the shards (`test/ci/README.md`): real shard times, Linux SwiftShader compat device, artifact collection. Then commit its `gpu-durations` artifact
 
@@ -80,7 +82,9 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
 - Upscaler exposure, every texel vs 1024 taps: pros/cons and sources sent 2026-11-12. Agreed: merge the bit-identical `perf/exposure-parallel` first
 - Review drafts (local only, gitignored, never pushed): `drafts/webgpu-spd-issues.md` (6 issues), `drafts/gpuweb-5253-comment.md` (numbers to fill from Windows)
 - Upscaler branch `perf/exposure-parallel` is local only: push it to pmndrs/upscaler so the Windows agent can run its measurements, or skip that run
-- Windows, sampler precision ([correctness.md](results/windows/correctness.md)): NVIDIA rounds each 2D tap weight to 1/256, Intel truncates axis weights (even sizes too); `averageAccess: 'load'` passes on both. Default `'sample'`, `'load'`, or `'load'` only after odd sizes? Decide after the sample-vs-load timings on both GPUs
+- Windows, sampler precision ([correctness.md](results/windows/correctness.md)): NVIDIA rounds each 2D tap weight to 1/256, Intel truncates axis weights (even sizes too); `averageAccess: 'load'` passes on both. Timed ([timings.md](results/windows/timings.md)): `'load'` costs 13 % / 2 % (RTX rgba8 / rgba16f), 31 % / 22 % (Intel). Default `'sample'`, `'load'`, or `'load'` only after odd sizes?
+- Windows, f16 rounding cost: `'nearest'` costs 4 % on the RTX but 29 % on Intel (rgba16f, render sizes). Try a cheaper formulation (f32 magic-number add), keep as is, or default to `'device'` on some devices?
+- Windows, RTX clocks: WebGPU runs sat at 620–920 MHz, native at ~1600. Lock clocks (`nvidia-smi -lgc`, needs admin) and rerun for fair WebGPU ÷ native ratios?
 
 ## Decided (owner, 2026-11-12)
 
