@@ -111,7 +111,8 @@ export function digest( ids ) {
  * else when the shard owns it. `run( id, fn )` runs fn if `has( id )` and records its time
  * and the cases it returned (an array of results). Time between groups (shared setup:
  * textures, inputs, oracles) is charged to the group that follows it, so the recorded
- * durations add up to the run's wall time.
+ * durations add up to the run's wall time. With `onError( id, error )` set (--keep-going), a
+ * group that throws is reported there and the run moves on to the next group.
  */
 export class Selection {
 
@@ -123,6 +124,7 @@ export class Selection {
 		this.seen = new Set();
 		this.groups = {};
 		this.last = performance.now();
+		this.onError = null;
 
 	}
 
@@ -141,6 +143,12 @@ export class Selection {
 		try {
 
 			results = await fn();
+			return results;
+
+		} catch ( error ) {
+
+			if ( ! this.onError ) throw error;
+			this.onError( id, error );
 			return results;
 
 		} finally {

@@ -11,6 +11,7 @@
 //   node test/run.js --quality --skip-validation              M2T.4: 'spd' vs 'exact' per level, Hi-Z violations
 //   node test/run.js --compat            on a compatibility-mode device (featureLevel 'compatibility')
 //   node test/run.js --power=low         force the low-power GPU (default high); for laptops with two GPUs
+//   node test/run.js --keep-going        report every failing check instead of stopping at the first
 //   node test/run.js --bench --compare=webgpu-spd --formats=rgba8unorm,rgba16float,r32float --skip-validation
 //                                        webgpu-spd 3.0.0 vs exact / tail / spd / render (results/compare/webgpu-spd.md)
 //   node test/run.js --webgpu-spd-check --skip-validation [--frames=64]   its correctness against our oracles
@@ -26,6 +27,7 @@ import { loadavg } from 'node:os';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer';
+import { gpuChoiceArgs } from './gpu-choice.js';
 import { assignShards, parseShard, partitionProblems, shardLoads } from './ci/shard.js';
 import { createServer } from './serve.js';
 
@@ -41,6 +43,7 @@ if ( value( 'compare' ) ) options.compare = value( 'compare' );
 if ( args.includes( '--quality' ) ) options.quality = true;
 if ( args.includes( '--skip-validation' ) ) options.skipValidation = true;
 if ( args.includes( '--webgpu-spd-check' ) ) options.webgpuSpdCheck = true;
+if ( args.includes( '--keep-going' ) ) options.keepGoing = true;
 if ( value( 'frames' ) ) options.frames = Number( value( 'frames' ) );
 const loadBefore = loadavg();
 const startedAt = Date.now();
@@ -58,8 +61,9 @@ const timingPath = value( 'timing' );
 const browserArgs = [ '--enable-unsafe-webgpu' ];
 if ( process.env.CI ) browserArgs.push( '--no-sandbox' );
 if ( value( 'adapter' ) === 'swiftshader' ) browserArgs.push( '--use-webgpu-adapter=swiftshader', '--enable-unsafe-swiftshader', '--enable-features=Vulkan' );
-// --power=high|low picks the GPU on machines with two (e.g. a laptop's NVIDIA and Intel); the printed adapter info confirms which one ran.
-if ( value( 'power' ) ) browserArgs.push( `--use-webgpu-power-preference=${ value( 'power' ) === 'low' ? 'force-low-power' : 'force-high-performance' }` );
+// --power=high|low picks the GPU on machines with two (e.g. a laptop's NVIDIA and Intel; see
+// test/gpu-choice.js for Windows); the printed adapter info confirms which one ran.
+browserArgs.push( ...gpuChoiceArgs( value( 'power' ) ) );
 
 const server = createServer();
 let browser;
@@ -67,8 +71,8 @@ let browser;
 try {
 
 	await new Promise( resolve => server.listen( 0, '127.0.0.1', resolve ) );
-	// The full matrix takes minutes; the default 180 s protocol timeout would cut it off.
-	browser = await puppeteer.launch( { headless: ! args.includes( '--headful' ), args: browserArgs, protocolTimeout: ( args.includes( '--adapter=swiftshader' ) ? 60 : 30 ) * 60 * 1000 } );
+	// The full matrix takes minutes (over 30 on a laptop RTX 3060); the default 180 s protocol timeout would cut it off.
+	browser = await puppeteer.launch( { headless: ! args.includes( '--headful' ), args: browserArgs, protocolTimeout: 120 * 60 * 1000 } );
 	const page = await browser.newPage();
 	const errors = [];
 	page.on( 'pageerror', error => errors.push( error.message ) );
@@ -80,7 +84,12 @@ try {
 	} );
 	page.setDefaultTimeout( 600000 );
 	await page.goto( `http://127.0.0.1:${ server.address().port }/test/browser/` );
-	await page.waitForFunction( () => typeof window.runSuite === 'function' );
+	// Loading the suite page takes seconds: fail fast, with the page's errors, if it never loads.
+	await page.waitForFunction( () => typeof window.runSuite === 'function', { timeout: 60000 } ).catch( error => {
+
+		throw new Error( `suite page did not load: ${ error.message }${ errors.length ? `\n${ errors.join( '\n' ) }` : '' }` );
+
+	} );
 	let report;
 
 	try {
@@ -109,7 +118,14 @@ try {
 	report.loadAverage = { before: loadBefore, after: loadavg() };
 	console.log( JSON.stringify( adapter ) );
 	console.log( `load average (1, 5, 15 min): before ${ loadBefore.map( v => v.toFixed( 1 ) ).join( ' ' ) }, after ${ report.loadAverage.after.map( v => v.toFixed( 1 ) ).join( ' ' ) }` );
-	console.log( `validation passed: ${ validation.cases } cases, ${ validation.checks } pattern runs, ${ validation.ms } ms` );
+	if ( validation.failures?.length ) {
+
+		// --keep-going: every failing check, then a failed exit.
+		for ( const failure of validation.failures ) console.log( failure.thrown ? `FAIL ${ failure.first }` : `FAIL ${ failure.first } (${ failure.failing }/${ failure.values } values outside, max error ${ failure.maxError })` );
+		console.log( `validation FAILED: ${ validation.failures.length } failing checks in ${ validation.cases } cases, ${ validation.checks } pattern runs, ${ validation.ms } ms` );
+		process.exitCode = 1;
+
+	} else console.log( `validation passed: ${ validation.cases } cases, ${ validation.checks } pattern runs, ${ validation.ms } ms` );
 	if ( validation.scalarPrecision ) console.log( `scalar float sums: worst error ${ ( validation.scalarPrecision.worst * 100 ).toFixed( 2 ) } % of the oracle's bound; ${ validation.scalarPrecision.pairing } results equal the oracle's float32 pairing bit for bit` );
 	if ( validation.skipped.length ) console.log( `skipped (feature unavailable): ${ validation.skipped.join( ', ' ) }` );
 	const ran = Object.keys( validation.groups ?? {} );

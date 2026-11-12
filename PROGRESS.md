@@ -11,6 +11,10 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
 ## Now
 
 - [ ] Windows runs (owner + a Windows agent, RTX 3060 + Intel UHD): branch `windows-testing`, handoff in `docs/WINDOWS-HANDOFF.md`. Verification, cross-vendor timings, and native D3D12/Vulkan matches (FidelityFX SPD, D3D11 `GenerateMips`, nvpro) for the same sizes
+  - [x] Correctness: RTX full + quick + compat quick, Intel quick, all groups run; failures traced to f16 truncation and sampler precision ([results/windows/correctness.md](results/windows/correctness.md)); Intel-only deviations open
+  - [x] Native harnesses built (`native/`): D3D12 AMD SPD (8 variants), D3D12 render, D3D11 `GenerateMips`, Vulkan nvpro + blit; level dumps at 1129×635 match our oracles ([native-semantics-rtx3060.json](results/windows/native-semantics-rtx3060.json))
+  - [ ] Timings (library + native, `results/windows/run-benches.sh`): held for the owner's go-ahead after the correctness failures
+  - [x] `test/parallel.js`: the suite in capped parallel shards, one summary; full matrix 35+ → 17 min, quick 4.6 → 2 min (RTX 3060)
 - [ ] CI: first GitHub run of the shards (`test/ci/README.md`): real shard times, Linux SwiftShader compat device, artifact collection. Then commit its `gpu-durations` artifact
 
 ## Next (SPEC §11)
@@ -76,6 +80,10 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
 - Upscaler exposure, every texel vs 1024 taps: pros/cons and sources sent 2026-11-12. Agreed: merge the bit-identical `perf/exposure-parallel` first
 - Review drafts (local only, gitignored, never pushed): `drafts/webgpu-spd-issues.md` (6 issues), `drafts/gpuweb-5253-comment.md` (numbers to fill from Windows)
 - Upscaler branch `perf/exposure-parallel` is local only: push it to pmndrs/upscaler so the Windows agent can run its measurements, or skip that run
+- Windows (2026-11-12, [results/windows/correctness.md](results/windows/correctness.md)): D3D12 truncates f32 → f16 in `textureStore` **and** `pack2x16float` (NVIDIA and Intel), so quantize-first doesn't round there. Fix in the kernels (bitwise round-to-nearest-even before storing), or accept truncation in the oracle on such devices?
+- Windows: NVIDIA's bilinear filter is outside `reduceReference`'s `filterTolerance` at 65×129 and 255×257 (native render passes show the same). Widen the model for it?
+- Windows: Intel UHD-only deviations (filtered levels at many odd shapes, rg11b10 up to 17 %, a same-size copy, rgb9e5 separate-source level 0) need a targeted look before conclusions. Investigate now, or after the timings?
+- Windows: run the prepared timing session (library + native, ~1 h of GPU time in jobs under 30 min each) despite the open correctness items?
 
 ## Decided (owner, 2026-11-12)
 
@@ -111,11 +119,15 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
 | 2026-11-10 | `a996cc4` | Apple M5 Pro, Chrome (puppeteer) | quick | ✅ 6032 cases, 19456 pattern runs (branch `reflections-integration`) |
 | 2026-11-12 | `38beb25` | SwiftShader | quick, unsharded, `--record-durations` | ✅ 4784 cases, 323 groups, 25.4 min; shards 1, 7, 14 of 14 match their recorded case counts (21, 301, 366) |
 | 2026-11-12 | `44b25bc` | Apple M5 Pro, Chrome 148 | quick (unsharded) + `--list --shards=14` | ✅ 10475 cases, 25548 pattern runs; partition disjoint and covering |
+| 2026-11-12 | `b6aca67` + harness fixes | RTX 3060 Laptop, D3D12, driver 592.00, Chrome 148 | full GPU matrix, `test/parallel.js` (36 shards × 6) | ❌ 18289 cases, 1674/1674 groups, 17 min; 287 failures: f16 truncation, sampler precision |
+| 2026-11-12 | `b6aca67` + harness fixes | RTX 3060 Laptop, D3D12 | quick / compat quick, parallel | ❌ 10444 cases, 2 min, 189 failures / ❌ 10355 cases, 2 min, 187 (same causes) |
+| 2026-11-12 | `b6aca67` + harness fixes | Intel UHD, D3D12, driver 31.0.101.5333 | quick, parallel (12 × 4) | ❌ 10437 cases, 2.4 min, 629 failures (f16 truncation + Intel-only deviations) |
 
 ## Notes
 
 - `textureStore` to rgba16float truncates instead of rounding on the M5 Pro (probe `results/probes/f16-store-rounding.mjs`); Downsampler quantizes first, the Reducer is being fixed to do the same.
 - The dev machine is often loaded (load average 12–18 from other projects): only trust ratios from the same run, and don't update SPEC §8 absolute numbers until it's idle.
+- Whole-suite correctness: `node test/parallel.js -- <run.js flags>` (shards in parallel, `--cap` per shard, `--budget` per run, one summary.md). The suite is CPU-bound (JS oracles), so one page uses one core: on the RTX 3060 laptop the full matrix is 35+ min alone, 17 min in 6 jobs; `--quick` 2 min. No run over 30 min (owner, 2026-11-12).
 - The full matrix takes about 6 minutes under load (family-trimmed). The six family formats on 2048², 96×4096 and 1920×1080 dominate. If it grows further, run big shapes with fewer patterns or widths.
 - In-tile levels of normalized formats are checked bit-exactly. Before that, a tie-rounding bug in the oracle (present since M1) was hidden by the 2-step tolerance.
 - SwiftShader exposes 4 storage textures, so CI can't cover the 5- and 6-level kernels (CLAUDE.md).

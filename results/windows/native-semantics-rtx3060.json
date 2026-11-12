@@ -1,0 +1,4260 @@
+{
+	"about": "Native level dumps diffed against the library oracles; maxSteps is in storage steps near 1 (8-bit unit, f16 ulp in [0.5, 1), f32 ulp). Dumps at 1129x635 from native/d3d12-mips and native/vk-mips (--dump, --no-timing) on the RTX 3060 Laptop, driver 32.0.15.9200 (NVIDIA 592.00), Vulkan 1.4.325; check: node native/d3d12-mips/check-dump.mjs <dump folder>",
+	"device": "NVIDIA GeForce RTX 3060 Laptop GPU",
+	"date": "2026-11-12",
+	"d3d12": [
+		{
+			"variant": "d3d11-generatemips",
+			"format": "rgba16float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "'exact' level by level",
+			"maxSteps": 16.5,
+			"differing": 820576,
+			"outside": 1036,
+			"failingLevels": [
+				1,
+				2,
+				3,
+				4
+			],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 16.5,
+					"differing": 627355,
+					"outside": 188,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 14,
+					"differing": 151581,
+					"outside": 800,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 7,
+					"differing": 32218,
+					"outside": 45,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 8,
+					"differing": 7520,
+					"outside": 3,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 6,
+					"differing": 1518,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 4,
+					"differing": 303,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 3,
+					"differing": 62,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 11,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 5,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 3,
+					"outside": 0,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "d3d11-generatemips",
+			"format": "rgba8unorm",
+			"width": 1129,
+			"height": 635,
+			"oracle": "'exact' level by level",
+			"maxSteps": 2,
+			"differing": 245236,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 2,
+					"differing": 181009,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 2,
+					"differing": 48490,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 2,
+					"differing": 11545,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 2,
+					"differing": 3142,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 2,
+					"differing": 786,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 2,
+					"differing": 208,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 2,
+					"differing": 38,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 14,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 3,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 1,
+					"outside": 0,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "render",
+			"format": "rgba16float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "'exact' level by level",
+			"maxSteps": 12.25,
+			"differing": 758357,
+			"outside": 18,
+			"failingLevels": [
+				2
+			],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 12.25,
+					"differing": 580426,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 9.5,
+					"differing": 141090,
+					"outside": 18,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 4,
+					"differing": 28698,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 4,
+					"differing": 6458,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 2.5,
+					"differing": 1332,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 2,
+					"differing": 276,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 2,
+					"differing": 53,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 16,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 5,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 3,
+					"outside": 0,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "render",
+			"format": "rgba8unorm",
+			"width": 1129,
+			"height": 635,
+			"oracle": "'exact' level by level",
+			"maxSteps": 2,
+			"differing": 171874,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 2,
+					"differing": 119644,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 2,
+					"differing": 37811,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 10548,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 2,
+					"differing": 2865,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 2,
+					"differing": 749,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 2,
+					"differing": 205,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 1,
+					"differing": 36,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 2,
+					"differing": 13,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 2,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 1,
+					"outside": 0,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "render-rtonly",
+			"format": "rgba16float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "'exact' level by level",
+			"maxSteps": 12.25,
+			"differing": 758357,
+			"outside": 18,
+			"failingLevels": [
+				2
+			],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 12.25,
+					"differing": 580426,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 9.5,
+					"differing": 141090,
+					"outside": 18,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 4,
+					"differing": 28698,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 4,
+					"differing": 6458,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 2.5,
+					"differing": 1332,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 2,
+					"differing": 276,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 2,
+					"differing": 53,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 16,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 5,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 3,
+					"outside": 0,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "render-rtonly",
+			"format": "rgba8unorm",
+			"width": 1129,
+			"height": 635,
+			"oracle": "'exact' level by level",
+			"maxSteps": 2,
+			"differing": 171874,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 2,
+					"differing": 119644,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 2,
+					"differing": 37811,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 10548,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 2,
+					"differing": 2865,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 2,
+					"differing": 749,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 2,
+					"differing": 205,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 1,
+					"differing": 36,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 2,
+					"differing": 13,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 2,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 1,
+					"outside": 0,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "spd-atomic-lds-linear",
+			"format": "rgba16float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 449.5,
+			"differing": 124419,
+			"outside": 4,
+			"failingLevels": [
+				10
+			],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 33908,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 64690,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 19369,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 4852,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 1209,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 254,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 2,
+					"differing": 96,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 30,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 7,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 449.5,
+					"differing": 4,
+					"outside": 4,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "spd-atomic-lds-linear",
+			"format": "rgba8unorm",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 56,
+			"differing": 98756,
+			"outside": 4,
+			"failingLevels": [
+				10
+			],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 91180,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 5628,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 1407,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 359,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 99,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 30,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 1,
+					"differing": 41,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 5,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 3,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 56,
+					"differing": 4,
+					"outside": 4,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "spd-atomic-lds-load",
+			"format": "rgba16float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 449.5,
+			"differing": 442102,
+			"outside": 4,
+			"failingLevels": [
+				10
+			],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 324042,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 88402,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 22385,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 5478,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 1346,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 304,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 2,
+					"differing": 104,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 30,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 7,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 449.5,
+					"differing": 4,
+					"outside": 4,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "spd-atomic-lds-load",
+			"format": "rgba8unorm",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 56,
+			"differing": 103601,
+			"outside": 4,
+			"failingLevels": [
+				10
+			],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 95901,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 5746,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 1412,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 359,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 100,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 30,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 1,
+					"differing": 41,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 5,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 3,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 56,
+					"differing": 4,
+					"outside": 4,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "spd-atomic-lds",
+			"format": "r32float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 0,
+			"differing": 0,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 238074,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 178788
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 11139
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 2730
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 665
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 153
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 2
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 1
+				}
+			]
+		},
+		{
+			"variant": "spd-atomic-wave-linear",
+			"format": "rgba16float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 449.5,
+			"differing": 124419,
+			"outside": 4,
+			"failingLevels": [
+				10
+			],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 33908,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 64690,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 19369,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 4852,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 1209,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 254,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 2,
+					"differing": 96,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 30,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 7,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 449.5,
+					"differing": 4,
+					"outside": 4,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "spd-atomic-wave-linear",
+			"format": "rgba8unorm",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 56,
+			"differing": 98756,
+			"outside": 4,
+			"failingLevels": [
+				10
+			],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 91180,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 5628,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 1407,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 359,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 99,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 30,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 1,
+					"differing": 41,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 5,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 3,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 56,
+					"differing": 4,
+					"outside": 4,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "spd-atomic-wave-load",
+			"format": "rgba16float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 449.5,
+			"differing": 442102,
+			"outside": 4,
+			"failingLevels": [
+				10
+			],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 324042,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 88402,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 22385,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 5478,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 1346,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 304,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 2,
+					"differing": 104,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 30,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 7,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 449.5,
+					"differing": 4,
+					"outside": 4,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "spd-atomic-wave-load",
+			"format": "rgba8unorm",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 56,
+			"differing": 103601,
+			"outside": 4,
+			"failingLevels": [
+				10
+			],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 95901,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 5746,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 1412,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 359,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 100,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 30,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 1,
+					"differing": 41,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 5,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 3,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 56,
+					"differing": 4,
+					"outside": 4,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "spd-atomic-wave",
+			"format": "r32float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 0,
+			"differing": 0,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 238074,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 178788
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 11139
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 2730
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 665
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 153
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 2
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 1
+				}
+			]
+		},
+		{
+			"variant": "spd-split-lds-linear",
+			"format": "rgba16float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 1,
+			"differing": 124362,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 33908,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 64690,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 19369,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 4852,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 1209,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 254,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 1,
+					"differing": 46,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 24,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 6,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 4,
+					"outside": 0,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "spd-split-lds-linear",
+			"format": "rgba8unorm",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 1,
+			"differing": 98753,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 91180,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 5628,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 1407,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 359,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 99,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 30,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 1,
+					"differing": 41,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 5,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 3,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 1,
+					"outside": 0,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "spd-split-lds-load",
+			"format": "rgba16float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 449.5,
+			"differing": 442102,
+			"outside": 4,
+			"failingLevels": [
+				10
+			],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 324042,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 88402,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 22385,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 5478,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 1346,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 304,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 2,
+					"differing": 104,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 30,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 7,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 449.5,
+					"differing": 4,
+					"outside": 4,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "spd-split-lds-load",
+			"format": "rgba8unorm",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 56,
+			"differing": 103601,
+			"outside": 4,
+			"failingLevels": [
+				10
+			],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 95901,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 5746,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 1412,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 359,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 100,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 30,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 1,
+					"differing": 41,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 5,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 3,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 56,
+					"differing": 4,
+					"outside": 4,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "spd-split-lds",
+			"format": "r32float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 0,
+			"differing": 0,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 238074,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 178788
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 11139
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 2730
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 665
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 153
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 2
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 1
+				}
+			]
+		},
+		{
+			"variant": "spd-split-wave-linear",
+			"format": "rgba16float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 1,
+			"differing": 124362,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 33908,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 64690,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 19369,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 4852,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 1209,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 254,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 1,
+					"differing": 46,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 24,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 6,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 4,
+					"outside": 0,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "spd-split-wave-linear",
+			"format": "rgba8unorm",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 1,
+			"differing": 98753,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 91180,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 5628,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 1407,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 359,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 99,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 30,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 1,
+					"differing": 41,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 5,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 3,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 1,
+					"outside": 0,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "spd-split-wave-load",
+			"format": "rgba16float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 449.5,
+			"differing": 442102,
+			"outside": 4,
+			"failingLevels": [
+				10
+			],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 324042,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 88402,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 22385,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 5478,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 1346,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 304,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 2,
+					"differing": 104,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 30,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 7,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 449.5,
+					"differing": 4,
+					"outside": 4,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "spd-split-wave-load",
+			"format": "rgba8unorm",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 56,
+			"differing": 103601,
+			"outside": 4,
+			"failingLevels": [
+				10
+			],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 95901,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 5746,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 1412,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 359,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 100,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 30,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 1,
+					"differing": 41,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 5,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 3,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 56,
+					"differing": 4,
+					"outside": 4,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "spd-split-wave",
+			"format": "r32float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "spdChainReference (6 per batch)",
+			"maxSteps": 0,
+			"differing": 0,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 238074,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 178788
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 11139
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 2730
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 665
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 153
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 2
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 1
+				}
+			]
+		}
+	],
+	"vulkan": [
+		{
+			"variant": "blit",
+			"format": "rgba16float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "'exact' level by level",
+			"maxSteps": 12.25,
+			"differing": 758383,
+			"outside": 18,
+			"failingLevels": [
+				2
+			],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 12.25,
+					"differing": 580476,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 9.5,
+					"differing": 141078,
+					"outside": 18,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 4,
+					"differing": 28705,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 5,
+					"differing": 6453,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 2.5,
+					"differing": 1320,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 2,
+					"differing": 274,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 2,
+					"differing": 53,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 16,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 5,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 3,
+					"outside": 0,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "blit",
+			"format": "rgba8unorm",
+			"width": 1129,
+			"height": 635,
+			"oracle": "'exact' level by level",
+			"maxSteps": 2,
+			"differing": 171933,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 2,
+					"differing": 119677,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 2,
+					"differing": 37827,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 10547,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 2,
+					"differing": 2872,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 2,
+					"differing": 753,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 2,
+					"differing": 205,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 1,
+					"differing": 36,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 2,
+					"differing": 13,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 2,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 1,
+					"outside": 0,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "nvpro-general",
+			"format": "r32float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "'box' level by level",
+			"maxSteps": 0,
+			"differing": 0,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 238074,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 178788
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 11139
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 2730
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 665
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 153
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 2
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 1
+				}
+			]
+		},
+		{
+			"variant": "nvpro-general",
+			"format": "rgba16float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "'box' level by level",
+			"maxSteps": 2.5,
+			"differing": 497881,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 357802,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 89094,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 2,
+					"differing": 37384,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 2,
+					"differing": 10161,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 2,
+					"differing": 2656,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 2,
+					"differing": 612,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 2,
+					"differing": 128,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 2,
+					"differing": 32,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 2.5,
+					"differing": 8,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 2,
+					"differing": 4,
+					"outside": 0,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "nvpro-general",
+			"format": "rgba8unorm",
+			"width": 1129,
+			"height": 635,
+			"oracle": "'box' level by level",
+			"maxSteps": 1,
+			"differing": 57873,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 22574,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 19488,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 12733,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 2231,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 616,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 152,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 1,
+					"differing": 47,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 21,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 7,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 4,
+					"outside": 0,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "nvpro-pyramid",
+			"format": "r32float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "'box' level by level",
+			"maxSteps": 0,
+			"differing": 0,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 238074,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 178788
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 11139
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 2730
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 665
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 153
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 2
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 0,
+					"differing": 0,
+					"outside": 0,
+					"values": 1
+				}
+			]
+		},
+		{
+			"variant": "nvpro-pyramid",
+			"format": "rgba16float",
+			"width": 1129,
+			"height": 635,
+			"oracle": "'box' level by level",
+			"maxSteps": 2.5,
+			"differing": 497881,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 357802,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 89094,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 2,
+					"differing": 37384,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 2,
+					"differing": 10161,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 2,
+					"differing": 2656,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 2,
+					"differing": 612,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 2,
+					"differing": 128,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 2,
+					"differing": 32,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 2.5,
+					"differing": 8,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 2,
+					"differing": 4,
+					"outside": 0,
+					"values": 4
+				}
+			]
+		},
+		{
+			"variant": "nvpro-pyramid",
+			"format": "rgba8unorm",
+			"width": 1129,
+			"height": 635,
+			"oracle": "'box' level by level",
+			"maxSteps": 1,
+			"differing": 57873,
+			"outside": 0,
+			"failingLevels": [],
+			"values": 952296,
+			"perLevel": [
+				{
+					"level": 1,
+					"size": [
+						564,
+						317
+					],
+					"maxSteps": 1,
+					"differing": 22574,
+					"outside": 0,
+					"values": 715152
+				},
+				{
+					"level": 2,
+					"size": [
+						282,
+						158
+					],
+					"maxSteps": 1,
+					"differing": 19488,
+					"outside": 0,
+					"values": 178224
+				},
+				{
+					"level": 3,
+					"size": [
+						141,
+						79
+					],
+					"maxSteps": 1,
+					"differing": 12733,
+					"outside": 0,
+					"values": 44556
+				},
+				{
+					"level": 4,
+					"size": [
+						70,
+						39
+					],
+					"maxSteps": 1,
+					"differing": 2231,
+					"outside": 0,
+					"values": 10920
+				},
+				{
+					"level": 5,
+					"size": [
+						35,
+						19
+					],
+					"maxSteps": 1,
+					"differing": 616,
+					"outside": 0,
+					"values": 2660
+				},
+				{
+					"level": 6,
+					"size": [
+						17,
+						9
+					],
+					"maxSteps": 1,
+					"differing": 152,
+					"outside": 0,
+					"values": 612
+				},
+				{
+					"level": 7,
+					"size": [
+						8,
+						4
+					],
+					"maxSteps": 1,
+					"differing": 47,
+					"outside": 0,
+					"values": 128
+				},
+				{
+					"level": 8,
+					"size": [
+						4,
+						2
+					],
+					"maxSteps": 1,
+					"differing": 21,
+					"outside": 0,
+					"values": 32
+				},
+				{
+					"level": 9,
+					"size": [
+						2,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 7,
+					"outside": 0,
+					"values": 8
+				},
+				{
+					"level": 10,
+					"size": [
+						1,
+						1
+					],
+					"maxSteps": 1,
+					"differing": 4,
+					"outside": 0,
+					"values": 4
+				}
+			]
+		}
+	]
+}

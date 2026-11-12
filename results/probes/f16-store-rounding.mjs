@@ -1,13 +1,14 @@
 // Probe: how f32 → f16 rounds in textureStore to rgba16float, against WGSL
 // pack2x16float and round-to-nearest-even (core toHalf). Values sit between two
 // halves at 1/4, 1/2 (ties) and 3/4 of a step, both signs.
-// Run: node results/probes/f16-store-rounding.mjs [--swiftshader]
+// Run: node results/probes/f16-store-rounding.mjs [--swiftshader] [--power=high|low]
 import puppeteer from 'puppeteer';
 import { createServer } from '../../test/serve.js';
+import { gpuChoiceArgs } from '../../test/gpu-choice.js';
 const server = createServer();
 await new Promise( resolve => server.listen( 0, '127.0.0.1', resolve ) );
 const swift = process.argv.includes( '--swiftshader' );
-const browser = await puppeteer.launch( { headless: true, args: [ '--enable-unsafe-webgpu', ...( swift ? [ '--use-webgpu-adapter=swiftshader', '--enable-unsafe-swiftshader', '--enable-features=Vulkan' ] : [] ) ] } );
+const browser = await puppeteer.launch( { headless: true, args: [ '--enable-unsafe-webgpu', ...( swift ? [ '--use-webgpu-adapter=swiftshader', '--enable-unsafe-swiftshader', '--enable-features=Vulkan' ] : gpuChoiceArgs( process.argv.find( arg => arg.startsWith( '--power=' ) )?.split( '=' )[ 1 ] ) ) ] } );
 const page = await browser.newPage();
 await page.goto( `http://127.0.0.1:${ server.address().port }/test/browser/` );
 console.log( JSON.stringify( await page.evaluate( async () => {

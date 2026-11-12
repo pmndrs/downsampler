@@ -1,0 +1,187 @@
+{
+ "textureStoreEqualsRtne": 30,
+ "packEqualsRtne": 30,
+ "count": 60,
+ "differences": [
+  {
+   "value": 1.00146484375,
+   "rtne": 15362,
+   "pack2x16float": 15361,
+   "textureStore": 15361
+  },
+  {
+   "value": -1.00146484375,
+   "rtne": 48130,
+   "pack2x16float": 48129,
+   "textureStore": 48129
+  },
+  {
+   "value": 1.000732421875,
+   "rtne": 15361,
+   "pack2x16float": 15360,
+   "textureStore": 15360
+  },
+  {
+   "value": 1.001708984375,
+   "rtne": 15362,
+   "pack2x16float": 15361,
+   "textureStore": 15361
+  },
+  {
+   "value": -1.000732421875,
+   "rtne": 48129,
+   "pack2x16float": 48128,
+   "textureStore": 48128
+  },
+  {
+   "value": -1.001708984375,
+   "rtne": 48130,
+   "pack2x16float": 48129,
+   "textureStore": 48129
+  },
+  {
+   "value": 1.50146484375,
+   "rtne": 15874,
+   "pack2x16float": 15873,
+   "textureStore": 15873
+  },
+  {
+   "value": -1.50146484375,
+   "rtne": 48642,
+   "pack2x16float": 48641,
+   "textureStore": 48641
+  },
+  {
+   "value": 1.500732421875,
+   "rtne": 15873,
+   "pack2x16float": 15872,
+   "textureStore": 15872
+  },
+  {
+   "value": 1.501708984375,
+   "rtne": 15874,
+   "pack2x16float": 15873,
+   "textureStore": 15873
+  },
+  {
+   "value": -1.500732421875,
+   "rtne": 48641,
+   "pack2x16float": 48640,
+   "textureStore": 48640
+  },
+  {
+   "value": -1.501708984375,
+   "rtne": 48642,
+   "pack2x16float": 48641,
+   "textureStore": 48641
+  },
+  {
+   "value": 3.0029296875,
+   "rtne": 16898,
+   "pack2x16float": 16897,
+   "textureStore": 16897
+  },
+  {
+   "value": -3.0029296875,
+   "rtne": 49666,
+   "pack2x16float": 49665,
+   "textureStore": 49665
+  },
+  {
+   "value": 3.00146484375,
+   "rtne": 16897,
+   "pack2x16float": 16896,
+   "textureStore": 16896
+  },
+  {
+   "value": 3.00341796875,
+   "rtne": 16898,
+   "pack2x16float": 16897,
+   "textureStore": 16897
+  },
+  {
+   "value": -3.00146484375,
+   "rtne": 49665,
+   "pack2x16float": 49664,
+   "textureStore": 49664
+  },
+  {
+   "value": -3.00341796875,
+   "rtne": 49666,
+   "pack2x16float": 49665,
+   "textureStore": 49665
+  },
+  {
+   "value": 0.977294921875,
+   "rtne": 15314,
+   "pack2x16float": 15313,
+   "textureStore": 15313
+  },
+  {
+   "value": -0.977294921875,
+   "rtne": 48082,
+   "pack2x16float": 48081,
+   "textureStore": 48081
+  },
+  {
+   "value": 0.9769287109375,
+   "rtne": 15313,
+   "pack2x16float": 15312,
+   "textureStore": 15312
+  },
+  {
+   "value": 0.9774169921875,
+   "rtne": 15314,
+   "pack2x16float": 15313,
+   "textureStore": 15313
+  },
+  {
+   "value": -0.9769287109375,
+   "rtne": 48081,
+   "pack2x16float": 48080,
+   "textureStore": 48080
+  },
+  {
+   "value": -0.9774169921875,
+   "rtne": 48082,
+   "pack2x16float": 48081,
+   "textureStore": 48081
+  },
+  {
+   "value": 0.100067138671875,
+   "rtne": 11880,
+   "pack2x16float": 11879,
+   "textureStore": 11879
+  },
+  {
+   "value": -0.100067138671875,
+   "rtne": 44648,
+   "pack2x16float": 44647,
+   "textureStore": 44647
+  },
+  {
+   "value": 0.1000213623046875,
+   "rtne": 11879,
+   "pack2x16float": 11878,
+   "textureStore": 11878
+  },
+  {
+   "value": 0.1000823974609375,
+   "rtne": 11880,
+   "pack2x16float": 11879,
+   "textureStore": 11879
+  },
+  {
+   "value": -0.1000213623046875,
+   "rtne": 44647,
+   "pack2x16float": 44646,
+   "textureStore": 44646
+  },
+  {
+   "value": -0.1000823974609375,
+   "rtne": 44648,
+   "pack2x16float": 44647,
+   "textureStore": 44647
+  }
+ ]
+}

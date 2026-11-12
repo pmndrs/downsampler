@@ -123,7 +123,7 @@ function toleratedLevels( batches, width, height, packed ) {
  */
 export function check( actual, expected, quantization, label, reduction = 'average', channels = 4, slack = 0, exact = false ) {
 
-	let maxError = 0;
+	let maxError = 0, firstFailure = null, failing = 0;
 	const packed = isPackedQuantization( quantization );
 
 	for ( let i = 0; i < expected.values.length; i ++ ) {
@@ -134,14 +134,30 @@ export function check( actual, expected, quantization, label, reduction = 'avera
 		const t = i - i % 4;
 		const texel = packed ? { channel: i % 4, texelMax: Math.max( expected.values[ t ], expected.values[ t + 1 ], expected.values[ t + 2 ] ) } : undefined;
 		const limit = exact ? 0 : tolerance( expected.values[ i ], quantization, expected.filterTolerance[ i ], reduction, texel ) + Math.abs( expected.values[ i ] ) * slack;
-		if ( ! Number.isFinite( actual[ i ] ) || error > limit ) throw new Error( `${ label }: value ${ i }, actual ${ actual[ i ] }, expected ${ expected.values[ i ] }, error ${ error } > ${ limit }` );
+		if ( ! Number.isFinite( actual[ i ] ) || error > limit ) {
+
+			const message = `${ label }: value ${ i }, actual ${ actual[ i ] }, expected ${ expected.values[ i ] }, error ${ error } > ${ limit }`;
+			if ( ! failures ) throw new Error( message );
+			firstFailure ??= message;
+			failing ++;
+
+		}
 		maxError = Math.max( maxError, error );
 
 	}
 
+	if ( firstFailure ) failures.push( { label, first: firstFailure, failing, values: expected.values.length, maxError } );
+
 	return maxError;
 
 }
+
+/**
+ * --keep-going: failing checks are collected here instead of thrown (one entry per check: its
+ * first failing value and how many failed), so one run maps every failure on a new device.
+ * Null (the default): the first failing value throws.
+ */
+let failures = null;
 
 /** Kernel widths to cover: single-level, 4 (default limit), 5 (16×16 tiles) and 6 (SPD tiles). */
 export function levelOptions( device ) {
@@ -165,8 +181,9 @@ export const compatibility = device => ! device.features.has( 'core-features-and
  * (`ids`). The result carries `groups` (id → { ms, cases } for the groups that ran) and the
  * listing's size and digest, so the shards of one suite can be checked against each other.
  */
-export async function validate( device, { onProgress = () => {}, quick = false, only, shard, durations = {}, list = false } = {} ) {
+export async function validate( device, { onProgress = () => {}, quick = false, only, shard, durations = {}, list = false, keepGoing = false } = {} ) {
 
+	failures = keepGoing ? [] : null;
 	let select = new Selection();
 	let shards = null;
 
@@ -182,9 +199,13 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 	}
 
+	// A group that throws outside check() (a direct assertion, a lost device) is recorded too.
+	if ( keepGoing ) select.onError = ( id, error ) => failures.push( { label: id, first: `${ id } threw: ${ error.message }`, thrown: true } );
 	const report = await suite( device, { onProgress, quick, only, select } );
 	const ids = select.listing ?? select.ids;
-	return { ...report, shard: shard ? { ...shard, groups: shards[ shard.index - 1 ].length } : null, listing: { groups: ids.length, digest: digest( ids ), ids }, groups: select.groups };
+	const failed = failures ?? [];
+	failures = null;
+	return { ...report, passed: failed.length === 0, failures: failed, shard: shard ? { ...shard, groups: shards[ shard.index - 1 ].length } : null, listing: { groups: ids.length, digest: digest( ids ), ids }, groups: select.groups };
 
 }
 
