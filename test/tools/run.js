@@ -23,6 +23,8 @@ if ( value( 'only' ) ) options.only = value( 'only' ).split( ',' );
 const browserArgs = [ '--enable-unsafe-webgpu' ];
 if ( process.env.CI ) browserArgs.push( '--no-sandbox' );
 if ( value( 'adapter' ) === 'swiftshader' ) browserArgs.push( '--use-webgpu-adapter=swiftshader', '--enable-unsafe-swiftshader', '--enable-features=Vulkan' );
+// --power=high|low picks the GPU on machines with two (e.g. a laptop's NVIDIA and Intel); the printed adapter info confirms which one ran.
+if ( value( 'power' ) ) browserArgs.push( `--use-webgpu-power-preference=${ value( 'power' ) === 'low' ? 'force-low-power' : 'force-high-performance' }` );
 
 const server = createServer();
 let browser;

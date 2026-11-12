@@ -10,6 +10,7 @@
 //   node test/run.js --bench --compare=spd --skip-validation   M2T.4: exact / tail / spd / atomic probe / render
 //   node test/run.js --quality --skip-validation              M2T.4: 'spd' vs 'exact' per level, Hi-Z violations
 //   node test/run.js --compat            on a compatibility-mode device (featureLevel 'compatibility')
+//   node test/run.js --power=low         force the low-power GPU (default high); for laptops with two GPUs
 import { mkdir, writeFile } from 'node:fs/promises';
 import { loadavg } from 'node:os';
 import { dirname } from 'node:path';
@@ -32,6 +33,8 @@ const loadBefore = loadavg();
 const browserArgs = [ '--enable-unsafe-webgpu' ];
 if ( process.env.CI ) browserArgs.push( '--no-sandbox' );
 if ( value( 'adapter' ) === 'swiftshader' ) browserArgs.push( '--use-webgpu-adapter=swiftshader', '--enable-unsafe-swiftshader', '--enable-features=Vulkan' );
+// --power=high|low picks the GPU on machines with two (e.g. a laptop's NVIDIA and Intel); the printed adapter info confirms which one ran.
+if ( value( 'power' ) ) browserArgs.push( `--use-webgpu-power-preference=${ value( 'power' ) === 'low' ? 'force-low-power' : 'force-high-performance' }` );
 
 const server = createServer();
 let browser;
