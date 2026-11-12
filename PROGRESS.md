@@ -15,7 +15,6 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
 
 ## Next (SPEC §11)
 
-- [ ] Upscaler on the library through a local `file:` reference (owner: the upscaler releases after this is on npm)
 - [ ] M2.4: layer range + rect
 - [ ] M2.5: `oddSizes: 'box'`, power-of-two destination from a separate source (SPEC §2.1, §13)
 
@@ -75,11 +74,10 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
 - Reducer defaults (`'zero-weight'` edges, no rounding between levels, scalar `finish` layer argument): impact explained 2026-11-12; awaiting a call
 - Upscaler exposure, every texel vs 1024 taps: pros/cons and sources sent 2026-11-12. Agreed: merge the bit-identical `perf/exposure-parallel` first
 - Review drafts (local only, gitignored, never pushed): `drafts/webgpu-spd-issues.md` (6 issues), `drafts/gpuweb-5253-comment.md` (numbers to fill from Windows)
-- Upscaler branch `perf/exposure-parallel` is local only: push it to pmndrs/upscaler so the Windows agent can run its measurements, or skip that run
 
 ## Decided (owner, 2026-11-12)
 
-- Upscaler uses the library through a local reference until npm; the upscaler releases after this is published
+- Upscaler uses the library through a local reference until npm; the upscaler releases after this is published. Upscaler changes happen in that project when the owner picks it up; this repo only keeps `docs/UPSCALER-HANDOFF.md`
 - Package: npm `downsampler` (unscoped; free on 2026-11-12), else `@pmndrs/downsampler`; GitHub `pmndrs/downsampler`
 - Devices: RTX 3060 laptop + Intel UHD now (maybe more NVIDIA); wider coverage after publish
 - `oddSizes: 'spd'` stays a public opt-in
