@@ -24,11 +24,14 @@ the clocks (`nvidia-smi -lgc`, admin) for both would fix it.
 | Ratio | RTX rgba8 | RTX rgba16f | Intel rgba8 | Intel rgba16f |
 |---|---|---|---|---|
 | `averageAccess: 'load'` ÷ `'sample'` (exact) | 1.13 (1.08–1.30) | 1.02 (1.01–1.51) | 1.31 (1.20–1.60) | 1.22 (1.05–1.26) |
-| `f16Rounding: 'nearest'` ÷ `'device'` | – | 1.04 (1.01–1.23) | – | **1.29** (1.04–1.34) |
+| `f16Rounding: 'nearest'` (integer, first version) ÷ `'device'` | – | 1.04 (1.01–1.23) | – | **1.29** (1.04–1.34) |
+| `f16Rounding: 'nearest'` (f32 add, current) ÷ `'device'` | – | 1.04 (1.00–1.10) | – | **1.14** (1.01–1.17) |
 
 - Shader weights (`'load'`, identical results on every GPU) cost 13 % (rgba8) and 2 % (rgba16f) on the RTX, 22–31 % on Intel.
-- Rounding f16 to nearest even with integer math costs 4 % on the RTX but 29 % on Intel at render sizes. A cheaper
-  formulation (round with one f32 add of a power-of-two magic number, which GPUs round to nearest even) is worth measuring.
+- Rounding f16 to nearest even with integer math cost 4 % on the RTX but 29 % on Intel at render sizes. The current
+  version rounds with one f32 add and subtract of 2^(exponent + 13) (the adder rounds to nearest even, as WGSL requires):
+  bit-exact against core `toHalf` on both GPUs, 14 % on Intel, noise on the RTX ([rtx](rtx3060-spd-f16fast.json),
+  [intel](intel-uhd-spd-f16fast.json)); RTX full matrix unchanged (85 failures, all sampler or AMD hooks).
 
 ## Native platform paths (same-API comparisons, unaffected by the caveat)
 

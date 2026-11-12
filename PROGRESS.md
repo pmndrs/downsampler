@@ -82,8 +82,9 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
 - Upscaler exposure, every texel vs 1024 taps: pros/cons and sources sent 2026-11-12. Agreed: merge the bit-identical `perf/exposure-parallel` first
 - Review drafts (local only, gitignored, never pushed): `drafts/webgpu-spd-issues.md` (6 issues), `drafts/gpuweb-5253-comment.md` (numbers to fill from Windows)
 - Upscaler branch `perf/exposure-parallel` is local only: push it to pmndrs/upscaler so the Windows agent can run its measurements, or skip that run
+- Decided (owner, 2026-11-12): `averageAccess` stays `'sample'` by default, `'load'` documented as the identical-everywhere option (README). Open: widen the suite's sampler tolerance to the measured NVIDIA/Intel behaviour so the Windows runs go green?
 - Windows, sampler precision ([correctness.md](results/windows/correctness.md)): NVIDIA rounds each 2D tap weight to 1/256, Intel truncates axis weights (even sizes too); `averageAccess: 'load'` passes on both. Timed ([timings.md](results/windows/timings.md)): `'load'` costs 13 % / 2 % (RTX rgba8 / rgba16f), 31 % / 22 % (Intel). Default `'sample'`, `'load'`, or `'load'` only after odd sizes?
-- Windows, f16 rounding cost: `'nearest'` costs 4 % on the RTX but 29 % on Intel (rgba16f, render sizes). Try a cheaper formulation (f32 magic-number add), keep as is, or default to `'device'` on some devices?
+- Windows, f16 rounding cost: `'nearest'` now rounds with an f32 add (owner asked to try it): 14 % on Intel (was 29 %), noise on the RTX, bit-exact on both. Keep, or default to `'device'` on some devices?
 - Windows, RTX clocks: WebGPU runs sat at 620–920 MHz, native at ~1600. Lock clocks (`nvidia-smi -lgc`, needs admin) and rerun for fair WebGPU ÷ native ratios?
 
 ## Decided (owner, 2026-11-12)

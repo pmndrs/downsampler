@@ -31,6 +31,9 @@ export interface DownsamplerOptions {
 	 * How 'average' reads the source level of each batch: one hardware bilinear
 	 * sample, or four `textureLoad`s with weights computed in the shader. Default
 	 * 'sample'. Unfilterable formats (float32, depth) and fold reductions always load.
+	 * Samplers round bilinear weights to 8 bits in vendor-specific ways (NVIDIA per 2D
+	 * tap, Intel by truncation), so 'sample' results differ slightly between GPUs;
+	 * 'load' is identical on every GPU and costs 2–31 % (results/windows/timings.md).
 	 */
 	averageAccess?: SourceAccess;
 	/**

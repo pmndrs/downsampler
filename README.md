@@ -45,6 +45,27 @@ downsampler.generate( irradiance /* rgb9e5ufloat */ );
 downsampler.outputPath( irradiance );                // 'buffer'; force one with new Downsampler( device, { output } )
 ```
 
+### Identical results on every GPU
+
+Two options trade a little speed for output that is the same, bit for bit, on every GPU:
+
+```js
+new Downsampler( device, { averageAccess: 'load' } );   // shader weights instead of the hardware sampler
+new Downsampler( device, { f16Rounding: 'device' } );   // opt out of round-to-nearest-even for float16 (default 'nearest')
+```
+
+- **`averageAccess`** (default `'sample'`). `'average'` reads each batch's first level with one hardware bilinear sample.
+  Samplers round their weights to 8 bits, and not all the same way: NVIDIA rounds each of the four 2D tap weights to 1/256,
+  Intel truncates each axis weight (even at exact halves, by a float ulp of the texture coordinate), Apple matched the exact
+  weights in our tests. Results then differ between GPUs by up to a 1/256 weight step times the local contrast, as render
+  passes and `GenerateMips` do on the same hardware. `'load'` reads four texels and applies the weights in the shader:
+  identical everywhere, 2–13 % slower on an RTX 3060 and 22–31 % on Intel UHD at render sizes
+  ([results/windows/timings.md](results/windows/timings.md)).
+- **`f16Rounding`** (Downsampler and Reducer, default `'nearest'`). float16 levels are rounded to nearest even in the
+  shader before they're stored and before the next level reads them, so they match the CPU reference on every GPU.
+  `'device'` uses WGSL's `pack2x16float`, which truncates toward zero on D3D12 (NVIDIA and Intel) and drifts each level a
+  little low.
+
 three.js (`WebGPURenderer`, texture allocated with storage usage, e.g. `StorageTexture`):
 
 ```js

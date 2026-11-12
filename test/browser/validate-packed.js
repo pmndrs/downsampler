@@ -175,7 +175,16 @@ async function validateCodecs( device ) {
 		if ( halfBits[ i ] !== expected ) throw new Error( `ds_half_bits(${ value } [0x${ halfInput[ i ].toString( 16 ) }]) = 0x${ halfBits[ i ].toString( 16 ) }, expected 0x${ expected.toString( 16 ) }` );
 
 	} );
-	results.push( { codec: 'float16 (round to nearest even)', encoded: halves.length } );
+	// ds_round_f16 (each level's rounding, by f32 add and subtract) against the same values as f32.
+	// Equal as numbers: f32 subnormal inputs may flush to a zero of either sign on the GPU.
+	const rounded = await runCodec( device, float16Wgsl( 'nearest' ), '	output[i] = bitcast<u32>(ds_round_f16(vec4f(bitcast<f32>(input[i]))).x);', halfInput, halfInput.length, halfInput.length );
+	halves.forEach( ( value, i ) => {
+
+		const expected = fromHalf( toHalf( value ) ), actual = bitsF32( rounded[ i ] );
+		if ( ! ( actual === expected || ( Number.isNaN( expected ) && Number.isNaN( actual ) ) ) ) throw new Error( `ds_round_f16(${ value } [0x${ halfInput[ i ].toString( 16 ) }]) = ${ actual }, expected ${ expected }` );
+
+	} );
+	results.push( { codec: 'float16 (round to nearest even)', encoded: halves.length, rounded: halves.length } );
 	return results;
 
 }
