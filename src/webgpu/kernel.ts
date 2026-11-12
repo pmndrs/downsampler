@@ -519,8 +519,11 @@ fn first(pos: vec2u, size: vec2u, layer: u32) -> vec4f {
 		// them but without its fixed-point weight rounding. The sample position
 		// (x + 0.5) * S / n - 0.5 is ((2x + 1) * S - n) / 2n: integer math keeps
 		// the base texel exact (float division isn't correctly rounded on GPUs),
-		// and gives weights of exactly 0 or 0.5 for copies and even sizes.
+		// and gives weights of exactly 0 or 0.5 for copies and even sizes. A same-size
+		// level (a converting copy) reads its texel alone: a zero weight on an Inf
+		// neighbour would still give NaN.
 		code += `	let sourceSize = textureDimensions(source);
+	if (all(sourceSize == size)) { return quantize(load(pos, layer)); }
 	let last = sourceSize - vec2u(1);
 	let numerator = (2u * pos + vec2u(1)) * sourceSize - size;
 	let denominator = 2u * size;

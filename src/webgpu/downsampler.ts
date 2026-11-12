@@ -441,7 +441,10 @@ export class Downsampler {
 
 			const external = batch.sourceMipLevel === null;
 			const sourceFormat = external ? source!.texture.format : format;
-			const access = this.access( reduction, sourceFormat );
+			// A same-size converting copy loads: a sampler at texel centres isn't exact on every
+			// GPU (Intel truncates the coordinate a hair below the centre and blends in 1/256 of a
+			// neighbour; results/windows/correctness.md).
+			const access = external && copySource && batch.firstMipLevel === baseMipLevel ? 'load' : this.access( reduction, sourceFormat );
 			const kernel: BatchKernelKey = { format, dimension, count: batch.count, access, reduction, sourceFormat, output, kind: batch.kernel, tile: batch.tile };
 			const layout = this.layout( kernel );
 			const pipeline = this.pipeline( kernel );

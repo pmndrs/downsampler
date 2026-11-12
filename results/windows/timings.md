@@ -68,3 +68,35 @@ Same-run and native-only ratios don't move; **cross-run WebGPU ÷ native ratios 
 
 The same render-pass chain costs about 2× in WebGPU what it costs in native D3D12 here, so part of every WebGPU ÷ native gap
 is the platform (Dawn's translation, barriers, per-pass overhead), not the kernel.
+
+## webgpu-spd 3.0.0 (`--compare=webgpu-spd`, `--webgpu-spd-check --frames=256`)
+
+Same-run ratios against our modes (no clock question); against native AMD SPD through the locked runs on the RTX
+(webgpu-spd ÷ ours, same run × ours ÷ native, locked) and directly on Intel. Medians over 960×540 … 2560×1440 (range).
+`wspd` is its default (8 mips per pass: single dispatch with the atomic handoff, subgroups on), `wspd6` its handoff-free
+6 mips per pass, `wspdNoSg` the default without subgroups.
+
+| Ratio | RTX rgba8 | RTX rgba16f | Intel rgba8 | Intel rgba16f |
+|---|---|---|---|---|
+| webgpu-spd default ÷ ours `'spd'` | 1.64 (1.19–2.08) | 1.07 (1.04–1.47) | **3.52** (2.43–3.76) | **2.68** (1.04–2.81) |
+| webgpu-spd 6 per pass ÷ ours `'spd'` | 1.24 (0.93–1.80) | 0.98 (0.90–1.08) | 3.34 | 2.58 |
+| webgpu-spd without subgroups ÷ ours `'spd'` | 1.53 | 1.05 | 1.78 | 1.35 |
+| webgpu-spd default ÷ ours `'exact'` | 0.83 | 0.91 | 1.89 | 1.85 |
+| webgpu-spd default ÷ AMD SPD best (native) | 2.02 | 1.36 | 4.04 | 4.12 |
+| ours `'spd'` ÷ AMD SPD best (native) | **1.26** | **1.27** | **1.28** | **1.50** |
+
+| Hi-Z (r32float max) | RTX | Intel |
+|---|---|---|
+| webgpu-spd default ÷ ours `'exact'` max | 0.95 (0.58–1.48) | 2.26 |
+| ours `'exact'` max ÷ AMD SPD max (native, best) | 2.19 | 1.94 |
+
+- On the RTX, our `'spd'` is 1.6× faster than webgpu-spd's default in rgba8 and level in rgba16f; webgpu-spd's handoff-free
+  mode is close to ours. Against native, ours is 1.26× AMD's best SPD build, webgpu-spd's default 2.0×.
+- On Intel, webgpu-spd is 2.7–3.5× slower than ours, mostly from subgroups: without them it is 1.4–1.8×. The same as
+  AMD's own quad-op path natively (2× its LDS path on Intel): subgroup/quad reductions are a loss on this GPU.
+- Hi-Z: ours `'exact'` max is conservative (every odd edge covered) and costs a batch per odd size; webgpu-spd's max and
+  AMD SPD's drop odd rows and columns. Not the same work, so these ratios aren't a like-for-like speed comparison.
+- **Correctness:** 0 stale frames of 41,472 on each GPU (27 size/format rows × 3 variants × 256 frames, one encoder and one
+  submit per frame; isolated runs all agree). On the M5 Pro its default handoff returned stale levels 7+ in up to 77 % of
+  frames (DIVERGES #22): the race is real on Apple, not observed on NVIDIA or Intel here. Its min/max are non-conservative
+  on both (dropped edges), as on the M5. One probe variant (`enable f16`) fails to compile without `shader-f16`.

@@ -8,6 +8,23 @@ Browser: puppeteer's Chrome 148.0.7778.97, headless, D3D12 backend; GPU pinned b
 | NVIDIA GeForce RTX 3060 Laptop (`--power=high`) | 32.0.15.9200 (NVIDIA 592.00) | nvidia ampere, `texture-formats-tier1`, 8 storage textures |
 | Intel UHD Graphics (`--power=low`) | 31.0.101.5333 | intel gen-12lp |
 
+## Current state (branch `f16-rounding`, 2026-11-13)
+
+| Run | Failures, then → now |
+|---|---|
+| RTX 3060, `--quick` | 189 → **2** ([tolerance-high-quick](tolerance-high-quick/summary.md)) |
+| Intel UHD, `--quick` | 629 → **2** ([tolerance-low-quick](tolerance-low-quick/summary.md)) |
+
+The two left on each GPU are the FSR luma-pyramid fixtures (`fsr/luma-pyramid`, `generator/luma-pyramid-clamp`): AMD's
+own hooks store f16 with `textureStore`, which truncates on D3D12. Not library code; `float16Wgsl` is exported for them.
+
+What changed (the sections below are the investigation that led here):
+1. `f16Rounding: 'nearest'` (default): float16 levels round to nearest even in the shader.
+2. Same-size converting copies load instead of sampling (the sampler isn't exact at texel centres on Intel).
+3. The oracle models hardware samplers (`ReferenceOptions.weights: 'sampler'`): 1.5 weight steps of 1/256 per axis times
+   the local contrast, including the texel below the footprint, where a truncating sampler lands when a weight is exactly
+   0 (Intel, reproduced to 2×10⁻⁴ on the first failing texel). Shader weights (`'load'`, in-tile levels) stay strict.
+
 ## Runs
 
 All with `node test/parallel.js` (sharded, `--keep-going`, per-shard cap and whole-run budget; one summary per run).

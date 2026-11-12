@@ -131,8 +131,10 @@ export function check( actual, expected, quantization, label, reduction = 'avera
 		if ( i % 4 >= channels ) continue;
 		const error = Math.abs( actual[ i ] - expected.values[ i ] );
 		// Packed formats: the step depends on the texel (rgb9e5's shared exponent) or the channel (rg11b10's 10-bit b).
+		// The largest channel may be off by its own filter allowance, and so cross an exponent: take its upper bound.
 		const t = i - i % 4;
-		const texel = packed ? { channel: i % 4, texelMax: Math.max( expected.values[ t ], expected.values[ t + 1 ], expected.values[ t + 2 ] ) } : undefined;
+		const upper = c => expected.values[ t + c ] + expected.filterTolerance[ t + c ];
+		const texel = packed ? { channel: i % 4, texelMax: Math.max( upper( 0 ), upper( 1 ), upper( 2 ) ) } : undefined;
 		const limit = exact ? 0 : tolerance( expected.values[ i ], quantization, expected.filterTolerance[ i ], reduction, texel ) + Math.abs( expected.values[ i ] ) * slack;
 		if ( ! Number.isFinite( actual[ i ] ) || error > limit ) {
 
@@ -326,6 +328,11 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 							downsampler.generate( texture, options );
 							const mips = await readMips( device, texture, 1 );
 							const label = `${ width }x${ height }x${ layers } ${ format } ${ output } ${ variant.name } ${ pattern } L${ levels }`;
+							// The hardware sampler weights a batch's first output (averages of filterable formats,
+							// unless the variant loads); its tolerance models the samplers' 8-bit weights
+							// (samplerWeightSteps). Loads and in-tile levels use shader weights: the strict model.
+							const sampled = ( variant.access ?? 'sample' ) === 'sample' && filterable;
+							const sampledLevels = new Set( sampled ? downsampler.prepare( texture, options ).filter( batch => ! batch.copy ).map( batch => batch.firstMipLevel ) : [] );
 
 							if ( variant.oddSizes === 'spd' ) {
 
@@ -333,7 +340,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 								for ( const batch of downsampler.prepare( texture, options ).filter( batch => ! batch.copy ) ) {
 
 									const source = batch.sourceMipLevel === 0 ? input.floats : mips[ batch.sourceMipLevel - 1 ];
-									const expected = spdReference( source, mipSize( width, batch.sourceMipLevel ), mipSize( height, batch.sourceMipLevel ), layers, quantization, reference, batch.count );
+									const expected = spdReference( source, mipSize( width, batch.sourceMipLevel ), mipSize( height, batch.sourceMipLevel ), layers, quantization, reference, batch.count, { weights: sampled ? 'sampler' : 'shader' } );
 									expected.forEach( ( level, i ) => {
 
 										const mip = batch.firstMipLevel + i;
@@ -363,7 +370,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 								const key = `${ variant.name }:${ pattern }`;
 								const inTile = ! firstOutputs.has( level );
 								let expected = level === 1 ? firstLevels.get( key ) : undefined;
-								if ( expected === undefined ) expected = reduceReference( previous, w, h, layers, quantization, reference, packed && inTile ? { pairing: 'float32' } : {} );
+								if ( expected === undefined ) expected = reduceReference( previous, w, h, layers, quantization, reference, { ...( packed && inTile ? { pairing: 'float32' } : {} ), weights: sampledLevels.has( level ) ? 'sampler' : 'shader' } );
 								if ( level === 1 ) firstLevels.set( key, expected );
 								const actual = mips[ level - 1 ];
 								result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ label } mip ${ level }`, reference, channels, 0, ( isIntegerDomain( quantization ) || packed ) && inTile ) );

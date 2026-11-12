@@ -15,7 +15,10 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
   - [x] Native harnesses built (`native/`): D3D12 AMD SPD (8 variants), D3D12 render, D3D11 `GenerateMips`, Vulkan nvpro + blit; level dumps at 1129×635 match our oracles ([native-semantics-rtx3060.json](results/windows/native-semantics-rtx3060.json))
   - [x] `f16Rounding` (branch `f16-rounding`, `1af33de`): RTX full matrix 287 → 85 failures, every f16 one gone on both GPUs
   - [x] Timings, native + `--compare=spd` on both GPUs ([results/windows/timings.md](results/windows/timings.md)); RTX WebGPU ran at 620–920 MHz vs native ~1600, so cross-API ratios there wait for locked clocks
-  - [ ] Remaining handoff jobs: `--compare=webgpu-spd`, `bench`, `tools`, `--webgpu-spd-check` per GPU (prepared in `run-benches.sh`)
+  - [x] webgpu-spd: timings and 256-frame check on both GPUs (0 stale frames of 41,472 each); our `'spd'` 1.6× / 3.5× faster than its default (RTX / Intel, rgba8) ([timings.md](results/windows/timings.md))
+  - [x] Sampler tolerance model (`ReferenceOptions.weights`) and exact converting copies (branch `f16-rounding`)
+  - [ ] Remaining handoff jobs: `bench`, `tools` per GPU (prepared in `run-benches.sh`, 25 min cap each)
+  - Handoff summary: [results/windows/README.md](results/windows/README.md); library changes are on branch `f16-rounding`
   - [x] `test/parallel.js`: the suite in capped parallel shards, one summary; full matrix 35+ → 17 min, quick 4.6 → 2 min (RTX 3060)
 - [ ] CI: first GitHub run of the shards (`test/ci/README.md`): real shard times, Linux SwiftShader compat device, artifact collection. Then commit its `gpu-durations` artifact
 
@@ -82,10 +85,8 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
 - Upscaler exposure, every texel vs 1024 taps: pros/cons and sources sent 2026-11-12. Agreed: merge the bit-identical `perf/exposure-parallel` first
 - Review drafts (local only, gitignored, never pushed): `drafts/webgpu-spd-issues.md` (6 issues), `drafts/gpuweb-5253-comment.md` (numbers to fill from Windows)
 - Upscaler branch `perf/exposure-parallel` is local only: push it to pmndrs/upscaler so the Windows agent can run its measurements, or skip that run
-- Decided (owner, 2026-11-12): `averageAccess` stays `'sample'` by default, `'load'` documented as the identical-everywhere option (README). Open: widen the suite's sampler tolerance to the measured NVIDIA/Intel behaviour so the Windows runs go green?
-- Windows, sampler precision ([correctness.md](results/windows/correctness.md)): NVIDIA rounds each 2D tap weight to 1/256, Intel truncates axis weights (even sizes too); `averageAccess: 'load'` passes on both. Timed ([timings.md](results/windows/timings.md)): `'load'` costs 13 % / 2 % (RTX rgba8 / rgba16f), 31 % / 22 % (Intel). Default `'sample'`, `'load'`, or `'load'` only after odd sizes?
+- Windows, render fallback (DIVERGES #17, now measured): in WebGPU, render passes beat our `'exact'` default in rgba8 by 25 % (RTX) and 71 % (Intel); `'spd'` beats render everywhere. Build a per-device / per-format render path in the adapters before the three.js default?
 - Windows, f16 rounding cost: `'nearest'` now rounds with an f32 add (owner asked to try it): 14 % on Intel (was 29 %), noise on the RTX, bit-exact on both. Keep, or default to `'device'` on some devices?
-- Windows, RTX clocks: WebGPU runs sat at 620–920 MHz, native at ~1600. Lock clocks (`nvidia-smi -lgc`, needs admin) and rerun for fair WebGPU ÷ native ratios?
 
 ## Decided (owner, 2026-11-12)
 
@@ -97,6 +98,8 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
 - Upscaler shading change keeps the 8-channel version (documented); the sign-bit version stays an experiment
 - f16 outputs round to nearest even in the shader (D3D12 truncates in `textureStore` and `pack2x16float`), as a configurable default (branch `f16-rounding`)
 - Order on Windows: native timings now; library timings after the f16 change, with `'sample'` vs `'load'` and f16 rounding on/off in the comparison
+- `averageAccess` stays `'sample'` by default; `'load'` documented as identical on every GPU. The suite's tolerance models the samplers' 8-bit weights (`ReferenceOptions.weights`)
+- RTX clocks: lock them (`nvidia-smi -lgc`, owner runs it as admin) only for WebGPU-vs-native comparisons; unlocked, those were overstated 1.2–2×. Same-run ratios don't need it
 ## Verification log
 
 | Date | Commit | Device | Suite | Result |
