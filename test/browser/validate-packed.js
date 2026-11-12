@@ -468,22 +468,23 @@ async function validateReducerHalfRounding( device ) {
 }
 
 /** `part`: 'downsampler' (codecs, Downsampler buffer path) or 'reducer' (Reducer buffer output, f16 rounding); default both. */
-export async function validatePacked( device, { quick = false, onProgress = () => {}, part } = {} ) {
+/** `select`: the case-group gate (test/ci/shard.js), one group per check below; default all. */
+export async function validatePacked( device, { quick = false, onProgress = () => {}, part, select = { has: () => true, run: async ( id, fn ) => fn() } } = {} ) {
 
 	const results = [];
 	if ( part !== 'reducer' ) {
 
-		results.push( ...await validateCodecs( device ) );
+		results.push( ...await select.run( 'packed/codecs', () => validateCodecs( device ) ) );
 		onProgress( 'validated packed codecs' );
-		results.push( ...await validateBufferPath( device, { quick } ) );
+		results.push( ...await select.run( 'packed/buffer-path', () => validateBufferPath( device, { quick } ) ) );
 		onProgress( 'validated buffer output path' );
 
 	}
 
 	if ( part !== 'downsampler' ) {
 
-		results.push( ...await validateReducerBuffer( device, { quick } ) );
-		results.push( ...await validateReducerHalfRounding( device ) );
+		results.push( ...await select.run( 'packed/reducer-buffer', () => validateReducerBuffer( device, { quick } ) ) );
+		results.push( ...await select.run( 'packed/reducer-half-rounding', () => validateReducerHalfRounding( device ) ) );
 		onProgress( 'validated reducer buffer output and f16 rounding' );
 
 	}

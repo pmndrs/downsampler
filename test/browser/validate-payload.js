@@ -51,15 +51,23 @@ function checkExact( actual, expected, label ) {
 }
 
 const textureLevels = [ [ 1 ], [ 1, 2, 4 ], [ 2, 5 ], [ 1, 3, 4, 6 ] ];
+const slug = name => name.replace( /[^a-z0-9]+/gi, '-' ).replace( /^-|-$/g, '' );
 
-async function validatePayloadReducer( device, { quick } ) {
+// Case groups (test/ci/shard.js): edges × variant × level selection, over every shape.
+async function validatePayloadReducer( device, { quick, select } ) {
 
 	const results = [];
+	const groupId = ( edges, variant, levels ) => `payload/reducer/${ edges }/${ slug( variant.name ) }/L${ levels.join( '' ) }`;
 	const shapes = quick ? payloadShapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : payloadShapes;
 	const limit = device.limits.maxStorageTexturesPerShaderStage;
 
+	const levelSets = textureLevels.filter( set => set.length <= limit );
+	const wanted = ( edges, variant ) => levelSets.filter( levels => select.has( groupId( edges, variant, levels ) ) );
+	const anyWanted = edges => payloadVariants.some( variant => wanted( edges, variant ).length > 0 );
+
 	for ( const [ width, height, layers = 1 ] of shapes ) {
 
+		if ( ! [ 'zero-weight', 'clamp' ].some( anyWanted ) ) continue;
 		const dimension = layers > 1 ? '2d-array' : '2d';
 		const source = device.createTexture( { size: [ width, height, layers ], format: 'rgba32float', textureBindingViewDimension: dimension, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST } );
 		const data = payloadData( width, height, layers, width * 31 + height );
@@ -68,6 +76,7 @@ async function validatePayloadReducer( device, { quick } ) {
 
 		for ( const edges of [ 'zero-weight', 'clamp' ] ) {
 
+			if ( ! anyWanted( edges ) ) continue;
 			const outputs = new Map( [ 1, 2, 3, 4, 5, 6 ].map( level => {
 
 				const texture = device.createTexture( { size: [ levelSize( width, level, edges ), levelSize( height, level, edges ), layers ], format: 'rgba32float', textureBindingViewDimension: dimension, usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST } );
@@ -78,8 +87,10 @@ async function validatePayloadReducer( device, { quick } ) {
 
 			for ( const variant of payloadVariants ) {
 
+				const selected = wanted( edges, variant );
+				if ( selected.length === 0 ) continue;
 				const expected = reducePyramid( data, width, height, layers, { reduction: variant.reduction, levels: [ 1, 2, 3, 4, 5, 6 ], edges } );
-				for ( const levels of textureLevels.filter( set => set.length <= limit ) ) {
+				for ( const levels of selected ) results.push( ...await select.run( groupId( edges, variant, levels ), async () => {
 
 					const reducer = new Reducer( device, { reduction: variant.reduction, levels, edges, format: 'rgba32float', dimension } );
 					for ( const level of levels ) {
@@ -93,9 +104,9 @@ async function validatePayloadReducer( device, { quick } ) {
 					reducer.encode( encoder, { source, outputs: levels.map( level => outputs.get( level ) ) } );
 					device.queue.submit( [ encoder.finish() ] );
 					for ( const level of levels ) checkExact( ( await readMips( device, outputs.get( level ), 0, 1 ) )[ 0 ], expected[ level - 1 ], `payload reducer ${ width }x${ height }x${ layers } ${ edges } ${ variant.name } [${ levels }] level ${ level }` );
-					results.push( { reducer: `payload ${ variant.name }`, width, height, layers, edges, levels } );
+					return [ { reducer: `payload ${ variant.name }`, width, height, layers, edges, levels } ];
 
-				}
+				} ) );
 
 			}
 
@@ -301,12 +312,13 @@ async function validatePayloadScalar( device, { quick } ) {
 
 }
 
-export async function validatePayload( device, { quick = false, onProgress = () => {} } = {} ) {
+/** `select`: the case-group gate (test/ci/shard.js); default all. */
+export async function validatePayload( device, { quick = false, onProgress = () => {}, select = { has: () => true, run: async ( id, fn ) => fn() } } = {} ) {
 
-	const results = [ ...await validatePayloadReducer( device, { quick } ) ];
+	const results = [ ...await validatePayloadReducer( device, { quick, select } ) ];
 	onProgress( 'validated payload reducer' );
-	results.push( ...await validateGBuffer( device, { quick } ) );
-	results.push( ...await validatePayloadScalar( device, { quick } ) );
+	results.push( ...await select.run( 'payload/gbuffer', () => validateGBuffer( device, { quick } ) ) );
+	results.push( ...await select.run( 'payload/scalar', () => validatePayloadScalar( device, { quick } ) ) );
 	onProgress( 'validated payload scalar' );
 	return results;
 

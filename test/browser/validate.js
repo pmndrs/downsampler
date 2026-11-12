@@ -8,6 +8,7 @@ import { validatePacked } from './validate-packed.js';
 import { validateScalar } from './validate-scalar.js';
 import { validatePayload } from './validate-payload.js';
 import { validateWide } from './validate-wide.js';
+import { assignShards, digest, Selection } from '../ci/shard.js';
 
 // [ width, height, layers?, viewDimension? ]: 1×1, 1D tails, odd sizes, partial
 // workgroups, rectangles, layers, both 2D view variants, and multi-batch sizes.
@@ -154,16 +155,50 @@ export function levelOptions( device ) {
 export const compatibility = device => ! device.features.has( 'core-features-and-limits' );
 
 /**
- * `only`: run one part of the suite; default all. The parts 'downsampler', 'reducer' and 'scalar' partition it
- * (CI runs them as parallel jobs); 'mips' is 'downsampler' plus 'reducer'. 'packed' runs the packed float
+ * `only`: run one part of the suite; default all. The parts 'downsampler', 'reducer', 'scalar' and 'fixtures'
+ * (the tool fixtures' oracle checks) partition it; 'mips' is 'downsampler' plus 'reducer'. 'packed' runs the packed float
  * formats and the buffer output path ('packed-source' and 'packed-api' one piece of it, for debugging).
  * 'odd' runs only the 'spd' and tail variants of the main matrix (part of 'downsampler', for debugging).
+ *
+ * `shard` ({ index, total }, 1-based) runs one shard of the case groups (after `only`), split by
+ * `durations` (group id → ms; test/ci/README.md). `list` runs nothing and returns the group ids
+ * (`ids`). The result carries `groups` (id → { ms, cases } for the groups that ran) and the
+ * listing's size and digest, so the shards of one suite can be checked against each other.
  */
-export async function validate( device, { onProgress = () => {}, quick = false, only } = {} ) {
+export async function validate( device, { onProgress = () => {}, quick = false, only, shard, durations = {}, list = false } = {} ) {
+
+	let select = new Selection();
+	let shards = null;
+
+	if ( shard || list ) {
+
+		// A first pass registers every group id and runs nothing (no textures, pipelines or oracles).
+		const listing = new Selection( { list: true } );
+		await suite( device, { quick, only, select: listing } );
+		if ( list ) return { listed: true, ids: listing.ids, digest: digest( listing.ids ) };
+		shards = assignShards( listing.ids, shard.total, durations );
+		select = new Selection( { assigned: shards[ shard.index - 1 ] } );
+		select.listing = listing.ids;
+
+	}
+
+	const report = await suite( device, { onProgress, quick, only, select } );
+	const ids = select.listing ?? select.ids;
+	return { ...report, shard: shard ? { ...shard, groups: shards[ shard.index - 1 ].length } : null, listing: { groups: ids.length, digest: digest( ids ), ids }, groups: select.groups };
+
+}
+
+// --quick checks the tool fixtures at an even and an odd render size (the full suite: all five).
+const quickFixtureSizes = [ [ 960, 540 ], [ 1129, 635 ] ];
+
+/** Variant names as id segments: 'spd average (load)' → 'spd-average-load'. */
+const slug = name => name.replace( /[^a-z0-9]+/gi, '-' ).replace( /^-|-$/g, '' );
+
+async function suite( device, { onProgress = () => {}, quick = false, only, select } ) {
 
 	const results = [];
 	const started = performance.now();
-	const cases = only === 'scalar' || only === 'reducer' ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
+	const cases = only === 'scalar' || only === 'reducer' || only === 'fixtures' ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
 	let scalarPrecision = null;
 	let runs = 0;
 	const skipped = [];
@@ -232,7 +267,10 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 				const [ width, height, layers = 1, dimension ] = shape;
 				const onShape = shapes => shapes.some( s => s.join() === shape.join() );
 				const sets = [ ...( onShape( storageShapes ) ? storageSets : [] ), ...( onShape( bufferShapes ) ? formatBufferSets : [] ) ];
-				if ( sets.length === 0 ) continue;
+				// Case groups: format × output path × kernel width × variant, over every shape
+				// (a group's pipelines are its own, so shards don't compile each other's).
+				const selected = sets.flatMap( set => formatVariants.map( variant => [ set, variant, `downsampler/${ format }/${ set.output }/L${ set.levels }/${ slug( variant.name ) }` ] ) ).filter( ( [ , , id ] ) => select.has( id ) );
+				if ( selected.length === 0 ) continue;
 				const texture = createTexture( device, { width, height, layers, format, dimension } );
 				// Inputs and first-level references depend only on shape, format,
 				// pattern and reduction, so they are shared across kernel widths.
@@ -240,14 +278,14 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 				try {
 
-					for ( const { levels, output, ...byAccess } of sets ) for ( const variant of formatVariants ) {
+					for ( const [ { levels, output, ...byAccess }, variant, id ] of selected ) results.push( ...await select.run( id, async () => {
 
 						const downsampler = byAccess[ `${ variant.tail ? 'tail' : '' }${ variant.access ?? 'sample' }` ];
 						const options = { reduction: variant.reduction, oddSizes: variant.oddSizes };
 						// Tail variants run where the plan has a tail batch. --quick skips 32×32-tile
 						// tails: SwiftShader takes minutes to compile each of those pipelines.
 						const tails = variant.tail ? downsampler.prepare( texture, options ).filter( batch => batch.kernel === 'tail' ) : [];
-						if ( variant.tail && ( tails.length === 0 || ( quick && tails.some( batch => batch.tile > 16 ) ) ) ) continue;
+						if ( variant.tail && ( tails.length === 0 || ( quick && tails.some( batch => batch.tile > 16 ) ) ) ) return [];
 						const reference = variant.reference ?? variant.reduction;
 						const result = { width, height, layers, format, output, levelsPerDispatch: levels, reduction: variant.name, dispatches: 0, maxError: 0 };
 
@@ -317,9 +355,9 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 						}
 
 						result.dispatches = downsampler.prepare( texture, options ).length;
-						results.push( result );
+						return [ result ];
 
-					}
+					} ) );
 
 					onProgress( `validated ${ width }×${ height }×${ layers } ${ format }` );
 
@@ -340,39 +378,58 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 		} else if ( only?.startsWith( 'packed' ) ) {
 
 			// 'packed-source' and 'packed-api' run one part (for debugging).
-			if ( only !== 'packed-api' ) results.push( ...await validateSource( device, { quick, onProgress, packedOnly: true } ) );
-			if ( only !== 'packed-source' ) results.push( ...await validatePacked( device, { quick, onProgress } ) );
+			if ( only !== 'packed-api' ) results.push( ...await validateSource( device, { quick, onProgress, select, packedOnly: true } ) );
+			if ( only !== 'packed-source' ) results.push( ...await validatePacked( device, { quick, onProgress, select } ) );
 
-		} else if ( only !== 'scalar' ) {
+		} else if ( only !== 'scalar' && only !== 'fixtures' ) {
 
 			if ( only !== 'reducer' ) {
 
-				results.push( ...await validateSource( device, { quick, onProgress } ) );
-				results.push( ...await validateOptions( device ) );
-				results.push( ...await validatePacked( device, { quick, onProgress, part: 'downsampler' } ) );
+				results.push( ...await validateSource( device, { quick, onProgress, select } ) );
+				results.push( ...await select.run( 'downsampler/options', () => validateOptions( device ) ) );
+				results.push( ...await validatePacked( device, { quick, onProgress, part: 'downsampler', select } ) );
 
 			}
 
 			if ( only !== 'downsampler' ) {
 
-				const reducer = await validateReducer( device, { quick, onProgress } );
+				const reducer = await validateReducer( device, { quick, onProgress, select } );
 				results.push( ...reducer );
 				runs += reducer.reduce( ( sum, result ) => sum + ( result.runs ?? 0 ), 0 );
-				results.push( ...await validateTools( device, { quick, onProgress } ) );
-				results.push( ...await validateReducerOptions( device ) );
-				results.push( ...await validateWide( device, { quick, onProgress } ) );
-				results.push( ...await validatePayload( device, { quick, onProgress } ) );
-				results.push( ...await validatePacked( device, { quick, onProgress, part: 'reducer' } ) );
+				results.push( ...await validateTools( device, { quick, onProgress, select } ) );
+				results.push( ...await select.run( 'reducer/options', () => validateReducerOptions( device ) ) );
+				results.push( ...await validateWide( device, { quick, onProgress, select } ) );
+				results.push( ...await validatePayload( device, { quick, onProgress, select } ) );
+				results.push( ...await validatePacked( device, { quick, onProgress, part: 'reducer', select } ) );
 
 			}
 
 		}
 
-		if ( only !== 'mips' && only !== 'reducer' && only !== 'downsampler' && only !== 'odd' && ! only?.startsWith( 'packed' ) ) {
+		if ( only === undefined || only === 'scalar' ) {
 
-			const scalar = await validateScalar( device, { quick, onProgress } );
+			const scalar = await validateScalar( device, { quick, onProgress, select } );
 			results.push( ...scalar.results );
-			scalarPrecision = { worst: scalar.worst, pairing: scalar.pairing };
+			if ( scalar.pairing !== null ) scalarPrecision = { worst: scalar.worst, pairing: scalar.pairing };
+
+		}
+
+		// The tool fixtures' oracle checks (test/tools/README.md; `node test/tools/run.js --check`), one
+		// group per size. They make their own core device, so a compatibility-mode run leaves them out.
+		if ( ( only === undefined || only === 'fixtures' ) && ! compatibility( device ) ) {
+
+			const { defaultSizes } = await import( '../tools/scene.js' );
+			for ( const [ width, height ] of quick ? quickFixtureSizes : defaultSizes ) results.push( ...await select.run( `fixtures/${ width }x${ height }`, async () => {
+
+				const { runTools } = await import( '../tools/harness.js' );
+				const report = await runTools( { sizes: [ [ width, height ] ], bench: false, onProgress } );
+				const checked = Object.entries( report.results[ 0 ].fixtures ).filter( ( [ , fixture ] ) => fixture.check );
+				const failed = checked.filter( ( [ , fixture ] ) => ! fixture.check.ok ).map( ( [ name ] ) => name );
+				if ( failed.length ) throw new Error( `tool fixtures ${ width }x${ height }: oracle checks failed: ${ failed.join( ', ' ) }` );
+				onProgress( `validated tool fixtures ${ width }×${ height }` );
+				return checked.map( ( [ name ] ) => ( { fixture: name, width, height } ) );
+
+			} ) );
 
 		}
 
@@ -440,7 +497,7 @@ function splat( floats ) {
 
 }
 
-async function validateSource( device, { quick, onProgress, packedOnly = false } ) {
+async function validateSource( device, { quick, onProgress, select, packedOnly = false } ) {
 
 	const results = [];
 	const shapes = quick ? sourceShapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : sourceShapes;
@@ -462,90 +519,98 @@ async function validateSource( device, { quick, onProgress, packedOnly = false }
 
 		const { quantization, channels } = formats[ format ];
 
-		for ( const [ shapeIndex, [ width, height, layers = 1 ] ] of shapes.entries() ) {
+		// One case group per source case (its pipelines), over every shape.
+		results.push( ...await select.run( `source/${ sourceFormat }/${ format }/${ relation }`, async () => {
 
-			const dw = relation === 'same' ? width : Math.max( 1, width >> 1 ), dh = relation === 'same' ? height : Math.max( 1, height >> 1 );
-			const destination = createTexture( device, { width: dw, height: dh, layers, format } );
+			const results = [];
+			for ( const [ shapeIndex, [ width, height, layers = 1 ] ] of shapes.entries() ) {
 
-			try {
+				const dw = relation === 'same' ? width : Math.max( 1, width >> 1 ), dh = relation === 'same' ? height : Math.max( 1, height >> 1 );
+				const destination = createTexture( device, { width: dw, height: dh, layers, format } );
 
-				for ( const pattern of [ 'random', 'edge', 'tiles' ] ) {
+				try {
 
-					const source = await makeSource( device, sourceFormat, width, height, layers, pattern, pattern === 'tiles' ? shapeIndex + 3 : 1 );
-					const input = sampledChannels( sourceFormat ) === 1 ? splat( source.floats ) : source.floats;
+					for ( const pattern of [ 'random', 'edge', 'tiles' ] ) {
 
-					try {
+						const source = await makeSource( device, sourceFormat, width, height, layers, pattern, pattern === 'tiles' ? shapeIndex + 3 : 1 );
+						const input = sampledChannels( sourceFormat ) === 1 ? splat( source.floats ) : source.floats;
 
-						for ( const { downsampler, mode } of downsamplers ) for ( const reduction of reductions ) {
+						try {
 
-							if ( mode === 'spd' && reduction !== 'average' ) continue;
-							const options = { source: { texture: source.texture }, reduction, oddSizes: mode === 'spd' ? 'spd' : 'exact' };
-							if ( mode === 'tail' && ! downsampler.prepare( destination, options ).some( batch => batch.kernel === 'tail' ) ) continue;
-							poison( device, destination, 0 );
-							downsampler.generate( destination, options );
-							const mips = await readMips( device, destination, 0 );
-							const label = `${ sourceFormat } ${ width }x${ height }x${ layers } -> ${ format } ${ relation } ${ reduction } ${ pattern } L${ downsampler.levelsPerDispatch } ${ mode }`;
-							const unormSource = /unorm/.test( sourceFormat ) ? 2 ** - 21 : 0;
+							for ( const { downsampler, mode } of downsamplers ) for ( const reduction of reductions ) {
 
-							if ( mode === 'spd' ) {
+								if ( mode === 'spd' && reduction !== 'average' ) continue;
+								const options = { source: { texture: source.texture }, reduction, oddSizes: mode === 'spd' ? 'spd' : 'exact' };
+								if ( mode === 'tail' && ! downsampler.prepare( destination, options ).some( batch => batch.kernel === 'tail' ) ) continue;
+								poison( device, destination, 0 );
+								downsampler.generate( destination, options );
+								const mips = await readMips( device, destination, 0 );
+								const label = `${ sourceFormat } ${ width }x${ height }x${ layers } -> ${ format } ${ relation } ${ reduction } ${ pattern } L${ downsampler.levelsPerDispatch } ${ mode }`;
+								const unormSource = /unorm/.test( sourceFormat ) ? 2 ** - 21 : 0;
 
-								for ( const batch of downsampler.prepare( destination, options ).filter( batch => ! batch.copy ) ) {
+								if ( mode === 'spd' ) {
 
-									const external = batch.sourceMipLevel === null;
-									if ( batch.kernel === 'exact' ) {
+									for ( const batch of downsampler.prepare( destination, options ).filter( batch => ! batch.copy ) ) {
 
-										check( mips[ 0 ], copyReference( input, width, height, layers, quantization ), quantization, `${ label } copy`, reduction, channels, unormSource );
-										continue;
+										const external = batch.sourceMipLevel === null;
+										if ( batch.kernel === 'exact' ) {
+
+											check( mips[ 0 ], copyReference( input, width, height, layers, quantization ), quantization, `${ label } copy`, reduction, channels, unormSource );
+											continue;
+
+										}
+
+										const from = external ? input : mips[ batch.sourceMipLevel ];
+										const sw = external ? width : mipSize( dw, batch.sourceMipLevel ), sh = external ? height : mipSize( dh, batch.sourceMipLevel );
+										spdReference( from, sw, sh, layers, quantization, reduction, batch.count ).forEach( ( level, i ) => {
+
+											const mip = batch.firstMipLevel + i;
+											check( mips[ mip ], level, quantization, `${ label } mip ${ mip }`, reduction, channels, external ? unormSource : 0 );
+
+										} );
 
 									}
 
-									const from = external ? input : mips[ batch.sourceMipLevel ];
-									const sw = external ? width : mipSize( dw, batch.sourceMipLevel ), sh = external ? height : mipSize( dh, batch.sourceMipLevel );
-									spdReference( from, sw, sh, layers, quantization, reduction, batch.count ).forEach( ( level, i ) => {
-
-										const mip = batch.firstMipLevel + i;
-										check( mips[ mip ], level, quantization, `${ label } mip ${ mip }`, reduction, channels, external ? unormSource : 0 );
-
-									} );
+									continue;
 
 								}
 
-								continue;
+								let previous = input, w = width, h = height;
+
+								for ( let level = 0; level < destination.mipLevelCount; level ++ ) {
+
+									const quantizedInput = level > 0 || formats[ sourceFormat ]?.quantization === quantization;
+									const expected = level === 0 && dw === width && dh === height ? copyReference( previous, w, h, layers, quantization ) : reduceReference( previous, w, h, layers, quantization, reduction, { quantizedInput } );
+									const slack = level === 0 && /unorm/.test( sourceFormat ) ? 2 ** - 21 : 0;
+									check( mips[ level ], expected, quantization, `${ label } mip ${ level }`, reduction, channels, slack );
+									previous = mips[ level ]; w = expected.width; h = expected.height;
+
+								}
 
 							}
 
-							let previous = input, w = width, h = height;
+						} finally {
 
-							for ( let level = 0; level < destination.mipLevelCount; level ++ ) {
-
-								const quantizedInput = level > 0 || formats[ sourceFormat ]?.quantization === quantization;
-								const expected = level === 0 && dw === width && dh === height ? copyReference( previous, w, h, layers, quantization ) : reduceReference( previous, w, h, layers, quantization, reduction, { quantizedInput } );
-								const slack = level === 0 && /unorm/.test( sourceFormat ) ? 2 ** - 21 : 0;
-								check( mips[ level ], expected, quantization, `${ label } mip ${ level }`, reduction, channels, slack );
-								previous = mips[ level ]; w = expected.width; h = expected.height;
-
-							}
+							source.texture.destroy();
 
 						}
 
-					} finally {
-
-						source.texture.destroy();
-
 					}
+
+					results.push( { source: sourceFormat, destination: format, relation, width, height, layers, reductions } );
+					onProgress( `validated source ${ sourceFormat } ${ width }×${ height }×${ layers } -> ${ format } (${ relation })` );
+
+				} finally {
+
+					destination.destroy();
 
 				}
 
-				results.push( { source: sourceFormat, destination: format, relation, width, height, layers, reductions } );
-				onProgress( `validated source ${ sourceFormat } ${ width }×${ height }×${ layers } -> ${ format } (${ relation })` );
-
-			} finally {
-
-				destination.destroy();
-
 			}
 
-		}
+			return results;
+
+		} ) );
 
 	}
 
@@ -914,11 +979,17 @@ function atlasLevels( values, layout, layers ) {
 
 }
 
-async function validateReducer( device, { quick, onProgress } ) {
+async function validateReducer( device, { quick, onProgress, select } ) {
 
 	const results = [];
 	const shapes = quick ? reducerShapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : reducerShapes;
 	const widths = [ 1, 4, 5, 6 ];
+	// Case groups: edges × variant × kernel width × path (one pipeline per view dimension), over every shape.
+	const groupId = ( edges, variant, count, path ) => `reducer/${ edges }/${ slug( variant.name ) }/L${ count }/${ path }`;
+	const combos = widths.flatMap( count => [ 'texture', 'hook' ].map( path => [ count, path ] ) );
+	const wanted = ( edges, variant ) => combos.filter( ( [ count, path ] ) => select.has( groupId( edges, variant, count, path ) ) );
+	const edgeModes = [ 'zero-weight', 'clamp' ];
+	const anyWanted = edges => reducerVariants.filter( variant => wanted( edges, variant ).length > 0 ).length > 0;
 	const reducers = new Map();
 	const reducerFor = ( path, edges, variant, count, dimension ) => {
 
@@ -935,14 +1006,16 @@ async function validateReducer( device, { quick, onProgress } ) {
 
 	for ( const [ width, height, layers = 1, viewDimension ] of shapes ) {
 
+		if ( edgeModes.filter( anyWanted ).length === 0 ) continue;
 		const dimension = viewDimension ?? ( layers > 1 ? '2d-array' : '2d' );
 		const source = createTexture( device, { width, height, layers, format: 'rgba32float', dimension, storage: false } );
 		const destroy = [ source ];
 
 		try {
 
-			for ( const edges of [ 'zero-weight', 'clamp' ] ) {
+			for ( const edges of edgeModes ) {
 
+				if ( ! anyWanted( edges ) ) continue;
 				// Output textures at exactly each level's size (⌈n/2⌉ under zero-weight).
 				const outputs = new Map( [ 1, 2, 3, 4, 5, 6 ].map( level => {
 
@@ -955,11 +1028,13 @@ async function validateReducer( device, { quick, onProgress } ) {
 
 				for ( const variant of reducerVariants ) for ( const pattern of variant.patterns ) {
 
+					const selected = wanted( edges, variant );
+					if ( selected.length === 0 ) continue;
 					const data = reducerData( width, height, layers, pattern, width * 7 + height );
 					upload( device, source, data );
 					const expected = reducePyramid( data, width, height, layers, { reduction: variant.reference ?? variant.reduction, levels: [ 1, 2, 3, 4, 5, 6 ], edges } );
 
-					for ( const count of widths ) for ( const path of [ 'texture', 'hook' ] ) {
+					for ( const [ count, path ] of selected ) results.push( ...await select.run( groupId( edges, variant, count, path ), async () => {
 
 						const reducer = reducerFor( path, edges, variant, count, dimension );
 						const label = `reducer ${ width }x${ height }x${ layers } ${ edges } ${ variant.name } ${ pattern } L${ count } ${ path }`;
@@ -999,9 +1074,9 @@ async function validateReducer( device, { quick, onProgress } ) {
 
 						}
 
-						results.push( result );
+						return [ result ];
 
-					}
+					} ) );
 
 				}
 
@@ -1090,127 +1165,140 @@ function halfTexture( device, width, height, format, values ) {
 
 }
 
-async function validateTools( device, { quick, onProgress } ) {
+async function validateTools( device, { quick, onProgress, select } ) {
 
 	const results = [];
 
 	// Shading change: odd sizes drop the last row/column (SPD), partial tiles repeat the edge.
-	const shading = new Reducer( device, {
-		label: 'fsr shading change', reduction: [ 'average', 'average', 'sum', 'max' ], levels: [ 1, 2, 3 ], edges: 'clamp', format: 'rgba16float',
-		load: shadingChange.load, bindings: { wgsl: shadingChange.bindings.wgsl, entries: shadingChange.bindings.entries() }
-	} );
+	results.push( ...await select.run( 'tools/fsr-shading-change', async () => {
 
-	for ( const [ width, height ] of quick ? [ [ 192, 108 ], [ 67, 33 ], [ 5, 3 ] ] : [ [ 1920, 1080 ], [ 1917, 1077 ], [ 67, 33 ], [ 5, 3 ] ] ) {
-
-		let state = width + height;
-		const next = () => ( state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0 ) / 2 ** 32;
-		const current = Array.from( { length: width * height }, () => fromHalf( toHalf( next() * 2 ) ) );
-		const previous = Array.from( { length: width * height }, () => fromHalf( toHalf( next() * 3 ) ) );
-		const exposure = 1.5;
-		const base = new Float64Array( width * height * 4 );
-		current.forEach( ( c, i ) => {
-
-			const diff = Math.fround( Math.fround( c * exposure ) - previous[ i ] );
-			base.set( [ diff, Math.sign( diff ), 1, Math.abs( diff ) ], i * 4 );
-
+		const results = [];
+		const shading = new Reducer( device, {
+			label: 'fsr shading change', reduction: [ 'average', 'average', 'sum', 'max' ], levels: [ 1, 2, 3 ], edges: 'clamp', format: 'rgba16float',
+			load: shadingChange.load, bindings: { wgsl: shadingChange.bindings.wgsl, entries: shadingChange.bindings.entries() }
 		} );
 
-		const cur = halfTexture( device, width, height, 'r16float', current ), prev = halfTexture( device, width, height, 'r16float', previous );
-		const uniform = device.createBuffer( { size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
-		device.queue.writeBuffer( uniform, 0, Float32Array.of( exposure, 0, 0, 0 ) );
-		// FSR's SpdMips: half resolution, one mip per emitted level; 'clamp' sizes are mip sizes.
-		const mips = device.createTexture( { size: [ width >> 1 || 1, height >> 1 || 1 ], mipLevelCount: Math.min( 3, Math.floor( Math.log2( Math.max( width >> 1 || 1, height >> 1 || 1 ) ) ) + 1 ), format: 'rgba16float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST } );
-		const bindGroup = device.createBindGroup( { layout: shading.bindGroupLayouts[ 1 ], entries: [ { binding: 0, resource: cur.createView() }, { binding: 1, resource: prev.createView() }, { binding: 2, resource: { buffer: uniform } } ] } );
+		for ( const [ width, height ] of quick ? [ [ 192, 108 ], [ 67, 33 ], [ 5, 3 ] ] : [ [ 1920, 1080 ], [ 1917, 1077 ], [ 67, 33 ], [ 5, 3 ] ] ) {
 
-		if ( mips.mipLevelCount === 3 && compatibility( device ) ) {
+			let state = width + height;
+			const next = () => ( state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0 ) / 2 ** 32;
+			const current = Array.from( { length: width * height }, () => fromHalf( toHalf( next() * 2 ) ) );
+			const previous = Array.from( { length: width * height }, () => fromHalf( toHalf( next() * 3 ) ) );
+			const exposure = 1.5;
+			const base = new Float64Array( width * height * 4 );
+			current.forEach( ( c, i ) => {
 
-			// Compatibility mode: three mips of one texture in one dispatch are rejected up front.
-			let error = null;
-			try { shading.encode( device.createCommandEncoder(), { width, height, bindGroup, outputs: [ 0, 1, 2 ].map( mipLevel => ( { texture: mips, mipLevel } ) ) } ); } catch ( caught ) { error = caught; }
-			if ( ! error?.message.includes( 'compatibility mode' ) ) throw new Error( `compat: the Reducer accepted three mips of one texture (${ error?.message })` );
-			results.push( { tool: 'fsr shading change (compat: rejected)', width, height } );
+				const diff = Math.fround( Math.fround( c * exposure ) - previous[ i ] );
+				base.set( [ diff, Math.sign( diff ), 1, Math.abs( diff ) ], i * 4 );
 
-		} else if ( mips.mipLevelCount === 3 ) {
+			} );
 
-			poison( device, mips, 0 );
-			const encoder = device.createCommandEncoder();
-			shading.encode( encoder, { width, height, bindGroup, outputs: [ 0, 1, 2 ].map( mipLevel => ( { texture: mips, mipLevel } ) ) } );
-			device.queue.submit( [ encoder.finish() ] );
-			const actual = await readMips( device, mips, 0, 3 );
-			const expected = reducePyramid( base, width, height, 1, { reduction: [ 'average', 'average', 'sum', 'max' ], levels: [ 1, 2, 3 ], edges: 'clamp' } );
-			expected.forEach( ( level, i ) => checkPyramid( actual[ i ], level, `fsr shading change ${ width }x${ height } level ${ level.level }`, { quantization: 'float16' } ) );
-			results.push( { tool: 'fsr shading change', width, height } );
+			const cur = halfTexture( device, width, height, 'r16float', current ), prev = halfTexture( device, width, height, 'r16float', previous );
+			const uniform = device.createBuffer( { size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+			device.queue.writeBuffer( uniform, 0, Float32Array.of( exposure, 0, 0, 0 ) );
+			// FSR's SpdMips: half resolution, one mip per emitted level; 'clamp' sizes are mip sizes.
+			const mips = device.createTexture( { size: [ width >> 1 || 1, height >> 1 || 1 ], mipLevelCount: Math.min( 3, Math.floor( Math.log2( Math.max( width >> 1 || 1, height >> 1 || 1 ) ) ) + 1 ), format: 'rgba16float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST } );
+			const bindGroup = device.createBindGroup( { layout: shading.bindGroupLayouts[ 1 ], entries: [ { binding: 0, resource: cur.createView() }, { binding: 1, resource: prev.createView() }, { binding: 2, resource: { buffer: uniform } } ] } );
 
-		} else {
+			if ( mips.mipLevelCount === 3 && compatibility( device ) ) {
 
-			// Too small for three mips of a half-resolution texture: reject the output.
-			let threw = false;
-			try { shading.encode( device.createCommandEncoder(), { width, height, bindGroup, outputs: [ 0, 0, 0 ].map( () => ( { texture: mips, mipLevel: 2 } ) ) } ); } catch { threw = true; }
-			if ( ! threw ) throw new Error( 'fsr shading change: accepted an output mip outside its texture' );
+				// Compatibility mode: three mips of one texture in one dispatch are rejected up front.
+				let error = null;
+				try { shading.encode( device.createCommandEncoder(), { width, height, bindGroup, outputs: [ 0, 1, 2 ].map( mipLevel => ( { texture: mips, mipLevel } ) ) } ); } catch ( caught ) { error = caught; }
+				if ( ! error?.message.includes( 'compatibility mode' ) ) throw new Error( `compat: the Reducer accepted three mips of one texture (${ error?.message })` );
+				results.push( { tool: 'fsr shading change (compat: rejected)', width, height } );
 
-		}
+			} else if ( mips.mipLevelCount === 3 ) {
 
-		for ( const resource of [ cur, prev, mips, uniform ] ) resource.destroy();
+				poison( device, mips, 0 );
+				const encoder = device.createCommandEncoder();
+				shading.encode( encoder, { width, height, bindGroup, outputs: [ 0, 1, 2 ].map( mipLevel => ( { texture: mips, mipLevel } ) ) } );
+				device.queue.submit( [ encoder.finish() ] );
+				const actual = await readMips( device, mips, 0, 3 );
+				const expected = reducePyramid( base, width, height, 1, { reduction: [ 'average', 'average', 'sum', 'max' ], levels: [ 1, 2, 3 ], edges: 'clamp' } );
+				expected.forEach( ( level, i ) => checkPyramid( actual[ i ], level, `fsr shading change ${ width }x${ height } level ${ level.level }`, { quantization: 'float16' } ) );
+				results.push( { tool: 'fsr shading change', width, height } );
 
-	}
+			} else {
 
-	onProgress( 'validated tool shape: fsr shading change' );
-
-	// Denoiser weighted mean: sky (depth 1) weighs 0, so sky-only blocks emit 0.
-	const weighted = new Reducer( device, {
-		label: 'denoiser weighted mean', reduction: [ 'weighted', 'weighted', 'weighted', 'weight' ], levels: [ 1, 2, 3 ], edges: 'zero-weight',
-		load: denoiser.load, store: denoiser.store, bindings: { wgsl: denoiser.bindings.wgsl, entries: denoiser.bindings.entries() }
-	} );
-
-	for ( const [ width, height ] of quick ? [ [ 255, 129 ], [ 9, 5 ] ] : [ [ 1920, 1080 ], [ 1917, 1079 ], [ 255, 129 ], [ 9, 5 ] ] ) {
-
-		let state = width * 3 + height;
-		const next = () => ( state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0 ) / 2 ** 32;
-		// The top third is sky, and a fifth of the rest.
-		const sky = Array.from( { length: width * height }, ( _, i ) => Math.floor( i / width ) < height / 3 || next() < 0.2 );
-		const radiance = Array.from( { length: width * height * 4 }, () => fromHalf( toHalf( next() * 8 ) ) );
-		const depth = Float32Array.from( sky, ( isSky ) => isSky ? 1 : Math.fround( next() * 0.99 ) );
-		const base = new Float64Array( width * height * 4 );
-		sky.forEach( ( isSky, i ) => base.set( [ radiance[ i * 4 ], radiance[ i * 4 + 1 ], radiance[ i * 4 + 2 ], isSky ? 0 : 1 ], i * 4 ) );
-
-		const radianceTexture = halfTexture( device, width, height, 'rgba16float', radiance );
-		const depthTexture = device.createTexture( { size: [ width, height ], format: 'r32float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST } );
-		device.queue.writeTexture( { texture: depthTexture }, depth, { bytesPerRow: width * 4, rowsPerImage: height }, [ width, height ] );
-		const layout = atlasLayout( width, height, 1, 'zero-weight' );
-		const atlasBuffer = storageBuffer( device, new Float32Array( layout.texels * 4 ).fill( poisonValue ) );
-		const uniform = device.createBuffer( { size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
-		device.queue.writeBuffer( uniform, 0, Uint32Array.of( 0, ...layout.levels.slice( 0, 3 ).map( level => level.offset ), 0, ...layout.levels.slice( 0, 3 ).map( level => level.width ) ) );
-		const bindGroup = device.createBindGroup( { layout: weighted.bindGroupLayouts[ 1 ], entries: [ radianceTexture.createView(), depthTexture.createView(), { buffer: atlasBuffer }, { buffer: uniform } ].map( ( resource, binding ) => ( { binding, resource } ) ) } );
-
-		const encoder = device.createCommandEncoder();
-		weighted.encode( encoder, { width, height, bindGroup } );
-		device.queue.submit( [ encoder.finish() ] );
-		const levels = atlasLevels( await readBuffer( device, atlasBuffer ), layout, 1 );
-		const expected = reducePyramid( base, width, height, 1, { reduction: [ 'weighted', 'weighted', 'weighted', 'weight' ], levels: [ 1, 2, 3 ], edges: 'zero-weight' } );
-		let skyBlocks = 0;
-
-		for ( const level of expected ) {
-
-			const actual = levels.get( level.level );
-			checkPyramid( actual, level, `denoiser ${ width }x${ height } level ${ level.level }` );
-			for ( let i = 0; i < actual.length; i += 4 ) if ( level.values[ i + 3 ] === 0 ) {
-
-				skyBlocks ++;
-				if ( actual[ i ] !== 0 || actual[ i + 1 ] !== 0 || actual[ i + 2 ] !== 0 || actual[ i + 3 ] !== 0 ) throw new Error( `denoiser ${ width }x${ height } level ${ level.level }: a sky-only block emitted ${ Array.from( actual.subarray( i, i + 4 ) ) }` );
+				// Too small for three mips of a half-resolution texture: reject the output.
+				let threw = false;
+				try { shading.encode( device.createCommandEncoder(), { width, height, bindGroup, outputs: [ 0, 0, 0 ].map( () => ( { texture: mips, mipLevel: 2 } ) ) } ); } catch { threw = true; }
+				if ( ! threw ) throw new Error( 'fsr shading change: accepted an output mip outside its texture' );
 
 			}
 
+			for ( const resource of [ cur, prev, mips, uniform ] ) resource.destroy();
+
 		}
 
-		if ( skyBlocks === 0 ) throw new Error( `denoiser ${ width }x${ height }: the fixture has no sky-only block` );
-		for ( let level = 4; level <= 6; level ++ ) if ( levels.get( level ).some( value => value !== poisonValue ) ) throw new Error( `denoiser: level ${ level } was written` );
-		for ( const resource of [ radianceTexture, depthTexture, atlasBuffer, uniform ] ) resource.destroy();
-		results.push( { tool: 'denoiser weighted mean', width, height, skyBlocks } );
+		onProgress( 'validated tool shape: fsr shading change' );
+		return results;
 
-	}
+	} ) );
 
-	onProgress( 'validated tool shape: denoiser weighted mean' );
-	results.push( ...await validateCrossLevel( device, { quick } ) );
+	// Denoiser weighted mean: sky (depth 1) weighs 0, so sky-only blocks emit 0.
+	results.push( ...await select.run( 'tools/denoiser-weighted-mean', async () => {
+
+		const results = [];
+		const weighted = new Reducer( device, {
+			label: 'denoiser weighted mean', reduction: [ 'weighted', 'weighted', 'weighted', 'weight' ], levels: [ 1, 2, 3 ], edges: 'zero-weight',
+			load: denoiser.load, store: denoiser.store, bindings: { wgsl: denoiser.bindings.wgsl, entries: denoiser.bindings.entries() }
+		} );
+
+		for ( const [ width, height ] of quick ? [ [ 255, 129 ], [ 9, 5 ] ] : [ [ 1920, 1080 ], [ 1917, 1079 ], [ 255, 129 ], [ 9, 5 ] ] ) {
+
+			let state = width * 3 + height;
+			const next = () => ( state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0 ) / 2 ** 32;
+			// The top third is sky, and a fifth of the rest.
+			const sky = Array.from( { length: width * height }, ( _, i ) => Math.floor( i / width ) < height / 3 || next() < 0.2 );
+			const radiance = Array.from( { length: width * height * 4 }, () => fromHalf( toHalf( next() * 8 ) ) );
+			const depth = Float32Array.from( sky, ( isSky ) => isSky ? 1 : Math.fround( next() * 0.99 ) );
+			const base = new Float64Array( width * height * 4 );
+			sky.forEach( ( isSky, i ) => base.set( [ radiance[ i * 4 ], radiance[ i * 4 + 1 ], radiance[ i * 4 + 2 ], isSky ? 0 : 1 ], i * 4 ) );
+
+			const radianceTexture = halfTexture( device, width, height, 'rgba16float', radiance );
+			const depthTexture = device.createTexture( { size: [ width, height ], format: 'r32float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST } );
+			device.queue.writeTexture( { texture: depthTexture }, depth, { bytesPerRow: width * 4, rowsPerImage: height }, [ width, height ] );
+			const layout = atlasLayout( width, height, 1, 'zero-weight' );
+			const atlasBuffer = storageBuffer( device, new Float32Array( layout.texels * 4 ).fill( poisonValue ) );
+			const uniform = device.createBuffer( { size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+			device.queue.writeBuffer( uniform, 0, Uint32Array.of( 0, ...layout.levels.slice( 0, 3 ).map( level => level.offset ), 0, ...layout.levels.slice( 0, 3 ).map( level => level.width ) ) );
+			const bindGroup = device.createBindGroup( { layout: weighted.bindGroupLayouts[ 1 ], entries: [ radianceTexture.createView(), depthTexture.createView(), { buffer: atlasBuffer }, { buffer: uniform } ].map( ( resource, binding ) => ( { binding, resource } ) ) } );
+
+			const encoder = device.createCommandEncoder();
+			weighted.encode( encoder, { width, height, bindGroup } );
+			device.queue.submit( [ encoder.finish() ] );
+			const levels = atlasLevels( await readBuffer( device, atlasBuffer ), layout, 1 );
+			const expected = reducePyramid( base, width, height, 1, { reduction: [ 'weighted', 'weighted', 'weighted', 'weight' ], levels: [ 1, 2, 3 ], edges: 'zero-weight' } );
+			let skyBlocks = 0;
+
+			for ( const level of expected ) {
+
+				const actual = levels.get( level.level );
+				checkPyramid( actual, level, `denoiser ${ width }x${ height } level ${ level.level }` );
+				for ( let i = 0; i < actual.length; i += 4 ) if ( level.values[ i + 3 ] === 0 ) {
+
+					skyBlocks ++;
+					if ( actual[ i ] !== 0 || actual[ i + 1 ] !== 0 || actual[ i + 2 ] !== 0 || actual[ i + 3 ] !== 0 ) throw new Error( `denoiser ${ width }x${ height } level ${ level.level }: a sky-only block emitted ${ Array.from( actual.subarray( i, i + 4 ) ) }` );
+
+				}
+
+			}
+
+			if ( skyBlocks === 0 ) throw new Error( `denoiser ${ width }x${ height }: the fixture has no sky-only block` );
+			for ( let level = 4; level <= 6; level ++ ) if ( levels.get( level ).some( value => value !== poisonValue ) ) throw new Error( `denoiser: level ${ level } was written` );
+			for ( const resource of [ radianceTexture, depthTexture, atlasBuffer, uniform ] ) resource.destroy();
+			results.push( { tool: 'denoiser weighted mean', width, height, skyBlocks } );
+
+		}
+
+		onProgress( 'validated tool shape: denoiser weighted mean' );
+		return results;
+
+	} ) );
+
+	results.push( ...await validateCrossLevel( device, { quick, select } ) );
 	onProgress( 'validated tool shape: cross-level store state' );
 	return results;
 
@@ -1258,7 +1346,7 @@ fn store(level: u32, texel: vec2i, layer: u32, value: vec4f) {
 
 }
 
-async function validateCrossLevel( device, { quick } ) {
+async function validateCrossLevel( device, { quick, select } ) {
 
 	const results = [];
 	const entries = [
@@ -1268,8 +1356,9 @@ async function validateCrossLevel( device, { quick } ) {
 	];
 
 	// Tiles of 8 ([ 2, 3 ], [ 1, 4 ]) and 16 ([ 2, 5 ]) level-1 texels; a 6-level tile leaves no workgroup memory for vec4f state.
-	for ( const [ shallow, deep ] of [ [ 2, 3 ], [ 1, 4 ], [ 2, 5 ] ] ) for ( const edges of [ 'clamp', 'zero-weight' ] ) {
+	for ( const [ shallow, deep ] of [ [ 2, 3 ], [ 1, 4 ], [ 2, 5 ] ] ) for ( const edges of [ 'clamp', 'zero-weight' ] ) results.push( ...await select.run( `tools/cross-level/${ shallow }-${ deep }/${ edges }`, async () => {
 
+		const results = [];
 		const hooks = crossLevelHooks( shallow, deep );
 		const reducer = new Reducer( device, { label: `cross-level ${ shallow }→${ deep } ${ edges }`, reduction: 'sum', levels: [ shallow, deep ], edges, load: hooks.load, store: hooks.store, bindings: { wgsl: hooks.wgsl, entries } } );
 
@@ -1299,7 +1388,9 @@ async function validateCrossLevel( device, { quick } ) {
 
 		}
 
-	}
+		return results;
+
+	} ) );
 
 	return results;
 

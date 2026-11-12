@@ -1,8 +1,8 @@
 // Headless GPU suite runner.
 //   node test/run.js                     validation suite
 //   node test/run.js --quick             small shapes only
-//   node test/run.js --only=scalar       one part of the suite: downsampler, reducer, scalar
-//                                        (a partition; CI runs them in parallel), or mips (downsampler + reducer)
+//   node test/run.js --only=scalar       one part of the suite: downsampler, reducer, scalar, fixtures
+//                                        (a partition), or mips (downsampler + reducer); CI uses --shard instead
 //   node test/run.js --bench             validation + benchmark
 //   node test/run.js --bench --sizes=1024x1024,512x512x6 --formats=rgba8unorm --rounds=11 --repeats=16
 //   node test/run.js --output=results/report.json --headful
@@ -10,10 +10,18 @@
 //   node test/run.js --bench --compare=spd --skip-validation   M2T.4: exact / tail / spd / atomic probe / render
 //   node test/run.js --quality --skip-validation              M2T.4: 'spd' vs 'exact' per level, Hi-Z violations
 //   node test/run.js --compat            on a compatibility-mode device (featureLevel 'compatibility')
+// Shards (test/ci/README.md):
+//   node test/run.js --quick --adapter=swiftshader --shard=2/8   one of 8 disjoint shards, balanced by test/ci/durations.json
+//   node test/run.js --quick --adapter=swiftshader --list --shards=4,8   check the partitions (runs nothing); --verbose lists ids
+//   node test/run.js --quick --adapter=swiftshader --list --shard=2/8    the case groups of one shard
+//   node test/run.js --quick --adapter=swiftshader --record-durations    rewrite test/ci/durations.json (sharded: merge)
+//   node test/run.js ... --timing=ci-timing.json                         per-group timing and the listing, for the CI aggregate
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { loadavg } from 'node:os';
 import { dirname } from 'node:path';
 import puppeteer from 'puppeteer';
+import { assignShards, parseShard, partitionProblems, shardLoads } from './ci/shard.js';
 import { createServer } from './serve.js';
 
 const args = process.argv.slice( 2 );
@@ -28,6 +36,17 @@ if ( value( 'compare' ) ) options.compare = value( 'compare' );
 if ( args.includes( '--quality' ) ) options.quality = true;
 if ( args.includes( '--skip-validation' ) ) options.skipValidation = true;
 const loadBefore = loadavg();
+const startedAt = Date.now();
+
+// Shards: recorded per-group durations balance them (round-robin without any).
+const durationsPath = value( 'durations' ) ?? new URL( './ci/durations.json', import.meta.url ).pathname;
+const recorded = existsSync( durationsPath ) ? JSON.parse( readFileSync( durationsPath, 'utf8' ) ) : { groups: {} };
+const durations = Object.fromEntries( Object.entries( recorded.groups ).map( ( [ id, group ] ) => [ id, group.ms ] ) );
+const list = args.includes( '--list' );
+if ( value( 'shard' ) ) Object.assign( options, { shard: parseShard( value( 'shard' ) ), durations } );
+if ( list ) options.list = true;
+const recordPath = args.includes( '--record-durations' ) ? durationsPath : value( 'record-durations' );
+const timingPath = value( 'timing' );
 
 const browserArgs = [ '--enable-unsafe-webgpu' ];
 if ( process.env.CI ) browserArgs.push( '--no-sandbox' );
@@ -53,16 +72,42 @@ try {
 	page.setDefaultTimeout( 600000 );
 	await page.goto( `http://127.0.0.1:${ server.address().port }/test/browser/` );
 	await page.waitForFunction( () => typeof window.runSuite === 'function' );
-	const report = await page.evaluate( options => window.runSuite( options ), options );
-	if ( errors.length ) throw new Error( errors.join( '\n' ) );
+	let report;
+
+	try {
+
+		report = await page.evaluate( options => window.runSuite( options ), options );
+		if ( errors.length ) throw new Error( errors.join( '\n' ) );
+
+	} catch ( error ) {
+
+		// A failed shard still leaves its wall time for the CI summary.
+		if ( timingPath ) await writeTiming( { ok: false, error: String( error.message ?? error ).slice( 0, 2000 ) } );
+		throw error;
+
+	}
 
 	const { validation, timing, adapter } = report;
+	if ( validation.listed ) {
+
+		listShards( validation.ids );
+		await browser.close();
+		server.close();
+		process.exit( process.exitCode ?? 0 );
+
+	}
+
 	report.loadAverage = { before: loadBefore, after: loadavg() };
 	console.log( JSON.stringify( adapter ) );
 	console.log( `load average (1, 5, 15 min): before ${ loadBefore.map( v => v.toFixed( 1 ) ).join( ' ' ) }, after ${ report.loadAverage.after.map( v => v.toFixed( 1 ) ).join( ' ' ) }` );
 	console.log( `validation passed: ${ validation.cases } cases, ${ validation.checks } pattern runs, ${ validation.ms } ms` );
 	if ( validation.scalarPrecision ) console.log( `scalar float sums: worst error ${ ( validation.scalarPrecision.worst * 100 ).toFixed( 2 ) } % of the oracle's bound; ${ validation.scalarPrecision.pairing } results equal the oracle's float32 pairing bit for bit` );
 	if ( validation.skipped.length ) console.log( `skipped (feature unavailable): ${ validation.skipped.join( ', ' ) }` );
+	const ran = Object.keys( validation.groups );
+	if ( validation.shard ) console.log( `shard ${ validation.shard.index }/${ validation.shard.total }: ${ ran.length } of ${ validation.listing.groups } case groups (listing ${ validation.listing.digest }), ${ validation.cases } cases` );
+	else console.log( `${ ran.length } case groups (listing ${ validation.listing.digest })` );
+	if ( timingPath ) await writeTiming( { ok: true, adapter, cases: validation.cases, checks: validation.checks, validationMs: validation.ms, listing: validation.listing, groups: validation.groups, skipped: validation.skipped } );
+	if ( recordPath ) await recordDurations( recordPath, validation, adapter );
 
 	if ( timing?.timestamps === false ) console.log( 'timestamp-query unavailable: benchmark skipped' );
 
@@ -113,5 +158,67 @@ try {
 
 	if ( browser ) await browser.close();
 	server.close();
+
+}
+
+/** `--timing`: this run's wall time, shard, listing and per-group timing (test/ci/report.js reads it). */
+async function writeTiming( fields ) {
+
+	const timing = { shard: options.shard ?? null, options: { quick: options.quick, compat: options.compat, only: options.only ?? null }, seconds: Math.round( ( Date.now() - startedAt ) / 1000 ), ...fields };
+	await mkdir( dirname( timingPath ), { recursive: true } );
+	await writeFile( timingPath, JSON.stringify( timing ) + '\n' );
+
+}
+
+/**
+ * `--record-durations`: per-group ms and cases into durations.json. An unsharded run of the whole
+ * suite replaces the file (dropping groups that no longer exist); a shard or an `--only` part merges.
+ */
+async function recordDurations( path, validation, adapter ) {
+
+	const whole = ! options.shard && ! options.only;
+	const groups = whole ? {} : { ...recorded.groups };
+	for ( const [ id, { ms, cases } ] of Object.entries( validation.groups ) ) groups[ id ] = { ms: Math.round( ms ), cases };
+	const sorted = Object.fromEntries( Object.keys( groups ).sort().map( id => [ id, groups[ id ] ] ) );
+	const flags = [ options.quick && '--quick', value( 'adapter' ) && `--adapter=${ value( 'adapter' ) }`, options.compat && '--compat' ].filter( Boolean ).join( ' ' );
+	const file = {
+		about: 'Per-case-group wall time (ms) and cases of the GPU suite, which balance CI shards (test/ci/README.md). Regenerate with `node test/run.js --quick --adapter=swiftshader --record-durations`, or merge CI timing artifacts with test/ci/report.js.',
+		recorded: whole ? { date: new Date().toISOString().slice( 0, 10 ), run: flags, adapter: adapter.description || adapter.architecture || adapter.vendor || 'unknown' } : { ...recorded.recorded, merged: new Date().toISOString().slice( 0, 10 ) },
+		groups: sorted
+	};
+	await mkdir( dirname( path ), { recursive: true } );
+	await writeFile( path, JSON.stringify( file, null, '\t' ) + '\n' );
+	console.log( `${ whole ? 'wrote' : 'merged' } ${ Object.keys( validation.groups ).length } group durations into ${ path }` );
+
+}
+
+/** `--list`: the case groups, per shard with `--shard=i/N` or `--shards=N,M`; checks each partition. */
+function listShards( ids ) {
+
+	const unknown = ids.filter( id => ! Number.isFinite( durations[ id ] ) );
+	console.log( `${ ids.length } case groups; ${ ids.length - unknown.length } with a recorded duration (${ ( ids.reduce( ( sum, id ) => sum + ( durations[ id ] ?? 0 ), 0 ) / 60000 ).toFixed( 1 ) } min recorded)` );
+	// In CI, a warning annotation: re-record test/ci/durations.json (test/ci/README.md).
+	if ( unknown.length ) console.log( `${ process.env.GITHUB_ACTIONS ? '::warning title=Unrecorded case groups::' : '' }${ unknown.length } case groups have no recorded duration (weighed as the median): ${ unknown.length > 12 ? `${ unknown.slice( 0, 12 ).join( ', ' ) }, …` : unknown.join( ', ' ) }` );
+	const stale = Object.keys( durations ).filter( id => ! ids.includes( id ) );
+	if ( stale.length && ! options.only ) console.log( `recorded but not in this listing: ${ stale.length }` );
+	const counts = value( 'shards' ) ? value( 'shards' ).split( ',' ).map( Number ) : options.shard ? [ options.shard.total ] : [];
+	if ( counts.length === 0 ) for ( const id of ids ) console.log( id );
+
+	for ( const total of counts ) {
+
+		const shards = assignShards( ids, total, durations );
+		const problems = partitionProblems( ids, shards );
+		const loads = shardLoads( shards, durations );
+		console.log( `\n${ total } shards: ${ problems.length ? `PARTITION BROKEN\n  ${ problems.join( '\n  ' ) }` : 'disjoint, cover every group' }` );
+		shards.forEach( ( shard, i ) => {
+
+			if ( options.shard && options.shard.total === total && options.shard.index !== i + 1 ) return;
+			console.log( `  shard ${ i + 1 }/${ total }: ${ shard.length } groups, ~${ ( loads[ i ] / 60000 ).toFixed( 1 ) } min recorded` );
+			if ( args.includes( '--verbose' ) || options.shard?.index === i + 1 ) for ( const id of shard ) console.log( `    ${ id }` );
+
+		} );
+		if ( problems.length ) process.exitCode = 1;
+
+	}
 
 }

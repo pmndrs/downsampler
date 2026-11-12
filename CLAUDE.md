@@ -10,7 +10,8 @@ DIVERGES.md lists every place we differ from SPD, nvpro and the WebGPU community
 
 - `npm run build`: tsc to `dist/` (tests import from `dist/`, so build first).
 - `npm run test:core`: backend-neutral unit tests (node:test).
-- `npm run test:gpu`: full GPU suite in headless Chrome on the real adapter. Add `--quick` for small shapes, `--adapter=swiftshader` for software WebGPU, `--verbose` for progress, `--only=downsampler|reducer|scalar` for one part (the three partition the suite; CI runs them as parallel jobs), `--compat` for a compatibility-mode device.
+- `npm run test:gpu`: full GPU suite in headless Chrome on the real adapter. Add `--quick` for small shapes, `--adapter=swiftshader` for software WebGPU, `--verbose` for progress, `--only=downsampler|reducer|scalar|fixtures` for one part (the four partition the suite; `fixtures` is the tool fixtures' oracle checks), `--compat` for a compatibility-mode device.
+- Shards (CI; test/ci/README.md): `node test/run.js --quick --adapter=swiftshader --shard=3/14` runs one of 14 disjoint shards of the case groups, balanced by `test/ci/durations.json`. `--list --shards=14` checks a partition without running anything (`--verbose` prints the ids). After adding or reshaping cases, re-record durations with `node test/run.js --quick --adapter=swiftshader --record-durations` (about 30 min) or from a CI run's `gpu-durations` artifact.
 - `npm run bench`: validation + benchmark (`--sizes=1024x1024,512x512x6 --rounds=11 --repeats=16 --output=results/x.json`).
 - `npm run lab`: device lab server.
 

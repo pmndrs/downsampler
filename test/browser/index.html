@@ -35,7 +35,8 @@
 
 			// Entry point for the headless runner (test/run.js) and the buttons below.
 			// `compare: 'spd'` times the odd-size strategies (M2T.4); `quality` measures 'spd' against 'exact'.
-			window.runSuite = async ( { bench = false, quick = false, only, sizes, formats, rounds, repeats, compat = false, compare, quality: measureQuality = false, skipValidation = false } = {} ) => {
+			// `shard` ({ index, total }), `durations` and `list`: CI shards of the validation suite (test/ci/README.md).
+			window.runSuite = async ( { bench = false, quick = false, only, sizes, formats, rounds, repeats, compat = false, compare, quality: measureQuality = false, skipValidation = false, shard, durations, list = false } = {} ) => {
 
 				const { device, adapter, userAgent } = await requestDevice( { compat, maxStorageTextures: compare === 'spd' } );
 				const errors = [];
@@ -45,7 +46,7 @@
 
 				try {
 
-					const validation = skipValidation ? { passed: true, cases: 0, checks: 0, skipped: [], ms: 0, results: [] } : await validate( device, { onProgress: progress, quick, only } );
+					const validation = skipValidation ? { passed: true, cases: 0, checks: 0, skipped: [], ms: 0, results: [] } : await validate( device, { onProgress: progress, quick, only, shard, durations, list } );
 					const timing = bench ? await benchmark( device, { sizes, formats, rounds, repeats, compare, onProgress: progress } ) : null;
 					const qualityResults = measureQuality ? await quality( device, { sizes, formats, onProgress: progress } ) : null;
 					await device.queue.onSubmittedWorkDone();

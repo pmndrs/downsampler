@@ -182,7 +182,8 @@ function run( device, reduction, options, mode = 'encode' ) {
 
 }
 
-export async function validateScalar( device, { quick = false, onProgress = () => {} } = {} ) {
+/** `select`: the case-group gate (test/ci/shard.js); one group per section below, and per procedural variant. */
+export async function validateScalar( device, { quick = false, onProgress = () => {}, select = { has: () => true, run: async ( id, fn ) => fn() } } = {} ) {
 
 	const results = [];
 	// Compatibility mode defaults to 4096 texels per side (4111×300 is beyond it).
@@ -192,8 +193,9 @@ export async function validateScalar( device, { quick = false, onProgress = () =
 	const seedBuffer = device.createBuffer( { size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
 
 	// Procedural hooks: exact counting at every size and layer count.
-	for ( const variant of procedural ) {
+	for ( const variant of procedural ) results.push( ...await select.run( `scalar/procedural/${ variant.name.replace( /[^a-z0-9]+/gi, '-' ) }`, async () => {
 
+		const results = [];
 		const reduction = new ScalarReduction( device, { reduce: variant.reduce, load: variant.load, bindings: proceduralBindings } );
 		const bindGroup = device.createBindGroup( { layout: reduction.kernel().partials.getBindGroupLayout( 1 ), entries: [ { binding: 0, resource: { buffer: seedBuffer } } ] } );
 
@@ -207,7 +209,9 @@ export async function validateScalar( device, { quick = false, onProgress = () =
 
 		}
 
-	}
+		return results;
+
+	} ) );
 
 	onProgress( 'validated scalar procedural' );
 
@@ -220,101 +224,122 @@ export async function validateScalar( device, { quick = false, onProgress = () =
 	].map( variant => ( { ...variant, reduction: new ScalarReduction( device, { reduce: variant.reduce } ) } ) );
 	let worst = 0;
 
-	for ( const [ shapeIndex, [ width, height, layers = 1, dimension ] ] of shapes.entries() ) {
+	results.push( ...await select.run( 'scalar/texture', async () => {
 
-		// float32 everywhere but 4K, where rgba16float halves the upload.
-		for ( const format of width * height > 4e6 ? [ 'rgba16float' ] : [ 'rgba32float', 'rgba16float' ] ) {
+		const results = [];
+		for ( const [ shapeIndex, [ width, height, layers = 1, dimension ] ] of shapes.entries() ) {
 
-			const texture = createSource( device, width, height, layers, format, dimension );
+			// float32 everywhere but 4K, where rgba16float halves the upload.
+			for ( const format of width * height > 4e6 ? [ 'rgba16float' ] : [ 'rgba32float', 'rgba16float' ] ) {
 
-			try {
+				const texture = createSource( device, width, height, layers, format, dimension );
 
-				const data = makeHdr( width, height, layers, format, shapeIndex + 1 );
-				upload( device, texture, data );
-				const floats = format === 'rgba16float' ? Float32Array.from( data, fromHalf ) : data;
+				try {
 
-				for ( const variant of textureVariants ) {
+					const data = makeHdr( width, height, layers, format, shapeIndex + 1 );
+					upload( device, texture, data );
+					const floats = format === 'rgba16float' ? Float32Array.from( data, fromHalf ) : data;
 
-					poisonBuffer( device, output );
-					run( device, variant.reduction, { texture, output: { buffer: output, offset: 256 } } );
-					const expected = scalarReference( floats, width, height, layers, variant.reduce );
-					worst = Math.max( worst, checkBound( await readResults( device, output, 256, layers ), expected, `scalar texture ${ variant.name } ${ width }x${ height }x${ layers } ${ format }` ) );
-					results.push( { scalar: `texture ${ variant.name }`, width, height, layers, format } );
+					for ( const variant of textureVariants ) {
+
+						poisonBuffer( device, output );
+						run( device, variant.reduction, { texture, output: { buffer: output, offset: 256 } } );
+						const expected = scalarReference( floats, width, height, layers, variant.reduce );
+						worst = Math.max( worst, checkBound( await readResults( device, output, 256, layers ), expected, `scalar texture ${ variant.name } ${ width }x${ height }x${ layers } ${ format }` ) );
+						results.push( { scalar: `texture ${ variant.name }`, width, height, layers, format } );
+
+					}
+
+					// A layer range, with results at offset 0.
+					if ( layers > 1 ) {
+
+						const reduction = textureVariants[ 1 ].reduction;
+						poisonBuffer( device, output );
+						run( device, reduction, { texture, layers: [ 1, layers - 1 ], output: { buffer: output } }, 'encodePass' );
+						const layerFloats = floats.subarray( width * height * 4 );
+						checkBound( await readResults( device, output, 0, layers - 1 ), scalarReference( layerFloats, width, height, layers - 1, textureVariants[ 1 ].reduce ), `scalar layer range ${ width }x${ height }x${ layers } ${ format }` );
+						results.push( { scalar: 'layer range', width, height, layers, format } );
+
+					}
+
+				} finally {
+
+					texture.destroy();
 
 				}
-
-				// A layer range, with results at offset 0.
-				if ( layers > 1 ) {
-
-					const reduction = textureVariants[ 1 ].reduction;
-					poisonBuffer( device, output );
-					run( device, reduction, { texture, layers: [ 1, layers - 1 ], output: { buffer: output } }, 'encodePass' );
-					const layerFloats = floats.subarray( width * height * 4 );
-					checkBound( await readResults( device, output, 0, layers - 1 ), scalarReference( layerFloats, width, height, layers - 1, textureVariants[ 1 ].reduce ), `scalar layer range ${ width }x${ height }x${ layers } ${ format }` );
-					results.push( { scalar: 'layer range', width, height, layers, format } );
-
-				}
-
-			} finally {
-
-				texture.destroy();
 
 			}
 
+			onProgress( `validated scalar ${ width }×${ height }×${ layers }` );
+
 		}
 
-		onProgress( `validated scalar ${ width }×${ height }×${ layers }` );
+		return results;
 
-	}
+	} ) );
 
 	// Normalized sources: unorm → float conversion needn't be correctly rounded,
 	// so each input may be off by 2^-21 relative (as SPEC §7 allows for folds).
-	for ( const [ width, height, layers = 1 ] of shapes.filter( shape => shape[ 0 ] * shape[ 1 ] <= 2.1e6 ) ) {
+	results.push( ...await select.run( 'scalar/rgba8unorm', async () => {
 
-		const texture = createSource( device, width, height, layers, 'rgba8unorm' );
-		const data = makeData( width, height, layers, 'rgba8unorm', 'random', 5 );
-		upload( device, texture, data );
-		const reduce = [ 'sum', 'average', 'min', 'max' ];
-		const reduction = textureVariants[ 1 ].reduction;
-		poisonBuffer( device, output );
-		run( device, reduction, { texture, output: { buffer: output, offset: 256 } } );
-		checkBound( await readResults( device, output, 256, layers ), scalarReference( toFloats( data, 'rgba8unorm' ), width, height, layers, reduce, { inputError: { relative: 2 ** - 21 } } ), `scalar rgba8unorm ${ width }x${ height }x${ layers }` );
-		results.push( { scalar: 'rgba8unorm', width, height, layers } );
-		texture.destroy();
+		const results = [];
+		for ( const [ width, height, layers = 1 ] of shapes.filter( shape => shape[ 0 ] * shape[ 1 ] <= 2.1e6 ) ) {
 
-	}
+			const texture = createSource( device, width, height, layers, 'rgba8unorm' );
+			const data = makeData( width, height, layers, 'rgba8unorm', 'random', 5 );
+			upload( device, texture, data );
+			const reduce = [ 'sum', 'average', 'min', 'max' ];
+			const reduction = textureVariants[ 1 ].reduction;
+			poisonBuffer( device, output );
+			run( device, reduction, { texture, output: { buffer: output, offset: 256 } } );
+			checkBound( await readResults( device, output, 256, layers ), scalarReference( toFloats( data, 'rgba8unorm' ), width, height, layers, reduce, { inputError: { relative: 2 ** - 21 } } ), `scalar rgba8unorm ${ width }x${ height }x${ layers }` );
+			results.push( { scalar: 'rgba8unorm', width, height, layers } );
+			texture.destroy();
+
+		}
+
+		return results;
+
+	} ) );
 
 	// Depth: min/max of depth32float and depth16unorm (splatted), exact.
-	const depthRange = new ScalarReduction( device, { reduce: [ 'min', 'max', 'min', 'max' ] } );
-	const depthShapes = shapes.filter( ( [ , , layers = 1 ] ) => layers === 1 ).filter( shape => shape[ 0 ] * shape[ 1 ] <= 2.1e6 );
-	for ( const format of [ 'depth32float', 'depth16unorm' ] ) for ( const [ width, height ] of depthShapes ) {
+	results.push( ...await select.run( 'scalar/depth', async () => {
 
-		const values = makeData( width, height, 1, 'r32float', 'random', width + height, { unit: true } );
-		// Plant the extremes in the last texel, so dropped edges fail.
-		values[ values.length - 1 ] = 0.999;
-		if ( values.length > 1 ) values[ values.length - 2 ] = 0.0001;
-		const depth = await createDepthSource( device, { width, height, format }, values );
-		poisonBuffer( device, output );
-		run( device, depthRange, { texture: depth.texture, output: { buffer: output, offset: 256 } } );
-		const splatted = new Float32Array( depth.floats.length );
-		for ( let i = 0; i < splatted.length; i += 4 ) splatted.fill( depth.floats[ i ], i, i + 4 );
-		const slack = format === 'depth16unorm' ? 2 ** - 21 : 0;
-		const [ actual ] = await readResults( device, output, 256, 1 );
-		const [ expected ] = scalarReference( splatted, width, height, 1, depthRange.ops, { inputError: { relative: slack } } );
-		for ( let c = 0; c < 4; c ++ ) if ( ! ( Math.abs( actual.value[ c ] - expected.exact[ c ] ) <= expected.bound[ c ] ) ) throw new Error( `scalar depth ${ format } ${ width }x${ height } channel ${ c }: actual ${ actual.value[ c ] }, expected ${ expected.exact[ c ] }` );
-		results.push( { scalar: `depth min/max ${ format }`, width, height } );
-		depth.texture.destroy();
+		const results = [];
+		const depthRange = new ScalarReduction( device, { reduce: [ 'min', 'max', 'min', 'max' ] } );
+		const depthShapes = shapes.filter( ( [ , , layers = 1 ] ) => layers === 1 ).filter( shape => shape[ 0 ] * shape[ 1 ] <= 2.1e6 );
+		for ( const format of [ 'depth32float', 'depth16unorm' ] ) for ( const [ width, height ] of depthShapes ) {
 
-	}
+			const values = makeData( width, height, 1, 'r32float', 'random', width + height, { unit: true } );
+			// Plant the extremes in the last texel, so dropped edges fail.
+			values[ values.length - 1 ] = 0.999;
+			if ( values.length > 1 ) values[ values.length - 2 ] = 0.0001;
+			const depth = await createDepthSource( device, { width, height, format }, values );
+			poisonBuffer( device, output );
+			run( device, depthRange, { texture: depth.texture, output: { buffer: output, offset: 256 } } );
+			const splatted = new Float32Array( depth.floats.length );
+			for ( let i = 0; i < splatted.length; i += 4 ) splatted.fill( depth.floats[ i ], i, i + 4 );
+			const slack = format === 'depth16unorm' ? 2 ** - 21 : 0;
+			const [ actual ] = await readResults( device, output, 256, 1 );
+			const [ expected ] = scalarReference( splatted, width, height, 1, depthRange.ops, { inputError: { relative: slack } } );
+			for ( let c = 0; c < 4; c ++ ) if ( ! ( Math.abs( actual.value[ c ] - expected.exact[ c ] ) <= expected.bound[ c ] ) ) throw new Error( `scalar depth ${ format } ${ width }x${ height } channel ${ c }: actual ${ actual.value[ c ] }, expected ${ expected.exact[ c ] }` );
+			results.push( { scalar: `depth min/max ${ format }`, width, height } );
+			depth.texture.destroy();
 
-	onProgress( 'validated scalar depth' );
-	results.push( ...await validateCombineOnly( device, { quick } ) );
+		}
+
+		onProgress( 'validated scalar depth' );
+		return results;
+
+	} ) );
+	results.push( ...await select.run( 'scalar/combine-only', () => validateCombineOnly( device, { quick } ) ) );
 	onProgress( 'validated scalar combine-only' );
-	results.push( ...await validateExposure( device, { quick } ) );
-	results.push( ...validateScalarOptions( device ) );
+	results.push( ...await select.run( 'scalar/exposure', () => validateExposure( device, { quick } ) ) );
+	results.push( ...await select.run( 'scalar/options', async () => validateScalarOptions( device ) ) );
 	output.destroy();
 	seedBuffer.destroy();
-	return { results, worst, pairing: `${ pairing.same }/${ pairing.total }` };
+	// null when no float-sum check ran (a shard without the texture groups).
+	return { results, worst, pairing: pairing.total ? `${ pairing.same }/${ pairing.total }` : null };
 
 }
 
