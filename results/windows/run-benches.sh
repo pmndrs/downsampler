@@ -3,7 +3,8 @@
 # clocks are comparable. Each job runs under the shared GPU lock from webgpu-ddgi
 # (tools/reference/bench-lock.ts): one GPU job at a time, a wait until the RTX 3060 is under
 # 70 C, SM/memory clocks sampled every 200 ms and a VALID / INVALID throttling verdict, all in
-# logs/<job>.log. Raw results go next to this file.
+# logs/<job>.log. Raw results go next to this file. Every job is killed after 25 min (owner: no run
+# over 30 min).
 #
 # Usage (Git Bash, from anywhere): sh results/windows/run-benches.sh [job-name-filter]
 # Build first: npm run build, and the native harnesses (native/README.md).
@@ -23,7 +24,7 @@ job() {
 	name=$1; shift
 	case "$name" in *"$FILTER"*) ;; *) return ;; esac
 	echo "=== $name start $( date -Iseconds )"
-	node "$LOCK" run --what "downsampler: $name" --clock-file "$LOGS/$name.clock.json" -- sh -c "cd '$REPO' && $*" > "$LOGS/$name.log" 2>&1
+	timeout 1500 node "$LOCK" run --what "downsampler: $name" --clock-file "$LOGS/$name.clock.json" -- sh -c "cd '$REPO' && $*" > "$LOGS/$name.log" 2>&1
 	echo "=== $name exit $? $( date -Iseconds )"
 	grep -E "^(timing verdict|VALID|INVALID|NO VERDICT)|verdict" "$LOGS/$name.log" | tail -2
 

@@ -80,10 +80,7 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
 - Upscaler exposure, every texel vs 1024 taps: pros/cons and sources sent 2026-11-12. Agreed: merge the bit-identical `perf/exposure-parallel` first
 - Review drafts (local only, gitignored, never pushed): `drafts/webgpu-spd-issues.md` (6 issues), `drafts/gpuweb-5253-comment.md` (numbers to fill from Windows)
 - Upscaler branch `perf/exposure-parallel` is local only: push it to pmndrs/upscaler so the Windows agent can run its measurements, or skip that run
-- Windows (2026-11-12, [results/windows/correctness.md](results/windows/correctness.md)): D3D12 truncates f32 → f16 in `textureStore` **and** `pack2x16float` (NVIDIA and Intel), so quantize-first doesn't round there. Fix in the kernels (bitwise round-to-nearest-even before storing), or accept truncation in the oracle on such devices?
-- Windows: NVIDIA's bilinear filter is outside `reduceReference`'s `filterTolerance` at 65×129 and 255×257 (native render passes show the same). Widen the model for it?
-- Windows: Intel UHD-only deviations (filtered levels at many odd shapes, rg11b10 up to 17 %, a same-size copy, rgb9e5 separate-source level 0) need a targeted look before conclusions. Investigate now, or after the timings?
-- Windows: run the prepared timing session (library + native, ~1 h of GPU time in jobs under 30 min each) despite the open correctness items?
+- Windows, sampler precision ([correctness.md](results/windows/correctness.md)): NVIDIA rounds each 2D tap weight to 1/256, Intel truncates axis weights (even sizes too); `averageAccess: 'load'` passes on both. Default `'sample'`, `'load'`, or `'load'` only after odd sizes? Decide after the sample-vs-load timings on both GPUs
 
 ## Decided (owner, 2026-11-12)
 
@@ -93,6 +90,8 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
 - `oddSizes: 'spd'` stays a public opt-in
 - Tail kernel stays opt-in, documented
 - Upscaler shading change keeps the 8-channel version (documented); the sign-bit version stays an experiment
+- f16 outputs round to nearest even in the shader (D3D12 truncates in `textureStore` and `pack2x16float`), as a configurable default (branch `f16-rounding`)
+- Order on Windows: native timings now; library timings after the f16 change, with `'sample'` vs `'load'` and f16 rounding on/off in the comparison
 ## Verification log
 
 | Date | Commit | Device | Suite | Result |

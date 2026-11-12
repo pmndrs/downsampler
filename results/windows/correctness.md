@@ -48,26 +48,41 @@ Failures it explains (RTX full: about 211 of 287):
 
 Only 65×129 and 255×257, `average` only, only the first output of a batch (sampler-filtered), all formats with float
 storage: e.g. 65×129 rgba16float mip 1, 4.82421875 against 4.8046875 (tolerance 0.0144), 2356 of 8192 values outside.
-The error 5/256 is a 1/256 weight step times a texel difference of about 5, on weights the oracle treats as exact.
 The native D3D12 render-pass chain, `render-rtonly` and the Vulkan blit show the same against `'exact'` in rgba16float at
 1129×635 (18 values, max 12.25 ulp; D3D11 `GenerateMips` 1036 values, max 16.5 ulp;
 [native-semantics-rtx3060.json](native-semantics-rtx3060.json)), so it is the sampler, not our kernel.
 
-### 3. Intel only: larger filtered deviations, not yet explained
+### 3. Intel: the same mechanism, a different sampler
 
-On top of 1 (132 failures, the same checks as NVIDIA):
-- filtered levels off at many odd shapes (3×7, 7×4, 15×17, 17×9, 31×33, 65×129, 192×108, 255×257), at levels 1–4, in
-  `'exact'`, `'spd'` and the tail: e.g. 3×7 rgba16float `'spd'` mip 1, 2.8828 against 2.9219 (tolerance 0.0088);
-- rg11b10ufloat up to 17 % off (15×17 mip 1: 34 against 29);
-- a same-size rgba16float → rgba8unorm `'spd'` copy giving 8/255 where the oracle has 0;
-- `packed/buffer-path`: "rgb9e5 from a separate source: level 0 is not the quantized copy".
+Intel fails the checks of 1 (132) and many more filtered ones: odd and even shapes (3×7 … 1920×1080 in the probe; 15×17,
+31×33, 192×108, 255×257 in the suite), levels 1–4, `'exact'`, `'spd'` and the tail, rg11b10ufloat up to 17 % (values span
+2^−14 … 2^10, so a weight step times a large neighbour is large), and a same-size `'spd'` copy (8/255 where 0 is due).
 
-These are bigger than a weight-precision step and need a targeted look (sampler coordinates on Intel, the packed
-encoders, or the oracle) before anything is concluded. The first full-suite attempt on Intel also lost the device after
-580 s (log: [logs/correctness-low.log](logs/correctness-low.log), first run); the quick runs did not.
+### Why 2 and 3: how each sampler weights (probes, 2026-11-12)
+
+| | RTX 3060 | Intel UHD |
+|---|---|---|
+| Axis weights ([sampler-weights](sampler-weights-rtx3060.json)) | 8-bit, rounded to nearest | 8-bit, **truncated** ([intel](sampler-weights-intel-uhd.json)) |
+| 2D tap weights ([sampler-2d-weights](sampler-2d-weights-rtx3060.json)) | **each of the four products rounded to 1/256** (512 of 1089 grid points off) | exact products ([intel](sampler-2d-weights-intel-uhd.json)) |
+| Filtered f16 result | rounded to f16 (≤ 0.5 ulp) | exact |
+| The library's own taps ([kernel-ramp](kernel-ramp-rtx3060.json)) | exact at 65, 129, 192, 108; ≤ 0.57/256 elsewhere | 1/256 low almost everywhere, **even sizes too** (at 1920 → 960 all 960 weights are 127/256: `uv = (x + 0.5) / n` lands a float ulp under the texel edge and truncation takes the step below; [intel](kernel-ramp-intel-uhd.json)) |
+
+`reduceReference`'s `filterTolerance` allows a 1/256 step per axis only where the axis weight isn't representable in 8
+bits. NVIDIA's per-tap rounding breaks that at sizes with representable axis weights (65, 129: weights k/64, k/128),
+and with random data spanning [−4, 12) the four rounding errors scale with the taps, up to about 0.05; reproduced
+on 65×9, 33×129, 129×129 too. Intel's truncation breaks it everywhere, even sizes included.
+
+**`averageAccess: 'load'` passes on both GPUs in every case** (no failure among the `(load)` variants, 18289 cases on
+the RTX, 10437 on Intel): it applies the weights in the shader. Our kernel arithmetic is right; the hardware samplers
+differ, and the native platforms' own mip paths differ with them.
+
+Still open on Intel: `packed/buffer-path`, "rgb9e5 from a separate source: level 0 is not the quantized copy" (a
+same-size converting copy, so likely the truncated weight at a texel centre, not yet confirmed). The first full-suite
+attempt on Intel also lost the device after 580 s (log: [logs/correctness-low.log](logs/correctness-low.log), first run);
+the quick runs did not.
 
 ## Not changed
 
-No library code (`src/`) was changed on this branch, per the handoff. Fixing 1 needs a shader-side round-to-nearest-even
-(or an oracle that accepts truncation); 2 needs the tolerance model widened for NVIDIA's sampler. Both are owner calls
-(PROGRESS.md, *Waiting on owner*).
+No library code (`src/`) was changed on this branch, per the handoff. Owner decisions (2026-11-12): 1 gets a
+shader-side round-to-nearest-even as a configurable default (branch `f16-rounding`); 2 and 3 wait for the timings of
+`averageAccess: 'sample'` against `'load'` on both GPUs.
