@@ -10,6 +10,7 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
 
 ## Now
 
+- **Continued on branch `f16-rounding`** (from this branch): the library changes the owner decided on (`f16Rounding`, exact converting copies, the sampler tolerance model), every timing (native, webgpu-spd, locked clocks) and the handoff summary `results/windows/README.md`. This branch keeps `src/` unchanged, per the handoff.
 - [ ] Windows runs (owner + a Windows agent, RTX 3060 + Intel UHD): branch `windows-testing`, handoff in `docs/WINDOWS-HANDOFF.md`. Verification, cross-vendor timings, and native D3D12/Vulkan matches (FidelityFX SPD, D3D11 `GenerateMips`, nvpro) for the same sizes
   - [x] Correctness: RTX full + quick + compat quick, Intel quick, all groups run; failures traced to f16 truncation and sampler precision ([results/windows/correctness.md](results/windows/correctness.md)); Intel-only deviations open
   - [x] Native harnesses built (`native/`): D3D12 AMD SPD (8 variants), D3D12 render, D3D11 `GenerateMips`, Vulkan nvpro + blit; level dumps at 1129×635 match our oracles ([native-semantics-rtx3060.json](results/windows/native-semantics-rtx3060.json))
