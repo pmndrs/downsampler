@@ -32,7 +32,7 @@ Last updated: 2026-11-13 (Windows: RTX 3060 Laptop and Intel UHD, native D3D12/V
 | 12 | One `vec4f` workgroup array, not per channel | SPD | Planned (M3) | S | None | Unknown, vendor-dependent |
 | 13 | float32 loads instead of sampling | nvpro | Planned (M3) | S | None | nvpro: sampler 26–32 % faster (NVIDIA) |
 | 14 | No `texture_external` source | fiddle | Candidate | M | None | Saves one full-frame copy per frame |
-| 15 | No sub-rectangle yet | SPD | Planned (M2.4) | M | Depends on the snapping decision | Saves work on partial updates |
+| 15 | Sub-rectangles rewrite exact per-level regions, not 64-texel tiles | SPD | Done (M2.4), tighter by design | — | None | Fewer texels per partial update; bit-identical to a full recompute |
 | 16 | sRGB via scratch copy or buffer, not a UNORM alias | SPD | Planned (M2.3.5) | M | Same results | Extra copy of levels 1+ |
 | 17 | Compute only; no per-device render fallback | `greggman`, `toji` | Risk (M3), reduced | M | None | Windows: with 32×32 exact tiles (2026-11-13) `'exact'` ÷ render is 1.19 / 1.04 in rgba8 (NVIDIA / Intel), the tail kernel 0.98 / 1.02; `'spd'` beats render everywhere |
 | 18 | Needs `STORAGE_BINDING` on the texture | gpuweb#5253 (`Kangz`) | Risk, reduced | — | None | No measurable cost on NVIDIA or Intel (D3D12); Apple, AMD unmeasured |
@@ -196,11 +196,11 @@ Last updated: 2026-11-13 (Windows: RTX 3060 Laptop and Intel UHD, native D3D12/V
 - **Performance (estimate):** saves one full-frame write and read per frame for video pyramids.
 - **Verdict:** candidate. It matters for video, the upscaler or ML preprocessing.
 
-### 15. No sub-rectangle yet
+### 15. Sub-rectangles: exact per-level regions
 - **They:** SPD's `rectInfo` snaps the rect to 64-texel source tiles, and recomputes levels below 64×64 for the whole texture.
-- **We:** don't have it yet; it is planned for M2.4.
-- **Effort:** M. Matching SPD's snapping is simplest. A tighter rect saves more work but needs per-level rounding rules.
-- **Verdict:** planned. Decide the snapping in M2.4.
+- **We:** `rect` (M2.4, SPEC §4 Partial updates) rewrites, per level, exactly the texels whose footprint touches the previous level's rewritten ones (`2x … 2x+2` at odd sizes under `'exact'`, clamped blocks under `'spd'`). Dispatches cover the workgroups holding those texels; stores outside them are skipped. The result is bit-identical to a full recompute, and every other texel is untouched. Layer ranges (`layers`) and every path (tail, buffer, compatibility, separate sources) compose with it.
+- **Cost of converging:** none needed. SPD's snapping would write more texels for the same result; matching it would only matter for a caller relying on SPD rewriting whole 64-texel tiles.
+- **Verdict:** resolved, tighter by design. Not timed.
 
 ### 16. sRGB through a scratch copy or buffer
 - **They:** SPD samples an sRGB view and writes a UNORM alias of the same texture.

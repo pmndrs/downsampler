@@ -7,6 +7,7 @@ import { createDepthSource, createTexture, makeData, poison, readMip, readMips, 
 import { validatePacked } from './validate-packed.js';
 import { validateScalar } from './validate-scalar.js';
 import { validatePayload } from './validate-payload.js';
+import { validateRegion } from './validate-region.js';
 import { validateWide } from './validate-wide.js';
 import { assignShards, digest, Selection } from '../ci/shard.js';
 
@@ -177,6 +178,7 @@ export const compatibility = device => ! device.features.has( 'core-features-and
  * (the tool fixtures' oracle checks) partition it; 'mips' is 'downsampler' plus 'reducer'. 'packed' runs the packed float
  * formats and the buffer output path ('packed-source' and 'packed-api' one piece of it, for debugging).
  * 'odd' runs only the 'spd' and tail variants of the main matrix (part of 'downsampler', for debugging).
+ * 'region' runs only the partial updates (`rect`, `layers`; validate-region.js; part of 'downsampler').
  *
  * `shard` ({ index, total }, 1-based) runs one shard of the case groups (after `only`), split by
  * `durations` (group id → ms; test/ci/README.md). `list` runs nothing and returns the group ids
@@ -221,7 +223,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 	const results = [];
 	const started = performance.now();
-	const cases = only === 'scalar' || only === 'reducer' || only === 'fixtures' ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
+	const cases = only === 'scalar' || only === 'reducer' || only === 'fixtures' || only === 'region' ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
 	let scalarPrecision = null;
 	let runs = 0;
 	const skipped = [];
@@ -403,6 +405,10 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 			// The main matrix's 'spd' and tail variants only (above).
 
+		} else if ( only === 'region' ) {
+
+			results.push( ...await validateRegion( device, { quick, onProgress, select } ) );
+
 		} else if ( only?.startsWith( 'packed' ) ) {
 
 			// 'packed-source' and 'packed-api' run one part (for debugging).
@@ -415,6 +421,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 				results.push( ...await validateSource( device, { quick, onProgress, select } ) );
 				results.push( ...await select.run( 'downsampler/options', () => validateOptions( device ) ) );
+				results.push( ...await validateRegion( device, { quick, onProgress, select } ) );
 				results.push( ...await validatePacked( device, { quick, onProgress, part: 'downsampler', select } ) );
 
 			}

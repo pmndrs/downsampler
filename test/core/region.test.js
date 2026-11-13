@@ -332,3 +332,25 @@ test( 'invalid rects and layer ranges are named', () => {
 	assert.throws( () => planRegions( batches, { x: 0, y: 0, width: 17, height: 1 }, 16, 16 ), /outside the 16×16 level/ );
 
 } );
+
+test( 'region kernels add the region uniform and guard every store; full kernels are unchanged', async () => {
+
+	globalThis.GPUShaderStage ??= { COMPUTE: 4 };
+	const { createKernel, kernelLayoutEntries, regionBinding, regionBytes } = await import( '../../dist/webgpu/kernel.js' );
+	for ( const options of [
+		{ format: 'rgba8unorm', count: 4, tile: 16 }, { format: 'rgba16float', count: 3, tail: true, tile: 32, reduction: 'max' },
+		{ format: 'rgba16float', count: 5, edges: 'clamp' }, { format: 'rgba8unorm', count: 6, output: 'buffer', dimension: '2d-array' }
+	] ) {
+
+		const full = createKernel( options ), partial = createKernel( { ...options, region: true } );
+		assert.ok( ! full.includes( 'ds_region' ) && ! kernelLayoutEntries( options ).some( entry => entry.binding === regionBinding ) );
+		assert.ok( partial.includes( 'let group = ds_group + ds_region.origin.xyz;' ) );
+		// Every level's store is guarded (the exact kernel's first output once per sub-tile).
+		assert.ok( ( partial.match( /ds_inside\(/g ) ?? [] ).length > options.count );
+		assert.deepEqual( kernelLayoutEntries( { ...options, region: true } ).find( entry => entry.binding === regionBinding ).buffer, { type: 'uniform', minBindingSize: regionBytes } );
+
+	}
+
+	assert.throws( () => createKernel( { edges: 'clamp', count: 2, region: true, load: 'fn load(texel: vec2i, layer: u32) -> vec4f { return vec4f(0.0); }', format: 'rgba8unorm' } ), /hooks aren't supported/ );
+
+} );

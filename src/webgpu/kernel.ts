@@ -94,6 +94,35 @@ export interface KernelOptions {
 	 * custom reduce then take instead). Eight channels need both hooks.
 	 */
 	channels?: Channels;
+	/**
+	 * 'exact' kernels and 'clamp' tile kernels without hooks: a partial update
+	 * (`Downsampler` `rect` and `layers`). Adds the region uniform ({@link regionBinding}):
+	 * the dispatch's first workgroup and layer, and per level the texels to store.
+	 * Every texel is computed as in a full dispatch; only stores are restricted.
+	 */
+	region?: boolean;
+}
+
+/** Group 0 binding of the region uniform of partial updates ({@link KernelOptions.region}). */
+export const regionBinding = 11;
+/**
+ * Bytes of the region uniform: `struct { origin: vec4u, bounds: array<vec4u, 6> }`. `origin`
+ * is the first workgroup (x, y, in tiles) and the first layer (z); `bounds[i]` the texels
+ * level i of the dispatch stores, (x0, y0, x1, y1) with x0 ≤ x < x1, or all 0 for none.
+ */
+export const regionBytes = 112;
+
+/** WGSL of the region uniform and `ds_inside(i, texel)`, shared by the kernels that take it. */
+function regionWgsl(): string {
+
+	return `struct DsRegion { origin: vec4u, bounds: array<vec4u, 6> }
+@group(0) @binding(${ regionBinding }) var<uniform> ds_region: DsRegion;
+fn ds_inside(i: u32, texel: vec2u) -> bool {
+	let b = ds_region.bounds[i];
+	return all(texel >= b.xy) && all(texel < b.zw);
+}
+`;
+
 }
 
 /** Group 0 binding of the size uniform (`struct { size: vec2u }`) of tile kernels with a load hook. */
@@ -326,6 +355,7 @@ function tileOptions( options: KernelOptions ) {
 	if ( access === 'sample' && ( edges !== 'clamp' || load !== undefined || resolveReduction( reduction, options.channels ).ops?.some( op => op !== 'average' ) !== false ) ) throw new Error( 'downsampler: tile kernels sample (access "sample") only under \'clamp\', for an all-\'average\' reduction read from a texture; otherwise they read with textureLoad.' );
 	if ( options.tail !== undefined || options.tile !== undefined ) throw new Error( 'downsampler: tail and tile are \'exact\' kernel options.' );
 	checkHooks( { load, store, size } );
+	if ( options.region === true && ( load !== undefined || store !== undefined ) ) throw new Error( 'downsampler: region (partial update) tile kernels read a source texture and write output textures or the buffer output; hooks aren\'t supported.' );
 	if ( size !== undefined && load === undefined ) throw new Error( 'downsampler: a size hook replaces the size uniform of a load hook; without a load hook the size is the source texture\'s.' );
 	if ( typeof bindings !== 'string' ) throw new Error( 'downsampler: bindings must be WGSL declarations for @group(1).' );
 	if ( store === undefined && ( format === undefined || ! isSupportedFormat( format ) ) ) throw new Error( `downsampler: output format ${ JSON.stringify( format ) } is not supported; pass a supported format or a store hook.` );
@@ -355,6 +385,7 @@ export function kernelLayoutEntries( options: KernelOptions ): GPUBindGroupLayou
 		if ( store === undefined && output === 'buffer' ) entries.push( { binding: outputLayoutBinding, visibility, buffer: { type: 'uniform', minBindingSize: outputLayoutBytes } }, { binding: outputBufferBinding, visibility, buffer: { type: 'storage' } } );
 		else if ( store === undefined ) levels.forEach( ( _, i ) => entries.push( { binding: i + 2, visibility, storageTexture: { access: 'write-only', format: format!, viewDimension: dimension } } ) );
 		if ( load !== undefined && size === undefined ) entries.push( { binding: sizeBinding, visibility, buffer: { type: 'uniform', minBindingSize: 8 } } );
+		if ( options.region === true ) entries.push( { binding: regionBinding, visibility, buffer: { type: 'uniform', minBindingSize: regionBytes } } );
 		return entries;
 
 	}
@@ -369,6 +400,7 @@ export function kernelLayoutEntries( options: KernelOptions ): GPUBindGroupLayou
 		entries.push( { binding: outputBufferBinding, visibility, buffer: { type: 'storage' } } );
 
 	} else for ( let i = 0; i < count!; i ++ ) entries.push( { binding: i + 2, visibility, storageTexture: { access: 'write-only', format: format!, viewDimension: dimension } } );
+	if ( options.region === true ) entries.push( { binding: regionBinding, visibility, buffer: { type: 'uniform', minBindingSize: regionBytes } } );
 	return entries;
 
 }
@@ -415,7 +447,7 @@ export function createKernel( options: KernelOptions ): string {
  * tile by the 'exact' rule at any parity (shader bilinear weights for 'average',
  * the `2x … 2x+2` footprint for folds), each quantized as stored.
  */
-function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage', tail = false, tile: tileOption, f16Rounding = 'nearest' }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
+function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage', tail = false, tile: tileOption, f16Rounding = 'nearest', region = false }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
 
 	reductionKey( reduction );
 	const average = reduction === 'average';
@@ -445,6 +477,7 @@ var<workgroup> tile: array<vec4f, ${ tile * tile }>;
 	if ( quantization === 'float16' ) code += float16Wgsl( f16Rounding );
 	if ( buffer ) code += bufferOutputWgsl( format, false, false );
 	else for ( let i = 0; i < count; i ++ ) code += `@group(0) @binding(${ i + 2 }) var mip${ i }: texture_storage_2d${ suffix }<${ format }, write>;\n`;
+	if ( region ) code += regionWgsl();
 
 	// Intermediate levels are quantized exactly as they would be stored.
 	// Normalized values stay in integer units (value × scale) so 2:1 averages are
@@ -575,6 +608,11 @@ fn ds_level_size(i: u32) -> vec2u { return max(ds_output.size >> vec2u(i), vec2u
 	// chain on Intel UHD, rgba8; results/windows/timings.md).
 	const dims = ( i: number ) => buffer ? `ds_level_size(${ i }u)` : i === 0 ? 'textureDimensions(mip0)' : `max(size0 >> vec2u(${ i }u), vec2u(1u))`;
 	const put = ( i: number, pos: string ) => buffer ? `ds_put(${ i }u, ${ pos }, group.z, value);` : `textureStore(mip${ i }, vec2i(${ pos })${ layer }, value / SCALE);`;
+	// Partial updates store only the region's texels (which lie inside the level).
+	const stored = ( i: number, pos: string, size: string ) => region ? `ds_inside(${ i }u, ${ pos })` : `all(${ pos } < ${ size })`;
+	// Partial updates offset the workgroup grid and the layer.
+	const entry = region ? `@builtin(workgroup_id) ds_group: vec3u) {
+	let group = ds_group + ds_region.origin.xyz;` : '@builtin(workgroup_id) group: vec3u) {';
 
 	if ( tail ) {
 
@@ -610,7 +648,7 @@ fn tailStep(pos: vec2u, sourceSize: vec2u, size: vec2u) -> vec4f {
 
 	code += `
 @compute @workgroup_size(${ side }, ${ side })
-fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group: vec3u) {
+fn main(@builtin(local_invocation_id) local: vec3u, ${ entry }
 	let size0 = ${ dims( 0 ) };
 	var value: vec4f;
 `;
@@ -623,7 +661,7 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
 		let pos0 = group.xy * ${ tile }u + p;
 		value = first(min(pos0, size0 - vec2u(1)), size0, group.z);
 		tile[p.y * ${ tile }u + p.x] = value;
-		if (all(pos0 < size0)) { ${ put( 0, 'pos0' ) } }
+		if (${ stored( 0, 'pos0', 'size0' ) }) { ${ put( 0, 'pos0' ) } }
 	}
 `;
 
@@ -645,7 +683,7 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
 	workgroupBarrier();
 	if (all(local.xy < ${ dims( i ) })) {
 		tile[local.y * ${ tile }u + local.x] = value;
-		${ put( i, 'local.xy' ) }
+		${ region ? `if (ds_inside(${ i }u, local.xy)) { ${ put( i, 'local.xy' ) } }` : put( i, 'local.xy' ) }
 	}
 `;
 
@@ -674,7 +712,7 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
 	if (local.x < ${ extent }u && local.y < ${ extent }u) {
 		tile[local.y * ${ tile }u + local.x] = value;
 		let pos = group.xy * ${ extent }u + local.xy;
-		if (all(pos < ${ dims( i ) })) { ${ put( i, 'pos' ) } }
+		if (${ stored( i, 'pos', dims( i ) ) }) { ${ put( i, 'pos' ) } }
 	}
 `;
 
@@ -725,6 +763,8 @@ function createTileKernel( options: KernelOptions ): string {
 	if ( packed !== null ) code += packedFloatWgsl( packed );
 	if ( store === undefined && ! buffer ) levels.forEach( ( level, i ) => code += `@group(0) @binding(${ i + 2 }) var ds_out${ level }: texture_storage_2d${ suffix }<${ format }, write>;\n` );
 	if ( load !== undefined && size === undefined ) code += `struct DsParams { size: vec2u }\n@group(0) @binding(${ sizeBinding }) var<uniform> ds_params: DsParams;\n`;
+	const region = options.region === true;
+	if ( region ) code += regionWgsl();
 	if ( bindings !== '' ) code += `\n// Tool bindings (group 1)\n${ bindings }\n`;
 	if ( load !== undefined ) code += `\n// load hook\n${ load }\n`;
 	if ( store !== undefined ) code += `\n// store hook\n${ store }\n`;
@@ -877,9 +917,13 @@ fn ds_first(p: vec2u, layer: u32) -> ${ T } {
 
 	};
 
+	// Partial updates offset the workgroup grid and the layer, and store only the region's texels.
+	const entry = region ? `@builtin(workgroup_id) ds_group: vec3u) {
+	let group = ds_group + ds_region.origin.xyz;` : '@builtin(workgroup_id) group: vec3u) {';
+	const inside = ( level: number ) => region ? ` && ds_inside(${ levels.indexOf( level ) }u, pos)` : '';
 	code += `
 @compute @workgroup_size(${ side }, ${ side })
-fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group: vec3u) {
+fn main(@builtin(local_invocation_id) local: vec3u, ${ entry }
 	var value: ${ T };
 `;
 	if ( levels.includes( 1 ) ) code += `	let size1 = ${ levelSize( 1 ) };\n`;
@@ -891,7 +935,7 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
 		let p = local.xy + vec2u(${ ( i % samples ) * side }u, ${ Math.floor( i / samples ) * side }u);
 		let pos = group.xy * ${ tile }u + p;
 		value = ds_first(pos, group.z);
-${ count > 1 ? `		ds_tile[p.y * ${ tile }u + p.x] = value;\n` : '' }${ levels.includes( 1 ) ? `		if (all(pos < size1)) { ${ emit( 1, 'pos' ) } }\n` : '' }	}
+${ count > 1 ? `		ds_tile[p.y * ${ tile }u + p.x] = value;\n` : '' }${ levels.includes( 1 ) ? `		if (all(pos < size1)${ inside( 1 ) }) { ${ emit( 1, 'pos' ) } }\n` : '' }	}
 `;
 
 	}
@@ -913,7 +957,7 @@ ${ count > 1 ? `		ds_tile[p.y * ${ tile }u + p.x] = value;\n` : '' }${ levels.in
 `;
 		if ( levels.includes( level ) ) code += `	if (local.x < ${ extent }u && local.y < ${ extent }u) {
 		let pos = group.xy * ${ extent }u + local.xy;
-		if (all(pos < ${ levelSize( level ) })) { ${ emit( level, 'pos' ) } }
+		if (all(pos < ${ levelSize( level ) })${ inside( level ) }) { ${ emit( level, 'pos' ) } }
 	}
 `;
 

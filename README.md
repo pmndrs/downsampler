@@ -27,6 +27,11 @@ downsampler.generate( texture );                    // encode + submit
 downsampler.encode( encoder, texture );             // or record into your own encoder
 downsampler.encode( encoder, texture, { baseMipLevel: 2, mipLevelCount: 4 } );
 
+// Partial updates: only the texels that depend on a changed region (bit-identical to a full
+// recompute), and only some array layers. Works with every option below.
+downsampler.encode( encoder, texture, { rect: { x: 128, y: 64, width: 32, height: 32 } } );
+downsampler.encode( encoder, cubeAs2dArray, { layers: [ 2, 1 ] } );
+
 // Reduction pyramids. Odd sizes include the extra row/column, so min/max are conservative.
 downsampler.generate( texture, { reduction: 'max' } );
 downsampler.generate( texture, { reduction: 'minmax' } );  // r/b = min, g/a = max
