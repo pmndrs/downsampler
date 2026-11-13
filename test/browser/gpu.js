@@ -1,5 +1,5 @@
 // Shared browser-side helpers for the GPU suite, benchmark and device lab.
-import { formats, fromHalf, integerDomains, isIntegerDomain, isPackedQuantization, isSupportedFormat, packTexel, storageWritable, toHalf, unpackTexel } from '/dist/index.js';
+import { formats, fromHalf, srgbDecodeTable, integerDomains, isIntegerDomain, isPackedQuantization, isSupportedFormat, packTexel, storageWritable, toHalf, unpackTexel } from '/dist/index.js';
 import { requiredLimits } from '/dist/webgpu/index.js';
 
 /**
@@ -62,14 +62,18 @@ function storage( format ) {
 
 	const { quantization, channels } = formats[ format ];
 	if ( isPackedQuantization( quantization ) ) return { channels: 1, Array: Uint32Array, quantization, packed: true };
-	const arrays = { unorm8: Uint8Array, snorm8: Int8Array, unorm16: Uint16Array, snorm16: Int16Array, float16: Uint16Array, float32: Float32Array };
+	const arrays = { unorm8: Uint8Array, srgb8: Uint8Array, snorm8: Int8Array, unorm16: Uint16Array, snorm16: Int16Array, float16: Uint16Array, float32: Float32Array };
 	return { channels, Array: arrays[ quantization ], quantization };
 
 }
 
-/** A value in a format's encoding (the inverse of `decode`), rounding to nearest. */
+/**
+ * A value in a format's encoding (the inverse of `decode`), rounding to nearest. sRGB
+ * fixtures are made as codes: the value is the encoded one (code / 255) in every channel.
+ */
 function encode( value, quantization ) {
 
+	if ( quantization === 'srgb8' ) return Math.min( 255, Math.max( 0, Math.round( value * 255 ) ) );
 	if ( isIntegerDomain( quantization ) ) {
 
 		const { scale, min, max } = integerDomains[ quantization ];
@@ -81,8 +85,10 @@ function encode( value, quantization ) {
 
 }
 
-function decode( stored, quantization ) {
+/** A stored value as a read returns it; sRGB colour channels through the exact decode table (alpha is linear). */
+function decode( stored, quantization, channel ) {
 
+	if ( quantization === 'srgb8' ) return channel === 3 ? Math.fround( stored / 255 ) : srgbDecodeTable[ stored ];
 	if ( isIntegerDomain( quantization ) ) return Math.max( - 1, stored / integerDomains[ quantization ].scale );
 	return quantization === 'float16' ? fromHalf( stored ) : stored;
 
@@ -170,7 +176,7 @@ export function toFloats( data, format ) {
 	for ( let i = 0; i < texels; i ++ ) for ( let c = 0; c < 4; c ++ ) {
 
 		const value = c < channels ? data[ i * channels + c ] : c === 3 ? 1 : 0;
-		output[ i * 4 + c ] = c >= channels ? value : decode( value, quantization );
+		output[ i * 4 + c ] = c >= channels ? value : decode( value, quantization, c );
 
 	}
 

@@ -7,6 +7,7 @@
  */
 import { integerDomains, isIntegerDomain, isPackedQuantization, packedStep, quantize, quantizeTexel, roundHalfEven, type Quantization } from './formats.js';
 import { foldChannel, footprint, type ReferenceReduction } from './reduction.js';
+import { srgbLevel, srgbSteps } from './srgb.js';
 
 export interface ReferenceLevel {
 	width: number;
@@ -63,6 +64,9 @@ export interface ReferenceOptions {
  * {@link tolerance}.
  */
 export function reduceReference( source: Float32Array, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction = 'average', { quantizedInput = true, pairing, weights = 'sampler' }: ReferenceOptions = {} ): ReferenceLevel {
+
+	// sRGB: colour in linear float32 then encoded as stored, alpha as unorm8 (src/core/srgb.ts).
+	if ( quantization === 'srgb8' ) return srgbLevel( ( q, input ) => reduceReference( source, width, height, layers, q, reduction, { quantizedInput: input, pairing, weights } ), quantizedInput );
 
 	const w = Math.max( 1, Math.floor( width / 2 ) ), h = Math.max( 1, Math.floor( height / 2 ) );
 	const values = new Float32Array( w * h * layers * 4 );
@@ -194,7 +198,8 @@ export interface ToleranceTexel {
 }
 
 /**
- * Declared comparison tolerance for one value: about two steps for normalized formats,
+ * Declared comparison tolerance for one value: about two steps for normalized formats
+ * (sRGB: two codes, so `texel` is required: its alpha is plain unorm8),
  * or max(0.002, 0.3 %) for float16, or 1e-5 relative for float32, or two steps of
  * the stored value plus 2^-13 for the packed float formats (rgb9e5ufloat: steps of the texel's
  * shared exponent, so `texel` is required), plus the reference's filter allowance. Fold
@@ -213,6 +218,13 @@ export function tolerance( expected: number, quantization: Quantization, filterT
 
 	}
 	if ( isIntegerDomain( quantization ) ) return 2.01 / integerDomains[ quantization ].scale + filterTolerance;
+	// sRGB: two codes around the value (linear steps grow with the value); alpha as unorm8.
+	if ( quantization === 'srgb8' ) {
+
+		if ( texel === undefined ) throw new Error( 'downsampler: srgb8 tolerances need the texel (channel 3 is linear alpha).' );
+		return ( texel.channel === 3 ? 2.01 / 255 : srgbSteps( expected, 2 ) * 1.0001 ) + filterTolerance;
+
+	}
 	// float32 kernels compute in f32 and the reference in f64: a few ulps.
 	if ( quantization === 'float32' ) return Math.max( 1e-6, Math.abs( expected ) * 1e-5 ) + filterTolerance;
 	return Math.max( 0.002, Math.abs( expected ) * 0.003 ) + filterTolerance;

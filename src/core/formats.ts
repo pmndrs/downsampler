@@ -2,13 +2,14 @@
  * Formats and how intermediate levels are quantized so that every level matches
  * what would be read back from the stored texture.
  */
+import { quantizeSrgb } from './srgb.js';
 
 /**
  * How values are rounded between levels. The packed float formats quantize a
  * whole texel ({@link quantizeTexel}): rgb9e5ufloat shares one exponent across
  * r, g and b, and rg11b10ufloat has 11-, 11- and 10-bit channels.
  */
-export type Quantization = 'unorm8' | 'snorm8' | 'unorm16' | 'snorm16' | 'float16' | 'float32' | PackedQuantization;
+export type Quantization = 'unorm8' | 'snorm8' | 'unorm16' | 'snorm16' | 'float16' | 'float32' | 'srgb8' | PackedQuantization;
 
 /** Quantizations of formats that pack r, g and b into one 32-bit word (no alpha). */
 export type PackedQuantization = 'rgb9e5ufloat' | 'rg11b10ufloat';
@@ -49,7 +50,7 @@ export interface FormatInfo {
 	filterable: boolean;
 	/** Device feature needed to use it as a storage texture, if any. */
 	feature?: string;
-	/** False for formats that can never be storage textures (rgb9e5ufloat): only the buffer output path writes them. */
+	/** False for formats that can never be storage textures (rgb9e5ufloat, the sRGB formats): only the buffer output path writes them. */
 	storage?: false;
 	/** Storage needs 'core-features-and-limits': not available in compatibility mode (rg32float). */
 	coreStorage?: true;
@@ -85,7 +86,12 @@ export const formats = {
 	// it is always written through the buffer output path; rg11b10ufloat takes
 	// that path without texture-formats-tier1 (or without STORAGE_BINDING usage).
 	rgb9e5ufloat: { quantization: 'rgb9e5ufloat', bytesPerTexel: 4, channels: 3, filterable: true, storage: false },
-	rg11b10ufloat: { quantization: 'rg11b10ufloat', bytesPerTexel: 4, channels: 3, filterable: true, feature: 'texture-formats-tier1' }
+	rg11b10ufloat: { quantization: 'rg11b10ufloat', bytesPerTexel: 4, channels: 3, filterable: true, feature: 'texture-formats-tier1' },
+	// sRGB colour (src/core/srgb.ts): read through the sRGB view (decoded to linear by the
+	// hardware), reduced in linear, encoded in the shader and written through the buffer
+	// output path: WebGPU has no sRGB storage textures, even through a view. Alpha is linear.
+	'rgba8unorm-srgb': { quantization: 'srgb8', bytesPerTexel: 4, channels: 4, filterable: true, storage: false },
+	'bgra8unorm-srgb': { quantization: 'srgb8', bytesPerTexel: 4, channels: 4, filterable: true, storage: false }
 } as const satisfies Record<string, FormatInfo>;
 
 export type SupportedFormat = keyof typeof formats;
@@ -173,10 +179,10 @@ export function fromHalf( bits: number ): number {
 
 }
 
-/** Quantize a value the way the GPU kernels do between levels. Packed formats quantize whole texels: use {@link quantizeTexel}. */
+/** Quantize a value the way the GPU kernels do between levels. Packed and sRGB formats quantize whole texels: use {@link quantizeTexel}. */
 export function quantize( value: number, quantization: Quantization ): number {
 
-	if ( isPackedQuantization( quantization ) ) throw new Error( `downsampler: ${ quantization } quantizes whole texels; use quantizeTexel.` );
+	if ( isPackedQuantization( quantization ) || quantization === 'srgb8' ) throw new Error( `downsampler: ${ quantization } quantizes whole texels; use quantizeTexel.` );
 	if ( isIntegerDomain( quantization ) ) {
 
 		const { scale, min, max } = integerDomains[ quantization ];
@@ -341,10 +347,19 @@ export function unpackTexel( bits: number, quantization: PackedQuantization ): [
 
 /**
  * Quantize one RGBA texel as stored, in place at `offset` of `values`. Packed
- * formats pack and unpack r, g and b (a sampled read returns alpha 1); the
+ * formats pack and unpack r, g and b (a sampled read returns alpha 1); sRGB
+ * formats encode and decode linear r, g and b, and alpha is unorm8; the
  * others quantize each value.
  */
 export function quantizeTexel( values: { [ index: number ]: number }, offset: number, quantization: Quantization ): void {
+
+	if ( quantization === 'srgb8' ) {
+
+		for ( let c = 0; c < 3; c ++ ) values[ offset + c ] = quantizeSrgb( values[ offset + c ] );
+		values[ offset + 3 ] = quantize( values[ offset + 3 ], 'unorm8' );
+		return;
+
+	}
 
 	if ( isPackedQuantization( quantization ) ) {
 
