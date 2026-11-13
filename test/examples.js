@@ -15,8 +15,13 @@ const args = process.argv.slice( 2 );
 const value = name => args.find( arg => arg.startsWith( `--${ name }=` ) )?.slice( name.length + 3 );
 const directory = fileURLToPath( new URL( '../examples/', import.meta.url ) );
 const only = value( 'only' )?.split( ',' );
-// Every page, plus option presets of the mip chain (its query string sets the controls).
-const variants = [ 'mip-chain.html?odd=spd', 'mip-chain.html?size=1129x635&odd=spd', 'mip-chain.html?size=255x257&tail=0', 'mip-chain.html?size=31x31' ];
+// Every page, plus option presets (a page's query string sets its controls).
+const variants = [
+	'mip-chain.html?odd=spd', 'mip-chain.html?size=1129x635&odd=spd', 'mip-chain.html?size=255x257&tail=0', 'mip-chain.html?size=31x31',
+	'partial-update.html?odd=box', 'partial-update.html?size=257x255&odd=spd', 'partial-update.html?size=1920x1080',
+	'odd-sizes.html?size=31x31', 'odd-sizes.html?size=1477x831',
+	'hi-z-pow2.html?hiz=2048x1024', 'hi-z-pow2.html?size=1129x635&hiz=512x256', 'hi-z-pow2.html?hiz=1024x1024',
+];
 const pages = [ ...readdirSync( directory ).filter( file => file.endsWith( '.html' ) ).sort(), ...variants ].filter( file => only === undefined || only.some( name => file.startsWith( name ) ) );
 
 const browserArgs = [ '--enable-unsafe-webgpu' ];
