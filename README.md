@@ -19,6 +19,7 @@ npm install downsampler
 | `downsampler/webgpu` | `Downsampler`, `Reducer`, `ScalarReduction` and the WGSL generators |
 | `downsampler/three` | `generateMipmaps( renderer, texture )` for `WebGPURenderer` |
 | `downsampler` | the backend-neutral core: planning, formats and the CPU reference implementations (oracles) |
+| `downsampler/mipmap` | one self-contained file (no imports) for vendoring in-place `'average'` mip chains, e.g. into three.js: the kernel generator, planner and `kernelDefaults` |
 
 ## Quick start
 

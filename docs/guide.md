@@ -10,6 +10,7 @@ Every public API, option and default, checked against the TypeScript source (`sr
 - [ScalarReduction: an image to one value](#scalarreduction-an-image-to-one-value)
 - [three.js](#threejs)
 - [The core package: oracles and planning](#the-core-package-oracles-and-planning)
+- [Vendoring: `downsampler/mipmap`](#vendoring-downsamplermipmap)
 - [Coming next](#coming-next)
 
 ## Setup
@@ -576,6 +577,41 @@ The texture must have `STORAGE_BINDING` usage (in current three.js a `StorageTex
 | `srgbCode`, `srgbDecodeTable`, `quantizeSrgb`, `srgbThresholds`, `srgbBounds`, `srgbDecode`, `srgbEncode` | sRGB: the correctly rounded encoder, the exact decode table, the rounding thresholds and the f32 bounds the shader compares against. The oracles take the quantization `'srgb8'`. |
 
 The WGSL generators are exported from `downsampler/webgpu` for vendoring: `createKernel`, `kernelLayoutEntries`, `float16Wgsl`, `packedFloatWgsl`, `srgbWgsl`, `bufferOutputWgsl`, `createIntKernel`, `intMeanWgsl`, `createScalarKernel`. An exact kernel for an sRGB format with `output: 'storage'` writes the encoded bytes to storage textures of the linear alias format (`srgbScratchFormat`: `rgba8unorm` or `bgra8unorm`), for a self-dispatching tool that copies them into the sRGB level with `copyTextureToTexture`.
+
+## Vendoring: `downsampler/mipmap`
+
+An engine that can't take a dependency (three.js's `WebGPUTextureMipmapUtils`) copies one file: `dist/mipmap.js`, built from `src/mipmap.ts`. It imports nothing, is plain ES2022 (about 19 KB, 350 lines with comments) and holds in-place `'average'` chains only: the `'exact'` and tail kernels, the planner, the default rules and the formats they write.
+
+```js
+import { createMipmapKernel, kernelDefaults, mipmapAccess, mipmapFormats, planMipmapBatches } from 'downsampler/mipmap';
+
+const defaults = kernelDefaults( device.limits, device.adapterInfo ); // { levelsPerDispatch, bufferLevelsPerDispatch, exactTile, tailMaxTile, tail }
+const access = mipmapAccess( texture.format, device.features );       // 'sample', or 'load' for unfilterable formats
+for ( const batch of planMipmapBatches( texture.width, texture.height, { mipLevelCount: texture.mipLevelCount, ...defaults } ) ) {
+
+	const code = createMipmapKernel( { format: texture.format, dimension, count: batch.count, access, tail: batch.kernel === 'tail', tile: batch.tile } );
+	// Bindings: 0 filtering sampler ('sample' only), 1 view of level batch.sourceMipLevel ('float' or 'unfilterable-float'),
+	// 2 … count + 1 write-only storage views of levels batch.firstMipLevel …; dispatch groupsX × groupsY × layers.
+
+}
+```
+
+| Export | What it is |
+|---|---|
+| `createMipmapKernel( { format, dimension?, count, access?, tail?, tile?, f16Rounding? } )` | One batch's WGSL. Equal to `createKernel( { ...options, f16Pack: false } )` of `downsampler/webgpu`: float16 kernels define `ds_round_f16` alone, without the buffer path's `ds_half_bits` and `ds_pack_f16`. |
+| `planMipmapBatches( width, height, { mipLevelCount?, levelsPerDispatch, tail?, tailMaxTile?, exactMinTile? } )` | The batches, equal to core `planBatches` in place under `'exact'`; the tail is on by default. Takes `exactTile` for `exactMinTile`, so `kernelDefaults( … )` spreads in. |
+| `kernelDefaults( limits, adapterInfo? )` | The device defaults `Downsampler` resolves its options from: levels per dispatch (storage textures, and the buffer path's), the `'exact'` tile (32, 16 on Apple, 8 below 256 invocations and on software adapters), the largest tail tile, and `tail: true`. Pure. |
+| `mipmapFormats`, `mipmapAccess( format, features? )` | The 19 storage formats with a float view (8- and 16-bit normalized, float16, float32), each with its quantization, filterability and storage feature. sRGB, packed, `rgb10a2unorm` and integer formats need the full library. |
+
+A copy may be restyled and pruned, but its WGSL must stay byte for byte the library's: three's GPU suite doesn't cover what this repo's does, so equal WGSL is what makes this suite its oracle. Check it with
+
+```sh
+node scripts/check-vendored.mjs path/to/WebGPUTextureMipmapUtils.js
+```
+
+which imports the file (its relative imports resolved), calls its generator (an exported `createMipmapKernel`, or a module-level `createKernel` taking options or three's positional `( format, dimension, count, access, tail, tile )`) on the golden option sets in `test/golden/mipmap/cases.json`, and compares each result with its `.wgsl` file. It prints the matching count, the cases that differ with a line diff, and the changed lines across all of them; cases the copy rejects (formats it leaves out) are listed as not covered and don't fail it. Exit status 1 means drift.
+
+When the library's kernels change on purpose, `npm run golden:update` rewrites the goldens (`test/core/golden.test.js` fails until then), and the diff of `test/golden/mipmap/` is the change a vendored copy has to follow.
 
 ## Coming next
 

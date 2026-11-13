@@ -29,6 +29,10 @@ The first release.
 
 - `generateMipmaps( renderer, texture, options )` for `WebGPURenderer` (storage textures, or `COPY_DST` textures on the buffer path), `unsupportedReason`, `getDownsampler` (shared per device and option set), `getGPUTexture` and `requiredLimits`. `three` is an optional peer, typed structurally.
 
+### Vendoring (`downsampler/mipmap`)
+
+- One self-contained file for in-place `'average'` chains (`createMipmapKernel`, `planMipmapBatches`, `kernelDefaults`, …), the same kernels as `Downsampler`, checked against golden WGSL.
+
 ### Core (`downsampler`)
 
 - Backend-neutral planning, region math, format codecs and the CPU oracles every kernel is tested against (`reduceReference`, `boxReference`, `areaReference`, `spdReference`, `reducePyramid`, `scalarReference`, …).
