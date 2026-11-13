@@ -3,7 +3,9 @@
 //   node test/run.js --quick             small shapes only
 //   node test/run.js --only=scalar       one part of the suite: downsampler, reducer, scalar, fixtures
 //                                        (a partition), or mips (downsampler + reducer); CI uses --shard instead
-//                                        or box (the 'box' and resample checks of downsampler, for debugging)
+//                                        or box (the 'box' and resample checks of downsampler, for debugging),
+//                                        srgb (the sRGB formats: matrix, sources, validate-srgb.js), integer
+//                                        (the integer formats), format:rgb10a2unorm (one format's main matrix)
 //   node test/run.js --bench             validation + benchmark
 //   node test/run.js --bench --sizes=1024x1024,512x512x6 --formats=rgba8unorm --rounds=11 --repeats=16
 //   node test/run.js --output=results/report.json --headful
@@ -212,7 +214,7 @@ try {
 			...Object.fromEntries( names.map( name => [ name, `${ row.gpuMs[ name ].toFixed( 4 ) } (${ ( row.gpuMs[ name ] / row.gpuMs[ name.endsWith( 'Max' ) ? 'exactMax' : 'exact' ] ).toFixed( 2 ) })` ] ) )
 		} ) ) );
 
-	} else if ( timing?.results.length && ( options.compare === 'webgpu-spd' || options.compare === 'render' ) ) {
+	} else if ( timing?.results.length && ( options.compare === 'webgpu-spd' || options.compare === 'render' || options.compare === 'srgb' ) ) {
 
 		// Paired per-round ratios to 'exact' (averages) and 'exactMax' (max); 'render': to render passes.
 		console.table( timing.results.map( row => ( {

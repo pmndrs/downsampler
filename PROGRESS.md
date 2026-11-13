@@ -10,10 +10,7 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Now
 
-- [ ] Formats: rgb10a2unorm (M2.3.3) + integer formats (M2.3.7) (agent, branch `formats-rgb10a2-int`)
-- [ ] sRGB destinations + transform hooks (M2.3.5) (agent, branch `srgb`)
 - [ ] API polish + ship prep: empty rect no-op, region buffers destroyed after submit, `maxResampleRatio` option, one source shape, package/CHANGELOG/release workflow, durations re-record (agent, branch `ship-prep`)
-- [ ] three.js in-tree compute mipmaps (SPEC §10.2), local three.js worktree `three.js-compute-mips`, branch `compute-mipmaps`; not pushed (agent)
 - [x] Windows runs (owner + a Windows agent, RTX 3060 + Intel UHD), merged from `f16-rounding` (`a3b9517`): branch `windows-testing`, handoff in `docs/WINDOWS-HANDOFF.md`. Verification, cross-vendor timings, and native D3D12/Vulkan matches (FidelityFX SPD, D3D11 `GenerateMips`, nvpro) for the same sizes
   - [x] Correctness: RTX full + quick + compat quick, Intel quick, all groups run; failures traced to f16 truncation and sampler precision, both explained by probes ([results/windows/correctness.md](results/windows/correctness.md))
   - [x] Native harnesses built (`native/`): D3D12 AMD SPD (8 variants), D3D12 render, D3D11 `GenerateMips`, Vulkan nvpro + blit; level dumps at 1129×635 match our oracles ([native-semantics-rtx3060.json](results/windows/native-semantics-rtx3060.json))
@@ -32,6 +29,8 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Next (SPEC §11)
 
+- [ ] Vendoring support for three.js (from the integration): a single-file in-place mip entry point (`createMipmapKernel`, `planMipmapBatches`, format table); the default rules as a pure `kernelDefaults( limits, adapterInfo )`; golden WGSL snapshots + a drift-check script for vendored copies; a `ds_round_f16`-only float16 variant; SPEC §2.1/§7 wording: "matches render passes" = within 1 step per level, up to 2 over independent chains on Apple (Metal render passes follow no fixed tie rule: round-half-up differs at 46 % of ties, round-to-even at 37 %). After the formats and sRGB branches merge
+- [ ] Possible three.js issue (outside our PR): in compatibility mode its render-pass mips of a 33² rgba8 cube differ by up to 6 steps from the same faces as a 2d-array (`main_cube` half-texel at odd sizes?); not investigated
 - [ ] One source shape after M2.5: `source: GPUTexture | TextureLevel` everywhere (ScalarRun's `texture` + `mipLevel` too), shared source checks in one module, `width`/`height` instead of `size: [ w, h ]`, `layers: [ first, count ]` everywhere (Reducer's count → `layerCount` until it takes a first layer)
 - [ ] Re-record `test/ci/durations.json` (41 new `region/*` groups, plus M2.5's)
 - [ ] Test hardening from the review: oracle `weights` default `'shader'` (fail closed; callers that sample opt into `'sampler'`); tile-equivalence at 16/32 on the buffer path, compat, `baseMipLevel` sub-range, separate source and tail; an f16 tie check through in-tile combine, tail and `'spd'` batches; a same-size copy next to Inf/NaN
@@ -40,9 +39,7 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Deferred (three.js-driven)
 
-- [ ] M2.3.3: rgb10a2unorm
-- [ ] M2.3.5: sRGB + transform hooks for colour textures (hooks themselves arrive with M2T.1)
-- [ ] M2.3.7: integer formats
+- [ ] Transform hooks around the average (premultiplied alpha, log luminance): deferred, design sketch in SPEC §5 Planned
 
 ## Later
 
@@ -53,6 +50,9 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] M2.3.3 + M2.3.7: rgb10a2unorm (units (1023, 1023, 1023, 3), tier1 storage or buffer path) and integer formats (all core and tier1 uint/sint plus rgb10a2uint; own `vec4u` kernel; exact mean with ties to even at any width, no overflow; folds, custom `reduce` on vec4u/vec4i; same-signedness sources clamped; `'spd'`/Reducer/ScalarReduction rejected). Oracle `intReference`, 16/16 mutations caught, WGSL of existing formats byte-identical (`f4f89c6`, `d9cc128`, `d1432b7`, `b09a1b2`, `8be6de5`, merged). M5 Pro full matrix 35,517 cases (9 uncapped shards), SwiftShader integer quick 2,886; DIVERGES #24 added
+- [x] M2.3.5: sRGB destinations (rgba8unorm-srgb, bgra8unorm-srgb): sRGB view read, linear reduction, correctly rounded encode in the shader, buffer output path (a scratch texture measured a tie: 0.95 / 1.00 / 1.00); loads snap to the exact decode (the M5 Pro decodes to 12 bits, k/4095); `scratch: GPUBuffer` + `scratchSize()`; 10/10 mutations caught; DIVERGES #16 done (`d2e2857`, `98ce9d1`, `32218d0`, `85b0904`, merged). M5 Pro: full matrix 24,664 cases (9 shards), `--only=srgb` 2,144, compat quick 402, core 103, examples 21. Render passes are faster for sRGB from 1080p up (0.55–0.79× our time, loaded machine): the buffer path writes and copies every level
+- [x] three.js in-tree compute mipmaps (SPEC §10.2): `new WebGPURenderer( { mipmapGeneration: 'compute' } )`, default stays `'render'`. Vendored `'exact'` + tail kernel, planner, f16 rounding (library `488eff6`) into `WebGPUTextureMipmapUtils.js` (611 lines); STORAGE_BINDING added to eligible textures; `maxStorageTexturesPerShaderStage` requested; render-pass fallback for sRGB (until the sRGB path), compressed, MSAA, 3D/depth, packed/integer formats, compatibility mode; cubes as 6-layer 2d-array on core devices. Local worktree `/Users/dex/Developer/three.js-compute-mips`, branch `compute-mipmaps` (`2d0648f1f7`…`dc4bd5e5c1`), base upstream dev `3f7edc3d75`; not pushed; draft PR text in `PR-compute-mipmaps.md` there. M5 Pro: three unit 1982/1982, new parity test 72/72 (≤ 1 step per level vs render passes, ≤ 2 over a chain), e2e 208/209 identical with compute forced on (`webgpu_refraction` 0.1 % of pixels: mip differences used as UV offsets)
 - [x] Examples round 2: partial-update.html (rect + layers, bit-identical to a full recompute), odd-sizes.html ('exact'/'spd'/'box' vs the area-weighted ideal: mean error at 1129×635 is 2.1 / 5.1 / 0.29 in 1/255), hi-z-pow2.html (resample 'area', conservative vs every depth texel; a 2×2-tap pyramid misses 93,859 texels at 1024×512); Recipes in docs/guide.md, snippets type-checked against dist (`4c2f55d`, merged); M5 Pro: 21/21 example pages pass
 - [ ] Follow-up: `ScalarReduction` exposes no `bindGroupLayouts` for hooks (Reducer does)
 - [x] M2.5: `oddSizes: 'box'` (nvpro area weights in the shader, `'exact'` batches, the tail carries odd steps; folds identical to `'exact'`) and `source.resample: 'area'` (any destination size up/down to 8× per axis, e.g. power-of-two Hi-Z; conservative folds; 2048×1024 in 2 dispatches); `rect` composes with both (`areaDependents`); full-update WGSL unchanged (2,704 option sets byte-identical); 9/9 mutations caught (`2ad91a7`, `bb16237`, `ac86eee`, merge `a39022b`); DIVERGES #3 updated, #23 added
@@ -106,6 +106,8 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Decided (owner, 2026-11-13)
 
+- (coordinator) three.js keeps render-pass mipmaps for sRGB textures until Windows/idle numbers say otherwise: our sRGB path wins only up to 1280×720 on the M5 (loaded); measurement added to the Windows brief
+- (coordinator) `test/parallel.js` caps stay fixed; on an overloaded machine re-run shards with `test/run.js --shard=i/N`
 - Empty rect (0×0): a no-op, as WebGPU's zero-size copies are
 - Rect ring buffer (dynamic offsets, no allocation per new rect): not now; documented as a future task (Later)
 - `source.resample: 'area'` stays explicit; the ratio cap stays 8× per axis, as an option if that is free (`maxResampleRatio`), raised later if a tool needs it
@@ -158,6 +160,7 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 | 2026-11-12 | `b6aca67` + harness fixes | RTX 3060 Laptop, D3D12 | quick / compat quick, parallel | ❌ 10444 cases, 2 min, 189 failures / ❌ 10355 cases, 2 min, 187 (same causes) |
 | 2026-11-12 | `b6aca67` + harness fixes | Intel UHD, D3D12, driver 31.0.101.5333 | quick, parallel (12 × 4) | ❌ 10437 cases, 2.4 min, 629 failures (f16 truncation + Intel-only deviations) |
 | 2026-11-13 | `198728a` | Apple M5 Pro, Chrome 148 | quick (unsharded) | ✅ 10477 cases, 731 groups, 40 s (before `5f97c86`: ❌ f16 truncation, separate-source rgba16float) |
+| 2026-11-13 | `8be6de5` | Apple M5 Pro, Chrome 148, loaded (~500) | full GPU matrix (9 uncapped shards) / core / examples | ✅ 35517 cases, 79132 pattern runs / ✅ 109 / ✅ 21 (branch `formats-rgb10a2-int`, includes sRGB) |
 | 2026-11-13 | `a39022b` | Apple M5 Pro, Chrome 148, loaded | full GPU matrix (parallel, 9 shards × 3) / core / examples | ✅ 22436 cases, 65572 pattern runs, 1980/1980 groups, 0 failures, 22 min 55 s / ✅ 92 / ✅ 10 |
 | 2026-11-13 | `9bc4c7e` | Apple M5 Pro, Chrome 148, loaded | full GPU matrix (6 shards) / region quick on a compat device / core | ✅ 18830 cases / ✅ 267 / ✅ 80 (branch `m2.4-layers-rect`) |
 | 2026-11-13 | `9a49043` | Apple M5 Pro, Chrome 148, loaded | full GPU matrix (parallel, 3 jobs) / quick / core / examples | ✅ 18370 cases, 1674 groups / ✅ 10480 / ✅ 74 / ✅ 10 (branch `api-consistency`) |

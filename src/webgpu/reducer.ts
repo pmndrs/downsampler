@@ -1,4 +1,4 @@
-import { bufferWritable, formats, isSupportedFormat, storageWritable, type FormatInfo, type SupportedFormat } from '../core/formats.js';
+import { bufferWritable, formats, isIntFormat, isSupportedFormat, storageWritable, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { outputBufferLayout, tileSize, workgroupSide } from '../core/plan.js';
 import { levelSize, tileDispatch } from '../core/pyramid.js';
 import { resolveReduction, type Channels, type Reduction, type TileEdgePolicy } from '../core/reduction.js';
@@ -196,6 +196,7 @@ export class Reducer {
 		const format = options.format;
 		let output: OutputPath | undefined;
 
+		if ( options.store === undefined && format !== undefined && isSupportedFormat( format ) && isIntFormat( format ) ) throw new Error( `downsampler: a Reducer accumulates floats, so it doesn't write integer formats (${ format }); use a store hook, or a Downsampler (exact integer chains).` );
 		if ( options.store === undefined && format !== undefined && isSupportedFormat( format ) ) {
 
 			output = options.output ?? ( storageWritable( format, device.features ) || ! bufferWritable( format ) ? 'storage' : 'buffer' );
@@ -388,7 +389,7 @@ export class Reducer {
 		if ( source !== undefined ) {
 
 			const { texture, mipLevel } = source;
-			const reason = sourceTextureReason( source );
+			const reason = sourceTextureReason( source, 'source', { mismatch: format => `a Reducer reads float-sampleable sources, not ${ format }; read integer textures in a load hook` } );
 			if ( reason !== null ) throw new Error( `downsampler: ${ reason }.` );
 			const sw = mipSize( texture.width, mipLevel ), sh = mipSize( texture.height, mipLevel );
 			if ( ( width !== undefined && width !== sw ) || ( height !== undefined && height !== sh ) ) throw new Error( `downsampler: width and height (${ width }×${ height }) must match the source level (${ sw }×${ sh }), or be left out.` );

@@ -3,6 +3,7 @@
  * `source`, `Reducer`'s and `ScalarReduction`'s take a `GPUTexture` (its level
  * 0) or a {@link TextureLevel}, and pass the same checks here.
  */
+import { sampleKind } from '../core/formats.js';
 import type { ViewDimension } from './kernel.js';
 
 /** A texture level: level `mipLevel` (default 0) of `texture`. */
@@ -31,21 +32,29 @@ export function sourceShapeReason( source: unknown, name = 'source' ): string | 
 
 }
 
+/** What a source must sample as, and the reason given when it doesn't. */
+export interface SourceKind {
+	/** Default 'float' (depth included); an integer destination takes a source of its own kind. */
+	kind?: 'float' | 'uint' | 'sint';
+	/** The reason for a format of another kind. Default: "<name> format <format> is not float-sampleable" (or "… is not a <kind> integer format"). */
+	mismatch?: ( format: string ) => string;
+}
+
 /**
  * Why level `mipLevel` of `texture` can't be read as a source, or null: a 2D,
- * single-sampled, float-sampleable texture (depth too, through its depth
- * aspect) with TEXTURE_BINDING usage, a 2d or 2d-array binding view dimension
- * (compatibility mode), and the level inside the texture. `name` starts the
- * reason ('source').
+ * single-sampled texture of the sample kind wanted (float-sampleable by default,
+ * depth too, through its depth aspect) with TEXTURE_BINDING usage, a 2d or
+ * 2d-array binding view dimension (compatibility mode), and the level inside the
+ * texture. `name` starts the reason ('source').
  */
-export function sourceTextureReason( { texture, mipLevel }: Required<TextureLevel>, name = 'source' ): string | null {
+export function sourceTextureReason( { texture, mipLevel }: Required<TextureLevel>, name = 'source', { kind = 'float', mismatch }: SourceKind = {} ): string | null {
 
 	if ( texture.dimension !== '2d' ) return `${ name } dimension ${ texture.dimension } is not supported`;
 	const viewDimension = ( texture as GPUTexture & { textureBindingViewDimension?: string } ).textureBindingViewDimension;
 	if ( viewDimension !== undefined && viewDimension !== '2d' && viewDimension !== '2d-array' ) return `${ name } textureBindingViewDimension ${ viewDimension } is not supported`;
 	if ( texture.sampleCount !== 1 ) return `multisampled ${ name }s are not supported (resolve first)`;
 	if ( ( texture.usage & GPUTextureUsage.TEXTURE_BINDING ) === 0 ) return `${ name } needs TEXTURE_BINDING usage`;
-	if ( /int$/.test( texture.format ) || texture.format === 'stencil8' ) return `${ name } format ${ texture.format } is not float-sampleable`;
+	if ( texture.format === 'stencil8' || sampleKind( texture.format ) !== kind ) return mismatch?.( texture.format ) ?? `${ name } format ${ texture.format } is not ${ kind === 'float' ? 'float-sampleable' : `a ${ kind } integer format` }`;
 	if ( ! Number.isInteger( mipLevel ) || mipLevel < 0 || mipLevel >= texture.mipLevelCount ) return `${ name } mipLevel ${ mipLevel } is outside the ${ name } texture (${ texture.mipLevelCount } level${ texture.mipLevelCount === 1 ? '' : 's' })`;
 	return null;
 

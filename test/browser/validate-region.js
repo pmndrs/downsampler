@@ -290,7 +290,10 @@ export async function validateRegion( device, { quick, onProgress = () => {}, se
 		{ name: 'custom', format: 'rgba8unorm', options: { reduction: { wgsl: preferHigh.wgsl } } },
 		{ name: 'average', format: 'rgba16float', options: {} },
 		{ name: 'max', format: 'rgba16float', options: { reduction: 'max' } },
-		{ name: 'min', format: 'r32float', options: { reduction: 'min' } }
+		{ name: 'min', format: 'r32float', options: { reduction: 'min' } },
+		// sRGB (M2.3.5, buffer path): under 'exact', the tail, 'spd' and 'box'.
+		{ name: 'average', format: 'rgba8unorm-srgb', options: {} },
+		{ name: 'max', format: 'rgba8unorm-srgb', options: { reduction: 'max' } }
 	];
 	const pick = mode => reductions.filter( r => {
 

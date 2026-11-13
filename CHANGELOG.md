@@ -16,7 +16,7 @@ The first release.
 - `encode`, `encodePass` (into your compute pass), `generate`, `prepare` (the planned dispatches, for self-dispatch) and `release`.
 - Two output paths (storage textures, or a buffer and copies for formats that can't be storage textures) and a compatibility-mode path, all bit-identical.
 - Identical results on every GPU where it matters: `f16Rounding: 'nearest'` (default) rounds float16 levels in the shader; `averageAccess: 'load'` replaces the sampler's vendor-specific weights.
-- Formats: `rgba8unorm`, `rgba8snorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, `rgb9e5ufloat`; with `texture-formats-tier1` the 8- and 16-bit one- and two-channel formats, the 16-bit normalized formats and `rg11b10ufloat` storage; `bgra8unorm` with `bgra8unorm-storage`.
+- Formats: `rgba8unorm`, `rgba8snorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, `rgb9e5ufloat`; with `texture-formats-tier1` the 8- and 16-bit one- and two-channel formats, the 16-bit normalized formats, `rg11b10ufloat` and `rgb10a2unorm` storage; `bgra8unorm` with `bgra8unorm-storage`; `rgba8unorm-srgb` and `bgra8unorm-srgb` through the buffer path (an optional shared `scratch` buffer); integer formats with exact averages (round to nearest, ties to even) and bitwise folds.
 
 ### Tool kernels (`downsampler/webgpu`)
 
