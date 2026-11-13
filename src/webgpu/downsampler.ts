@@ -1,4 +1,4 @@
-import { bufferWritable, formats, isSupportedFormat, type FormatInfo, type SupportedFormat } from '../core/formats.js';
+import { bufferWritable, formats, isIntFormat, isSupportedFormat, sampleKind, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { outputBufferLayout, planBatches, tailTile, type Batch, type BatchKernel, type OddSizePolicy } from '../core/plan.js';
 import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
 import { layersProblem, planRegions, rectProblem, type BatchRegion, type Rect } from '../core/region.js';
@@ -83,8 +83,10 @@ export interface DownsamplerOptions {
 export interface SourceOptions {
 	/**
 	 * Texture to read the first destination level from: any float-sampleable 2D
-	 * format, including depth (read through its depth aspect). Needs
-	 * TEXTURE_BINDING usage and the destination's array layer count.
+	 * format, including depth (read through its depth aspect); for an integer
+	 * destination, an integer format of the same signedness (values are clamped to
+	 * the destination's range). Needs TEXTURE_BINDING usage and the destination's
+	 * array layer count.
 	 */
 	texture: GPUTexture;
 	/** Level to read. Default 0. */
@@ -152,6 +154,9 @@ export interface EncodeOptions {
 	 * `{ wgsl }` defines `fn reduce(a: vec4f, b: vec4f) -> vec4f`, which must be
 	 * associative, commutative and idempotent. Sums, per-channel ops and custom
 	 * sums have no 'exact' meaning and are rejected: use a `Reducer`.
+	 * Integer formats (SPEC.md §6.1): 'average' is the exact mean rounded to nearest,
+	 * ties to even; a custom fold takes and returns `vec4u` (uint formats) or `vec4i`
+	 * (sint formats), e.g. a bitwise or for occupancy pyramids.
 	 */
 	reduction?: Reduction;
 	/**
@@ -436,7 +441,9 @@ export class Downsampler {
 		if ( texture.sampleCount !== 1 ) return 'multisampled sources are not supported (resolve first)';
 		if ( ( texture.usage & GPUTextureUsage.TEXTURE_BINDING ) === 0 ) return 'source needs TEXTURE_BINDING usage';
 		if ( source.resample !== undefined && source.resample !== 'area' ) return `source resample ${ JSON.stringify( source.resample ) } is unknown (only 'area')`;
-		if ( /int$/.test( texture.format ) || texture.format === 'stencil8' ) return `source format ${ texture.format } is not float-sampleable`;
+		// Float destinations read float-sampleable sources; integer ones an integer source of the same signedness.
+		const kind = isSupportedFormat( destination.format ) ? sampleKind( destination.format ) : 'float';
+		if ( texture.format === 'stencil8' || sampleKind( texture.format ) !== kind ) return kind === 'float' ? `source format ${ texture.format } is not float-sampleable` : `destination ${ destination.format } is an integer format, so its source must be a ${ kind } integer format too, not ${ texture.format }`;
 		if ( ! Number.isInteger( mipLevel ) || mipLevel < 0 || mipLevel >= texture.mipLevelCount ) return 'source mipLevel is outside the source texture';
 		if ( texture.depthOrArrayLayers !== destination.depthOrArrayLayers ) return `source has ${ texture.depthOrArrayLayers } layers, destination ${ destination.depthOrArrayLayers }`;
 		const sw = mipSize( texture.width, mipLevel ), sh = mipSize( texture.height, mipLevel );
@@ -553,6 +560,7 @@ export class Downsampler {
 		if ( oddSizes !== 'exact' && oddSizes !== 'spd' && oddSizes !== 'box' ) throw new Error( `downsampler: odd size policy ${ JSON.stringify( oddSizes ) } is not implemented ('exact', 'box' or 'spd').` );
 		const reduction = options.reduction ?? 'average';
 		if ( needsTileEdges( reduction ) ) throw new Error( 'downsampler: sums, per-channel reductions and custom sums have no \'exact\' mip-chain meaning; use a Reducer (edges \'zero-weight\' or \'clamp\').' );
+		if ( oddSizes === 'spd' && isIntFormat( texture.format as SupportedFormat ) ) throw new Error( `downsampler: oddSizes 'spd' isn't available for integer formats (${ texture.format }): its batches carry unrounded float sums between levels, which can't hold 32-bit integers exactly. Use oddSizes 'exact' (the default) or 'box', which reduce integers exactly.` );
 		if ( oddSizes === 'spd' && reduction !== 'average' ) throw new Error( 'downsampler: oddSizes \'spd\' is for \'average\' only. It drops the last odd row or column, so min/max/minmax and custom folds would not be a conservative Hi-Z; use oddSizes \'exact\' (the default), or a Reducer with edges \'zero-weight\' (⌈n/2⌉ sizes, every texel counted).' );
 		const sourceMipLevel = source?.mipLevel ?? 0;
 		const parameters: PlanParameters = { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel, scratch: options.scratch };

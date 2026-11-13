@@ -1,9 +1,10 @@
-import { formats, integerDomains, isIntegerDomain, isPackedQuantization, isSupportedFormat, sampledChannels, type FormatInfo, type SupportedFormat } from '../core/formats.js';
+import { channelDomain, formats, intDomains, isIntegerDomain, isIntQuantization, isPackedQuantization, isSupportedFormat, sampledChannels, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { srgbBounds, srgbDecodeTable } from '../core/srgb.js';
 import { tailTile, tileSize, workgroupSide } from '../core/plan.js';
 import { checkLevels } from '../core/pyramid.js';
 import { isBuiltinReduction, needsTileEdges, reductionKey, resolveReduction, type Channels, type CustomReduction, type EdgePolicy, type Reduction } from '../core/reduction.js';
 import { lanes, payloadCombine } from './lanes.js';
+import { createIntKernel, intSampleType } from './integer.js';
 import { checkHooks } from './tool.js';
 
 /** Texture view dimension of kernel sources and outputs: '2d', or '2d-array' (every layer; cube maps as 6 layers). */
@@ -128,7 +129,7 @@ export const regionBinding = 11;
 export const regionBytes = 112;
 
 /** WGSL of the region uniform and `ds_inside(i, texel)`, shared by the kernels that take it. */
-function regionWgsl(): string {
+export function regionWgsl(): string {
 
 	return `struct DsRegion { origin: vec4u, bounds: array<vec4u, 6> }
 @group(0) @binding(${ regionBinding }) var<uniform> ds_region: DsRegion;
@@ -302,6 +303,31 @@ function packedWords( format: SupportedFormat, normalized = false ): string[] {
 	const { quantization, channels } = formats[ format ];
 	const ch = [ 'x', 'y', 'z', 'w' ];
 	const order = format === 'bgra8unorm' ? [ 'z', 'y', 'x', 'w' ] : ch;
+	// 10-bit r, g, b and 2-bit a: integer units (rgb10a2unorm normalized values rounded to them, ties to even).
+	if ( quantization === 'unorm10a2' || quantization === 'uint10a2' ) {
+
+		const unit = ( c: string, scale: number ) => normalized ? `u32(round(clamp(v.${ c }, 0.0, 1.0) * ${ scale }.0))` : `u32(v.${ c })`;
+		return [ `${ unit( 'x', 1023 ) } | (${ unit( 'y', 1023 ) } << 10u) | (${ unit( 'z', 1023 ) } << 20u) | (${ unit( 'w', 3 ) } << 30u)` ];
+
+	}
+
+	// Integer formats: `v` holds the stored integers' bits (vec4u), sign-extended for sint.
+	if ( isIntQuantization( quantization ) ) {
+
+		const bits = intDomains[ quantization ].bits[ 0 ];
+		if ( bits === 32 ) return ch.slice( 0, channels ).map( c => `v.${ c }` );
+		const mask = bits === 8 ? '0xffu' : '0xffffu';
+		const perWord = 32 / bits;
+		if ( channels % perWord !== 0 ) throw new Error( `downsampler: the buffer output path writes 32-bit words; ${ format } texels are ${ formats[ format ].bytesPerTexel } bytes.` );
+		return Array.from( { length: channels / perWord }, ( _, w ) => Array.from( { length: perWord }, ( _, i ) => {
+
+			const value = `(v.${ ch[ w * perWord + i ] } & ${ mask })`;
+			return i === 0 ? value : `(${ value } << ${ bits * i }u)`;
+
+		} ).join( ' | ' ) );
+
+	}
+
 	if ( normalized && isIntegerDomain( quantization ) ) {
 
 		const kind = quantization.startsWith( 'snorm' ) ? 'snorm' : 'unorm';
@@ -408,10 +434,12 @@ export function bufferOutputWgsl( format: SupportedFormat, normalized = false, f
 	const words = packedWords( format, normalized );
 	const { quantization } = formats[ format ];
 	const half = f16Rounding === false ? '' : quantization === 'float16' ? float16Wgsl( f16Rounding ) : quantization === 'srgb8' ? srgbWgsl() : '';
+	// Integer formats put their integers' bits (vec4u).
+	const type = isIntQuantization( quantization ) ? 'vec4u' : 'vec4f';
 	return `${ half }struct DsOutput { size: vec2u, offset: array<vec4u, 2>, stride: array<vec4u, 2>, rows: array<vec4u, 2> }
 @group(0) @binding(${ outputLayoutBinding }) var<uniform> ds_output: DsOutput;
 @group(0) @binding(${ outputBufferBinding }) var<storage, read_write> ds_texels: array<u32>;
-fn ds_put(i: u32, texel: vec2u, layer: u32, v: vec4f) {
+fn ds_put(i: u32, texel: vec2u, layer: u32, v: ${ type }) {
 	let index = ds_output.offset[i / 4u][i % 4u] + (layer * ds_output.rows[i / 4u][i % 4u] + texel.y) * ds_output.stride[i / 4u][i % 4u] + texel.x * ${ words.length }u;
 ${ words.map( ( word, w ) => `	ds_texels[index${ w ? ` + ${ w }u` : '' }] = ${ word };\n` ).join( '' ) }}
 `;
@@ -437,6 +465,9 @@ function tileOptions( options: KernelOptions ) {
 	if ( size !== undefined && load === undefined ) throw new Error( 'downsampler: a size hook replaces the size uniform of a load hook; without a load hook the size is the source texture\'s.' );
 	if ( typeof bindings !== 'string' ) throw new Error( 'downsampler: bindings must be WGSL declarations for @group(1).' );
 	if ( store === undefined && ( format === undefined || ! isSupportedFormat( format ) ) ) throw new Error( `downsampler: output format ${ JSON.stringify( format ) } is not supported; pass a supported format or a store hook.` );
+	// Tile kernels accumulate f32 sums, which can't hold 32-bit integers; integer chains are Downsampler's 'exact' and 'box'.
+	if ( store === undefined && isIntQuantization( formats[ format! ].quantization ) ) throw new Error( `downsampler: tile kernels (a Reducer, oddSizes 'spd') accumulate floats, so they don't write integer formats (${ format }); use a store hook, or a Downsampler with oddSizes 'exact' or 'box'.` );
+	if ( load === undefined && sourceFormat !== undefined && /int$/.test( sourceFormat ) ) throw new Error( `downsampler: tile kernels read float-sampleable sources, not ${ sourceFormat }; read it in a load hook.` );
 	if ( dimension !== '2d' && dimension !== '2d-array' ) throw new Error( `downsampler: view dimension ${ JSON.stringify( dimension ) } is not supported.` );
 	const output = options.output ?? 'storage';
 	if ( output !== 'storage' && output !== 'buffer' ) throw new Error( `downsampler: unknown output path ${ JSON.stringify( output ) }; expected 'storage' or 'buffer'.` );
@@ -469,9 +500,11 @@ export function kernelLayoutEntries( options: KernelOptions ): GPUBindGroupLayou
 	}
 
 	const { format, dimension = '2d', count, reduction = 'average', output = 'storage' } = options;
-	const access = options.access ?? ( reduction === 'average' ? 'sample' : 'load' );
+	// Integer formats always load, through a 'uint' or 'sint' binding.
+	const int = format !== undefined && isSupportedFormat( format ) && isIntQuantization( formats[ format ].quantization );
+	const access = options.access ?? ( reduction === 'average' && ! int ? 'sample' : 'load' );
 	if ( access === 'sample' ) entries.push( { binding: 0, visibility, sampler: { type: 'filtering' } } );
-	entries.push( { binding: 1, visibility, texture: { sampleType: access === 'sample' ? 'float' : 'unfilterable-float', viewDimension: dimension } } );
+	entries.push( { binding: 1, visibility, texture: { sampleType: int ? intSampleType( format! ) : access === 'sample' ? 'float' : 'unfilterable-float', viewDimension: dimension } } );
 	if ( output === 'buffer' ) {
 
 		entries.push( { binding: outputLayoutBinding, visibility, buffer: { type: 'uniform', minBindingSize: outputLayoutBytes } } );
@@ -527,6 +560,7 @@ export function createKernel( options: KernelOptions ): string {
 	}
 
 	if ( options.format === undefined || options.count === undefined ) throw new Error( 'downsampler: exact kernels need a format and a level count.' );
+	if ( isSupportedFormat( options.format ) && isIntQuantization( formats[ options.format ].quantization ) ) return createIntKernel( { ...options, format: options.format, dimension: options.dimension ?? '2d', count: options.count } );
 	return createExactKernel( { ...options, format: options.format, dimension: options.dimension ?? '2d', count: options.count } );
 
 }
@@ -591,11 +625,14 @@ var<workgroup> tile: array<vec4f, ${ tile * tile }>;
 	// uses i32: converting a negative float to u32 is undefined (snorm).
 	if ( integer ) {
 
-		const { scale, min, max } = integerDomains[ quantization ];
+		// Per-channel units: a scalar, or a vector for rgb10a2unorm (2-bit alpha).
+		const domains = [ 0, 1, 2, 3 ].map( c => channelDomain( quantization, c ) );
+		const units = ( key: 'scale' | 'min' | 'max' ) => domains.every( domain => domain[ key ] === domains[ 0 ][ key ] ) ? `${ domains[ 0 ][ key ] }.0` : `vec4f(${ domains.map( domain => `${ domain[ key ] }.0` ).join( ', ' ) })`;
+		const vector = ( key: 'min' | 'max' ) => units( key ).startsWith( 'vec4f' ) ? units( key ) : `vec4f(${ units( key ) })`;
 		code += `
-const SCALE = ${ scale }.0;
+const SCALE = ${ units( 'scale' ) };
 fn quantize(value: vec4f) -> vec4f {
-	let scaled = clamp(value, vec4f(${ min }.0), vec4f(${ max }.0));
+	let scaled = clamp(value, ${ vector( 'min' ) }, ${ vector( 'max' ) });
 	let lower = floor(scaled);
 	let fraction = scaled - lower;
 	let nearest = select(lower, lower + vec4f(1), fraction > vec4f(0.5));

@@ -1,4 +1,4 @@
-import { bufferWritable, formats, isSupportedFormat, storageWritable, type FormatInfo, type SupportedFormat } from '../core/formats.js';
+import { bufferWritable, formats, isIntFormat, isSupportedFormat, sampleKind, storageWritable, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { outputBufferLayout, tileSize, workgroupSide } from '../core/plan.js';
 import { levelSize, tileDispatch } from '../core/pyramid.js';
 import { resolveReduction, type Channels, type Reduction, type TileEdgePolicy } from '../core/reduction.js';
@@ -197,6 +197,7 @@ export class Reducer {
 		const format = options.format;
 		let output: OutputPath | undefined;
 
+		if ( options.store === undefined && format !== undefined && isSupportedFormat( format ) && isIntFormat( format ) ) throw new Error( `downsampler: a Reducer accumulates floats, so it doesn't write integer formats (${ format }); use a store hook, or a Downsampler (exact integer chains).` );
 		if ( options.store === undefined && format !== undefined && isSupportedFormat( format ) ) {
 
 			output = options.output ?? ( storageWritable( format, device.features ) || ! bufferWritable( format ) ? 'storage' : 'buffer' );
@@ -381,6 +382,7 @@ export class Reducer {
 			const { texture, mipLevel } = source;
 			if ( ! Number.isInteger( mipLevel ) || mipLevel < 0 || mipLevel >= texture.mipLevelCount ) throw new Error( 'downsampler: source mipLevel is outside the source texture.' );
 			if ( ( texture.usage & GPUTextureUsage.TEXTURE_BINDING ) === 0 ) throw new Error( 'downsampler: source needs TEXTURE_BINDING usage.' );
+			if ( sampleKind( texture.format ) !== 'float' ) throw new Error( `downsampler: a Reducer reads float-sampleable sources, not ${ texture.format }; read integer textures in a load hook.` );
 			const sw = mipSize( texture.width, mipLevel ), sh = mipSize( texture.height, mipLevel );
 			if ( ( width !== undefined && width !== sw ) || ( height !== undefined && height !== sh ) ) throw new Error( `downsampler: width and height (${ width }×${ height }) must match the source level (${ sw }×${ sh }), or be left out.` );
 			width = sw; height = sh;

@@ -2,8 +2,10 @@
 // the three.js adapter lives in `downsampler/three`.
 export { outputBufferLayout, planBatches, mipSize, mipLevelCountFor, tailTile, tailTileFor, tileSize, workgroupSide } from './core/plan.js';
 export type { Batch, BatchKernel, BufferLevel, PlanOptions, OddSizePolicy } from './core/plan.js';
-export { bufferWritable, formats, fromHalf, fromUfloat, integerDomains, isIntegerDomain, isPackedQuantization, isSupportedFormat, packedStep, packRg11b10, packRgb9e5, packTexel, quantize, quantizeTexel, rg11b10Max, rgb9e5Max, roundHalfEven, sampledChannels, storageWritable, toHalf, toUfloat, unpackRg11b10, unpackRgb9e5, unpackTexel } from './core/formats.js';
-export type { FormatInfo, IntegerQuantization, PackedQuantization, Quantization, SupportedFormat } from './core/formats.js';
+export { bufferWritable, channelDomain, formats, fromHalf, fromUfloat, integerDomains, intDomains, intRange, isIntegerDomain, isIntFormat, isIntQuantization, isPackedQuantization, isSupportedFormat, packedStep, packRg11b10, packRgb9e5, packTexel, quantize, quantizeTexel, rg11b10Max, rgb9e5Max, roundHalfEven, sampledChannels, sampleKind, storageWritable, toHalf, toUfloat, unpackRg11b10, unpackRgb9e5, unpackTexel } from './core/formats.js';
+export type { FormatInfo, IntegerQuantization, IntQuantization, PackedQuantization, Quantization, SupportedFormat } from './core/formats.js';
+export { intReference, roundedMean } from './core/integer.js';
+export type { IntLevel, IntReduction, IntReferenceOptions } from './core/integer.js';
 export { areaDependents, clampDependents, exactDependents, layersProblem, planRegions, rectProblem } from './core/region.js';
 export type { BatchRegion, Rect } from './core/region.js';
 export { copyReference, reduceReference, tolerance } from './core/reference.js';

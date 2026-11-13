@@ -5,7 +5,7 @@
  * reductions (min, max, minmax, custom) combine every source texel the output
  * covers (see `footprint`). Results are quantized to the storage format.
  */
-import { integerDomains, isIntegerDomain, isPackedQuantization, packedStep, quantize, quantizeTexel, roundHalfEven, type Quantization } from './formats.js';
+import { channelDomain, isIntegerDomain, isIntQuantization, isPackedQuantization, packedStep, quantize, quantizeTexel, roundHalfEven, type Quantization } from './formats.js';
 import { foldChannel, footprint, type ReferenceReduction } from './reduction.js';
 import { srgbLevel, srgbSteps } from './srgb.js';
 
@@ -65,6 +65,7 @@ export interface ReferenceOptions {
  */
 export function reduceReference( source: Float32Array, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction = 'average', { quantizedInput = true, pairing, weights = 'sampler' }: ReferenceOptions = {} ): ReferenceLevel {
 
+	if ( isIntQuantization( quantization ) ) throw new Error( `downsampler: ${ quantization } is an integer format; use intReference (exact integers, not float32 values).` );
 	// sRGB: colour in linear float32 then encoded as stored, alpha as unorm8 (src/core/srgb.ts).
 	if ( quantization === 'srgb8' ) return srgbLevel( ( q, input ) => reduceReference( source, width, height, layers, q, reduction, { quantizedInput: input, pairing, weights } ), quantizedInput );
 
@@ -73,7 +74,7 @@ export function reduceReference( source: Float32Array, width: number, height: nu
 	const filterTolerance = new Float32Array( values.length );
 	// Packed formats quantize whole texels once all four values are known.
 	const packed = isPackedQuantization( quantization );
-	const perValue = ( value: number ) => packed ? value : quantize( value, quantization );
+	const perValue = ( value: number, channel: number ) => packed ? value : quantize( value, quantization, channel );
 	const finish = () => {
 
 		if ( packed ) for ( let i = 0; i < values.length; i += 4 ) quantizeTexel( values, i, quantization );
@@ -91,7 +92,7 @@ export function reduceReference( source: Float32Array, width: number, height: nu
 
 				let value = source[ ( ( layer * height + y0 ) * width + x0 ) * 4 + c ];
 				for ( let sy = y0; sy <= y1; sy ++ ) for ( let sx = x0; sx <= x1; sx ++ ) value = fold( value, source[ ( ( layer * height + sy ) * width + sx ) * 4 + c ], c );
-				values[ ( ( layer * h + y ) * w + x ) * 4 + c ] = perValue( value );
+				values[ ( ( layer * h + y ) * w + x ) * 4 + c ] = perValue( value, c );
 
 			}
 
@@ -101,9 +102,8 @@ export function reduceReference( source: Float32Array, width: number, height: nu
 
 	}
 
-	const domainOf = isIntegerDomain( quantization ) ? integerDomains[ quantization ] : null;
 	const halves = ( n: number ) => n === 1 || n % 2 === 0;
-	if ( pairing === 'float32' && domainOf === null && halves( width ) && halves( height ) ) {
+	if ( pairing === 'float32' && ! isIntegerDomain( quantization ) && halves( width ) && halves( height ) ) {
 
 		// The kernels' in-tile reduction: clamped 2×2 reads, summed left to right in f32.
 		const f = Math.fround;
@@ -112,7 +112,7 @@ export function reduceReference( source: Float32Array, width: number, height: nu
 			const y0 = Math.min( 2 * y, height - 1 ), y1 = Math.min( 2 * y + 1, height - 1 );
 			const x0 = Math.min( 2 * x, width - 1 ), x1 = Math.min( 2 * x + 1, width - 1 );
 			const at = ( sx: number, sy: number, c: number ) => source[ ( ( layer * height + sy ) * width + sx ) * 4 + c ];
-			for ( let c = 0; c < 4; c ++ ) values[ ( ( layer * h + y ) * w + x ) * 4 + c ] = perValue( f( f( f( at( x0, y0, c ) + at( x1, y0, c ) ) + at( x0, y1, c ) ) + at( x1, y1, c ) ) * 0.25 );
+			for ( let c = 0; c < 4; c ++ ) values[ ( ( layer * h + y ) * w + x ) * 4 + c ] = perValue( f( f( f( at( x0, y0, c ) + at( x1, y0, c ) ) + at( x0, y1, c ) ) + at( x1, y1, c ) ) * 0.25, c );
 
 		}
 
@@ -122,9 +122,11 @@ export function reduceReference( source: Float32Array, width: number, height: nu
 
 	const clamp = ( x: number, size: number ) => Math.min( size - 1, Math.max( 0, x ) );
 	const exact = ( weight: number ) => weight * 256 === Math.round( weight * 256 );
-	const domain = isIntegerDomain( quantization ) && quantizedInput ? integerDomains[ quantization ] : null;
-	const scale = domain ? domain.scale : 1;
-	const units = domain ? source.map( value => Math.round( value * scale ) ) : source;
+	// Normalized formats: per-channel integer units (rgb10a2unorm's alpha has its own scale).
+	const integer = isIntegerDomain( quantization ) ? quantization : null;
+	const domains = [ 0, 1, 2, 3 ].map( c => integer !== null && quantizedInput ? channelDomain( integer, c ) : null );
+	const scales = domains.map( domain => domain ? domain.scale : 1 );
+	const units = domains[ 0 ] ? source.map( ( value, i ) => Math.round( value * scales[ i % 4 ] ) ) : source;
 
 	for ( let layer = 0; layer < layers; layer ++ ) {
 
@@ -145,6 +147,7 @@ export function reduceReference( source: Float32Array, width: number, height: nu
 
 				for ( let c = 0; c < 4; c ++ ) {
 
+					const domain = domains[ c ], scale = scales[ c ];
 					const a = units[ i00 + c ], b = units[ i10 + c ], d = units[ i01 + c ], e = units[ i11 + c ];
 					const top = a * ( 1 - fx ) + b * fx;
 					const bottom = d * ( 1 - fx ) + e * fx;
@@ -164,7 +167,7 @@ export function reduceReference( source: Float32Array, width: number, height: nu
 
 					} else filterTolerance[ index ] = ( ( exactX ? 0 : gx / 256 ) + ( exactY ? 0 : gy / 256 ) ) / scale;
 					const value = top * ( 1 - fy ) + bottom * fy;
-					values[ index ] = domain ? roundHalfEven( Math.min( domain.max, Math.max( domain.min, value ) ) ) / scale : perValue( value );
+					values[ index ] = domain ? roundHalfEven( Math.min( domain.max, Math.max( domain.min, value ) ) ) / scale : perValue( value, c );
 
 				}
 
@@ -217,7 +220,9 @@ export function tolerance( expected: number, quantization: Quantization, filterT
 		return 2 * packedStep( quantization, expected, texel.channel, texel.texelMax ) + 2 ** - 13 + filterTolerance;
 
 	}
-	if ( isIntegerDomain( quantization ) ) return 2.01 / integerDomains[ quantization ].scale + filterTolerance;
+	// rgb10a2unorm: steps of the value's channel (`texel.channel`; 2-bit alpha).
+	if ( isIntegerDomain( quantization ) ) return 2.01 / channelDomain( quantization, texel?.channel ?? 0 ).scale + filterTolerance;
+	if ( isIntQuantization( quantization ) ) return 0;
 	// sRGB: two codes around the value (linear steps grow with the value); alpha as unorm8.
 	if ( quantization === 'srgb8' ) {
 
