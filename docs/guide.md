@@ -321,7 +321,7 @@ for ( const texture of textures ) downsampler.encode( encoder, texture, { scratc
 - Alpha is linear (these formats store it as plain unorm8): averaged in 0–255 units, ties to even, as `rgba8unorm`.
 - `'min'`, `'max'` and `'minmax'` select stored codes exactly: the decode is monotonic and the encoder inverts it, so they equal folding the codes themselves.
 - Hardware decoding isn't exact everywhere: an Apple M5 Pro decodes to 12-bit linear values (254 of 256 codes inexact, up to 0.39 of a code step off). `averageAccess: 'load'` snaps every loaded texel to the exact decode table, so results are the same on every GPU; the default `'sample'` keeps the hardware's decode and filtering, as render passes do (about a code from the exact result at most).
-- Cost (M5 Pro, measured under load, SPEC §6.1 sRGB): 1.1–2.1× faster than render passes up to 1080p and at 1024², but slower at 2560×1440 and 4096² (render passes take 0.55–0.59× the time), where the buffer path's extra copy of every level dominates. `'load'` costs 1.5–2×.
+- Cost (M5 Pro, not idle, SPEC §6.1 sRGB): 1.2–2× faster than render passes up to 1280×720 and at 1024², a tie at 1707×960, and slower from 1080p up (render passes take 0.55–0.79× the time), where the buffer path's extra copy of every level dominates. For large sRGB textures, three's own render-pass mipmaps may be the faster choice. `'load'` costs 1.7–2.1×.
 - The texture needs `COPY_DST` (three.js gives its textures that). `oddSizes`, `rect`, `layers`, separate sources (into or out of sRGB), the tail kernel and compatibility mode all work; `encodePass` doesn't (the buffer path's copies).
 
 ### Compatibility mode
