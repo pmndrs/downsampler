@@ -1,4 +1,4 @@
-export { Downsampler } from './downsampler.js';
+export { Downsampler, maxResampleRatio } from './downsampler.js';
 export { isCompatibilityTexture } from './compat.js';
 export type { BufferCopy, DownsamplerOptions, EncodeOptions, PreparedBatch, SourceOptions } from './downsampler.js';
 export { Reducer } from './reducer.js';

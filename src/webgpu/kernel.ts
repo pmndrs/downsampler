@@ -52,6 +52,18 @@ export interface KernelOptions {
 	 */
 	tail?: boolean;
 	/**
+	 * 'exact' only: an area-weighted first output (`source.resample: 'area'`; `areaReference`
+	 * in core). It covers [x·S/n, (x+1)·S/n) of its source level at any size ratio S/n:
+	 * averages weight each texel it overlaps by the overlap, folds combine every texel it
+	 * overlaps. Needs access 'load'.
+	 */
+	area?: boolean;
+	/**
+	 * 'exact' only: `oddSizes: 'box'`. The first output is area-weighted (as `area`), and so
+	 * are a tail's further levels (three taps at odd sizes). Needs access 'load'.
+	 */
+	box?: boolean;
+	/**
 	 * The tile edge, 8, 16 or 32. Tail kernels: at least the first output's larger
 	 * side, default 32. Exact kernels: at least what `count` levels need (8 up to four
 	 * levels, then 16 and 32), which is the default.
@@ -373,6 +385,27 @@ export function kernelLayoutEntries( options: KernelOptions ): GPUBindGroupLayou
 
 }
 
+/**
+ * WGSL for area-weighted steps (see `areaReference` in core): the span of source
+ * texels output texel x of n overlaps in a level of S, `[x·S/n, (x+1)·S/n)`, and
+ * (averages) each texel's weight, overlap / S. The overlap is an integer in units
+ * of 1/n texel. Halving and same-size axes take exact weights (1/2, 1): GPU float
+ * division isn't correctly rounded (WGSL allows 2.5 ulp), and an even step must
+ * stay the 'exact' rule's 2×2 box bit for bit.
+ */
+function areaWgsl( average: boolean ): string {
+
+	return `fn ds_area_first(x: vec2u, s: vec2u, n: vec2u) -> vec2u { return (x * s) / n; }
+fn ds_area_last(x: vec2u, s: vec2u, n: vec2u) -> vec2u { return ((x + vec2u(1u)) * s - vec2u(1u)) / n; }
+${ average ? `fn ds_area_weight(t: u32, x: u32, s: u32, n: u32) -> f32 {
+	if (s == 2u * n) { return 0.5; }
+	if (s == n) { return 1.0; }
+	return f32(min(n * (t + 1u), (x + 1u) * s) - max(n * t, x * s)) / f32(s);
+}
+` : '' }`;
+
+}
+
 const builtinFolds = {
 	min: 'min(a, b)',
 	max: 'max(a, b)',
@@ -415,12 +448,14 @@ export function createKernel( options: KernelOptions ): string {
  * tile by the 'exact' rule at any parity (shader bilinear weights for 'average',
  * the `2x … 2x+2` footprint for folds), each quantized as stored.
  */
-function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage', tail = false, tile: tileOption, f16Rounding = 'nearest' }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
+function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage', tail = false, box = false, area = box, tile: tileOption, f16Rounding = 'nearest' }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
 
 	reductionKey( reduction );
 	const average = reduction === 'average';
-	access ??= average ? 'sample' : 'load';
+	if ( box && ! area ) throw new Error( 'downsampler: a box kernel\'s first output is area-weighted (area true).' );
+	access ??= average && ! area ? 'sample' : 'load';
 	if ( ! average && access !== 'load' ) throw new Error( 'downsampler: fold reductions read their source with textureLoad (access "load").' );
+	if ( area && access !== 'load' ) throw new Error( 'downsampler: area-weighted (box) kernels read their source with textureLoad (access "load").' );
 
 	const array = dimension === '2d-array';
 	const suffix = array ? '_array' : '';
@@ -510,11 +545,34 @@ fn load(p: vec2u, layer: u32) -> vec4f {
 
 	}
 
+	if ( area ) code += areaWgsl( average );
+
 	code += `
 fn first(pos: vec2u, size: vec2u, layer: u32) -> vec4f {
 `;
 
-	if ( access === 'sample' ) {
+	if ( area ) {
+
+		// Every texel of [pos·S/n, (pos+1)·S/n) per axis, at any ratio S/n (a same-size
+		// source reads its texel alone, with weight 1).
+		code += `	let sourceSize = textureDimensions(source);
+	let lo = ds_area_first(pos, sourceSize, size);
+	let hi = ds_area_last(pos, sourceSize, size);
+${ average ? `	var sum = vec4f(0.0);
+	for (var y = lo.y; y <= hi.y; y++) {
+		var row = vec4f(0.0);
+		for (var x = lo.x; x <= hi.x; x++) { row += ds_area_weight(x, pos.x, sourceSize.x, size.x) * load(vec2u(x, y), layer); }
+		sum += ds_area_weight(y, pos.y, sourceSize.y, size.y) * row;
+	}
+	return quantize(sum);
+` : `	var v = load(lo, layer);
+	for (var y = lo.y; y <= hi.y; y++) {
+		for (var x = lo.x; x <= hi.x; x++) { v = fold(v, load(vec2u(x, y), layer)); }
+	}
+	return quantize(v);
+` }`;
+
+	} else if ( access === 'sample' ) {
 
 		code += `	let uv = (vec2f(pos) + 0.5) / vec2f(size);
 	return quantize(textureSampleLevel(source, imageSampler, uv${ array ? ', i32(layer)' : '' }, 0.0)${ splat } * SCALE);
@@ -585,7 +643,17 @@ fn tileAt(p: vec2u) -> vec4f { return tile[p.y * ${ tile }u + p.x]; }
 fn tailStep(pos: vec2u, sourceSize: vec2u, size: vec2u) -> vec4f {
 	let last = sourceSize - vec2u(1);
 `;
-		code += average ? `	let numerator = (2u * pos + vec2u(1)) * sourceSize - size;
+		code += average && box ? `	let lo = ds_area_first(pos, sourceSize, size);
+	let hi = ds_area_last(pos, sourceSize, size);
+	var sum = vec4f(0.0);
+	for (var y = lo.y; y <= hi.y; y++) {
+		var row = vec4f(0.0);
+		for (var x = lo.x; x <= hi.x; x++) { row += ds_area_weight(x, pos.x, sourceSize.x, size.x) * tileAt(vec2u(x, y)); }
+		sum += ds_area_weight(y, pos.y, sourceSize.y, size.y) * row;
+	}
+	return quantize(sum);
+}
+` : average ? `	let numerator = (2u * pos + vec2u(1)) * sourceSize - size;
 	let denominator = 2u * size;
 	let lo = min(numerator / denominator, last);
 	let hi = min(lo + vec2u(1), last);

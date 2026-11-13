@@ -85,7 +85,21 @@ export interface SourceOptions {
 	texture: GPUTexture;
 	/** Level to read. Default 0. */
 	mipLevel?: number;
+	/**
+	 * 'area': the destination's first level may be any size (e.g. a power-of-two
+	 * Hi-Z, 1024×512 or 2048×1024 from 1920×1080), up to {@link maxResampleRatio}
+	 * times smaller per axis. Destination texel x covers [x·S/n, (x+1)·S/n) of the
+	 * source (S source texels, n destination texels per axis): 'average' weights
+	 * every source texel by its overlap, and folds combine every texel it overlaps,
+	 * so min/max stay conservative at any ratio, up or down. Later levels follow
+	 * `oddSizes`. Without it, the destination level must be the source's size or
+	 * half of it. SPEC.md §4 Separate source.
+	 */
+	resample?: 'area';
 }
+
+/** Largest source ÷ destination ratio per axis with `resample: 'area'` (at most 9 taps per axis). */
+export const maxResampleRatio = 8;
 
 export interface EncodeOptions {
 	/**
@@ -116,7 +130,13 @@ export interface EncodeOptions {
 	 * ⌈levels / levelsPerDispatch⌉ dispatches. Lower quality at odd sizes.
 	 * Folds are rejected: under these semantics min/max are not a conservative
 	 * Hi-Z. Works on both output paths and in compatibility mode.
-	 * 'box' (planned): area-weighted odd sizes. See SPEC.md §2.1.
+	 * 'box': area-weighted odd sizes (nvpro_pyramid's weights): each source texel
+	 * contributes in proportion to its overlap, so a 31×31 texture reduces to its
+	 * true mean. Same batches as 'exact'; batches that read an odd level (and tail
+	 * batches) load, with weights (n − x, n, x + 1) / (2n + 1) along an odd size
+	 * 2n + 1. Folds are the same as under 'exact' (the same 2x … 2x+2 footprint).
+	 * Works with the tail kernel, both output paths and compatibility mode.
+	 * See SPEC.md §2.1.
 	 */
 	oddSizes?: OddSizePolicy;
 	/**
@@ -175,6 +195,10 @@ interface BatchKernelKey {
 	output: OutputPath;
 	kind: BatchKernel;
 	tile: number;
+	/** Area-weighted first output: see {@link KernelOptions.area}. */
+	area: boolean;
+	/** `oddSizes: 'box'`: area-weighted first output and tail steps ({@link KernelOptions.box}). */
+	box: boolean;
 }
 
 /**
@@ -321,13 +345,21 @@ export class Downsampler {
 		if ( texture.dimension !== '2d' ) return `source dimension ${ texture.dimension } is not supported`;
 		if ( texture.sampleCount !== 1 ) return 'multisampled sources are not supported (resolve first)';
 		if ( ( texture.usage & GPUTextureUsage.TEXTURE_BINDING ) === 0 ) return 'source needs TEXTURE_BINDING usage';
+		if ( source.resample !== undefined && source.resample !== 'area' ) return `source resample ${ JSON.stringify( source.resample ) } is unknown (only 'area')`;
 		if ( /int$/.test( texture.format ) || texture.format === 'stencil8' ) return `source format ${ texture.format } is not float-sampleable`;
 		if ( ! Number.isInteger( mipLevel ) || mipLevel < 0 || mipLevel >= texture.mipLevelCount ) return 'source mipLevel is outside the source texture';
 		if ( texture.depthOrArrayLayers !== destination.depthOrArrayLayers ) return `source has ${ texture.depthOrArrayLayers } layers, destination ${ destination.depthOrArrayLayers }`;
 		const sw = mipSize( texture.width, mipLevel ), sh = mipSize( texture.height, mipLevel );
 		const dw = mipSize( destination.width, baseMipLevel ), dh = mipSize( destination.height, baseMipLevel );
+		if ( source.resample === 'area' ) {
+
+			if ( sw > maxResampleRatio * dw || sh > maxResampleRatio * dh ) return `destination level ${ baseMipLevel } (${ dw }×${ dh }) is more than ${ maxResampleRatio }× smaller than the source level (${ sw }×${ sh }) along an axis; reduce into a larger level, or start from a smaller source level`;
+			return null;
+
+		}
+
 		const same = dw === sw && dh === sh, half = dw === Math.max( 1, sw >> 1 ) && dh === Math.max( 1, sh >> 1 );
-		if ( ! same && ! half ) return `destination level ${ baseMipLevel } (${ dw }×${ dh }) must be the source level's size (${ sw }×${ sh }) or half of it`;
+		if ( ! same && ! half ) return `destination level ${ baseMipLevel } (${ dw }×${ dh }) must be the source level's size (${ sw }×${ sh }) or half of it; for another size (e.g. a power-of-two Hi-Z) pass source.resample 'area'`;
 		return null;
 
 	}
@@ -405,12 +437,13 @@ export class Downsampler {
 		}
 
 		const oddSizes = options.oddSizes ?? 'exact';
-		if ( oddSizes !== 'exact' && oddSizes !== 'spd' ) throw new Error( `downsampler: odd size policy ${ JSON.stringify( oddSizes ) } is not implemented ('exact' or 'spd').` );
+		if ( oddSizes !== 'exact' && oddSizes !== 'spd' && oddSizes !== 'box' ) throw new Error( `downsampler: odd size policy ${ JSON.stringify( oddSizes ) } is not implemented ('exact', 'box' or 'spd').` );
 		const reduction = options.reduction ?? 'average';
 		if ( needsTileEdges( reduction ) ) throw new Error( 'downsampler: sums, per-channel reductions and custom sums have no \'exact\' mip-chain meaning; use a Reducer (edges \'zero-weight\' or \'clamp\').' );
 		if ( oddSizes === 'spd' && reduction !== 'average' ) throw new Error( 'downsampler: oddSizes \'spd\' is for \'average\' only. It drops the last odd row or column, so min/max/minmax and custom folds would not be a conservative Hi-Z; use oddSizes \'exact\' (the default), or a Reducer with edges \'zero-weight\' (⌈n/2⌉ sizes, every texel counted).' );
 		const sourceMipLevel = source?.mipLevel ?? 0;
-		const key = `${ baseMipLevel }:${ mipLevelCount }:${ oddSizes }:${ reductionKey( reduction ) }:${ source === undefined ? 'self' : `source:${ sourceMipLevel }` }`;
+		const resample = source?.resample === 'area';
+		const key = `${ baseMipLevel }:${ mipLevelCount }:${ oddSizes }:${ reductionKey( reduction ) }:${ source === undefined ? 'self' : `source:${ sourceMipLevel }${ resample ? ':area' : '' }` }`;
 		let cache = this.plans.get( texture );
 		if ( cache === undefined ) this.plans.set( texture, cache = new Map() );
 		const cached = cache.get( key );
@@ -432,7 +465,10 @@ export class Downsampler {
 		const copySource = source !== undefined && mipSize( source.texture.width, sourceMipLevel ) === mipSize( texture.width, baseMipLevel ) && mipSize( source.texture.height, sourceMipLevel ) === mipSize( texture.height, baseMipLevel );
 		// Tail tiles of 16 and 32 take 16 × 16 invocations; below 256 (compatibility mode) only 8.
 		const tailMaxTile = this.device.limits.maxComputeInvocationsPerWorkgroup >= 256 ? tailTile : 8;
-		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch, oddSizes, fromSource: source !== undefined, copySource, tail: oddSizes === 'exact' && this.tail, tailMaxTile, exactMinTile: this.exactTile } );
+		// Under 'spd', a resampled source is its own 1-level batch, like a copy.
+		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch, oddSizes, fromSource: source !== undefined, copySource: copySource || resample, tail: oddSizes !== 'spd' && this.tail, tailMaxTile, exactMinTile: this.exactTile } );
+		const sourceSize = ( batch: Batch ): [ number, number ] => batch.sourceMipLevel === null ? [ mipSize( source!.texture.width, sourceMipLevel ), mipSize( source!.texture.height, sourceMipLevel ) ] : [ mipSize( texture.width, batch.sourceMipLevel ), mipSize( texture.height, batch.sourceMipLevel ) ];
+		const odd = ( size: number ) => size > 1 && size % 2 === 1;
 
 		// Buffer path: one scratch buffer, sized for the largest batch, serves every
 		// batch in turn (each batch's copies are recorded before the next dispatch).
@@ -463,8 +499,14 @@ export class Downsampler {
 			// A same-size converting copy loads: a sampler at texel centres isn't exact on every
 			// GPU (Intel truncates the coordinate a hair below the centre and blends in 1/256 of a
 			// neighbour; results/windows/correctness.md).
-			const access = external && copySource && batch.firstMipLevel === baseMipLevel ? 'load' : this.access( reduction, sourceFormat );
-			const kernel: BatchKernelKey = { format, dimension, count: batch.count, access, reduction, sourceFormat, output, kind: batch.kernel, tile: batch.tile };
+			// Area-weighted batches load: a resampled source (any reduction), and under 'box' the
+			// averages that read an odd level, or reduce odd levels in a tail. The others are
+			// the 'exact' kernels: an even step is the same 2×2 box, and folds are the same.
+			const [ sw, sh ] = sourceSize( batch );
+			const box = batch.kernel !== 'clamp' && oddSizes === 'box' && reduction === 'average' && ( batch.kernel === 'tail' || odd( sw ) || odd( sh ) );
+			const area = box || ( batch.kernel !== 'clamp' && external && resample );
+			const access = area || ( external && copySource && batch.firstMipLevel === baseMipLevel ) ? 'load' : this.access( reduction, sourceFormat );
+			const kernel: BatchKernelKey = { format, dimension, count: batch.count, access, reduction, sourceFormat, output, kind: batch.kernel, tile: batch.tile, area, box };
 			const layout = this.layout( kernel );
 			const pipeline = this.pipeline( kernel );
 			const entries: GPUBindGroupEntry[] = access === 'sample' ? [ { binding: 0, resource: this.sampler } ] : [];
@@ -527,7 +569,7 @@ export class Downsampler {
 	private compatCopies( texture: GPUTexture, batch: Batch, dimension: ViewDimension, view: ( level: number ) => GPUTextureView ): PreparedBatch[] {
 
 		const format = texture.format as SupportedFormat;
-		const kernel: BatchKernelKey = { format, dimension, count: 1, access: 'load', reduction: 'max', sourceFormat: format, output: 'storage', kind: 'exact', tile: 8 };
+		const kernel: BatchKernelKey = { format, dimension, count: 1, access: 'load', reduction: 'max', sourceFormat: format, output: 'storage', kind: 'exact', tile: 8, area: false, box: false };
 		const layout = this.layout( kernel );
 		const pipeline = this.pipeline( kernel );
 		return Array.from( { length: batch.count }, ( _, i ) => {
@@ -574,10 +616,10 @@ export class Downsampler {
 	 * Kernel options for a batch. 'clamp' batches (`oddSizes: 'spd'`) are the
 	 * Reducer's 'clamp' tile kernel emitting every level.
 	 */
-	private kernelOptions( { format, dimension, count, access, reduction, sourceFormat, output, kind, tile }: BatchKernelKey ): KernelOptions {
+	private kernelOptions( { format, dimension, count, access, reduction, sourceFormat, output, kind, tile, area, box }: BatchKernelKey ): KernelOptions {
 
 		const { f16Rounding } = this;
-		if ( kind !== 'clamp' ) return { format, dimension, count, reduction, access, sourceFormat, output, f16Rounding, tile, ...( kind === 'tail' ? { tail: true } : {} ) };
+		if ( kind !== 'clamp' ) return { format, dimension, count, reduction, access, sourceFormat, output, f16Rounding, tile, ...( kind === 'tail' ? { tail: true } : {} ), ...( box ? { box: true } : area ? { area: true } : {} ) };
 		return { format, dimension, edges: 'clamp', count, reduction, access, sourceFormat, output, f16Rounding };
 
 	}
@@ -595,11 +637,11 @@ export class Downsampler {
 
 	private pipeline( key: BatchKernelKey ): GPUComputePipeline {
 
-		const { format, dimension, count, access, reduction, sourceFormat, output, kind, tile } = key;
-		const id = `${ kind }${ kind === 'clamp' ? '' : tile }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }:${ output }`;
+		const { format, dimension, count, access, reduction, sourceFormat, output, kind, tile, area, box } = key;
+		const id = `${ kind }${ kind === 'clamp' ? '' : tile }${ box ? ':box' : area ? ':area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }:${ output }`;
 		let pipeline = this.pipelines.get( id );
 		if ( pipeline !== undefined ) return pipeline;
-		const label = `downsampler ${ kind }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ typeof reduction === 'string' ? reduction : 'custom' }:${ output }`;
+		const label = `downsampler ${ kind }${ box ? ' box' : area ? ' area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ typeof reduction === 'string' ? reduction : 'custom' }:${ output }`;
 		const module = this.device.createShaderModule( { label, code: createKernel( this.kernelOptions( key ) ) } );
 		const layout = this.device.createPipelineLayout( { label, bindGroupLayouts: [ this.layout( key ) ] } );
 		pipeline = this.device.createComputePipeline( { label, layout, compute: { module, entryPoint: 'main' } } );

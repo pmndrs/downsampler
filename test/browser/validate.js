@@ -1,9 +1,10 @@
 // GPU correctness suite. Every texel of every generated level is checked against
 // the CPU reference, computed from the GPU's own previous level so permitted
 // rounding differences do not accumulate along the chain.
-import { copyReference, formats, fromHalf, isIntegerDomain, isPackedQuantization, levelSize, pyramidTolerance, quantize, reducePyramid, reduceReference, sampledChannels, spdReference, storageWritable, toHalf, tolerance } from '/dist/index.js';
+import { areaReference, boxReference, copyReference, formats, maxViolations, fromHalf, isIntegerDomain, isPackedQuantization, levelSize, pyramidTolerance, quantize, reducePyramid, reduceReference, sampledChannels, spdReference, storageWritable, toHalf, tolerance } from '/dist/index.js';
 import { Downsampler, Reducer } from '/dist/webgpu/index.js';
 import { createDepthSource, createTexture, makeData, poison, readMip, readMips, toFloats, upload } from './gpu.js';
+import { validateBox } from './validate-box.js';
 import { validatePacked } from './validate-packed.js';
 import { validateScalar } from './validate-scalar.js';
 import { validatePayload } from './validate-payload.js';
@@ -40,7 +41,7 @@ const patterns = [ 'constant', 'random', 'edge', 'tiles' ];
 // the smallest value. A min under a total order, so associative, commutative and
 // idempotent, and sensitive to the value domain (it breaks if a kernel passes
 // 0–255 units instead of normalized values).
-const preferHigh = {
+export const preferHigh = {
 	wgsl: `fn reduce(a: vec4f, b: vec4f) -> vec4f {
 	let ha = a >= vec4f(0.5);
 	let hb = b >= vec4f(0.5);
@@ -69,12 +70,23 @@ export const variants = [
 	{ name: 'tail average (load)', reduction: 'average', tail: true, access: 'load', patterns, filterableOnly: true },
 	{ name: 'tail max', reduction: 'max', tail: true, patterns: patterns.slice( 1 ) },
 	{ name: 'tail minmax', reduction: 'minmax', tail: true, patterns: patterns.slice( 1 ) },
-	{ name: 'tail custom', reduction: { wgsl: preferHigh.wgsl }, reference: preferHigh.reference, tail: true, patterns: patterns.slice( 1 ) }
+	{ name: 'tail custom', reduction: { wgsl: preferHigh.wgsl }, reference: preferHigh.reference, tail: true, patterns: patterns.slice( 1 ) },
+	// oddSizes: 'box' (area-weighted odd sizes, M2.5), each level against `boxReference` from the
+	// GPU's previous level; on the box formats only (every quantization path, two packed, r32float).
+	// Batches reading an odd level load; even ones sample, as 'exact' does. 'box max' must equal
+	// the 'exact' folds (the same footprint).
+	{ name: 'box average', reduction: 'average', oddSizes: 'box', patterns, box: true },
+	{ name: 'box average (load)', reduction: 'average', oddSizes: 'box', access: 'load', patterns, filterableOnly: true, box: true },
+	{ name: 'box max', reduction: 'max', oddSizes: 'box', patterns: patterns.slice( 1 ), box: true },
+	{ name: 'tail box average', reduction: 'average', oddSizes: 'box', tail: true, patterns, box: true }
 ];
+
+/** Formats the 'box' variants run on: each quantization family's 4-channel format, the packed floats and r32float. */
+export const boxFormats = [ ...familyFormats, 'rgb9e5ufloat', 'rg11b10ufloat', 'r32float' ];
 
 const mipSize = ( size, level ) => Math.max( 1, size >> level );
 
-function expectThrow( run, message, label ) {
+export function expectThrow( run, message, label ) {
 
 	try { run(); } catch ( error ) {
 
@@ -176,7 +188,8 @@ export const compatibility = device => ! device.features.has( 'core-features-and
  * `only`: run one part of the suite; default all. The parts 'downsampler', 'reducer', 'scalar' and 'fixtures'
  * (the tool fixtures' oracle checks) partition it; 'mips' is 'downsampler' plus 'reducer'. 'packed' runs the packed float
  * formats and the buffer output path ('packed-source' and 'packed-api' one piece of it, for debugging).
- * 'odd' runs only the 'spd' and tail variants of the main matrix (part of 'downsampler', for debugging).
+ * 'odd' runs only the 'spd' and tail variants of the main matrix (part of 'downsampler', for debugging),
+ * 'box' the main matrix's 'box' variants and validate-box.js (M2.5; also part of 'downsampler').
  *
  * `shard` ({ index, total }, 1-based) runs one shard of the case groups (after `only`), split by
  * `durations` (group id → ms; test/ci/README.md). `list` runs nothing and returns the group ids
@@ -274,7 +287,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 			const odd = variant => variant.oddSizes !== undefined || variant.tail === true;
 			const quickOdd = variant => quick && odd( variant );
 			const quickFormats = variant => variant.tail ? [ 'rgba8unorm', 'rgba16float' ] : familyFormats;
-			const formatVariants = variants.filter( variant => ( filterable || ! variant.filterableOnly ) && ( only !== 'odd' || odd( variant ) ) && ! ( quickOdd( variant ) && ! quickFormats( variant ).includes( format ) ) );
+			const formatVariants = variants.filter( variant => ( filterable || ! variant.filterableOnly ) && ( only !== 'odd' || odd( variant ) ) && ! ( quickOdd( variant ) && ! quickFormats( variant ).includes( format ) ) && ( ! variant.box || boxFormats.includes( format ) ) && ( only !== 'box' || variant.box ) );
 			const family = familyFormats.includes( format ) || packed;
 			const storageShapes = ! storagePath ? [] : family ? cases : subset;
 			// The buffer path runs every shape when it is a packed format's only path (rgb9e5ufloat;
@@ -370,7 +383,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 								const key = `${ variant.name }:${ pattern }`;
 								const inTile = ! firstOutputs.has( level );
 								let expected = level === 1 ? firstLevels.get( key ) : undefined;
-								if ( expected === undefined ) expected = reduceReference( previous, w, h, layers, quantization, reference, { ...( packed && inTile ? { pairing: 'float32' } : {} ), weights: sampledLevels.has( level ) ? 'sampler' : 'shader' } );
+								if ( expected === undefined ) expected = ( variant.oddSizes === 'box' ? boxReference : reduceReference )( previous, w, h, layers, quantization, reference, { ...( packed && inTile ? { pairing: 'float32' } : {} ), weights: sampledLevels.has( level ) ? 'sampler' : 'shader' } );
 								if ( level === 1 ) firstLevels.set( key, expected );
 								const actual = mips[ level - 1 ];
 								result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ label } mip ${ level }`, reference, channels, 0, ( isIntegerDomain( quantization ) || packed ) && inTile ) );
@@ -403,6 +416,10 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 			// The main matrix's 'spd' and tail variants only (above).
 
+		} else if ( only === 'box' ) {
+
+			results.push( ...await validateBox( device, { quick, onProgress, select } ) );
+
 		} else if ( only?.startsWith( 'packed' ) ) {
 
 			// 'packed-source' and 'packed-api' run one part (for debugging).
@@ -416,6 +433,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 				results.push( ...await validateSource( device, { quick, onProgress, select } ) );
 				results.push( ...await select.run( 'downsampler/options', () => validateOptions( device ) ) );
 				results.push( ...await validatePacked( device, { quick, onProgress, part: 'downsampler', select } ) );
+				results.push( ...await validateBox( device, { quick, onProgress, select } ) );
 
 			}
 
@@ -500,7 +518,7 @@ export const sourceShapes = [
 	[ 64, 32, 3 ], [ 17, 11, 3 ], [ 512, 512 ], [ 1920, 1080 ]
 ];
 
-async function makeSource( device, format, width, height, layers, pattern, seed ) {
+export async function makeSource( device, format, width, height, layers, pattern, seed ) {
 
 	if ( format.startsWith( 'depth' ) ) {
 
@@ -517,7 +535,7 @@ async function makeSource( device, format, width, height, layers, pattern, seed 
 }
 
 /** Single-channel sources are splatted by the kernel; the oracle sees the same. */
-function splat( floats ) {
+export function splat( floats ) {
 
 	const output = new Float32Array( floats.length );
 	for ( let i = 0; i < floats.length; i += 4 ) output.fill( floats[ i ], i, i + 4 );
@@ -534,9 +552,11 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 	const downsamplers = levelOptions( device ).flatMap( levels => {
 
 		const exact = new Downsampler( device, { levelsPerDispatch: levels, tail: false } );
-		const modes = [ { downsampler: exact, mode: 'exact' }, { downsampler: exact, mode: 'spd' } ];
+		// 'box': area-weighted odd sizes, folds included (they must match 'exact').
+		const modes = [ { downsampler: exact, mode: 'exact' }, { downsampler: exact, mode: 'spd' }, { downsampler: exact, mode: 'box' } ];
 		// Tail pipelines compile slowly on SwiftShader; --quick leaves them to the main matrix.
-		return quick ? modes : [ ...modes, { downsampler: new Downsampler( device, { levelsPerDispatch: levels, tail: true } ), mode: 'tail' } ];
+		const tail = new Downsampler( device, { levelsPerDispatch: levels, tail: true } );
+		return quick ? modes : [ ...modes, { downsampler: tail, mode: 'tail' }, { downsampler: tail, mode: 'tail box' } ];
 
 	} );
 
@@ -568,8 +588,9 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 							for ( const { downsampler, mode } of downsamplers ) for ( const reduction of reductions ) {
 
 								if ( mode === 'spd' && reduction !== 'average' ) continue;
-								const options = { source: { texture: source.texture }, reduction, oddSizes: mode === 'spd' ? 'spd' : 'exact' };
-								if ( mode === 'tail' && ! downsampler.prepare( destination, options ).some( batch => batch.kernel === 'tail' ) ) continue;
+								const box = mode.endsWith( 'box' );
+								const options = { source: { texture: source.texture }, reduction, oddSizes: mode === 'spd' ? 'spd' : box ? 'box' : 'exact' };
+								if ( mode.startsWith( 'tail' ) &&! downsampler.prepare( destination, options ).some( batch => batch.kernel === 'tail' ) ) continue;
 								poison( device, destination, 0 );
 								downsampler.generate( destination, options );
 								const mips = await readMips( device, destination, 0 );
@@ -608,7 +629,7 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 								for ( let level = 0; level < destination.mipLevelCount; level ++ ) {
 
 									const quantizedInput = level > 0 || formats[ sourceFormat ]?.quantization === quantization;
-									const expected = level === 0 && dw === width && dh === height ? copyReference( previous, w, h, layers, quantization ) : reduceReference( previous, w, h, layers, quantization, reduction, { quantizedInput } );
+									const expected = level === 0 && dw === width && dh === height ? copyReference( previous, w, h, layers, quantization ) : ( box ? boxReference : reduceReference )( previous, w, h, layers, quantization, reduction, { quantizedInput } );
 									const slack = level === 0 && /unorm/.test( sourceFormat ) ? 2 ** - 21 : 0;
 									check( mips[ level ], expected, quantization, `${ label } mip ${ level }`, reduction, channels, slack );
 									previous = mips[ level ]; w = expected.width; h = expected.height;

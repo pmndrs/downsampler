@@ -34,6 +34,9 @@ function compareStrategies( device ) {
 		// and also timed spdMax and atomicMax.
 		if ( reduction !== 'average' ) continue;
 		strategies.spd = { ...run( exact, { reduction, oddSizes: 'spd' } ), parity: false };
+		// M2.5: area-weighted odd sizes, the 'exact' batches (odd-level batches load), with and without the tail.
+		strategies.box = { ...run( new Downsampler( device, { tail: false } ), { reduction, oddSizes: 'box' } ), parity: false };
+		strategies.tailBox = { ...run( tail, { reduction, oddSizes: 'box' } ), parity: false };
 		// Windows decisions (2026-11-12, results/windows/correctness.md): shader weights instead of
 		// the sampler ('load', identical on every GPU), and the device's own f16 conversion
 		// ('device', the cost of rounding to nearest even; the same as exact for non-f16 formats).
