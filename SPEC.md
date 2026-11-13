@@ -17,7 +17,7 @@ Feature target: parity with AMD FidelityFX SPD, implemented independently in WGS
 A 2:1 reduction is only exact when a dimension halves cleanly. For odd, non-unit sizes (decided 2026-11-10; `'spd'` built and measured 2026-11-11, M2T.4):
 
 - **`'exact'` (default, implemented).** An odd size ends the current batch, and the next level is re-sampled from the stored level with normalized-coordinate bilinear filtering.
-  - Results match render-pass and WebGL mipmaps (the CPU reference in §7), so engines can switch without visual change.
+  - Results match render-pass and WebGL mipmaps (the CPU reference in §7), so engines can switch without visual change. **"Match" means within 1 step per level**: each level within one step of a render pass's level made from the same source level (8-bit formats; float formats within their rounding and the sampler's weight step). Whole chains made independently can differ by **up to 2 steps** on Apple GPUs, because a one-step difference at one level carries into the next and Metal render passes follow no fixed tie rule: against them, a round-half-up kernel differed at 46 % of exact ties and round-to-even (ours) at 37 % (three.js parity test, `test/webgpu/mipmaps-compute.js` in the `compute-mipmaps` branch, M5 Pro, Chrome 155, 72 of 72 cases; at even sizes every 8-bit difference fell on a tie). So no kernel reproduces render-pass mipmaps bit for bit on every GPU; ours is bit-reproducible against the CPU oracle instead (§7).
   - Min/max use the conservative `2x … 2x+2` footprint, so Hi-Z is correct.
   - Cost: more dispatches at render sizes, 5–9 instead of 2 (1920×1080: 7). The exact tail kernel (M2T.4; **default since 2026-11-13**, `tail: false` turns it off) cuts that to 3–6 with the same rule: 0.82–0.90× of `'exact'` on an RTX 3060, 0.81–1.02× on an M5 Pro, neutral on Intel UHD (decision 3 below).
 - **`'box'` (implemented 2026-11-13, M2.5, opt-in).** Area-weighted odd sizes, as in nvpro_pyramid. Output texel x of n covers `[x·S/n, (x+1)·S/n)` of its source level, and each source texel weighs its overlap (`areaReference` in core, `src/core/box.ts`). Per axis that is 1 tap at size 1, 2 taps of 1/2 at even sizes, and at an odd size `2n+1` 3 taps `2x … 2x+2` with weights `(n−x, n, x+1)/(2n+1)`. Every source texel contributes in proportion to its overlap, so every level keeps the base level's mean, and a 31×31 texture's 1×1 is its true mean (`greggman`'s case, gpuweb#5253; core and GPU tests).
@@ -408,6 +408,15 @@ shadingChange.encodePass( pass, {                        // or encode( encoder, 
 import { reducePyramid, levelSize } from 'downsampler';  // the CPU oracle and level sizes
 ```
 
+```ts
+// Vendoring (§10): in-place 'average' chains in one self-contained file, dist/mipmap.js (no imports).
+import { createMipmapKernel, planMipmapBatches, kernelDefaults, mipmapFormats, mipmapAccess } from 'downsampler/mipmap';
+
+const defaults = kernelDefaults( device.limits, device.adapterInfo ); // { levelsPerDispatch, bufferLevelsPerDispatch, exactTile, tailMaxTile, tail }: Downsampler's defaults
+const batches = planMipmapBatches( width, height, { mipLevelCount, ...defaults } ); // = planBatches in place under 'exact' (tail on by default)
+createMipmapKernel( { format, dimension, count, access: mipmapAccess( format, device.features ), tail, tile, f16Rounding } ); // = createKernel( { ...options, f16Pack: false } )
+```
+
 The destination must have `TEXTURE_BINDING` usage, plus `STORAGE_BINDING` (storage path) or `COPY_DST` (buffer path, §6.1), and a format from `formats`: `rgba8unorm`, `rgba16float`, `rgba8snorm`, `r32float`, `rg32float`, `rgba32float`, `rgb9e5ufloat`, `rgba8unorm-srgb`, `bgra8unorm-srgb` (buffer path only), plus `bgra8unorm` (storage needs `bgra8unorm-storage`), `rg11b10ufloat` (storage needs `texture-formats-tier1`; else the buffer path) and `r8unorm`, `rg8unorm`, `r8snorm`, `rg8snorm`, `r16float`, `rg16float` and the 16-bit normalized formats (need `texture-formats-tier1`), `rgb10a2unorm` (storage needs tier1; else the buffer path), and the integer formats (§6.1 Integer formats): `rgba8uint`/`sint`, `rgba16uint`/`sint`, `r32uint`/`sint`, `rg32uint`/`sint`, `rgba32uint`/`sint` (core), `r8`, `rg8`, `r16`, `rg16` `uint`/`sint` and `rgb10a2uint` (tier1; the 4-byte ones take the buffer path without it). `unsupportedReason` names a missing feature or usage. Its dimension must be `2d`, with `textureBindingViewDimension` either `2d` or `2d-array`.
 
 ```ts
@@ -574,6 +583,8 @@ Optimisation: with `float32-filterable`, float32 formats may take the sample pat
 
 **Oracle.** `reduceReference` is a normalized-coordinate bilinear sample at each output texel centre with clamped edges, quantized to the storage format. Each GPU level is checked against the reference computed from the GPU's own previous level, so permitted rounding does not accumulate.
 
+**Render passes are not the oracle.** "Matches render-pass mipmaps" (§2.1) is a looser, separate claim: each level within 1 step of a render pass's level from the same source level, and independent chains within 2 steps on Apple, where Metal render passes round exact ties with no fixed rule (three.js's parity test). Ties round to even here, against the CPU oracle, bit for bit where the tolerance below says exact.
+
 **Tolerance.** Declared test tolerances for these fixtures, not a formal error bound:
 - unorm8: 2.01 steps.
 - float16: `max(0.002, 0.3 % of the reference value)`.
@@ -676,6 +687,19 @@ three.js does not take runtime dependencies for core features. The plan:
    - A prototype with these semantics passes three's integration tests in the `webgpu-spd-audit` branch.
    - The first PR adds sRGB (most three.js color textures) and cube maps. Hi-Z follows separately. sRGB works in `downsampler/three` since M2.3.5: three's sRGB colour textures are `rgba8unorm-srgb` with COPY_DST, so they take the buffer path with no STORAGE_BINDING (which an sRGB texture can't have anyway). Many textures can share one `scratch` buffer (§5).
    - Keep this repo's GPU suite as the shared oracle, so the vendored copy can't drift.
+   - **Done (2026-11-13):** `WebGPUTextureMipmapUtils` (611 lines, branch `compute-mipmaps`) vendors the in-place `'average'` subset by hand from commit 488eff6: layers and cube maps as 2d-array views, but no sRGB (the buffer path) in this first PR; textures it can't write keep render passes, as does every texture in compatibility mode.
+
+### Vendoring (2026-11-13)
+
+What three.js's integration needed, built so that a copy is one file and its drift is a test failure:
+
+- **One file.** `downsampler/mipmap` (`src/mipmap.ts` → `dist/mipmap.js`, plain ES2022, no imports, ~19 KB with comments): `createMipmapKernel`, `planMipmapBatches`, `kernelDefaults` and the format subset (`mipmapFormats`, `mipmapAccess`). It is a pruned copy of the generator, not a bundle: the full `kernel.ts` with its imports is several thousand lines, nearly all for paths an engine's in-place chain never takes. A core test (`test/core/mipmap.test.js`) requires it to equal the full generator on its whole option space (every format × dimension × count × tile × tail × access × `f16Rounding`, ~34 000 kernels) and `planBatches` on 16 shapes × every plan option, so a change to the kernel bodies fails there until the copy follows.
+- **Defaults as a pure function.** `kernelDefaults( limits, adapterInfo )`; `Downsampler`'s constructor resolves its defaults from it, so an engine using the function gets the library's levels per dispatch, tiles and tail.
+- **float16.** `float16Wgsl( rounding, false )` and `KernelOptions.f16Pack: false` give `ds_round_f16` alone: `ds_half_bits` and `ds_pack_f16` serve only the buffer output path. The default stays true, so every existing option set's WGSL is unchanged byte for byte (compared before and after over 723 240 option sets); the mipmap entry uses false.
+- **Goldens.** `test/golden/mipmap/` holds the WGSL of 56 fixed option sets (every format at a 4-level batch and a 6-level tail with its usual access; every batch shape for rgba8unorm; both accesses, both dimensions and `'device'` rounding) and `cases.json`. `test/core/golden.test.js` fails when either generator's output changes; `npm run golden:update` (`node test/core/golden.test.js --update`) rewrites them, and their diff is what a vendored copy must follow.
+- **Drift check.** `node scripts/check-vendored.mjs <file>` imports a vendored copy (relative imports resolved against it), calls its generator (an exported `createMipmapKernel`, or a module-level `createKernel` taking options or three's positional arguments) on the golden cases and compares byte for byte: the matching count, the differing cases with line diffs, and the changed lines across them. Cases the copy rejects are reported as not covered. Exit 1 on any difference.
+- **GPU.** `validate-mipmap.js` (`--only=mipmap`, part of `downsampler`) records chains from the entry alone, with the bindings its documentation names, and requires them bit-identical to a `Downsampler`'s, and its plan and defaults equal: 11 formats × 9 shapes (layers, 2d-array, odd, 1D, 1×1, 1920×1080).
+- **Three's copy today** (check-vendored against `compute-mipmaps` @ dc4bd5e5c1): 18 of 56 goldens match, 36 differ, 2 not covered (its positional generator has no `f16Rounding`). Three kinds of difference, none changing results: float16's `ds_round_f16` is emitted after the storage bindings instead of before them; single-channel formats don't splat (`.xxxx`) the sampled or loaded value; the load path leaves out the same-size copy line (`if (all(sourceSize == size))`), which an in-place chain never takes. Adopting the library's text for these three makes the copy pass.
 
 ## 11. Milestones
 

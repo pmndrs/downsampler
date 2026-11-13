@@ -1,10 +1,11 @@
 import { bufferWritable, formats, isIntFormat, isSupportedFormat, sampleKind, type FormatInfo, type SupportedFormat } from '../core/formats.js';
-import { outputBufferLayout, planBatches, tailTile, type Batch, type BatchKernel, type OddSizePolicy } from '../core/plan.js';
+import { outputBufferLayout, planBatches, type Batch, type BatchKernel, type OddSizePolicy } from '../core/plan.js';
 import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
 import { layersProblem, planRegions, rectProblem, type BatchRegion, type Rect } from '../core/region.js';
 import { isCompatibilityTexture } from './compat.js';
 import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, regionBinding, regionBytes, type F16Rounding, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
 import { requiredLimits } from './limits.js';
+import { kernelDefaults } from '../mipmap.js';
 
 /** Options of `new Downsampler( device, options )`. Every option is validated by the constructor. See docs/guide.md. */
 export interface DownsamplerOptions {
@@ -316,6 +317,8 @@ export class Downsampler {
 	readonly f16Rounding: F16Rounding;
 	/** Smallest first-output tile of 'exact' batches (resolved `exactTile` option: 8, 16 or 32). */
 	readonly exactTile: number;
+	/** Largest tail tile: 32, or 8 below 256 invocations per workgroup (tail tiles of 16 and 32 take 16 × 16 invocations). */
+	private readonly tailMaxTile: number;
 	private readonly scratch = new WeakMap<GPUTexture, Map<number, GPUTexture>>();
 	private readonly pipelines = new Map<string, GPUComputePipeline>();
 	private readonly layouts = new Map<string, GPUBindGroupLayout>();
@@ -341,9 +344,12 @@ export class Downsampler {
 
 		const output = options.output ?? 'auto';
 		if ( output !== 'auto' && output !== 'storage' && output !== 'buffer' ) throw new Error( 'downsampler: output must be "auto", "storage" or "buffer".' );
-		// 5 and 6 levels take 16 × 16 invocations; compatibility mode defaults to 128.
-		const invocations = device.limits.maxComputeInvocationsPerWorkgroup >= 256 ? 6 : 4;
-		const limit = output === 'buffer' ? invocations : Math.min( invocations, device.limits.maxStorageTexturesPerShaderStage );
+		// The device's defaults (`kernelDefaults`, shared with `downsampler/mipmap`). 5 and 6 levels
+		// take 16 × 16 invocations; compatibility mode defaults to 128. Software adapters
+		// (SwiftShader) keep 8×8 'exact' tiles: they take 30 s or more to compile a 32×32-tile pipeline.
+		const defaults = kernelDefaults( device.limits, ( device as GPUDevice & { adapterInfo?: GPUAdapterInfo } ).adapterInfo );
+		const invocations = defaults.bufferLevelsPerDispatch;
+		const limit = output === 'buffer' ? invocations : defaults.levelsPerDispatch;
 		const levels = options.levelsPerDispatch ?? limit;
 		if ( ! Number.isInteger( levels ) || levels < 1 || levels > limit ) throw new Error( `downsampler: levelsPerDispatch must be an integer from 1 to ${ limit } on this device${ output === 'buffer' || limit === invocations ? '' : ` (up to ${ invocations } with output 'buffer')` }.` );
 		this.device = device;
@@ -355,16 +361,14 @@ export class Downsampler {
 		const compatibility = options.compatibility ?? 'auto';
 		if ( compatibility !== 'auto' && typeof compatibility !== 'boolean' ) throw new Error( 'downsampler: compatibility must be true, false or "auto".' );
 		this.compatibility = compatibility;
-		this.tail = options.tail ?? true;
+		this.tail = options.tail ?? defaults.tail;
 		const f16Rounding = options.f16Rounding ?? 'nearest';
 		if ( f16Rounding !== 'nearest' && f16Rounding !== 'device' ) throw new Error( 'downsampler: f16Rounding must be "nearest" or "device".' );
 		this.f16Rounding = f16Rounding;
-		// Software adapters (SwiftShader) keep 8: they take 30 s or more to compile a 32×32-tile pipeline.
-		const info = ( device as GPUDevice & { adapterInfo?: GPUAdapterInfo } ).adapterInfo;
-		const software = info?.isFallbackAdapter === true;
-		const exactTile = options.exactTile ?? ( invocations === 6 && ! software ? ( info?.vendor === 'apple' ? 16 : 32 ) : 8 );
+		const exactTile = options.exactTile ?? defaults.exactTile;
 		if ( exactTile !== 8 && ( exactTile !== 16 && exactTile !== 32 || invocations < 6 ) ) throw new Error( 'downsampler: exactTile must be 8, or 16 or 32 on devices with 256 invocations per workgroup.' );
 		this.exactTile = exactTile;
+		this.tailMaxTile = defaults.tailMaxTile;
 		this.sampler = device.createSampler( { label: 'downsampler', minFilter: 'linear', magFilter: 'linear' } );
 
 	}
@@ -627,8 +631,7 @@ export class Downsampler {
 		const levelsPerDispatch = output === 'buffer' && this.output === 'auto' ? this.bufferLevelsPerDispatch : this.levelsPerDispatch;
 		const sourceWidth = source === undefined ? undefined : mipSize( source.texture.width, sourceMipLevel ), sourceHeight = source === undefined ? undefined : mipSize( source.texture.height, sourceMipLevel );
 		const copySource = source !== undefined && sourceWidth === mipSize( texture.width, baseMipLevel ) && sourceHeight === mipSize( texture.height, baseMipLevel );
-		// Tail tiles of 16 and 32 take 16 × 16 invocations; below 256 (compatibility mode) only 8.
-		const tailMaxTile = this.device.limits.maxComputeInvocationsPerWorkgroup >= 256 ? tailTile : 8;
+		const { tailMaxTile } = this;
 		// Under 'spd', a resampled source is its own 1-level batch, like a copy.
 		const resample = source?.resample === 'area';
 		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch, oddSizes, fromSource: source !== undefined, copySource: copySource || resample, tail: oddSizes !== 'spd' && this.tail, tailMaxTile, exactMinTile: this.exactTile } );
