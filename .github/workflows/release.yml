@@ -1,0 +1,74 @@
+name: Release
+
+# Publishes the package to npm with provenance. Manual only (Actions → Release → Run workflow):
+# no push, pull request or schedule trigger. Before running it, the full GPU matrix must have
+# passed on a real GPU (CLAUDE.md); CI runners have none, so this job runs the typecheck, the
+# build and the core suite only.
+#
+# Setup: an npm automation token in the repository secret NPM_TOKEN (or npm trusted publishing
+# for this repository and workflow, which needs no token), and optionally required reviewers on
+# the `npm` environment.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish. Must equal package.json's (guards against publishing the wrong commit).
+        required: true
+        type: string
+      dist-tag:
+        description: npm dist-tag
+        required: true
+        default: latest
+        type: string
+      dry-run:
+        description: Run everything, but `npm publish --dry-run`
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  # npm provenance: the OIDC token that signs the package's build attestation.
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish ${{ inputs.version }} (${{ inputs.dist-tag }}${{ inputs.dry-run && ', dry run' || '' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: npm
+    env:
+      # The GPU suite's browser isn't needed here.
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: npm ci
+      - name: Check the version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          actual=$(node -p "require('./package.json').version")
+          if [ "$actual" != "$VERSION" ]; then echo "::error::package.json has version $actual, not $VERSION"; exit 1; fi
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:core
+      - name: List the package contents
+        run: npm pack --dry-run
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          DIST_TAG: ${{ inputs.dist-tag }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          flags="--provenance --access public --tag $DIST_TAG"
+          if [ "$DRY_RUN" = true ]; then flags="$flags --dry-run"; fi
+          npm publish $flags
