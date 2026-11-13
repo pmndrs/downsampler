@@ -19,7 +19,7 @@ A 2:1 reduction is only exact when a dimension halves cleanly. For odd, non-unit
 - **`'exact'` (default, implemented).** An odd size ends the current batch, and the next level is re-sampled from the stored level with normalized-coordinate bilinear filtering.
   - Results match render-pass and WebGL mipmaps (the CPU reference in §7), so engines can switch without visual change.
   - Min/max use the conservative `2x … 2x+2` footprint, so Hi-Z is correct.
-  - Cost: more dispatches at render sizes, 5–9 instead of 2 (1920×1080: 7). The exact tail kernel (`new Downsampler( device, { tail: true } )`, opt-in, M2T.4) cuts that to 3–6 with the same rule, but recovers little time (measurements below).
+  - Cost: more dispatches at render sizes, 5–9 instead of 2 (1920×1080: 7). The exact tail kernel (M2T.4; **default since 2026-11-13**, `tail: false` turns it off) cuts that to 3–6 with the same rule: 0.82–0.90× of `'exact'` on an RTX 3060, 0.81–1.02× on an M5 Pro, neutral on Intel UHD (decision 3 below).
 - **`'box'` (planned, opt-in).** Area-weighted odd sizes, as in nvpro_pyramid: per axis, 3 taps with weights `(n−x, n, x+1)/(2n+1)` for size `2n+1`. Every source texel contributes in proportion to its overlap, which fixes the unrepresentative 1×1 of render-pass mipmaps on sizes like 31×31.
   - Same dispatch structure and footprint as the folds, so no extra cost.
   - Recommended for quality-sensitive content: GI, irradiance and roughness chains, UI.
@@ -99,7 +99,7 @@ What the numbers say:
 **Decided (coordinator, 2026-11-11; owner can overrule):**
 1. `oddSizes: 'spd'` stays a public opt-in, for 'average' only: SPD parity and speed-first average chains that tolerate dropped edges, such as bloom or exposure-style pyramids. Folds are rejected under it.
 2. The atomic probe stays test-only (`test/bench/atomic-spd.js`).
-3. The tail kernel stays opt-in (`tail: false` by default). Make it the default only if an idle-machine run shows ≥ 5 % at render sizes; on this loaded machine it measured 0.83–1.07×. It composes with both output paths and with compatibility mode, where devices with fewer than 256 invocations per workgroup cap tail tiles at 8×8.
+3. ~~The tail kernel stays opt-in~~. **Superseded 2026-11-13 (owner rule: default if faster on most devices): `tail: true` is the default.** Tail ÷ `'exact'` at render sizes, idle: RTX 3060 0.82 / 0.90 (rgba8 / rgba16f), Intel UHD 0.97 / 0.97, M5 Pro 0.81–1.02 with 16×16 exact tiles (`results/render/m5-pro-render-tiles-*.json`, `results/windows/timings.md`). The same sweep set `exactTile`'s default to 16 on Apple GPUs: 32 was 1.04–1.28× slower than 8 or 16 there at render sizes, while on the RTX and Intel 32 was the fast one. Tail levels use shader bilinear weights, within one rgba8 step of the sampler's. It composes with both output paths and with compatibility mode, where devices with fewer than 256 invocations per workgroup cap tail tiles at 8×8.
 
 **Still for the owner:**
 - If `'exact'` must get closer to `'spd'` at render sizes, the levers are halo batches for the large-level breaks (§13) and a cheaper exact kernel (integer rounding, fold footprint branches). Measure on NVIDIA, AMD and Intel first (§9): the cost of a dependent dispatch there is unknown.

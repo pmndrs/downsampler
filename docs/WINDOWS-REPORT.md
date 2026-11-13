@@ -41,7 +41,7 @@ exported for it. [correctness.md](../results/windows/correctness.md)
 
 1. **f32 → f16 truncates toward zero on D3D12**, in both `textureStore` and `pack2x16float`, on NVIDIA and Intel. On the M5
    Pro only `textureStore` truncated, so the old quantize step didn't help here. Fix: `f16Rounding: 'nearest'` (default)
-   rounds to nearest even in the shader with one f32 add and subtract, bit-exact against core `toHalf` on both GPUs.
+   rounds to nearest even in the shader with one f32 add and subtract, bit-exact against core `toHalf` on both GPUs. **Update 2026-11-13 (M5 Pro):** that add-and-subtract was folded away by Metal's fast math, so it didn't round on Apple GPUs at all. `5f97c86` replaced it with branch-free integer rounding; its cost on Intel needs re-measuring.
    Cost against `'device'`: noise on the RTX, **14 % on Intel**. Probe: `results/probes/f16-store-rounding.mjs`.
 2. **Hardware bilinear weights differ by vendor.** NVIDIA rounds axis weights to 8 bits and then rounds each of the four
    2D tap products to 1/256. Intel truncates axis weights, even at exact halves: `(x + 0.5) / n` lands a float ulp below

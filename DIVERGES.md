@@ -19,7 +19,7 @@ Last updated: 2026-11-13 (Windows: RTX 3060 Laptop and Intel UHD, native D3D12/V
 | # | Divergence | Source | Verdict | Effort to converge | Quality | Performance |
 |---|---|---|---|---|---|---|
 | 1 | No single dispatch / atomic handoff | SPD, webgpu-spd | Keep | S (probe exists) | Converging risks missing mips | Measured: 2 dispatches beat the atomic probe, 1.1–2.2× at render sizes up to 1440p; tie at 4096² |
-| 2 | Batch ends at every odd size | SPD, nvpro | Tail kernel built (opt-in); halo batches candidate | — / M–L | None | Measured: tail 0.83–1.07×; `'spd'` structure 0.47–0.73× |
+| 2 | Batch ends at every odd size | SPD, nvpro | Tail kernel built, default since 2026-11-13; halo batches candidate | — / M–L | None | Measured, idle: tail 0.82–0.90× (RTX 3060), 0.81–1.02× (M5 Pro), 0.97× (Intel UHD); `'spd'` structure 0.47–0.73× |
 | 3 | Odd sizes match render passes, not area-weighted or dropped | SPD, nvpro | Keep default; `'spd'` opt-in; `'box'` planned | Done for SPD / M for `'box'` | `'spd'`: drifting footprints, non-conservative Hi-Z | `'spd'` 1.4–2.1× faster at render sizes (rgba8) |
 | 4 | Conservative min/max footprint at odd edges | SPD | Keep | S (but wrong) | SPD's Hi-Z can false-cull | One extra load per odd edge texel |
 | 5 | Clamp at edges, no zero reads | SPD | Keep | S | Ours: no dark or zero borders | ~None |
@@ -70,11 +70,11 @@ Last updated: 2026-11-13 (Windows: RTX 3060 Laptop and Intel UHD, native D3D12/V
 - **We:** end the batch where the next reduction is inexact: 5–9 dispatches at render sizes (1920×1080: 7).
 - **Why:** it is the simplest structure that keeps `'exact'` results identical to render passes.
 - **Effort to converge:**
-  - **Tail kernel: built (M2T.4), opt-in** with `new Downsampler( device, { tail: true } )`. Once a first output fits one 32×32 workgroup, that workgroup finishes the chain with exact weights. Render sizes drop to 3–6 dispatches (1920×1080: 4; 1477×831: 6, since 46×25 doesn't fit).
+  - **Tail kernel: built (M2T.4), the default since 2026-11-13** (`tail: false` turns it off). Once a first output fits one 32×32 workgroup, that workgroup finishes the chain with exact weights. Render sizes drop to 3–6 dispatches (1920×1080: 4; 1477×831: 6, since 46×25 doesn't fit).
   - **Halo batches, M–L (candidate):** our odd taps fall in `2x … 2x+2`, the same support as nvpro's, so their halo structure would work without changing results. This is what's left: the breaks at the large levels.
 - **Quality:** none. The tail matches `'exact'` within one 8-bit step (its shader bilinear weights replace the sampler's 8-bit ones). It passed the full GPU matrix against the `'exact'` oracle.
 - **Performance (measured, M5 Pro, loaded; SPEC §2.1):**
-  - The tail is 0.83–1.07× of `'exact'`: a gain at 960×540 (0.83–0.85), and about 0.90–0.97 elsewhere, often inside the noise. The trailing dispatches it removes are cheap.
+  - The tail is 0.83–1.07× of `'exact'` on a loaded M5 Pro (2026-11-11). Idle re-runs (2026-11-13): RTX 3060 0.82 / 0.90 (rgba8 / rgba16f), Intel UHD 0.97 / 0.97, M5 Pro 0.81–1.02 with 16×16 exact tiles (`results/render/m5-pro-render-tiles-*.json`). Owner rule: default if faster on most devices, so it became the default.
   - The gap is real, though. The `'spd'` structure, 2 dispatches with no batch ends, is 0.47–0.73× for rgba8 and 0.62–0.94× for rgba16f at render sizes up to 1440p.
   - It isn't pass overhead: one compute pass for all batches (`encodePass`) measured 0.94–1.03×.
   - Part of it is the exact kernel's arithmetic: `'spd'` is 0.81× at 1024² rgba8 with the same 2 dispatches, and 0.63× for max.
