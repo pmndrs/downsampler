@@ -170,7 +170,7 @@ footer { color: var(--muted); font-size: 13px; display: grid; gap: 6px; max-widt
 		<p>Features are built and tested on the Apple M5 Pro. What's left before M3 tuning is measurement on other vendors: the two risk entries (17, 18) and every performance claim depend on it.</p>
 		<div class="phases">
 			<div class="phase"><span class="st st-done">done</span><h3>M1 · core</h3><p>Kernel, Downsampler, three.js adapter, GPU suite, device lab, bench.</p></div>
-			<div class="phase"><span class="st st-done">done</span><h3>M2 · features</h3><p>Reductions, separate source (Hi-Z), 21 formats incl. rgb9e5 and rg11b10 via the buffer path, compatibility mode, encodePass.</p></div>
+			<div class="phase"><span class="st st-done">done</span><h3>M2 · features</h3><p>Reductions, separate source (Hi-Z), formats incl. rgb9e5, rg11b10, rgb10a2, sRGB and integers via the buffer path, compatibility mode, encodePass.</p></div>
 			<div class="phase"><span class="st st-done">done</span><h3>M2T · tools first</h3><p>Reducer (hooks, sums, weights, 8 channels, payload folds, level selection), ScalarReduction, FSR 3.1 and upscaler fixtures, 'spd' mode and tail kernel measured.</p></div>
 			<div class="phase"><span class="st st-done">done</span><h3>Windows round 1</h3><p>RTX 3060 + Intel UHD: correctness, native D3D12/Vulkan matches, f16 rounding, sampler oracle, 32×32 exact tiles (docs/WINDOWS-REPORT.md). Round 2 (verify the merged milestones, M3 runs) is handed off in docs/WINDOWS-HANDOFF-2.md.</p></div>
 			<div class="phase"><span class="st st-done">done</span><h3>M2.4 / M2.5</h3><p>Done 2026-11-13: layer range and rect (partial updates), 'box' odd sizes, power-of-two (any-size) destinations from a separate source.</p></div>
@@ -357,14 +357,14 @@ const entries = [
 		converge: 'None needed: tighter by design.',
 		quality: 'None: bit-identical to a full recompute (GPU suite, 11/11 mutations caught).',
 		perfKind: 'estimate', perf: 'Fewer texels per partial update than SPD; not timed yet.', perfShort: 'Fewer texels than SPD (not timed)', qualityShort: 'None', note: 'Resolved.' },
-	{ n: 16, title: 'sRGB through a scratch copy or buffer', src: [ 'spd' ], srcText: 'SPD', verdict: 'planned', effort: 'M',
+	{ n: 16, title: 'sRGB through the buffer output path, not a UNORM alias', src: [ 'spd' ], srcText: 'SPD', verdict: 'keep', effort: '—',
 		they: 'SPD samples an sRGB view and writes a UNORM alias of the same texture.',
-		we: 'WebGPU forbids sRGB storage even through a view, so reduce in linear, write rgba8unorm scratch or a buffer, then copy.',
-		why: 'The alias is not allowed in WebGPU.',
-		converge: 'M (M2.3.5).',
-		quality: 'Same results.',
-		perfKind: 'estimate', perf: 'One extra copy of levels 1+, about a third of the base level\'s bytes.',
-		perfShort: 'Extra copy of levels 1+', qualityShort: 'Same results', note: 'Choose scratch texture vs buffer by measurement.' },
+		we: 'Done (M2.3.5, 2026-11-13): read the sRGB view, reduce in linear light, encode each level in the shader (correctly rounded to the exact sRGB curve), write through the buffer output path and copy into the texture. Loads snap to the exact 256-entry decode, because the M5 Pro decodes to 12 bits (k/4095). Min/max fold decoded values (same result as folding codes).',
+		why: 'WebGPU forbids sRGB storage, even through a view, so the alias is impossible. A scratch rgba8unorm texture + copy measured a tie (0.95 / 1.00 / 1.00 of the buffer path); the buffer path already composes with compatibility mode, rect, layers and separate sources.',
+		converge: 'None possible in WebGPU.',
+		quality: 'Linear-light averages with a correctly rounded encode, the same on every GPU; 10/10 mutations caught (no decode, encoded-space averages, gamma 2.2, truncation …).',
+		perfKind: 'measured', perf: 'Extra write and copy of every level. On the M5 Pro (loaded), render passes take 0.55–0.79× our time from 1920×1080 up; we are 1.19–1.98× faster up to 1280×720 and at 1024². Windows round 2 re-measures.',
+		perfShort: 'Render passes faster from 1080p up (M5)', qualityShort: 'Linear-light, correctly rounded', note: 'Keep; three.js keeps render passes for large sRGB textures until the Windows numbers.' },
 	{ n: 17, title: 'Compute only, no per-device render fallback', src: [ 'community', 'gpuweb' ], srcText: 'greggman, toji', verdict: 'risk', effort: 'M',
 		they: 'greggman found compute generators slower than render passes on NVIDIA/D3D12 (up to 10× for SPD-style ports); toji reported a partner seeing the same. The community default is render passes.',
 		we: 'Compute only. The three.js adapter falls back to render passes only for textures we cannot handle.',
@@ -416,6 +416,14 @@ const entries = [
 		converge: 'None needed.',
 		quality: 'A core test counts over 100 non-conservative texels on one 1920-texel row for the 2×2 tap; ours has none (GPU-checked against every source texel).',
 		perfKind: 'estimate', perf: 'The first batch loads the overlap (3×3 texels at 1920×1080 → 1024×512) instead of one sampler fetch. Not timed.', perfShort: 'Not timed', qualityShort: 'Conservative at any ratio', note: 'Keep.' },
+	{ n: 24, title: 'Integer averages: exact mean, rounded to nearest, no overflow', src: [ 'community' ], srcText: 'webgpu-spd', verdict: 'keep', effort: 'S',
+		they: 'webgpu-spd averages integer formats as (v0 + v1 + v2 + v3) / 4 in the format\'s integer type: integer division truncates, and 32-bit sums wrap. SPD has no integer path; render passes can\'t mip integer formats at all.',
+		we: 'The exact weighted mean, rounded to nearest with ties to even, at every width including 32-bit (M2.3.7): 2×2 means at even sizes, render-pass weights as exact rationals at odd ones, area weights under box and resample. Signed formats are offset by 2³¹ so min/max and tie parity work unchanged. Folds and custom reduce on vec4u/vec4i as for other formats.',
+		why: 'The same rule as every normalized format here, no drift along a chain, no overflow; the oracle is exact, so every level is checked bit for bit.',
+		converge: 'S (a truncating mean); not planned.',
+		quality: 'Truncation biases every level down by 3/8 of a unit on average, about 4 units by the 1×1 of a 2048² chain; ours has no bias.',
+		perfKind: 'estimate', perf: 'A few integer ops per texel more than a sum and shift; odd steps split values into 16-bit halves. Not timed; integer chains are rare (IDs and occupancy use folds).',
+		perfShort: 'A few integer ops; not timed', qualityShort: 'No bias, no overflow', note: 'Keep.' },
 ];
 
 const esc = s => String( s ).replace( /[&<>"]/g, c => ( { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } )[ c ] );
