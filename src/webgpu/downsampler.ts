@@ -51,8 +51,10 @@ export interface DownsamplerOptions {
 	 * 'exact' chains: once a level fits one workgroup (32×32, or 8×8 below 256
 	 * invocations per workgroup, as in compatibility mode), finish the chain in
 	 * one dispatch (the tail kernel) instead of a batch per odd size. Results
-	 * follow the same 'exact' rule. Works on both output paths and in
-	 * compatibility mode. Default false (SPEC.md §2.1).
+	 * follow the same 'exact' rule, with shader bilinear weights in the tail levels
+	 * (within one rgba8 step of the sampler's). Works on both output paths and in
+	 * compatibility mode. Default true: 0.82–0.90× of 'exact' on an RTX 3060, 0.81–1.02×
+	 * on an M5 Pro, neutral on Intel UHD (SPEC.md §2.1).
 	 */
 	tail?: boolean;
 	/**
@@ -65,10 +67,11 @@ export interface DownsamplerOptions {
 	/**
 	 * 'exact' batches: the smallest output tile per workgroup, 8, 16 or 32. Default 32
 	 * (16 × 16 invocations, each writing 2 × 2 first-level texels) where a workgroup can
-	 * have 256 invocations, else 8; also 8 on fallback (software) adapters, which compile
-	 * 32×32-tile pipelines slowly. Results are the same; 8 × 8 workgroups were up to
-	 * 1.6× slower on Intel UHD and 1.3× on an RTX 3060 at render sizes
-	 * (results/windows/timings.md).
+	 * have 256 invocations, 16 on Apple GPUs, else 8; also 8 on fallback (software)
+	 * adapters, which compile 32×32-tile pipelines slowly. Results are the same; 8 × 8
+	 * workgroups were up to 1.6× slower on Intel UHD and 1.3× on an RTX 3060 at render
+	 * sizes (results/windows/timings.md), while 32 was 1.04–1.28× slower than 8 or 16 on
+	 * an M5 Pro (results/render/m5-pro-render-tiles-*.json).
 	 */
 	exactTile?: number;
 }
@@ -234,13 +237,14 @@ export class Downsampler {
 		const compatibility = options.compatibility ?? 'auto';
 		if ( compatibility !== 'auto' && typeof compatibility !== 'boolean' ) throw new Error( 'downsampler: compatibility must be true, false or "auto".' );
 		this.compatibility = compatibility;
-		this.tail = options.tail ?? false;
+		this.tail = options.tail ?? true;
 		const f16Rounding = options.f16Rounding ?? 'nearest';
 		if ( f16Rounding !== 'nearest' && f16Rounding !== 'device' ) throw new Error( 'downsampler: f16Rounding must be "nearest" or "device".' );
 		this.f16Rounding = f16Rounding;
 		// Software adapters (SwiftShader) keep 8: they take 30 s or more to compile a 32×32-tile pipeline.
-		const software = ( device as GPUDevice & { adapterInfo?: GPUAdapterInfo } ).adapterInfo?.isFallbackAdapter === true;
-		const exactTile = options.exactTile ?? ( invocations === 6 && ! software ? 32 : 8 );
+		const info = ( device as GPUDevice & { adapterInfo?: GPUAdapterInfo } ).adapterInfo;
+		const software = info?.isFallbackAdapter === true;
+		const exactTile = options.exactTile ?? ( invocations === 6 && ! software ? ( info?.vendor === 'apple' ? 16 : 32 ) : 8 );
 		if ( exactTile !== 8 && ( exactTile !== 16 && exactTile !== 32 || invocations < 6 ) ) throw new Error( 'downsampler: exactTile must be 8, or 16 or 32 on devices with 256 invocations per workgroup.' );
 		this.exactTile = exactTile;
 		this.sampler = device.createSampler( { label: 'downsampler', minFilter: 'linear', magFilter: 'linear' } );
