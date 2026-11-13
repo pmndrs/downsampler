@@ -234,8 +234,8 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 		// invocations), since it binds one buffer however many levels it writes.
 		const downsamplerSet = ( levels, output ) => ( {
 			levels, output,
-			sample: new Downsampler( device, { levelsPerDispatch: levels, output } ),
-			load: new Downsampler( device, { levelsPerDispatch: levels, averageAccess: 'load', output } ),
+			sample: new Downsampler( device, { levelsPerDispatch: levels, output, tail: false } ),
+			load: new Downsampler( device, { levelsPerDispatch: levels, averageAccess: 'load', output, tail: false } ),
 			tailsample: new Downsampler( device, { levelsPerDispatch: levels, output, tail: true } ),
 			tailload: new Downsampler( device, { levelsPerDispatch: levels, averageAccess: 'load', output, tail: true } )
 		} );
@@ -533,7 +533,7 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 	// clamp batches) and the exact tail (only where the plan has a tail batch).
 	const downsamplers = levelOptions( device ).flatMap( levels => {
 
-		const exact = new Downsampler( device, { levelsPerDispatch: levels } );
+		const exact = new Downsampler( device, { levelsPerDispatch: levels, tail: false } );
 		const modes = [ { downsampler: exact, mode: 'exact' }, { downsampler: exact, mode: 'spd' } ];
 		// Tail pipelines compile slowly on SwiftShader; --quick leaves them to the main matrix.
 		return quick ? modes : [ ...modes, { downsampler: new Downsampler( device, { levelsPerDispatch: levels, tail: true } ), mode: 'tail' } ];
@@ -780,7 +780,10 @@ async function validateOptions( device ) {
 
 		}
 
-		const tiles = [ 8, ...( big ? [ 16, 32 ] : [] ) ].map( tile => [ tile, new Downsampler( device, { exactTile: tile } ) ] );
+		// Without the tail kernel (default on), so every level comes from an 'exact' batch.
+		const untailed = new Downsampler( device, { tail: false } );
+		if ( downsampler.tail !== true ) throw new Error( 'the tail kernel is not the default' );
+		const tiles = [ 8, ...( big ? [ 16, 32 ] : [] ) ].map( tile => [ tile, new Downsampler( device, { exactTile: tile, tail: false } ) ] );
 		for ( const [ width, height, layers, format, options, label ] of [
 			[ 333, 200, 3, 'rgba16float', {}, 'average, 3 layers' ],
 			[ 1280, 720, 1, 'rgba8unorm', {}, 'average 1280×720' ],
@@ -791,7 +794,7 @@ async function validateOptions( device ) {
 			const data = makeData( width, height, layers, format, 'random', 12 );
 			const reference = createTexture( device, { width, height, layers, format } );
 			upload( device, reference, data );
-			downsampler.generate( reference, options );
+			untailed.generate( reference, options );
 			const expected = await readMips( device, reference, 1 );
 			reference.destroy();
 			for ( const [ tile, owner ] of tiles ) {
@@ -801,13 +804,13 @@ async function validateOptions( device ) {
 				owner.generate( texture, options );
 				const actual = await readMips( device, texture, 1 );
 				texture.destroy();
-				actual.forEach( ( level, l ) => { if ( level.some( ( value, i ) => ! Object.is( value, expected[ l ][ i ] ) ) ) throw new Error( `exactTile ${ tile } ${ label }: level ${ l + 1 } differs from the default (${ downsampler.exactTile })` ); } );
+				actual.forEach( ( level, l ) => { if ( level.some( ( value, i ) => ! Object.is( value, expected[ l ][ i ] ) ) ) throw new Error( `exactTile ${ tile } ${ label }: level ${ l + 1 } differs from the default (${ untailed.exactTile })` ); } );
 
 			}
 
 		}
 
-		results.push( { option: `exactTile ${ tiles.map( ( [ tile ] ) => tile ).join( '/' ) } match the default (${ downsampler.exactTile })` } );
+		results.push( { option: `exactTile ${ tiles.map( ( [ tile ] ) => tile ).join( '/' ) } match the default (${ untailed.exactTile }); default tail ${ downsampler.tail }` } );
 
 	}
 
