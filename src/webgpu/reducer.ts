@@ -8,6 +8,7 @@ import { checkToolBindings, setToolBindGroup, toolBindGroupLayout, toolBindGroup
 
 export type { ToolBindings } from './tool.js';
 
+/** Options of `new Reducer( device, options )`. The kernel is generated and compiled in the constructor. See SPEC.md §14.1. */
 export interface ReducerOptions {
 	/**
 	 * Per-channel ops (`[ 'average', 'average', 'sum', 'max' ]`, with 'weight' and
@@ -71,6 +72,7 @@ export interface TextureLevel {
 	mipLevel?: number;
 }
 
+/** One dispatch of a Reducer: the source size, textures and the tool's group 1. */
 export interface ReducerDispatch {
 	/** Source size in texels. Required with a load hook; otherwise the source level's size. */
 	width?: number;
@@ -131,12 +133,17 @@ export class Reducer {
 	readonly device: GPUDevice;
 	/** The kernel's WGSL. Entry point {@link Reducer.entryPoint}. */
 	readonly wgsl: string;
+	/** The compute entry point of {@link Reducer.wgsl}. */
 	readonly entryPoint = 'main';
 	/** Pipeline layout: [ group 0 (ours), group 1 (the tool's, if it has bindings) ]. */
 	readonly layout: GPUPipelineLayout;
+	/** [ group 0 (the Reducer's), group 1 (the tool's, from `bindings`, if any) ]. Create the tool's bind group from index 1. */
 	readonly bindGroupLayouts: readonly GPUBindGroupLayout[];
+	/** The compiled pipeline, shared by equal Reducers on a device. */
 	readonly pipeline: GPUComputePipeline;
+	/** Emitted levels, source-relative (1 = half size). */
 	readonly levels: readonly number[];
+	/** Edge policy: 'zero-weight' (⌈n/2⌉ sizes) or 'clamp' (SPD, ⌊n/2⌋). */
 	readonly edges: TileEdgePolicy;
 	/** Accumulator channels per texel (4 or 8). */
 	readonly channels: Channels;

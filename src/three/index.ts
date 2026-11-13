@@ -17,6 +17,7 @@ interface ThreeBackendLike {
 	get( object: object ): { texture?: GPUTexture };
 }
 
+/** The part of a three.js `WebGPURenderer` the adapter uses (typed structurally, so `three` stays optional). */
 export interface ThreeRendererLike {
 	backend: ThreeBackendLike;
 }
@@ -49,9 +50,14 @@ export function getGPUTexture( renderer: ThreeRendererLike, texture: object ): G
 }
 
 /**
- * Generate the mip chain of a three.js texture with compute shaders. Returns
- * false (doing nothing) when the texture is not allocated or not supported, so
- * callers can fall back to three's own mipmap generation.
+ * Generate the mip chain of a three.js texture with compute shaders, using the
+ * renderer's shared {@link getDownsampler} and submitting immediately. `options`
+ * are a Downsampler's `EncodeOptions` (e.g. `{ reduction: 'max' }`). Returns
+ * false (doing nothing) when the texture is not allocated, has a single level or
+ * is not supported, so callers can fall back to three's own mipmap generation;
+ * `getDownsampler( renderer ).unsupportedReason( getGPUTexture( renderer, texture ) )`
+ * says why. Set `texture.mipmapsAutoUpdate = false` so three doesn't regenerate
+ * the levels with render passes after a compute write.
  */
 export function generateMipmaps( renderer: ThreeRendererLike, texture: object, options: EncodeOptions = {} ): boolean {
 

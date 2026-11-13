@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Mip chain</title>
+		<link rel="icon" href="data:,">
+		<link rel="stylesheet" href="style.css">
+	</head>
+	<body>
+		<nav><a href="./">Examples</a> · <a href="../docs/guide.md">Guide</a></nav>
+		<h1>Mip chain for a texture</h1>
+		<p>
+			A procedural <code>rgba8unorm</code> image is uploaded to level 0, and <code>Downsampler</code> writes every other
+			level with compute shaders. The default odd-size policy, <code>'exact'</code>, gives the same result as render-pass
+			(and WebGL) mipmaps: each level is checked below against the library's CPU reference, computed from the GPU's own
+			previous level. Switch to <code>'spd'</code> to see AMD SPD's semantics (two dispatches at most sizes, the last odd
+			row or column dropped), and toggle the tail kernel to see the dispatch count change.
+		</p>
+		<pre><code>const downsampler = new Downsampler( device );
+downsampler.encode( encoder, texture );                      // levels 1 … n from level 0
+downsampler.encode( encoder, texture, { oddSizes: 'spd' } ); // SPD semantics (average only)</code></pre>
+		<p class="muted" id="adapter"></p>
+
+		<h2>Readout</h2>
+		<ul id="readout"></ul>
+
+		<h2>Options</h2>
+		<div class="controls">
+			<label>Size <select id="size">
+				<option value="1920x1080" selected>1920 × 1080</option>
+				<option value="1024x1024">1024 × 1024</option>
+				<option value="1129x635">1129 × 635</option>
+				<option value="255x257">255 × 257</option>
+				<option value="31x31">31 × 31</option>
+			</select></label>
+			<label>Odd sizes <select id="odd">
+				<option value="exact" selected>'exact' (default)</option>
+				<option value="spd">'spd'</option>
+			</select></label>
+			<label><input type="checkbox" id="tail"> tail kernel</label>
+		</div>
+
+		<h2>Dispatches</h2>
+		<table id="batches"></table>
+
+		<h2>Levels</h2>
+		<div class="levels" id="levels"></div>
+		<div class="view">
+			<figure><canvas class="level" id="canvas"></canvas><figcaption id="caption"></figcaption></figure>
+		</div>
+
+		<script type="module">
+			import { reduceReference, spdReference, tolerance } from '../dist/index.js';
+			import { Downsampler } from '../dist/webgpu/index.js';
+			import { compare, drawLevel, fail, initDevice, levelButtons, makeImage, mipLevels, mipSize, readLevels, report, upload } from './common.js';
+
+			const { device } = await initDevice();
+			const quantization = 'unorm8';
+			const downsamplers = new Map();
+			const downsamplerFor = tail => {
+
+				if ( ! downsamplers.has( tail ) ) downsamplers.set( tail, new Downsampler( device, { tail } ) );
+				return downsamplers.get( tail );
+
+			};
+
+			// The checkbox starts at the library's default. ?size=WxH&odd=spd&tail=0 preset the options.
+			const tailBox = document.getElementById( 'tail' );
+			const params = new URLSearchParams( location.search );
+			tailBox.checked = params.has( 'tail' ) ? params.get( 'tail' ) !== '0' : new Downsampler( device ).tail;
+			for ( const id of [ 'size', 'odd' ] ) if ( params.has( id ) ) document.getElementById( id ).value = params.get( id );
+
+			let texture;
+
+			async function run() {
+
+				const [ width, height ] = document.getElementById( 'size' ).value.split( 'x' ).map( Number );
+				const oddSizes = document.getElementById( 'odd' ).value;
+				const downsampler = downsamplerFor( tailBox.checked );
+
+				texture?.destroy();
+				texture = device.createTexture( {
+					label: 'example mip chain', format: 'rgba8unorm', size: [ width, height ], mipLevelCount: mipLevels( width, height ),
+					// TEXTURE_BINDING + STORAGE_BINDING for the library; COPY_DST to upload, COPY_SRC to read back.
+					usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC
+				} );
+				upload( device, texture, makeImage( width, height ), 4 );
+
+				const encoder = device.createCommandEncoder();
+				downsampler.encode( encoder, texture, { oddSizes } );
+				device.queue.submit( [ encoder.finish() ] );
+
+				// What was recorded: one compute dispatch per batch.
+				const batches = downsampler.prepare( texture, { oddSizes } );
+				const table = document.getElementById( 'batches' );
+				table.innerHTML = '<tr><th>Dispatch</th><th>Kernel</th><th>Reads level</th><th>Writes levels</th><th>First output</th></tr>' + batches.map( ( batch, i ) =>
+					`<tr><td>${ i + 1 }</td><td>${ batch.kernel }</td><td>${ batch.sourceMipLevel }</td><td>${ batch.firstMipLevel }–${ batch.firstMipLevel + batch.count - 1 }</td><td>${ batch.outputWidth } × ${ batch.outputHeight }</td></tr>` ).join( '' );
+
+				const levels = await readLevels( device, texture );
+
+				// Each batch against the CPU reference, from the GPU's own source level.
+				const checks = [ { name: `${ batches.length } dispatches for ${ width } × ${ height } (${ oddSizes }${ downsampler.tail ? ', tail' : '' })`, ok: true } ];
+				for ( const batch of batches ) {
+
+					const source = levels[ batch.sourceMipLevel ];
+					// 'spd' batches ('clamp' kernels): SPD's semantics from the batch's source level.
+					const spd = batch.kernel === 'clamp' ? spdReference( source.values, source.width, source.height, 1, quantization, 'average', batch.count ) : null;
+					for ( let i = 0; i < batch.count; i ++ ) {
+
+						const level = batch.firstMipLevel + i;
+						const previous = levels[ level - 1 ];
+						// 'exact' and tail batches: one render-pass step from the previous GPU level.
+						const reference = spd ? spd[ i ] : reduceReference( previous.values, previous.width, previous.height, 1, quantization );
+						const { maxError, failing } = compare( levels[ level ].values, reference.values, ( expected, j ) => tolerance( expected, quantization, reference.filterTolerance[ j ] ) );
+						checks.push( { name: `level ${ level } (${ levels[ level ].width } × ${ levels[ level ].height }) matches the reference`, ok: failing === 0, detail: `max error ${ ( maxError * 255 ).toFixed( 2 ) } / 255${ failing ? `, ${ failing } values outside the tolerance` : '' }` } );
+
+					}
+
+				}
+
+				report( checks );
+
+				levelButtons( document.getElementById( 'levels' ), levels.length, level => {
+
+					drawLevel( document.getElementById( 'canvas' ), levels[ level ] );
+					document.getElementById( 'caption' ).textContent = `Level ${ level }: ${ mipSize( width, level ) } × ${ mipSize( height, level ) } (shown scaled, nearest neighbour)`;
+
+				}, Math.min( 3, levels.length - 1 ) );
+
+			}
+
+			const rerun = () => run().catch( fail );
+			for ( const id of [ 'size', 'odd', 'tail' ] ) document.getElementById( id ).addEventListener( 'change', rerun );
+			await run().catch( fail );
+		</script>
+	</body>
+</html>

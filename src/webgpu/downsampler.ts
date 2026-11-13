@@ -4,6 +4,7 @@ import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.
 import { isCompatibilityTexture } from './compat.js';
 import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, type F16Rounding, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
 
+/** Options of `new Downsampler( device, options )`. Every option is validated by the constructor. See docs/guide.md. */
 export interface DownsamplerOptions {
 	/**
 	 * Output levels per dispatch. Defaults to the most the path allows: on the
@@ -76,6 +77,7 @@ export interface DownsamplerOptions {
 	exactTile?: number;
 }
 
+/** A separate source for the first destination level (`EncodeOptions.source`), e.g. a depth buffer for Hi-Z. */
 export interface SourceOptions {
 	/**
 	 * Texture to read the first destination level from: any float-sampleable 2D
@@ -87,6 +89,7 @@ export interface SourceOptions {
 	mipLevel?: number;
 }
 
+/** Options of one chain: `encode`, `encodePass`, `generate` and `prepare`. Plans are cached per texture and option set. */
 export interface EncodeOptions {
 	/**
 	 * In place: the source level, with outputs from `baseMipLevel + 1`. With
@@ -94,7 +97,8 @@ export interface EncodeOptions {
 	 */
 	baseMipLevel?: number;
 	/**
-	 * Destination levels involved. In place this includes the source level.
+	 * Destination levels involved. In place this includes the source level, so
+	 * SPD's `mips = N` is `mipLevelCount: N + 1`. With `source`: the levels written.
 	 * Default: the rest of the chain.
 	 */
 	mipLevelCount?: number;
@@ -141,6 +145,11 @@ export interface BufferCopy {
 	height: number;
 }
 
+/**
+ * One dispatch of a chain, as `prepare()` returns it: dispatch it with
+ * `pipeline`, `bindGroup` at group 0 and `dispatchWorkgroups( groupsX, groupsY,
+ * layers )`, then (buffer path) record `copies` from `buffer` into the texture.
+ */
 export interface PreparedBatch extends Batch {
 	pipeline: GPUComputePipeline;
 	bindGroup: GPUBindGroup;
@@ -178,7 +187,16 @@ interface BatchKernelKey {
 }
 
 /**
- * Generates mip chains with compute shaders, up to six levels per dispatch.
+ * Generates mip chains with compute shaders, up to six levels per dispatch:
+ * averages (render-pass semantics by default), min/max/minmax and custom fold
+ * pyramids (conservative at odd sizes, so a valid Hi-Z), in place or from a
+ * separate source such as a depth buffer.
+ *
+ * ```ts
+ * const downsampler = new Downsampler( device );
+ * downsampler.encode( encoder, texture );
+ * downsampler.encode( encoder, hiZ, { source: { texture: depth }, reduction: 'minmax' } );
+ * ```
  *
  * Dependent batches are separated by dispatch boundaries. There is deliberately
  * no single-dispatch (atomic last-workgroup) mode: WGSL barriers are
@@ -192,11 +210,17 @@ export class Downsampler {
 	readonly levelsPerDispatch: number;
 	/** Levels per dispatch on the buffer path: `levelsPerDispatch` if given, else 6 (4 below 256 invocations per workgroup). */
 	readonly bufferLevelsPerDispatch: number;
+	/** The `output` option: 'auto', 'storage' or 'buffer'. {@link Downsampler.outputPath} resolves it per texture. */
 	readonly output: 'auto' | OutputPath;
+	/** The `averageAccess` option; undefined means the default, 'sample'. */
 	readonly averageAccess: SourceAccess | undefined;
+	/** The `compatibility` option. {@link Downsampler.usesCompatibility} resolves it per texture. */
 	readonly compatibility: boolean | 'auto';
+	/** Whether 'exact' chains finish in a tail kernel (resolved `tail` option). */
 	readonly tail: boolean;
+	/** How float16 levels are rounded (resolved `f16Rounding` option). */
 	readonly f16Rounding: F16Rounding;
+	/** Smallest first-output tile of 'exact' batches (resolved `exactTile` option: 8, 16 or 32). */
 	readonly exactTile: number;
 	private readonly scratch = new WeakMap<GPUTexture, Map<number, GPUTexture>>();
 	private readonly pipelines = new Map<string, GPUComputePipeline>();
@@ -307,6 +331,7 @@ export class Downsampler {
 
 	}
 
+	/** Whether `texture` can be a destination: {@link Downsampler.unsupportedReason} is null. */
 	supports( texture: GPUTexture ): boolean {
 
 		return this.unsupportedReason( texture ) === null;

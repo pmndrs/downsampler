@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Block statistics</title>
+		<link rel="icon" href="data:,">
+		<link rel="stylesheet" href="style.css">
+	</head>
+	<body>
+		<nav><a href="./">Examples</a> · <a href="../docs/guide.md">Guide</a></nav>
+		<h1>Custom reduction with <code>Reducer</code>: block statistics</h1>
+		<p>
+			A <code>Reducer</code> runs one tile kernel that reduces up to six levels in workgroup memory and stores only the
+			levels you ask for. Here a <code>load</code> hook reads the tool's own texture (in <code>@group(1)</code>) and returns,
+			per texel, <code>(luma, luma², luma, 1)</code>. The channels reduce as
+			<code>[ 'average', 'average', 'max', 'sum' ]</code>, so each output texel of level 3 (8 × 8 blocks) and level 5
+			(32 × 32 blocks) holds the block's mean luma, mean of squares, maximum and texel count: enough for a mean, a
+			standard deviation and a peak per block, in one dispatch.
+		</p>
+		<p>
+			Edges are <code>'zero-weight'</code> (the default): blocks that reach past the image count only their in-image texels,
+			and level sizes round up (⌈n / 2ˡ⌉), so the outputs are separate textures rather than mips of the source. The readout
+			compares every emitted texel with <code>reducePyramid</code>, the CPU oracle, computed straight from the source.
+		</p>
+		<pre><code>const stats = new Reducer( device, {
+	reduction: [ 'average', 'average', 'max', 'sum' ],
+	levels: [ 3, 5 ],
+	format: 'rgba32float',
+	bindings: { wgsl: '@group(1) @binding(0) var image: texture_2d&lt;f32&gt;;', entries },
+	load: `fn load( texel: vec2i, layer: u32 ) -&gt; vec4f {
+		let l = dot( textureLoad( image, texel, 0 ).rgb, vec3f( 0.2126, 0.7152, 0.0722 ) );
+		return vec4f( l, l * l, l, 1.0 );
+	}`,
+} );
+stats.encode( encoder, { width, height, bindGroup, outputs: [ level3, level5 ] } );</code></pre>
+		<p class="muted" id="adapter"></p>
+
+		<h2>Readout</h2>
+		<ul id="readout"></ul>
+
+		<h2>Blocks</h2>
+		<div class="controls">
+			<span class="levels" id="levels"></span>
+			<label>Show <select id="show">
+				<option value="mean" selected>mean luma</option>
+				<option value="deviation">standard deviation (×4)</option>
+				<option value="max">max luma</option>
+				<option value="count">texel count (edge blocks are partial)</option>
+			</select></label>
+		</div>
+		<div class="view">
+			<figure><canvas class="level" id="source"></canvas><figcaption>source, 1277 × 719</figcaption></figure>
+			<figure><canvas class="level" id="blocks"></canvas><figcaption id="caption"></figcaption></figure>
+		</div>
+
+		<script type="module">
+			import { pyramidTolerance, reducePyramid } from '../dist/index.js';
+			import { Reducer } from '../dist/webgpu/index.js';
+			import { drawLevel, fail, initDevice, levelButtons, makeImage, readLevels, report, unormFloats, upload } from './common.js';
+
+			try {
+
+				const { device } = await initDevice();
+				// An odd size, so the last blocks of each level are partial.
+				const width = 1277, height = 719;
+				const pixels = makeImage( width, height );
+				const image = device.createTexture( { label: 'example image', format: 'rgba8unorm', size: [ width, height ], usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST } );
+				upload( device, image, pixels, 4 );
+
+				// The tool's group 1: its own declarations and the matching layout entries.
+				const bindings = {
+					wgsl: '@group(1) @binding(0) var image: texture_2d<f32>;',
+					entries: [ { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } } ]
+				};
+				const levels = [ 3, 5 ];
+				const reduction = [ 'average', 'average', 'max', 'sum' ];
+				const stats = new Reducer( device, {
+					reduction, levels, format: 'rgba32float', bindings,
+					load: /* wgsl */ `fn load( texel: vec2i, layer: u32 ) -> vec4f {
+						let l = dot( textureLoad( image, texel, 0 ).rgb, vec3f( 0.2126, 0.7152, 0.0722 ) );
+						return vec4f( l, l * l, l, 1.0 );
+					}`
+				} );
+				// Group 1 is created from the Reducer's own layout for it.
+				const bindGroup = device.createBindGroup( { layout: stats.bindGroupLayouts[ 1 ], entries: [ { binding: 0, resource: image.createView() } ] } );
+				const outputs = levels.map( level => {
+
+					const [ w, h ] = stats.levelSize( level, width, height );
+					return device.createTexture( { label: `example blocks, level ${ level }`, format: 'rgba32float', size: [ w, h ], usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC } );
+
+				} );
+
+				const encoder = device.createCommandEncoder();
+				stats.encode( encoder, { width, height, bindGroup, outputs } );
+				device.queue.submit( [ encoder.finish() ] );
+
+				// The oracle: the load hook's values per texel, in f64, reduced from the source at each level.
+				const source = unormFloats( pixels );
+				const terms = new Float64Array( width * height * 4 );
+				for ( let i = 0; i < width * height; i ++ ) {
+
+					const l = 0.2126 * source[ i * 4 ] + 0.7152 * source[ i * 4 + 1 ] + 0.0722 * source[ i * 4 + 2 ];
+					terms.set( [ l, l * l, l, 1 ], i * 4 );
+
+				}
+
+				const expected = reducePyramid( terms, width, height, 1, { reduction, levels, edges: 'zero-weight' } );
+				const results = await Promise.all( outputs.map( texture => readLevels( device, texture, 0, 1 ).then( ( [ level ] ) => level ) ) );
+				const checks = expected.map( ( reference, i ) => {
+
+					const actual = results[ i ].values;
+					let failing = 0, worst = 0;
+					for ( let j = 0; j < reference.values.length; j ++ ) {
+
+						// f32 sums against f64, plus the f32 luma dot product of the hook.
+						const allowed = pyramidTolerance( reference.magnitude[ j ] ) + 1e-6 * Math.abs( reference.values[ j ] );
+						const error = Math.abs( actual[ j ] - reference.values[ j ] );
+						if ( ! ( error <= allowed ) ) failing ++;
+						worst = Math.max( worst, error );
+
+					}
+
+					return { name: `level ${ reference.level } (${ reference.width } × ${ reference.height } blocks of ${ 2 ** reference.level }²) matches reducePyramid`, ok: failing === 0, detail: `max error ${ worst.toExponential( 2 ) }${ failing ? `, ${ failing } values outside` : '' }` };
+
+				} );
+				const counts = results[ 0 ].values.filter( ( v, i ) => i % 4 === 3 );
+				checks.push( { name: 'every source texel is counted once', ok: counts.reduce( ( a, b ) => a + b, 0 ) === width * height, detail: `Σ count = ${ counts.reduce( ( a, b ) => a + b, 0 ) } of ${ width * height }` } );
+				report( checks );
+
+				drawLevel( document.getElementById( 'source' ), { width, height, values: source } );
+				const show = document.getElementById( 'show' );
+				let selected = 0;
+				const draw = () => {
+
+					const level = results[ selected ], blockTexels = 4 ** levels[ selected ];
+					const view = {
+						mean: ( v, i ) => [ v[ i ], v[ i ], v[ i ] ],
+						deviation: ( v, i ) => { const d = 4 * Math.sqrt( Math.max( 0, v[ i + 1 ] - v[ i ] * v[ i ] ) ); return [ d, d, d ]; },
+						max: ( v, i ) => [ v[ i + 2 ], v[ i + 2 ], v[ i + 2 ] ],
+						count: ( v, i ) => { const c = v[ i + 3 ] / blockTexels; return [ c, c * 0.6, 0.2 ]; }
+					}[ show.value ];
+					drawLevel( document.getElementById( 'blocks' ), level, view );
+					document.getElementById( 'caption' ).textContent = `level ${ levels[ selected ] }: ${ level.width } × ${ level.height } blocks of ${ 2 ** levels[ selected ] } × ${ 2 ** levels[ selected ] } texels`;
+
+				};
+
+				show.addEventListener( 'change', draw );
+				const buttons = document.getElementById( 'levels' );
+				levelButtons( buttons, levels.length, index => { selected = index; draw(); } );
+				buttons.querySelectorAll( 'button' ).forEach( ( button, i ) => { button.textContent = `level ${ levels[ i ] }`; } );
+
+			} catch ( error ) {
+
+				fail( error );
+
+			}
+		</script>
+	</body>
+</html>
