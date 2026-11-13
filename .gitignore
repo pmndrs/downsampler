@@ -6,3 +6,13 @@ dist/
 
 # Owner-review drafts (bug reports, comments): never pushed
 drafts/
+
+# Native harnesses: fetched upstream sources (native/fetch-deps.ps1) and build output
+native/.deps/
+native/*/build/
+
+# test/parallel.js: per-shard files (the summary, summary.json and durations.json are kept)
+results/local/
+results/**/report-[0-9]*.json
+results/**/timing-[0-9]*.json
+results/**/shard-[0-9]*.log

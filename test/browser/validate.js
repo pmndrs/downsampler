@@ -123,7 +123,7 @@ function toleratedLevels( batches, width, height, packed ) {
  */
 export function check( actual, expected, quantization, label, reduction = 'average', channels = 4, slack = 0, exact = false ) {
 
-	let maxError = 0;
+	let maxError = 0, firstFailure = null, failing = 0;
 	const packed = isPackedQuantization( quantization );
 
 	for ( let i = 0; i < expected.values.length; i ++ ) {
@@ -131,17 +131,35 @@ export function check( actual, expected, quantization, label, reduction = 'avera
 		if ( i % 4 >= channels ) continue;
 		const error = Math.abs( actual[ i ] - expected.values[ i ] );
 		// Packed formats: the step depends on the texel (rgb9e5's shared exponent) or the channel (rg11b10's 10-bit b).
+		// The largest channel may be off by its own filter allowance, and so cross an exponent: take its upper bound.
 		const t = i - i % 4;
-		const texel = packed ? { channel: i % 4, texelMax: Math.max( expected.values[ t ], expected.values[ t + 1 ], expected.values[ t + 2 ] ) } : undefined;
+		const upper = c => expected.values[ t + c ] + expected.filterTolerance[ t + c ];
+		const texel = packed ? { channel: i % 4, texelMax: Math.max( upper( 0 ), upper( 1 ), upper( 2 ) ) } : undefined;
 		const limit = exact ? 0 : tolerance( expected.values[ i ], quantization, expected.filterTolerance[ i ], reduction, texel ) + Math.abs( expected.values[ i ] ) * slack;
-		if ( ! Number.isFinite( actual[ i ] ) || error > limit ) throw new Error( `${ label }: value ${ i }, actual ${ actual[ i ] }, expected ${ expected.values[ i ] }, error ${ error } > ${ limit }` );
+		if ( ! Number.isFinite( actual[ i ] ) || error > limit ) {
+
+			const message = `${ label }: value ${ i }, actual ${ actual[ i ] }, expected ${ expected.values[ i ] }, error ${ error } > ${ limit }`;
+			if ( ! failures ) throw new Error( message );
+			firstFailure ??= message;
+			failing ++;
+
+		}
 		maxError = Math.max( maxError, error );
 
 	}
 
+	if ( firstFailure ) failures.push( { label, first: firstFailure, failing, values: expected.values.length, maxError } );
+
 	return maxError;
 
 }
+
+/**
+ * --keep-going: failing checks are collected here instead of thrown (one entry per check: its
+ * first failing value and how many failed), so one run maps every failure on a new device.
+ * Null (the default): the first failing value throws.
+ */
+let failures = null;
 
 /** Kernel widths to cover: single-level, 4 (default limit), 5 (16×16 tiles) and 6 (SPD tiles). */
 export function levelOptions( device ) {
@@ -165,8 +183,9 @@ export const compatibility = device => ! device.features.has( 'core-features-and
  * (`ids`). The result carries `groups` (id → { ms, cases } for the groups that ran) and the
  * listing's size and digest, so the shards of one suite can be checked against each other.
  */
-export async function validate( device, { onProgress = () => {}, quick = false, only, shard, durations = {}, list = false } = {} ) {
+export async function validate( device, { onProgress = () => {}, quick = false, only, shard, durations = {}, list = false, keepGoing = false } = {} ) {
 
+	failures = keepGoing ? [] : null;
 	let select = new Selection();
 	let shards = null;
 
@@ -182,9 +201,13 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 	}
 
+	// A group that throws outside check() (a direct assertion, a lost device) is recorded too.
+	if ( keepGoing ) select.onError = ( id, error ) => failures.push( { label: id, first: `${ id } threw: ${ error.message }`, thrown: true } );
 	const report = await suite( device, { onProgress, quick, only, select } );
 	const ids = select.listing ?? select.ids;
-	return { ...report, shard: shard ? { ...shard, groups: shards[ shard.index - 1 ].length } : null, listing: { groups: ids.length, digest: digest( ids ), ids }, groups: select.groups };
+	const failed = failures ?? [];
+	failures = null;
+	return { ...report, passed: failed.length === 0, failures: failed, shard: shard ? { ...shard, groups: shards[ shard.index - 1 ].length } : null, listing: { groups: ids.length, digest: digest( ids ), ids }, groups: select.groups };
 
 }
 
@@ -305,6 +328,11 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 							downsampler.generate( texture, options );
 							const mips = await readMips( device, texture, 1 );
 							const label = `${ width }x${ height }x${ layers } ${ format } ${ output } ${ variant.name } ${ pattern } L${ levels }`;
+							// The hardware sampler weights a batch's first output (averages of filterable formats,
+							// unless the variant loads); its tolerance models the samplers' 8-bit weights
+							// (samplerWeightSteps). Loads and in-tile levels use shader weights: the strict model.
+							const sampled = ( variant.access ?? 'sample' ) === 'sample' && filterable;
+							const sampledLevels = new Set( sampled ? downsampler.prepare( texture, options ).filter( batch => ! batch.copy ).map( batch => batch.firstMipLevel ) : [] );
 
 							if ( variant.oddSizes === 'spd' ) {
 
@@ -312,7 +340,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 								for ( const batch of downsampler.prepare( texture, options ).filter( batch => ! batch.copy ) ) {
 
 									const source = batch.sourceMipLevel === 0 ? input.floats : mips[ batch.sourceMipLevel - 1 ];
-									const expected = spdReference( source, mipSize( width, batch.sourceMipLevel ), mipSize( height, batch.sourceMipLevel ), layers, quantization, reference, batch.count );
+									const expected = spdReference( source, mipSize( width, batch.sourceMipLevel ), mipSize( height, batch.sourceMipLevel ), layers, quantization, reference, batch.count, { weights: sampled ? 'sampler' : 'shader' } );
 									expected.forEach( ( level, i ) => {
 
 										const mip = batch.firstMipLevel + i;
@@ -342,7 +370,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 								const key = `${ variant.name }:${ pattern }`;
 								const inTile = ! firstOutputs.has( level );
 								let expected = level === 1 ? firstLevels.get( key ) : undefined;
-								if ( expected === undefined ) expected = reduceReference( previous, w, h, layers, quantization, reference, packed && inTile ? { pairing: 'float32' } : {} );
+								if ( expected === undefined ) expected = reduceReference( previous, w, h, layers, quantization, reference, { ...( packed && inTile ? { pairing: 'float32' } : {} ), weights: sampledLevels.has( level ) ? 'sampler' : 'shader' } );
 								if ( level === 1 ) firstLevels.set( key, expected );
 								const actual = mips[ level - 1 ];
 								result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ label } mip ${ level }`, reference, channels, 0, ( isIntegerDomain( quantization ) || packed ) && inTile ) );
@@ -738,6 +766,50 @@ async function validateOptions( device ) {
 	}
 
 	results.push( { option: 'encodePass matches encode' } );
+
+	// exactTile: the workgroup shape of 'exact' batches changes no bits. 16 and 32 need
+	// 256 invocations, and are skipped on software adapters (slow 32×32-tile compiles).
+	{
+
+		const big = device.limits.maxComputeInvocationsPerWorkgroup >= 256 && device.adapterInfo?.isFallbackAdapter !== true;
+		for ( const bad of [ 4, 12, 64, ...( device.limits.maxComputeInvocationsPerWorkgroup >= 256 ? [] : [ 16, 32 ] ) ] ) {
+
+			let threw = false;
+			try { new Downsampler( device, { exactTile: bad } ); } catch { threw = true; }
+			if ( ! threw ) throw new Error( `exactTile ${ bad } was accepted` );
+
+		}
+
+		const tiles = [ 8, ...( big ? [ 16, 32 ] : [] ) ].map( tile => [ tile, new Downsampler( device, { exactTile: tile } ) ] );
+		for ( const [ width, height, layers, format, options, label ] of [
+			[ 333, 200, 3, 'rgba16float', {}, 'average, 3 layers' ],
+			[ 1280, 720, 1, 'rgba8unorm', {}, 'average 1280×720' ],
+			[ 1917, 1079, 1, 'r32float', { reduction: 'max' }, 'max' ],
+			[ 255, 257, 1, 'rgba8unorm', { reduction: 'minmax' }, 'minmax' ],
+		] ) {
+
+			const data = makeData( width, height, layers, format, 'random', 12 );
+			const reference = createTexture( device, { width, height, layers, format } );
+			upload( device, reference, data );
+			downsampler.generate( reference, options );
+			const expected = await readMips( device, reference, 1 );
+			reference.destroy();
+			for ( const [ tile, owner ] of tiles ) {
+
+				const texture = createTexture( device, { width, height, layers, format } );
+				upload( device, texture, data );
+				owner.generate( texture, options );
+				const actual = await readMips( device, texture, 1 );
+				texture.destroy();
+				actual.forEach( ( level, l ) => { if ( level.some( ( value, i ) => ! Object.is( value, expected[ l ][ i ] ) ) ) throw new Error( `exactTile ${ tile } ${ label }: level ${ l + 1 } differs from the default (${ downsampler.exactTile })` ); } );
+
+			}
+
+		}
+
+		results.push( { option: `exactTile ${ tiles.map( ( [ tile ] ) => tile ).join( '/' ) } match the default (${ downsampler.exactTile })` } );
+
+	}
 
 	// The compatibility-mode path (scratch level per batch output, a copy dispatch
 	// per level) writes the same bits as the direct path: in place, from a depth

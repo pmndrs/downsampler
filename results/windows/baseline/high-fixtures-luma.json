@@ -1,0 +1,309 @@
+{
+  "date": "2026-11-12T09:46:49.431Z",
+  "adapter": {
+    "vendor": "nvidia",
+    "architecture": "ampere",
+    "device": "",
+    "description": "",
+    "isFallbackAdapter": false,
+    "features": [
+      "timestamp-query",
+      "texture-formats-tier1"
+    ],
+    "maxStorageTexturesPerShaderStage": 8
+  },
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36",
+  "formats": {
+    "half1": "r16float",
+    "half2": "rg16float",
+    "unorm1": "r8unorm"
+  },
+  "timestamps": true,
+  "rounds": 11,
+  "repeats": 16,
+  "mutation": false,
+  "results": [
+    {
+      "width": 960,
+      "height": 540,
+      "scene": {
+        "ms": 503,
+        "disoccluded": 0.0006655092592592592,
+        "moving": 0.07581404320987654
+      },
+      "pending": [],
+      "fixtures": {
+        "fsr/luma-pyramid": {
+          "pass": "exposure",
+          "dispatches": 2,
+          "check": {
+            "checks": [
+              {
+                "output": "FarthestDepthMip1",
+                "texels": 129600,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure",
+                "actual": 0.06566076725721359,
+                "expected": 0.06564581357460238,
+                "maxError": 0.00022779339301236214,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": false
+              },
+              {
+                "output": "FrameInfo.logLuma",
+                "actual": 0.46149054169654846,
+                "expected": 0.46171835064888,
+                "maxError": 0.0004933937583624078,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": false
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma",
+                "actual": 1.8782730102539062,
+                "expected": 1.8788909912109375,
+                "maxError": 0.0003289072968692898,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": false
+              },
+              {
+                "output": "SPD mip 6 (.xy)",
+                "texels": 120,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure (from reset)",
+                "actual": 0.03866339102387428,
+                "expected": 0.038663236743978,
+                "maxError": 0.000003990351281337105,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma (from reset)",
+                "actual": 0.9910991787910461,
+                "expected": 0.9911029869017242,
+                "maxError": 0.000003842295632586915,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma (from reset)",
+                "actual": 1.8782730102539062,
+                "expected": 1.8788909912109375,
+                "maxError": 0.0003289072968692898,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": false
+              }
+            ],
+            "ok": false,
+            "notes": {
+              "mips": 9,
+              "coverage": "[0, 512)² of 960×540"
+            }
+          }
+        },
+        "fsr/luma-pyramid-correct": {
+          "pass": "exposure",
+          "dispatches": 2,
+          "check": {
+            "checks": [
+              {
+                "output": "FarthestDepthMip1",
+                "texels": 129600,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure",
+                "actual": 0.06617342680692673,
+                "expected": 0.06617343213993565,
+                "maxError": 8.059139069711086e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma",
+                "actual": 0.4537131190299988,
+                "expected": 0.4537131253099984,
+                "maxError": 1.3841344411494191e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma",
+                "actual": 1.7801258563995361,
+                "expected": 1.780125945997827,
+                "maxError": 5.033255708009659e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure (from reset)",
+                "actual": 0.038668349385261536,
+                "expected": 0.0386683527984243,
+                "maxError": 8.82676017802129e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma (from reset)",
+                "actual": 0.9909706115722656,
+                "expected": 0.9909706721650421,
+                "maxError": 6.114487357188304e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma (from reset)",
+                "actual": 1.7801258563995361,
+                "expected": 1.780125945997827,
+                "maxError": 5.033255708009659e-8,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              }
+            ],
+            "ok": true,
+            "notes": null
+          }
+        },
+        "generator/luma-pyramid-clamp": {
+          "pass": "exposure",
+          "dispatches": 3,
+          "check": {
+            "checks": [
+              {
+                "output": "FarthestDepthMip1",
+                "texels": 129600,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure",
+                "actual": 0.06566076725721359,
+                "expected": 0.06564581357460238,
+                "maxError": 0.00022779339301236214,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": false
+              },
+              {
+                "output": "FrameInfo.logLuma",
+                "actual": 0.46149057149887085,
+                "expected": 0.46171835064888,
+                "maxError": 0.0004933292118215441,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": false
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma",
+                "actual": 1.8782730102539062,
+                "expected": 1.8788909912109375,
+                "maxError": 0.0003289072968692898,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": false
+              },
+              {
+                "output": "SPD mip 6 (.xy)",
+                "texels": 120,
+                "maxError": 1,
+                "unit": "f16 ulp",
+                "tolerance": 1,
+                "outside": 0,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.exposure (from reset)",
+                "actual": 0.03866339102387428,
+                "expected": 0.038663236743978,
+                "maxError": 0.000003990351281337105,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.logLuma (from reset)",
+                "actual": 0.9910991787910461,
+                "expected": 0.9911029869017242,
+                "maxError": 0.000003842295632586915,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": true
+              },
+              {
+                "output": "FrameInfo.sceneAverageLuma (from reset)",
+                "actual": 1.8782730102539062,
+                "expected": 1.8788909912109375,
+                "maxError": 0.0003289072968692898,
+                "unit": "relative",
+                "tolerance": 0.0001,
+                "ok": false
+              }
+            ],
+            "ok": false,
+            "notes": {
+              "mips": 9,
+              "coverage": "[0, 512)² of 960×540"
+            }
+          }
+        },
+        "floor": {
+          "pass": "floor",
+          "dispatches": 1,
+          "check": null
+        }
+      },
+      "checkMs": 283
+    }
+  ],
+  "ok": false,
+  "host": {
+    "platform": "win32 10.0.26200",
+    "cpus": 16,
+    "loadAverage": {
+      "before": [
+        0,
+        0,
+        0
+      ],
+      "after": [
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  "browserArgs": [
+    "--enable-unsafe-webgpu",
+    "--use-adapter-luid=0,83523"
+  ]
+}

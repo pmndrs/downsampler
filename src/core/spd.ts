@@ -17,7 +17,7 @@
 import { quantizeTexel, type Quantization } from './formats.js';
 import { pyramidTolerance, reducePyramid } from './pyramid.js';
 import type { PyramidReferenceReduction, ReferenceReduction } from './reduction.js';
-import type { ReferenceLevel } from './reference.js';
+import { samplerWeightSteps, type ReferenceLevel, type ReferenceOptions } from './reference.js';
 
 /** A Downsampler reduction as the tile oracle takes it: a custom fold is a fold. */
 function tileReduction( reduction: ReferenceReduction ): PyramidReferenceReduction {
@@ -31,19 +31,48 @@ function tileReduction( reduction: ReferenceReduction ): PyramidReferenceReducti
  * layer-major then row-major), each quantized to the storage format.
  * `filterTolerance` carries the float allowance of the kernel's f32 sums
  * (`pyramidTolerance` of the terms' magnitude), so `tolerance()` applies as for
- * other levels; folds select values and stay exact.
+ * other levels; folds select values and stay exact. With `weights: 'sampler'` (default;
+ * 'average' read by `access: 'sample'`, one bilinear sample at each 2×2 block's corner),
+ * it also allows {@link samplerWeightSteps} weight steps per axis on level 1, averaged into
+ * the deeper levels as level 1's errors are; 'shader' (loads) adds nothing.
  */
-export function spdReference( source: ArrayLike<number>, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction = 'average', count = 1 ): ReferenceLevel[] {
+export function spdReference( source: ArrayLike<number>, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction = 'average', count = 1, { weights = 'sampler' }: Pick<ReferenceOptions, 'weights'> = {} ): ReferenceLevel[] {
 
 	const levels = Array.from( { length: count }, ( _, i ) => i + 1 );
-	return reducePyramid( source, width, height, layers, { reduction: tileReduction( reduction ), levels, edges: 'clamp' } ).map( level => {
+	const sampled = weights === 'sampler' && reduction === 'average' ? samplerAllowance( source, width, height, layers, count ) : null;
+	return reducePyramid( source, width, height, layers, { reduction: tileReduction( reduction ), levels, edges: 'clamp' } ).map( ( level, i ) => {
 
 		// Per texel: packed formats (rgb9e5ufloat) share an exponent across channels.
 		const values = Float32Array.from( level.values );
 		for ( let i = 0; i < values.length; i += 4 ) quantizeTexel( values, i, quantization );
-		return { width: level.width, height: level.height, layers, values, filterTolerance: Float32Array.from( level.magnitude, pyramidTolerance ) };
+		const filterTolerance = Float32Array.from( level.magnitude, pyramidTolerance );
+		if ( sampled ) filterTolerance.forEach( ( value, j ) => { filterTolerance[ j ] = value + sampled[ i ][ j ]; } );
+		return { width: level.width, height: level.height, layers, values, filterTolerance };
 
 	} );
+
+}
+
+/**
+ * Per level 1…count, the sampler's weight allowance: level 1 from each clamped 2×2
+ * block's contrast per axis, deeper levels its average over their blocks.
+ */
+function samplerAllowance( source: ArrayLike<number>, width: number, height: number, layers: number, count: number ): ArrayLike<number>[] {
+
+	const w = Math.max( 1, width >> 1 ), h = Math.max( 1, height >> 1 );
+	const first = new Float64Array( w * h * layers * 4 );
+	const at = ( layer: number, x: number, y: number, c: number ) => source[ ( ( layer * height + Math.min( y, height - 1 ) ) * width + Math.min( x, width - 1 ) ) * 4 + c ];
+	for ( let layer = 0; layer < layers; layer ++ ) for ( let y = 0; y < h; y ++ ) for ( let x = 0; x < w; x ++ ) for ( let c = 0; c < 4; c ++ ) {
+
+		const a = at( layer, 2 * x, 2 * y, c ), b = at( layer, 2 * x + 1, 2 * y, c ), d = at( layer, 2 * x, 2 * y + 1, c ), e = at( layer, 2 * x + 1, 2 * y + 1, c );
+		const gx = Math.max( Math.abs( b - a ), Math.abs( e - d ) ), gy = Math.max( Math.abs( d - a ), Math.abs( e - b ) );
+		first[ ( ( layer * h + y ) * w + x ) * 4 + c ] = samplerWeightSteps * ( gx + gy ) / 256;
+
+	}
+
+	if ( count === 1 ) return [ first ];
+	const deeper = reducePyramid( first, w, h, layers, { reduction: 'average', levels: Array.from( { length: count - 1 }, ( _, i ) => i + 1 ), edges: 'clamp' } );
+	return [ first, ...deeper.map( level => level.values ) ];
 
 }
 
@@ -52,14 +81,14 @@ export function spdReference( source: ArrayLike<number>, width: number, height: 
  * `levelsPerDispatch` levels per batch, each batch reading the previous
  * batch's last quantized level. Level i of the result is mip i + 1.
  */
-export function spdChainReference( source: ArrayLike<number>, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction, levels: number, levelsPerDispatch: number ): ReferenceLevel[] {
+export function spdChainReference( source: ArrayLike<number>, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction, levels: number, levelsPerDispatch: number, options: Pick<ReferenceOptions, 'weights'> = {} ): ReferenceLevel[] {
 
 	const chain: ReferenceLevel[] = [];
 	let input: ArrayLike<number> = source, w = width, h = height;
 
 	while ( chain.length < levels ) {
 
-		const batch = spdReference( input, w, h, layers, quantization, reduction, Math.min( levelsPerDispatch, levels - chain.length ) );
+		const batch = spdReference( input, w, h, layers, quantization, reduction, Math.min( levelsPerDispatch, levels - chain.length ), options );
 		chain.push( ...batch );
 		const last = batch[ batch.length - 1 ];
 		input = last.values; w = last.width; h = last.height;

@@ -1,0 +1,15 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+#if FAST
+#extension GL_KHR_shader_subgroup_shuffle : enable
+#endif
+
+// FAST, MAX and IMAGE_FORMAT come from the command line (see CMakeLists.txt).
+#define NVPRO_PYRAMID_IS_FAST_PIPELINE FAST
+#include "preamble.glsl"
+#include "nvpro_pyramid.glsl"
+
+void main()
+{
+	nvproPyramidMain();
+}

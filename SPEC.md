@@ -200,10 +200,12 @@ A batch reads one source level and writes up to `levelsPerDispatch` consecutive 
 
 | Levels in batch | Workgroup | First-output tile | Source tile | Workgroup memory |
 |---|---|---|---|---|
-| ≤ 4 | 8×8 | 8×8 | 16×16 | 1 KiB |
+| ≤ 4 | 8×8 (`'exact'`: 16×16 by default, below) | 8×8 (`'exact'`: 32×32) | 16×16 (64×64) | 1 KiB (16 KiB) |
 | 5 | 16×16 | 16×16 | 32×32 | 4 KiB |
 | 6 | 16×16 | 32×32 (2×2 per invocation) | 64×64 (as in SPD) | 16 KiB (default limit) |
 | tail (any count) | 8×8 or 16×16 | 8, 16 or 32, the first output's larger side rounded up | — (one workgroup) | 1–16 KiB |
+
+**`'exact'` batches use a 32×32 tile at any level count** (`exactTile`, default 32 where a workgroup can have 256 invocations; 8 in compatibility mode and on fallback adapters). Same results; 8×8 workgroups were 1.2–1.6× slower on Intel UHD and up to 1.3× on an RTX 3060 at render sizes (results/windows/timings.md, 2026-11-13). Level sizes inside a batch are derived from the first output, not queried per level with `textureDimensions` on a storage texture (5–25 % on Intel, rgba8). Not yet re-measured on Apple. Tile kernels (`Reducer`, `'spd'` batches under 5 levels) still follow the level count.
 
 Tail tiles follow the first output, not the level count: SwiftShader took 30 s or more to compile each 32×32-tile pipeline, and an 8×8 tail of a small image doesn't need one.
 
@@ -221,7 +223,7 @@ Tail tiles follow the first output, not the level count: SwiftShader took 30 s o
 Every intermediate level is quantized exactly as stored, so a chain equals level-by-level generation.
 
 - **rgba8:** values stay in integer 0–255 units in workgroup memory. Sums are exact and ties round to even. With `k/255` floats, float error turned ties into round-ups. A 1×128 tail drifted 3 steps by mip 5: half of all 1D texels are ties.
-- **rgba16float:** values go through `pack2x16float` / `unpack2x16float`.
+- **float16 formats:** values are rounded to nearest even in the shader with integer math (`float16Wgsl`, `ds_round_f16`; mirrors core `toHalf` bit for bit), then stored as exact halves, so no device conversion rounds anything. `f16Rounding: 'device'` (Downsampler and Reducer options) uses `pack2x16float` / `unpack2x16float` instead: cheaper, but D3D12 truncates there (§ Findings, 2026-11-12).
 - **rgb9e5ufloat, rg11b10ufloat:** whole texels go through our encoder and back (`ds_pack9e5` / `ds_pack11_11_10` in WGSL, `quantizeTexel` in core; rules in §6.1); alpha reads 1. The rg11b10 storage path stores already-quantized values, so the GPU's own f32 → 11/10-bit conversion never rounds anything.
 
 ### Caching
@@ -465,6 +467,7 @@ Beyond SPD: sizes over 4096², render-pass-matching odd sizes, conservative min/
   - Probe kernel: `results/probes/rgb9e5-buffer-copy.mjs` (its `log2`/`round` packing predates this and is not the shipped one).
 - **Mutation checks** (M5 Pro, `--only=packed --quick`, 2026-11-11): 12 of 14 caught. Caught: no 512 bump, rgb9e5 rounding half to even (`round()`), rg11b10 ties rounding up, rg11b10 truncation, rg11b10 overflow to Inf and a wrong subnormal decode (both by the codec check only: fixtures never overflow), no intermediate quantization, unpadded rows and unaligned level offsets (validation errors), a kernel row stride that ignores the padding, layers sharing one region, and copying only a batch's first level. Survived, as equivalent on this GPU: **⌊log2⌋ from `log2()`** (an exponent off by one is absorbed by the bump: one too low rounds the largest mantissa to exactly 512 and bumps; one too high needs a `log2` error above ~2⁻⁹ to change a mantissa) and **NaN not cleared** before `clamp` (Metal's `clamp` already returns 0 for NaN; WGSL leaves it undefined, so the guard stays). The bit-based exponent stays: it costs nothing and doesn't depend on `log2` accuracy.
 - **Finding (M5 Pro, Chrome 148):** `textureStore` to rgba16float truncates f32 → f16, where `pack2x16float` rounds to nearest even (`results/probes/f16-store-rounding.mjs`). `Downsampler` is unaffected: it quantizes with `pack2x16float` before every store. `Reducer` float16 texture outputs are now quantized with `pack2x16float` before `textureStore` too (2026-11-12), so both its paths round to nearest even; a GPU case with values ¼, ½ and ¾ of a step above a half catches truncation. Packed floats are quantized by our encoder on both paths.
+- **Finding (RTX 3060 Laptop and Intel UHD, D3D12, Chrome 148, 2026-11-12):** `pack2x16float` truncates too, as does `textureStore` (`results/windows/f16-store-rounding-*.json`), so quantizing with it gave truncated halves on Windows (about 211 of 287 full-matrix failures on the RTX). Owner decision: float16 outputs round to nearest even in the shader by default (`f16Rounding: 'nearest'`, integer math on the float's bits); `'device'` keeps `pack2x16float` for comparison. A GPU case checks `ds_half_bits` against `toHalf` at every half's rounding boundaries.
 
 Optimisation: with `float32-filterable`, float32 formats may take the sample path; measure first (nvpro measured the sampler 26–32 % faster on NVIDIA, §13).
 

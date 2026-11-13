@@ -2,7 +2,7 @@ import { bufferWritable, formats, isSupportedFormat, type FormatInfo, type Suppo
 import { outputBufferLayout, planBatches, tailTile, type Batch, type BatchKernel, type OddSizePolicy } from '../core/plan.js';
 import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
 import { isCompatibilityTexture } from './compat.js';
-import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
+import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, type F16Rounding, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
 
 export interface DownsamplerOptions {
 	/**
@@ -31,6 +31,9 @@ export interface DownsamplerOptions {
 	 * How 'average' reads the source level of each batch: one hardware bilinear
 	 * sample, or four `textureLoad`s with weights computed in the shader. Default
 	 * 'sample'. Unfilterable formats (float32, depth) and fold reductions always load.
+	 * Samplers round bilinear weights to 8 bits in vendor-specific ways (NVIDIA per 2D
+	 * tap, Intel by truncation), so 'sample' results differ slightly between GPUs;
+	 * 'load' is identical on every GPU and costs 2–31 % (results/windows/timings.md).
 	 */
 	averageAccess?: SourceAccess;
 	/**
@@ -52,6 +55,22 @@ export interface DownsamplerOptions {
 	 * compatibility mode. Default false (SPEC.md §2.1).
 	 */
 	tail?: boolean;
+	/**
+	 * float16 formats: how each level is rounded to a half, before it is stored and
+	 * before the next level reads it. 'nearest' (default): round to nearest even in the
+	 * shader, the same on every GPU. 'device': the device's own conversion
+	 * (`pack2x16float`), which truncates on D3D12. See {@link F16Rounding}.
+	 */
+	f16Rounding?: F16Rounding;
+	/**
+	 * 'exact' batches: the smallest output tile per workgroup, 8, 16 or 32. Default 32
+	 * (16 × 16 invocations, each writing 2 × 2 first-level texels) where a workgroup can
+	 * have 256 invocations, else 8; also 8 on fallback (software) adapters, which compile
+	 * 32×32-tile pipelines slowly. Results are the same; 8 × 8 workgroups were up to
+	 * 1.6× slower on Intel UHD and 1.3× on an RTX 3060 at render sizes
+	 * (results/windows/timings.md).
+	 */
+	exactTile?: number;
 }
 
 export interface SourceOptions {
@@ -174,6 +193,8 @@ export class Downsampler {
 	readonly averageAccess: SourceAccess | undefined;
 	readonly compatibility: boolean | 'auto';
 	readonly tail: boolean;
+	readonly f16Rounding: F16Rounding;
+	readonly exactTile: number;
 	private readonly scratch = new WeakMap<GPUTexture, Map<number, GPUTexture>>();
 	private readonly pipelines = new Map<string, GPUComputePipeline>();
 	private readonly layouts = new Map<string, GPUBindGroupLayout>();
@@ -214,6 +235,14 @@ export class Downsampler {
 		if ( compatibility !== 'auto' && typeof compatibility !== 'boolean' ) throw new Error( 'downsampler: compatibility must be true, false or "auto".' );
 		this.compatibility = compatibility;
 		this.tail = options.tail ?? false;
+		const f16Rounding = options.f16Rounding ?? 'nearest';
+		if ( f16Rounding !== 'nearest' && f16Rounding !== 'device' ) throw new Error( 'downsampler: f16Rounding must be "nearest" or "device".' );
+		this.f16Rounding = f16Rounding;
+		// Software adapters (SwiftShader) keep 8: they take 30 s or more to compile a 32×32-tile pipeline.
+		const software = ( device as GPUDevice & { adapterInfo?: GPUAdapterInfo } ).adapterInfo?.isFallbackAdapter === true;
+		const exactTile = options.exactTile ?? ( invocations === 6 && ! software ? 32 : 8 );
+		if ( exactTile !== 8 && ( exactTile !== 16 && exactTile !== 32 || invocations < 6 ) ) throw new Error( 'downsampler: exactTile must be 8, or 16 or 32 on devices with 256 invocations per workgroup.' );
+		this.exactTile = exactTile;
 		this.sampler = device.createSampler( { label: 'downsampler', minFilter: 'linear', magFilter: 'linear' } );
 
 	}
@@ -399,7 +428,7 @@ export class Downsampler {
 		const copySource = source !== undefined && mipSize( source.texture.width, sourceMipLevel ) === mipSize( texture.width, baseMipLevel ) && mipSize( source.texture.height, sourceMipLevel ) === mipSize( texture.height, baseMipLevel );
 		// Tail tiles of 16 and 32 take 16 × 16 invocations; below 256 (compatibility mode) only 8.
 		const tailMaxTile = this.device.limits.maxComputeInvocationsPerWorkgroup >= 256 ? tailTile : 8;
-		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch, oddSizes, fromSource: source !== undefined, copySource, tail: oddSizes === 'exact' && this.tail, tailMaxTile } );
+		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch, oddSizes, fromSource: source !== undefined, copySource, tail: oddSizes === 'exact' && this.tail, tailMaxTile, exactMinTile: this.exactTile } );
 
 		// Buffer path: one scratch buffer, sized for the largest batch, serves every
 		// batch in turn (each batch's copies are recorded before the next dispatch).
@@ -427,7 +456,10 @@ export class Downsampler {
 
 			const external = batch.sourceMipLevel === null;
 			const sourceFormat = external ? source!.texture.format : format;
-			const access = this.access( reduction, sourceFormat );
+			// A same-size converting copy loads: a sampler at texel centres isn't exact on every
+			// GPU (Intel truncates the coordinate a hair below the centre and blends in 1/256 of a
+			// neighbour; results/windows/correctness.md).
+			const access = external && copySource && batch.firstMipLevel === baseMipLevel ? 'load' : this.access( reduction, sourceFormat );
 			const kernel: BatchKernelKey = { format, dimension, count: batch.count, access, reduction, sourceFormat, output, kind: batch.kernel, tile: batch.tile };
 			const layout = this.layout( kernel );
 			const pipeline = this.pipeline( kernel );
@@ -540,8 +572,9 @@ export class Downsampler {
 	 */
 	private kernelOptions( { format, dimension, count, access, reduction, sourceFormat, output, kind, tile }: BatchKernelKey ): KernelOptions {
 
-		if ( kind !== 'clamp' ) return { format, dimension, count, reduction, access, sourceFormat, output, ...( kind === 'tail' ? { tail: true, tile } : {} ) };
-		return { format, dimension, edges: 'clamp', count, reduction, access, sourceFormat, output };
+		const { f16Rounding } = this;
+		if ( kind !== 'clamp' ) return { format, dimension, count, reduction, access, sourceFormat, output, f16Rounding, tile, ...( kind === 'tail' ? { tail: true } : {} ) };
+		return { format, dimension, edges: 'clamp', count, reduction, access, sourceFormat, output, f16Rounding };
 
 	}
 
@@ -559,7 +592,7 @@ export class Downsampler {
 	private pipeline( key: BatchKernelKey ): GPUComputePipeline {
 
 		const { format, dimension, count, access, reduction, sourceFormat, output, kind, tile } = key;
-		const id = `${ kind }${ kind === 'tail' ? tile : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }:${ output }`;
+		const id = `${ kind }${ kind === 'clamp' ? '' : tile }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }:${ output }`;
 		let pipeline = this.pipelines.get( id );
 		if ( pipeline !== undefined ) return pipeline;
 		const label = `downsampler ${ kind }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ typeof reduction === 'string' ? reduction : 'custom' }:${ output }`;

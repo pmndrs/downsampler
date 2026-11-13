@@ -1,0 +1,48 @@
+{
+ "adapter": {
+  "vendor": "intel",
+  "architecture": "gen-12lp"
+ },
+ "sizes": {
+  "rgba32float 65x129": {
+   "maxErrorX256": 0,
+   "maxErrorY256": 0
+  },
+  "rgba32float 255x257": {
+   "maxErrorX256": 0.9921259842521977,
+   "maxErrorY256": 0
+  },
+  "rgba32float 15x17": {
+   "maxErrorX256": -1,
+   "maxErrorY256": 0
+  },
+  "rgba32float 192x108": {
+   "maxErrorX256": -1,
+   "maxErrorY256": -1
+  },
+  "rgba32float 1129x635": {
+   "maxErrorX256": -1.0354609929081562,
+   "maxErrorY256": 1.0220820189279038
+  },
+  "rgba16float 65x129": {
+   "maxErrorX256": 0,
+   "maxErrorY256": 0
+  },
+  "rgba16float 255x257": {
+   "maxErrorX256": 0.9921259842521977,
+   "maxErrorY256": 0
+  },
+  "rgba16float 15x17": {
+   "maxErrorX256": -1,
+   "maxErrorY256": 0
+  },
+  "rgba16float 192x108": {
+   "maxErrorX256": -1,
+   "maxErrorY256": -1
+  },
+  "rgba16float 1129x635": {
+   "maxErrorX256": -1.0354609929081562,
+   "maxErrorY256": 1.0220820189279038
+  }
+ }
+}

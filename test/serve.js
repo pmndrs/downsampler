@@ -13,8 +13,10 @@ export function createServer() {
 
 	return createHttpServer( async ( request, response ) => {
 
-		const path = normalize( decodeURIComponent( new URL( request.url, 'http://localhost' ).pathname ) );
-		const file = join( root, path.endsWith( '/' ) ? path + 'index.html' : path );
+		// Resolve directory URLs before normalize(): on Windows it turns '/' into '\', so a
+		// trailing-slash check after it never matches and the directory itself 404s.
+		const pathname = decodeURIComponent( new URL( request.url, 'http://localhost' ).pathname );
+		const file = join( root, normalize( pathname.endsWith( '/' ) ? pathname + 'index.html' : pathname ) );
 		if ( ! file.startsWith( root ) ) return response.writeHead( 403 ).end();
 
 		try {

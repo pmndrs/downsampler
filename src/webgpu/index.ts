@@ -4,8 +4,8 @@ export type { BufferCopy, DownsamplerOptions, EncodeOptions, PreparedBatch, Sour
 export { Reducer } from './reducer.js';
 export type { ReducerDispatch, ReducerOptions, TextureLevel } from './reducer.js';
 export type { ToolBindings } from './tool.js';
-export { bufferOutputWgsl, createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, packedFloatWgsl, sizeBinding } from './kernel.js';
-export type { KernelOptions, OutputPath, SourceAccess, ViewDimension } from './kernel.js';
+export { bufferOutputWgsl, createKernel, float16Wgsl, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, packedFloatWgsl, sizeBinding } from './kernel.js';
+export type { F16Rounding, KernelOptions, OutputPath, SourceAccess, ViewDimension } from './kernel.js';
 export type { Reduction, CustomReduction, BuiltinReduction, ChannelOp, ChannelOps, Channels, EdgePolicy, TileEdgePolicy } from '../core/reduction.js';
 export { ScalarReduction, createScalarKernel, scalarLayoutEntries, scalarResultBytes, scalarResultSize } from './scalar.js';
 export { lanes, wideStruct } from './lanes.js';

@@ -11,6 +11,7 @@ import { dirname } from 'node:path';
 import os from 'node:os';
 import puppeteer from 'puppeteer';
 import { createServer } from '../serve.js';
+import { gpuChoiceArgs } from '../gpu-choice.js';
 
 const args = process.argv.slice( 2 );
 const value = name => args.find( arg => arg.startsWith( `--${ name }=` ) )?.split( '=' )[ 1 ];
@@ -23,8 +24,9 @@ if ( value( 'only' ) ) options.only = value( 'only' ).split( ',' );
 const browserArgs = [ '--enable-unsafe-webgpu' ];
 if ( process.env.CI ) browserArgs.push( '--no-sandbox' );
 if ( value( 'adapter' ) === 'swiftshader' ) browserArgs.push( '--use-webgpu-adapter=swiftshader', '--enable-unsafe-swiftshader', '--enable-features=Vulkan' );
-// --power=high|low picks the GPU on machines with two (e.g. a laptop's NVIDIA and Intel); the printed adapter info confirms which one ran.
-if ( value( 'power' ) ) browserArgs.push( `--use-webgpu-power-preference=${ value( 'power' ) === 'low' ? 'force-low-power' : 'force-high-performance' }` );
+// --power=high|low picks the GPU on machines with two (e.g. a laptop's NVIDIA and Intel; see
+// test/gpu-choice.js for Windows); the printed adapter info confirms which one ran.
+browserArgs.push( ...gpuChoiceArgs( value( 'power' ) ) );
 
 const server = createServer();
 let browser;

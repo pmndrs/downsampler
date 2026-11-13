@@ -12,7 +12,7 @@ Each entry says what they do, what we do, why, what it would take to converge, a
 
 Effort: **S** is under a day, **M** a few days including oracle and GPU cases, **L** a week or more.
 
-Last updated: 2026-11-12 (entry 22: webgpu-spd 3.0.0 measured side by side)
+Last updated: 2026-11-13 (Windows: RTX 3060 Laptop and Intel UHD, native D3D12/Vulkan baselines; entries 1, 5, 17, 18, 22; results/windows/README.md)
 
 ## Summary
 
@@ -34,12 +34,12 @@ Last updated: 2026-11-12 (entry 22: webgpu-spd 3.0.0 measured side by side)
 | 14 | No `texture_external` source | fiddle | Candidate | M | None | Saves one full-frame copy per frame |
 | 15 | No sub-rectangle yet | SPD | Planned (M2.4) | M | Depends on the snapping decision | Saves work on partial updates |
 | 16 | sRGB via scratch copy or buffer, not a UNORM alias | SPD | Planned (M2.3.5) | M | Same results | Extra copy of levels 1+ |
-| 17 | Compute only; no per-device render fallback | `greggman`, `toji` | Risk (M3) | M | None | Unknown on NVIDIA/D3D12: reported up to 10× slower there |
-| 18 | Needs `STORAGE_BINDING` on the texture | gpuweb#5253 (`Kangz`) | Risk (M3) | — | None | Unknown sampling cost |
+| 17 | Compute only; no per-device render fallback | `greggman`, `toji` | Risk (M3), reduced | M | None | Windows: with 32×32 exact tiles (2026-11-13) `'exact'` ÷ render is 1.19 / 1.04 in rgba8 (NVIDIA / Intel), the tail kernel 0.98 / 1.02; `'spd'` beats render everywhere |
+| 18 | Needs `STORAGE_BINDING` on the texture | gpuweb#5253 (`Kangz`) | Risk, reduced | — | None | No measurable cost on NVIDIA or Intel (D3D12); Apple, AMD unmeasured |
 | 19 | Timestamp benchmark only | `greggman`, nvpro | Planned (M3) | S–M | — | Credibility of every claim |
 | 20 | API conventions: mip count, levels written, no counter buffer | SPD | Keep | S (docs) | — | — |
 | 21 | No size or level cap | SPD | Keep | — | — | — |
-| 22 | webgpu-spd 3.0.0, measured side by side ([results](results/compare/webgpu-spd.md)) | webgpu-spd | Keep | — | Its default handoff gave stale levels 7+ in up to 77 % of frames; Hi-Z up to 52 % non-conservative | Measured: our `'spd'` 1.2–2.1× faster than its handoff-free mode at render sizes |
+| 22 | webgpu-spd 3.0.0, measured side by side ([results](results/compare/webgpu-spd.md)) | webgpu-spd | Keep | — | Its default handoff gave stale levels 7+ in up to 77 % of frames; Hi-Z up to 52 % non-conservative | Measured: our `'spd'` 1.2–2.1× faster (M5), 1.6× / 3.5× faster than its default (RTX / Intel, rgba8); no stale frames on Windows |
 
 ## Dispatch structure
 
@@ -60,6 +60,7 @@ Last updated: 2026-11-12 (entry 22: webgpu-spd 3.0.0 measured side by side)
     - rgba16f: atomic 1.00–1.60×, against 0.62–0.94×.
     - 1024²: atomic 1.5–1.6×, against 0.81–0.97×. 4096²: 1.01–1.02×, against 0.99–1.00×.
     - Without copying its tail levels into the texture, it is still behind `'spd'`: 0.73–0.88× for rgba8, 0.90–1.50× for rgba16f.
+  - **2026-11-12, native AMD SPD on Windows** (D3D12, `native/d3d12-mips`, results/windows/timings.md): AMD's atomic single dispatch and the same shader split in two dispatches are within noise of each other on the RTX 3060 and on Intel UHD, every size and format. The handoff buys nothing natively either. webgpu-spd's handoff showed no stale frames on either GPU (entry 22): the race was observed on Apple only.
 - **Verdict:** keep. Revisit only if WGSL gains device-scope acquire/release, and measure first.
 
 ### 2. A batch ends at every odd size
@@ -111,6 +112,7 @@ Last updated: 2026-11-12 (entry 22: webgpu-spd 3.0.0 measured side by side)
 - **They:** SPD's unclamped loads read zeros past the texture edge unless the texture is padded.
 - **We:** clamp every read inside the texture.
 - **Quality:** no darkened borders, and no zero depth leaking into Hi-Z.
+- **Measured in AMD's own code** (native D3D12 SPD at 1129×635, RTX 3060, results/windows/native-semantics-rtx3060.json): the 1×1 level reads zeros past the 2×1 edge, 0.28 against 0.50 clamped, in every variant that loads (atomic or split). The linear-sampler split variant clamps and matches. It affects every size where ⌊log2 h⌋ < ⌊log2 w⌋ (1129×635, 1280×720, 1707×960, 2560×1440).
 - **Verdict:** keep.
 
 ### 6. No wrap edge mode
@@ -213,15 +215,19 @@ Last updated: 2026-11-12 (entry 22: webgpu-spd 3.0.0 measured side by side)
 - **They:** `greggman` found compute generators slower than render passes on NVIDIA/D3D12, up to 10× for SPD-style ports, and `toji` reported a partner seeing the same. The community default is render passes.
 - **We:** are compute only. The three.js adapter falls back to render passes only for textures we can't handle.
 - **Effort:** M. Collect cross-vendor data (M3), then either choose the path per device in the adapters or add a render-pass backend here (SPEC §3 leaves room for one).
-- **Performance (measured on Apple only):** 1.3–27× faster than render passes. Unknown on NVIDIA, AMD and Intel.
-- **Verdict:** risk. This is the biggest open question, and it decides the three.js default.
+- **Performance (measured):**
+  - **Apple M5 Pro:** 1.3–27× faster than render passes.
+  - **Windows, WebGPU, same run** (Chrome 148, D3D12; medians at render sizes; results/windows/timings.md): with 8 × 8 exact workgroups, our default `'exact'` ÷ WebGPU render passes was **1.25 (rgba8) / 1.06 (rgba16f) on an RTX 3060 Laptop** and **1.71 / 0.94 on Intel UHD**. Most of Intel's gap was our kernel: with 32 × 32 exact tiles (the default since 2026-11-13) it is **1.19 / 1.06 on the RTX and 1.04 / 0.66 on Intel**. The tail kernel is now 0.98 / 0.90 and 1.02 / 0.63; `'spd'` 0.75 / 0.75 and 0.78 / 0.68.
+  - **Render passes for the large levels, then `'exact'`** (same results) cost as much as `'exact'` or more: render passes aren't cheaper per texel (4096² level 1 ties), only per dependent step (~10 µs less than a compute dispatch on the RTX at render sizes).
+  - **Native platform paths** (D3D12): on the RTX, AMD SPD beats render passes by 27–31 % and `GenerateMips` by 15–20 %; on Intel, render passes and `GenerateMips` beat every SPD variant by ~27 % in rgba8 (level in rgba16f). nvpro's Vulkan compute is 3–5× slower than `vkCmdBlitImage` on Intel. Nothing like `greggman`'s 10× on NVIDIA.
+- **Verdict:** risk, reduced. After the tile fix only RTX rgba8 still favours render passes (by 19 %), and the tail kernel closes that (0.98). The lever is fewer dependent dispatches (the tail kernel, or exact batches across odd sizes), not a render-pass path; a render fallback stays for textures we can't write.
 
 ### 18. Textures need `STORAGE_BINDING`
 - **They:** render-pass generators need only `RENDER_ATTACHMENT`. `Kangz` flagged that adding storage usage to sampled textures has an unmeasured cost.
 - **We:** need `STORAGE_BINDING` on every destination; the three.js integration would add it automatically.
 - **Effort:** none to measure the cost (M3). Avoiding it would require the buffer output path for every format.
-- **Performance:** unknown. Some drivers may disable compression on storage textures.
-- **Verdict:** risk; measure in M3.
+- **Performance:** some drivers may disable compression on storage textures. Measured natively on Windows (D3D12, results/windows/native-tables.md): the same render-pass chain on a texture that also allows UAV access vs a render-target-only texture is 0.99–1.01× on the RTX 3060 and 0.96–1.08× on Intel UHD (no consistent direction). The flag itself costs nothing measurable there; still unmeasured on Apple and AMD.
+- **Verdict:** risk, reduced: no cost on NVIDIA or Intel under D3D12.
 
 ### 19. Benchmark method
 - **They:**
@@ -274,4 +280,7 @@ Last updated: 2026-11-12 (entry 22: webgpu-spd 3.0.0 measured side by side)
     - Its one dispatch (256²): 0.91×, against 0.90× for our `'spd'` in two.
 - **Where it is ahead:** a simpler API, integer formats and rgb10a2, sub-rectangles, a smaller bundle (8.3 KB gzipped against 13.9 KB for `Downsampler`), and it is released.
 - **Effort to converge:** none planned. Integer formats, rgb10a2 and sub-rectangles are already on our plan (M2.3.3, M2.3.7, M2.4).
+- **Measured on Windows** (RTX 3060 Laptop and Intel UHD, Chrome 148, D3D12, 2026-11-12; results/windows/timings.md):
+  - **Stale levels:** none: 0 of 41,472 frames on each GPU (27 size/format rows × 3 variants × 256 frames, one encoder and one submit per frame). The race is real on Apple, not observed on NVIDIA or Intel.
+  - **Speed:** its default ÷ our `'spd'` is 1.64 (rgba8) / 1.07 (rgba16f) on the RTX and 3.52 / 2.68 on Intel, where its subgroup path is the cost (1.78 / 1.35 without). Against native AMD SPD: its default 2.0× / 1.36× on the RTX (locked clocks), ours 1.26× / 1.27×.
 - **Verdict:** keep. For webgpu-spd users: set `maxMipsPerPass: 6`, and don't use it for Hi-Z at odd sizes. This is input for the planned webgpu-spd#7 comment (SPEC §13, Consequences item 5).

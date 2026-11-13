@@ -1,0 +1,142 @@
+{
+ "adapter": {
+  "vendor": "intel",
+  "architecture": "gen-12lp"
+ },
+ "sizes": {
+  "7": {
+   "n": 3,
+   "maxError": -0.0026041666666667407,
+   "maxErrorIn256ths": -0.6666666666666856,
+   "off": 2,
+   "worstAt": {
+    "x": 0,
+    "exact": 0.6666666666666667,
+    "got": 0.6640625
+   }
+  },
+  "15": {
+   "n": 7,
+   "maxError": -0.00390625,
+   "maxErrorIn256ths": -1,
+   "off": 7,
+   "worstAt": {
+    "x": 3,
+    "exact": 7,
+    "got": 6.99609375
+   }
+  },
+  "17": {
+   "n": 8,
+   "maxError": 0,
+   "maxErrorIn256ths": 0,
+   "off": 0,
+   "worstAt": null
+  },
+  "31": {
+   "n": 15,
+   "maxError": -0.00390625,
+   "maxErrorIn256ths": -1,
+   "off": 15,
+   "worstAt": {
+    "x": 7,
+    "exact": 15,
+    "got": 14.99609375
+   }
+  },
+  "33": {
+   "n": 16,
+   "maxError": 0,
+   "maxErrorIn256ths": 0,
+   "off": 0,
+   "worstAt": null
+  },
+  "65": {
+   "n": 32,
+   "maxError": 0,
+   "maxErrorIn256ths": 0,
+   "off": 0,
+   "worstAt": null
+  },
+  "108": {
+   "n": 54,
+   "maxError": -0.00390625,
+   "maxErrorIn256ths": -1,
+   "off": 47,
+   "worstAt": {
+    "x": 0,
+    "exact": 0.5,
+    "got": 0.49609375
+   }
+  },
+  "129": {
+   "n": 64,
+   "maxError": 0,
+   "maxErrorIn256ths": 0,
+   "off": 0,
+   "worstAt": null
+  },
+  "192": {
+   "n": 96,
+   "maxError": -0.00390625,
+   "maxErrorIn256ths": -1,
+   "off": 64,
+   "worstAt": {
+    "x": 0,
+    "exact": 0.5,
+    "got": 0.49609375
+   }
+  },
+  "255": {
+   "n": 127,
+   "maxError": -0.003875492125985147,
+   "maxErrorIn256ths": -0.9921259842521977,
+   "off": 126,
+   "worstAt": {
+    "x": 126,
+    "exact": 253.49606299212599,
+    "got": 253.4921875
+   }
+  },
+  "257": {
+   "n": 128,
+   "maxError": 0,
+   "maxErrorIn256ths": 0,
+   "off": 0,
+   "worstAt": null
+  },
+  "1129": {
+   "n": 564,
+   "maxError": -0.004044769503547485,
+   "maxErrorIn256ths": -1.0354609929081562,
+   "off": 561,
+   "worstAt": {
+    "x": 15,
+    "exact": 30.527482269503547,
+    "got": 30.5234375
+   }
+  },
+  "1477": {
+   "n": 738,
+   "maxError": -0.004192073170770527,
+   "maxErrorIn256ths": -1.073170731717255,
+   "off": 736,
+   "worstAt": {
+    "x": 337,
+    "exact": 674.9573170731708,
+    "got": 674.953125
+   }
+  },
+  "1920": {
+   "n": 960,
+   "maxError": -0.00390625,
+   "maxErrorIn256ths": -1,
+   "off": 960,
+   "worstAt": {
+    "x": 0,
+    "exact": 0.5,
+    "got": 0.49609375
+   }
+  }
+ }
+}

@@ -30,7 +30,13 @@ struct Varyings { @builtin(position) position: vec4f, @location(0) uv: vec2f };
 
 	return {
 		passes: texture => ( texture.mipLevelCount - 1 ) * texture.depthOrArrayLayers,
-		encode( encoder, texture ) {
+		/** Levels `first`..`last` (inclusive) only, each from the level above. */
+		encodeLevels( encoder, texture, first, last ) {
+
+			this.encode( encoder, texture, level => level >= first && level <= last );
+
+		},
+		encode( encoder, texture, filter = () => true ) {
 
 			let plan = plans.get( texture );
 			if ( ! plan ) {
@@ -40,7 +46,7 @@ struct Varyings { @builtin(position) position: vec4f, @location(0) uv: vec2f };
 				for ( let layer = 0; layer < texture.depthOrArrayLayers; layer ++ ) for ( let level = 1; level < texture.mipLevelCount; level ++ ) {
 
 					const view = ( mip ) => texture.createView( { dimension: '2d', baseMipLevel: mip, mipLevelCount: 1, baseArrayLayer: layer, arrayLayerCount: 1 } );
-					plan.push( { target: view( level ), bindGroup: device.createBindGroup( { layout: p.getBindGroupLayout( 0 ), entries: [ { binding: 0, resource: view( level - 1 ) }, { binding: 1, resource: sampler } ] } ), pipeline: p } );
+					plan.push( { level, target: view( level ), bindGroup: device.createBindGroup( { layout: p.getBindGroupLayout( 0 ), entries: [ { binding: 0, resource: view( level - 1 ) }, { binding: 1, resource: sampler } ] } ), pipeline: p } );
 
 				}
 
@@ -48,8 +54,9 @@ struct Varyings { @builtin(position) position: vec4f, @location(0) uv: vec2f };
 
 			}
 
-			for ( const { target, bindGroup, pipeline } of plan ) {
+			for ( const { level, target, bindGroup, pipeline } of plan ) {
 
+				if ( ! filter( level ) ) continue;
 				const pass = encoder.beginRenderPass( { colorAttachments: [ { view: target, loadOp: 'clear', storeOp: 'store' } ] } );
 				pass.setPipeline( pipeline );
 				pass.setBindGroup( 0, bindGroup );

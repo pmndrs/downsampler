@@ -1,0 +1,486 @@
+validated 1×1×1 rgba8unorm
+validated 2×2×1 rgba8unorm
+validated 3×7×1 rgba8unorm
+validated 7×4×1 rgba8unorm
+validated 15×17×1 rgba8unorm
+validated 16×16×1 rgba8unorm
+validated 17×9×1 rgba8unorm
+validated 31×33×1 rgba8unorm
+validated 64×64×1 rgba8unorm
+validated 65×129×1 rgba8unorm
+validated 128×8×1 rgba8unorm
+validated 1×128×1 rgba8unorm
+validated 128×1×1 rgba8unorm
+validated 192×108×1 rgba8unorm
+validated 255×257×1 rgba8unorm
+validated 256×256×1 rgba8unorm
+validated 512×32×1 rgba8unorm
+validated 64×32×3 rgba8unorm
+validated 17×11×3 rgba8unorm
+validated 32×16×1 rgba8unorm
+validated 17×9×1 rgba8unorm
+validated 2048×2048×1 rgba8unorm
+validated 96×4096×1 rgba8unorm
+validated 1920×1080×1 rgba8unorm
+validated 1×1×1 rgba16float
+validated 2×2×1 rgba16float
+validated 3×7×1 rgba16float
+validated 7×4×1 rgba16float
+validated 15×17×1 rgba16float
+validated 16×16×1 rgba16float
+validated 17×9×1 rgba16float
+validated 31×33×1 rgba16float
+validated 64×64×1 rgba16float
+validated 65×129×1 rgba16float
+validated 128×8×1 rgba16float
+validated 1×128×1 rgba16float
+validated 128×1×1 rgba16float
+validated 192×108×1 rgba16float
+validated 255×257×1 rgba16float
+validated 256×256×1 rgba16float
+validated 512×32×1 rgba16float
+validated 64×32×3 rgba16float
+validated 17×11×3 rgba16float
+validated 32×16×1 rgba16float
+validated 17×9×1 rgba16float
+validated 2048×2048×1 rgba16float
+validated 96×4096×1 rgba16float
+validated 1920×1080×1 rgba16float
+validated 1×1×1 rgba8snorm
+validated 2×2×1 rgba8snorm
+validated 3×7×1 rgba8snorm
+validated 7×4×1 rgba8snorm
+validated 15×17×1 rgba8snorm
+validated 16×16×1 rgba8snorm
+validated 17×9×1 rgba8snorm
+validated 31×33×1 rgba8snorm
+validated 64×64×1 rgba8snorm
+validated 65×129×1 rgba8snorm
+validated 128×8×1 rgba8snorm
+validated 1×128×1 rgba8snorm
+validated 128×1×1 rgba8snorm
+validated 192×108×1 rgba8snorm
+validated 255×257×1 rgba8snorm
+validated 256×256×1 rgba8snorm
+validated 512×32×1 rgba8snorm
+validated 64×32×3 rgba8snorm
+validated 17×11×3 rgba8snorm
+validated 32×16×1 rgba8snorm
+validated 17×9×1 rgba8snorm
+validated 2048×2048×1 rgba8snorm
+validated 96×4096×1 rgba8snorm
+validated 1920×1080×1 rgba8snorm
+validated 1×1×1 bgra8unorm
+validated 3×7×1 bgra8unorm
+validated 17×9×1 bgra8unorm
+validated 31×33×1 bgra8unorm
+validated 65×129×1 bgra8unorm
+validated 1×128×1 bgra8unorm
+validated 128×8×1 bgra8unorm
+validated 192×108×1 bgra8unorm
+validated 512×32×1 bgra8unorm
+validated 17×11×3 bgra8unorm
+validated 17×9×1 bgra8unorm
+validated 1×1×1 r8unorm
+validated 3×7×1 r8unorm
+validated 17×9×1 r8unorm
+validated 31×33×1 r8unorm
+validated 65×129×1 r8unorm
+validated 1×128×1 r8unorm
+validated 128×8×1 r8unorm
+validated 192×108×1 r8unorm
+validated 512×32×1 r8unorm
+validated 17×11×3 r8unorm
+validated 17×9×1 r8unorm
+validated 1×1×1 rg8unorm
+validated 3×7×1 rg8unorm
+validated 17×9×1 rg8unorm
+validated 31×33×1 rg8unorm
+validated 65×129×1 rg8unorm
+validated 1×128×1 rg8unorm
+validated 128×8×1 rg8unorm
+validated 192×108×1 rg8unorm
+validated 512×32×1 rg8unorm
+validated 17×11×3 rg8unorm
+validated 17×9×1 rg8unorm
+validated 1×1×1 r16float
+validated 3×7×1 r16float
+validated 17×9×1 r16float
+validated 31×33×1 r16float
+validated 65×129×1 r16float
+validated 1×128×1 r16float
+validated 128×8×1 r16float
+validated 192×108×1 r16float
+validated 512×32×1 r16float
+validated 17×11×3 r16float
+validated 17×9×1 r16float
+validated 1×1×1 rg16float
+validated 3×7×1 rg16float
+validated 17×9×1 rg16float
+validated 31×33×1 rg16float
+validated 65×129×1 rg16float
+validated 1×128×1 rg16float
+validated 128×8×1 rg16float
+validated 192×108×1 rg16float
+validated 512×32×1 rg16float
+validated 17×11×3 rg16float
+validated 17×9×1 rg16float
+validated 1×1×1 r8snorm
+validated 3×7×1 r8snorm
+validated 17×9×1 r8snorm
+validated 31×33×1 r8snorm
+validated 65×129×1 r8snorm
+validated 1×128×1 r8snorm
+validated 128×8×1 r8snorm
+validated 192×108×1 r8snorm
+validated 512×32×1 r8snorm
+validated 17×11×3 r8snorm
+validated 17×9×1 r8snorm
+validated 1×1×1 rg8snorm
+validated 3×7×1 rg8snorm
+validated 17×9×1 rg8snorm
+validated 31×33×1 rg8snorm
+validated 65×129×1 rg8snorm
+validated 1×128×1 rg8snorm
+validated 128×8×1 rg8snorm
+validated 192×108×1 rg8snorm
+validated 512×32×1 rg8snorm
+validated 17×11×3 rg8snorm
+validated 17×9×1 rg8snorm
+validated 1×1×1 r16unorm
+validated 3×7×1 r16unorm
+validated 17×9×1 r16unorm
+validated 31×33×1 r16unorm
+validated 65×129×1 r16unorm
+validated 1×128×1 r16unorm
+validated 128×8×1 r16unorm
+validated 192×108×1 r16unorm
+validated 512×32×1 r16unorm
+validated 17×11×3 r16unorm
+validated 17×9×1 r16unorm
+validated 1×1×1 rg16unorm
+validated 3×7×1 rg16unorm
+validated 17×9×1 rg16unorm
+validated 31×33×1 rg16unorm
+validated 65×129×1 rg16unorm
+validated 1×128×1 rg16unorm
+validated 128×8×1 rg16unorm
+validated 192×108×1 rg16unorm
+validated 512×32×1 rg16unorm
+validated 17×11×3 rg16unorm
+validated 17×9×1 rg16unorm
+validated 1×1×1 rgba16unorm
+validated 2×2×1 rgba16unorm
+validated 3×7×1 rgba16unorm
+validated 7×4×1 rgba16unorm
+validated 15×17×1 rgba16unorm
+validated 16×16×1 rgba16unorm
+validated 17×9×1 rgba16unorm
+validated 31×33×1 rgba16unorm
+validated 64×64×1 rgba16unorm
+validated 65×129×1 rgba16unorm
+validated 128×8×1 rgba16unorm
+validated 1×128×1 rgba16unorm
+validated 128×1×1 rgba16unorm
+validated 192×108×1 rgba16unorm
+validated 255×257×1 rgba16unorm
+validated 256×256×1 rgba16unorm
+validated 512×32×1 rgba16unorm
+validated 64×32×3 rgba16unorm
+validated 17×11×3 rgba16unorm
+validated 32×16×1 rgba16unorm
+validated 17×9×1 rgba16unorm
+validated 2048×2048×1 rgba16unorm
+validated 96×4096×1 rgba16unorm
+validated 1920×1080×1 rgba16unorm
+validated 1×1×1 r16snorm
+validated 3×7×1 r16snorm
+validated 17×9×1 r16snorm
+validated 31×33×1 r16snorm
+validated 65×129×1 r16snorm
+validated 1×128×1 r16snorm
+validated 128×8×1 r16snorm
+validated 192×108×1 r16snorm
+validated 512×32×1 r16snorm
+validated 17×11×3 r16snorm
+validated 17×9×1 r16snorm
+validated 1×1×1 rg16snorm
+validated 3×7×1 rg16snorm
+validated 17×9×1 rg16snorm
+validated 31×33×1 rg16snorm
+validated 65×129×1 rg16snorm
+validated 1×128×1 rg16snorm
+validated 128×8×1 rg16snorm
+validated 192×108×1 rg16snorm
+validated 512×32×1 rg16snorm
+validated 17×11×3 rg16snorm
+validated 17×9×1 rg16snorm
+validated 1×1×1 rgba16snorm
+validated 2×2×1 rgba16snorm
+validated 3×7×1 rgba16snorm
+validated 7×4×1 rgba16snorm
+validated 15×17×1 rgba16snorm
+validated 16×16×1 rgba16snorm
+validated 17×9×1 rgba16snorm
+validated 31×33×1 rgba16snorm
+validated 64×64×1 rgba16snorm
+validated 65×129×1 rgba16snorm
+validated 128×8×1 rgba16snorm
+validated 1×128×1 rgba16snorm
+validated 128×1×1 rgba16snorm
+validated 192×108×1 rgba16snorm
+validated 255×257×1 rgba16snorm
+validated 256×256×1 rgba16snorm
+validated 512×32×1 rgba16snorm
+validated 64×32×3 rgba16snorm
+validated 17×11×3 rgba16snorm
+validated 32×16×1 rgba16snorm
+validated 17×9×1 rgba16snorm
+validated 2048×2048×1 rgba16snorm
+validated 96×4096×1 rgba16snorm
+validated 1920×1080×1 rgba16snorm
+validated 1×1×1 r32float
+validated 3×7×1 r32float
+validated 17×9×1 r32float
+validated 31×33×1 r32float
+validated 65×129×1 r32float
+validated 1×128×1 r32float
+validated 128×8×1 r32float
+validated 192×108×1 r32float
+validated 512×32×1 r32float
+validated 17×11×3 r32float
+validated 17×9×1 r32float
+validated 1×1×1 rg32float
+validated 3×7×1 rg32float
+validated 17×9×1 rg32float
+validated 31×33×1 rg32float
+validated 65×129×1 rg32float
+validated 1×128×1 rg32float
+validated 128×8×1 rg32float
+validated 192×108×1 rg32float
+validated 512×32×1 rg32float
+validated 17×11×3 rg32float
+validated 17×9×1 rg32float
+validated 1×1×1 rgba32float
+validated 2×2×1 rgba32float
+validated 3×7×1 rgba32float
+validated 7×4×1 rgba32float
+validated 15×17×1 rgba32float
+validated 16×16×1 rgba32float
+validated 17×9×1 rgba32float
+validated 31×33×1 rgba32float
+validated 64×64×1 rgba32float
+validated 65×129×1 rgba32float
+validated 128×8×1 rgba32float
+validated 1×128×1 rgba32float
+validated 128×1×1 rgba32float
+validated 192×108×1 rgba32float
+validated 255×257×1 rgba32float
+validated 256×256×1 rgba32float
+validated 512×32×1 rgba32float
+validated 64×32×3 rgba32float
+validated 17×11×3 rgba32float
+validated 32×16×1 rgba32float
+validated 17×9×1 rgba32float
+validated 2048×2048×1 rgba32float
+validated 96×4096×1 rgba32float
+validated 1920×1080×1 rgba32float
+validated 1×1×1 rgb9e5ufloat
+validated 2×2×1 rgb9e5ufloat
+validated 3×7×1 rgb9e5ufloat
+validated 7×4×1 rgb9e5ufloat
+validated 15×17×1 rgb9e5ufloat
+validated 16×16×1 rgb9e5ufloat
+validated 17×9×1 rgb9e5ufloat
+validated 31×33×1 rgb9e5ufloat
+validated 64×64×1 rgb9e5ufloat
+validated 65×129×1 rgb9e5ufloat
+validated 128×8×1 rgb9e5ufloat
+validated 1×128×1 rgb9e5ufloat
+validated 128×1×1 rgb9e5ufloat
+validated 192×108×1 rgb9e5ufloat
+validated 255×257×1 rgb9e5ufloat
+validated 256×256×1 rgb9e5ufloat
+validated 512×32×1 rgb9e5ufloat
+validated 64×32×3 rgb9e5ufloat
+validated 17×11×3 rgb9e5ufloat
+validated 32×16×1 rgb9e5ufloat
+validated 17×9×1 rgb9e5ufloat
+validated 2048×2048×1 rgb9e5ufloat
+validated 96×4096×1 rgb9e5ufloat
+validated 1920×1080×1 rgb9e5ufloat
+validated 1×1×1 rg11b10ufloat
+validated 2×2×1 rg11b10ufloat
+validated 3×7×1 rg11b10ufloat
+validated 7×4×1 rg11b10ufloat
+validated 15×17×1 rg11b10ufloat
+validated 16×16×1 rg11b10ufloat
+validated 17×9×1 rg11b10ufloat
+validated 31×33×1 rg11b10ufloat
+validated 64×64×1 rg11b10ufloat
+validated 65×129×1 rg11b10ufloat
+validated 128×8×1 rg11b10ufloat
+validated 1×128×1 rg11b10ufloat
+validated 128×1×1 rg11b10ufloat
+validated 192×108×1 rg11b10ufloat
+validated 255×257×1 rg11b10ufloat
+validated 256×256×1 rg11b10ufloat
+validated 512×32×1 rg11b10ufloat
+validated 64×32×3 rg11b10ufloat
+validated 17×11×3 rg11b10ufloat
+validated 32×16×1 rg11b10ufloat
+validated 17×9×1 rg11b10ufloat
+validated 2048×2048×1 rg11b10ufloat
+validated 96×4096×1 rg11b10ufloat
+validated 1920×1080×1 rg11b10ufloat
+validated source depth32float 1×1×1 -> r32float (same)
+validated source depth32float 2×2×1 -> r32float (same)
+validated source depth32float 3×7×1 -> r32float (same)
+validated source depth32float 17×9×1 -> r32float (same)
+validated source depth32float 64×64×1 -> r32float (same)
+validated source depth32float 65×129×1 -> r32float (same)
+validated source depth32float 1×128×1 -> r32float (same)
+validated source depth32float 255×257×1 -> r32float (same)
+validated source depth32float 192×108×1 -> r32float (same)
+validated source depth32float 64×32×3 -> r32float (same)
+validated source depth32float 17×11×3 -> r32float (same)
+validated source depth32float 512×512×1 -> r32float (same)
+validated source depth32float 1920×1080×1 -> r32float (same)
+validated source depth16unorm 1×1×1 -> r32float (half)
+validated source depth16unorm 2×2×1 -> r32float (half)
+validated source depth16unorm 3×7×1 -> r32float (half)
+validated source depth16unorm 17×9×1 -> r32float (half)
+validated source depth16unorm 64×64×1 -> r32float (half)
+validated source depth16unorm 65×129×1 -> r32float (half)
+validated source depth16unorm 1×128×1 -> r32float (half)
+validated source depth16unorm 255×257×1 -> r32float (half)
+validated source depth16unorm 192×108×1 -> r32float (half)
+validated source depth16unorm 64×32×3 -> r32float (half)
+validated source depth16unorm 17×11×3 -> r32float (half)
+validated source depth16unorm 512×512×1 -> r32float (half)
+validated source depth16unorm 1920×1080×1 -> r32float (half)
+validated source rgba8unorm 1×1×1 -> rgba16float (half)
+validated source rgba8unorm 2×2×1 -> rgba16float (half)
+validated source rgba8unorm 3×7×1 -> rgba16float (half)
+validated source rgba8unorm 17×9×1 -> rgba16float (half)
+validated source rgba8unorm 64×64×1 -> rgba16float (half)
+validated source rgba8unorm 65×129×1 -> rgba16float (half)
+validated source rgba8unorm 1×128×1 -> rgba16float (half)
+validated source rgba8unorm 255×257×1 -> rgba16float (half)
+validated source rgba8unorm 192×108×1 -> rgba16float (half)
+validated source rgba8unorm 64×32×3 -> rgba16float (half)
+validated source rgba8unorm 17×11×3 -> rgba16float (half)
+validated source rgba8unorm 512×512×1 -> rgba16float (half)
+validated source rgba8unorm 1920×1080×1 -> rgba16float (half)
+validated source rgba16float 1×1×1 -> rgba8unorm (same)
+validated source rgba16float 2×2×1 -> rgba8unorm (same)
+validated source rgba16float 3×7×1 -> rgba8unorm (same)
+validated source rgba16float 17×9×1 -> rgba8unorm (same)
+validated source rgba16float 64×64×1 -> rgba8unorm (same)
+validated source rgba16float 65×129×1 -> rgba8unorm (same)
+validated source rgba16float 1×128×1 -> rgba8unorm (same)
+validated source rgba16float 255×257×1 -> rgba8unorm (same)
+validated source rgba16float 192×108×1 -> rgba8unorm (same)
+validated source rgba16float 64×32×3 -> rgba8unorm (same)
+validated source rgba16float 17×11×3 -> rgba8unorm (same)
+validated source rgba16float 512×512×1 -> rgba8unorm (same)
+validated source rgba16float 1920×1080×1 -> rgba8unorm (same)
+validated source rgba16float 1×1×1 -> rgba8unorm (half)
+validated source rgba16float 2×2×1 -> rgba8unorm (half)
+validated source rgba16float 3×7×1 -> rgba8unorm (half)
+validated source rgba16float 17×9×1 -> rgba8unorm (half)
+validated source rgba16float 64×64×1 -> rgba8unorm (half)
+validated source rgba16float 65×129×1 -> rgba8unorm (half)
+validated source rgba16float 1×128×1 -> rgba8unorm (half)
+validated source rgba16float 255×257×1 -> rgba8unorm (half)
+validated source rgba16float 192×108×1 -> rgba8unorm (half)
+validated source rgba16float 64×32×3 -> rgba8unorm (half)
+validated source rgba16float 17×11×3 -> rgba8unorm (half)
+validated source rgba16float 512×512×1 -> rgba8unorm (half)
+validated source rgba16float 1920×1080×1 -> rgba8unorm (half)
+validated source rgba16float 1×1×1 -> rgb9e5ufloat (half)
+validated source rgba16float 2×2×1 -> rgb9e5ufloat (half)
+validated source rgba16float 3×7×1 -> rgb9e5ufloat (half)
+validated source rgba16float 17×9×1 -> rgb9e5ufloat (half)
+validated source rgba16float 64×64×1 -> rgb9e5ufloat (half)
+validated source rgba16float 65×129×1 -> rgb9e5ufloat (half)
+validated source rgba16float 1×128×1 -> rgb9e5ufloat (half)
+validated source rgba16float 255×257×1 -> rgb9e5ufloat (half)
+validated source rgba16float 192×108×1 -> rgb9e5ufloat (half)
+validated source rgba16float 64×32×3 -> rgb9e5ufloat (half)
+validated source rgba16float 17×11×3 -> rgb9e5ufloat (half)
+validated source rgba16float 512×512×1 -> rgb9e5ufloat (half)
+validated source rgba16float 1920×1080×1 -> rgb9e5ufloat (half)
+validated source rgba32float 1×1×1 -> rgb9e5ufloat (same)
+validated source rgba32float 2×2×1 -> rgb9e5ufloat (same)
+validated source rgba32float 3×7×1 -> rgb9e5ufloat (same)
+validated source rgba32float 17×9×1 -> rgb9e5ufloat (same)
+validated source rgba32float 64×64×1 -> rgb9e5ufloat (same)
+validated source rgba32float 65×129×1 -> rgb9e5ufloat (same)
+validated source rgba32float 1×128×1 -> rgb9e5ufloat (same)
+validated source rgba32float 255×257×1 -> rgb9e5ufloat (same)
+validated source rgba32float 192×108×1 -> rgb9e5ufloat (same)
+validated source rgba32float 64×32×3 -> rgb9e5ufloat (same)
+validated source rgba32float 17×11×3 -> rgb9e5ufloat (same)
+validated source rgba32float 512×512×1 -> rgb9e5ufloat (same)
+validated source rgba32float 1920×1080×1 -> rgb9e5ufloat (same)
+validated source rgba16float 1×1×1 -> rg11b10ufloat (half)
+validated source rgba16float 2×2×1 -> rg11b10ufloat (half)
+validated source rgba16float 3×7×1 -> rg11b10ufloat (half)
+validated source rgba16float 17×9×1 -> rg11b10ufloat (half)
+validated source rgba16float 64×64×1 -> rg11b10ufloat (half)
+validated source rgba16float 65×129×1 -> rg11b10ufloat (half)
+validated source rgba16float 1×128×1 -> rg11b10ufloat (half)
+validated source rgba16float 255×257×1 -> rg11b10ufloat (half)
+validated source rgba16float 192×108×1 -> rg11b10ufloat (half)
+validated source rgba16float 64×32×3 -> rg11b10ufloat (half)
+validated source rgba16float 17×11×3 -> rg11b10ufloat (half)
+validated source rgba16float 512×512×1 -> rg11b10ufloat (half)
+validated source rgba16float 1920×1080×1 -> rg11b10ufloat (half)
+validated packed codecs
+validated buffer output path
+validated reducer 1×1×1
+validated reducer 2×2×1
+validated reducer 3×7×1
+validated reducer 7×4×1
+validated reducer 17×9×1
+validated reducer 31×33×1
+validated reducer 64×64×1
+validated reducer 65×129×1
+validated reducer 1×128×1
+validated reducer 128×1×1
+validated reducer 128×8×1
+validated reducer 192×108×1
+validated reducer 255×257×1
+validated reducer 17×11×3
+validated reducer 64×32×3
+validated reducer 32×16×1
+validated reducer 1920×1080×1
+validated tool shape: fsr shading change
+validated tool shape: denoiser weighted mean
+validated tool shape: cross-level store state
+validated wide reducer
+validated wide scalar
+validated payload reducer
+validated payload scalar
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+Error: reducer rgba16float storage: value 2 stored 3, round to nearest even gives 3.001953125 (input 3.00146484375)
+http://127.0.0.1:62813/test/browser/validate-packed.js:460:74
+Float32Array.forEach (<anonymous>)
+validateReducerHalfRounding (http://127.0.0.1:62813/test/browser/validate-packed.js:460:10)
+async Selection.run (http://127.0.0.1:62813/test/ci/shard.js:143:14)
+async validatePacked (http://127.0.0.1:62813/test/browser/validate-packed.js:487:20)
+async suite (http://127.0.0.1:62813/test/browser/validate.js:422:22)
+    at #evaluate (file:///C:/Users/denni/Documents/GitHub/pmndrs/denoiser/downsampler/node_modules/puppeteer-core/lib/esm/puppeteer/cdp/ExecutionContext.js:388:19)
+    at async ExecutionContext.evaluate (file:///C:/Users/denni/Documents/GitHub/pmndrs/denoiser/downsampler/node_modules/puppeteer-core/lib/esm/puppeteer/cdp/ExecutionContext.js:274:16)
+    at async IsolatedWorld.evaluate (file:///C:/Users/denni/Documents/GitHub/pmndrs/denoiser/downsampler/node_modules/puppeteer-core/lib/esm/puppeteer/cdp/IsolatedWorld.js:102:16)
+    at async CdpFrame.evaluate (file:///C:/Users/denni/Documents/GitHub/pmndrs/denoiser/downsampler/node_modules/puppeteer-core/lib/esm/puppeteer/api/Frame.js:359:20)
+    at async CdpPage.evaluate (file:///C:/Users/denni/Documents/GitHub/pmndrs/denoiser/downsampler/node_modules/puppeteer-core/lib/esm/puppeteer/api/Page.js:826:20)
+    at async file:///C:/Users/denni/Documents/GitHub/pmndrs/denoiser/downsampler/test/run.js:97:12
+    at validateReducerHalfRounding (http://127.0.0.1:62813/test/browser/validate-packed.js:459:9)
+    at <anonymous> (http://127.0.0.1:62813/test/browser/validate-packed.js:459:73)
+
+Node.js v24.13.1

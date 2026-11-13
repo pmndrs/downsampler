@@ -1,0 +1,48 @@
+{
+ "adapter": {
+  "vendor": "nvidia",
+  "architecture": "ampere"
+ },
+ "sizes": {
+  "rgba32float 65x129": {
+   "maxErrorX256": 0,
+   "maxErrorY256": 0
+  },
+  "rgba32float 255x257": {
+   "maxErrorX256": -0.5118110236217035,
+   "maxErrorY256": 0
+  },
+  "rgba32float 15x17": {
+   "maxErrorX256": -0.4285714285715585,
+   "maxErrorY256": 0
+  },
+  "rgba32float 192x108": {
+   "maxErrorX256": 0,
+   "maxErrorY256": 0
+  },
+  "rgba32float 1129x635": {
+   "maxErrorX256": -0.567375886530499,
+   "maxErrorY256": -0.5457413249241654
+  },
+  "rgba16float 65x129": {
+   "maxErrorX256": 0,
+   "maxErrorY256": 0
+  },
+  "rgba16float 255x257": {
+   "maxErrorX256": -0.5118110236217035,
+   "maxErrorY256": 0
+  },
+  "rgba16float 15x17": {
+   "maxErrorX256": -0.4285714285715585,
+   "maxErrorY256": 0
+  },
+  "rgba16float 192x108": {
+   "maxErrorX256": 0,
+   "maxErrorY256": 0
+  },
+  "rgba16float 1129x635": {
+   "maxErrorX256": -0.567375886530499,
+   "maxErrorY256": -0.5457413249241654
+  }
+ }
+}

@@ -34,6 +34,13 @@ function compareStrategies( device ) {
 		// and also timed spdMax and atomicMax.
 		if ( reduction !== 'average' ) continue;
 		strategies.spd = { ...run( exact, { reduction, oddSizes: 'spd' } ), parity: false };
+		// Windows decisions (2026-11-12, results/windows/correctness.md): shader weights instead of
+		// the sampler ('load', identical on every GPU), and the device's own f16 conversion
+		// ('device', the cost of rounding to nearest even; the same as exact for non-f16 formats).
+		const load = new Downsampler( device, { averageAccess: 'load' } ), tailLoad = new Downsampler( device, { averageAccess: 'load', tail: true } );
+		strategies.exactLoad = { ...run( load, { reduction } ), parity: true };
+		strategies.tailLoad = { ...run( tailLoad, { reduction } ), parity: true };
+		strategies.exactDevice = { ...run( new Downsampler( device, { f16Rounding: 'device' } ), { reduction } ), parity: true };
 		{
 
 			// All batches in one compute pass (encodePass), as a tool records them:
@@ -62,6 +69,46 @@ function compareStrategies( device ) {
 
 }
 
+/** The native harnesses' sizes (results/windows/native-tables.md). */
+export const renderCompareSizes = [ [ 960, 540 ], [ 1129, 635 ], [ 1280, 720 ], [ 1707, 960 ], [ 1920, 1080 ], [ 2560, 1440 ], [ 1024, 1024 ], [ 4096, 4096 ] ];
+
+/**
+ * `compare: 'render'` (DIVERGES #17): where render passes beat 'exact' compute.
+ * `hybrid<K>` renders levels 1..K and finishes with 'exact' from level K: the same
+ * results as both (render passes sample texel centres with normalized coordinates,
+ * as 'exact' does). `hybridSpd1` finishes with 'spd' instead (different semantics).
+ * `renderL1` / `exactL1` write only level 1, isolating the largest level; `exactBuffer`
+ * writes through the buffer output path, isolating storage-texture writes.
+ * Ratios are paired per round against render passes.
+ */
+function renderStrategies( device ) {
+
+	const exact = new Downsampler( device ), buffer = new Downsampler( device, { output: 'buffer' } );
+	const render = createRenderBaseline( device );
+	const run = ( downsampler, options ) => ( { passes: texture => downsampler.prepare( texture, options ).length, encode: ( encoder, texture ) => downsampler.encode( encoder, texture, options ) } );
+	const strategies = { render, exact: { ...run( exact, {} ), parity: true }, spd: { ...run( exact, { oddSizes: 'spd' } ), parity: false }, exactBuffer: { ...run( buffer, {} ), parity: true } };
+	const hybrid = ( levels, oddSizes ) => ( {
+		parity: oddSizes === 'exact',
+		passes: texture => Math.min( levels, texture.mipLevelCount - 1 ) + ( levels < texture.mipLevelCount - 1 ? exact.prepare( texture, { baseMipLevel: levels, oddSizes } ).length : 0 ),
+		encode: ( encoder, texture ) => {
+
+			render.encodeLevels( encoder, texture, 1, levels );
+			if ( levels < texture.mipLevelCount - 1 ) exact.encode( encoder, texture, { baseMipLevel: levels, oddSizes } );
+
+		}
+	} );
+	for ( const levels of [ 1, 2, 3 ] ) strategies[ `hybrid${ levels }` ] = hybrid( levels, 'exact' );
+	strategies.hybridSpd1 = hybrid( 1, 'spd' );
+	strategies.renderL1 = { parity: false, passes: () => 1, encode: ( encoder, texture ) => render.encodeLevels( encoder, texture, 1, 1 ) };
+	strategies.exactL1 = { ...run( exact, { mipLevelCount: 2 } ), parity: false };
+	// Workgroup shape: 'exact' batches default to 32 × 32 tiles (16 × 16 invocations);
+	// exact8 is the previous default for batches of up to four levels.
+	strategies.exact8 = { ...run( new Downsampler( device, { exactTile: 8 } ), {} ), parity: true };
+	strategies.tail = { ...run( new Downsampler( device, { tail: true } ), {} ), parity: true };
+	return { strategies, reference: () => 'render' };
+
+}
+
 /**
  * Before timing, the atomic probe must reproduce `oddSizes: 'spd'` on four
  * changing inputs (stale payloads would show), with its counter reset: levels
@@ -73,7 +120,10 @@ async function checkAtomic( device, { atomic, reduction }, exact, width, height,
 
 	const a = createTexture( device, { width, height, format } ), b = createTexture( device, { width, height, format } );
 	const quantization = format === 'rgba8unorm' ? 'unorm8' : 'float16';
-	let tailError = 0;
+	let tailError = 0, tailOutside = 0;
+	// 'spd' against its oracle is reported, not fatal: samplers that round their weights
+	// differently (Intel truncates, results/windows/correctness.md) shouldn't stop a timing run.
+	const spd = { outside: 0, values: 0, first: null };
 
 	try {
 
@@ -95,8 +145,15 @@ async function checkAtomic( device, { atomic, reduction }, exact, width, height,
 				for ( let i = 0; i < x.length; i ++ ) {
 
 					const error = Math.abs( x[ i ] - y[ i ] );
-					if ( level <= 6 ? ! Object.is( x[ i ], y[ i ] ) : error > tolerance( y[ i ], quantization ) ) throw new Error( `${ label }: level ${ level } value ${ i }: ${ x[ i ] } vs spd ${ y[ i ] }` );
-					if ( level > 6 ) tailError = Math.max( tailError, error );
+					// Levels 1–6 are the same tile kernel: bit for bit. Levels 7+ read mip 6 by load (the
+					// probe's payload) where 'spd' samples it, so a truncating sampler (Intel) differs there.
+					if ( level <= 6 && ! Object.is( x[ i ], y[ i ] ) ) throw new Error( `${ label }: level ${ level } value ${ i }: ${ x[ i ] } vs spd ${ y[ i ] }` );
+					if ( level > 6 ) {
+
+						tailError = Math.max( tailError, error );
+						if ( error > tolerance( y[ i ], quantization ) ) tailOutside ++;
+
+					}
 
 				}
 
@@ -111,7 +168,10 @@ async function checkAtomic( device, { atomic, reduction }, exact, width, height,
 					const actual = mb[ batch.firstMipLevel + i - 1 ];
 					for ( let j = 0; j < actual.length; j ++ ) {
 
-						if ( Math.abs( actual[ j ] - expected.values[ j ] ) > tolerance( expected.values[ j ], quantization, expected.filterTolerance[ j ], reduction ) ) throw new Error( `spd ${ width }x${ height } ${ format } ${ reduction } mip ${ batch.firstMipLevel + i } value ${ j }: ${ actual[ j ] } vs ${ expected.values[ j ] }` );
+						spd.values ++;
+						if ( Math.abs( actual[ j ] - expected.values[ j ] ) <= tolerance( expected.values[ j ], quantization, expected.filterTolerance[ j ], reduction ) ) continue;
+						spd.outside ++;
+						spd.first ??= `mip ${ batch.firstMipLevel + i } value ${ j }: ${ actual[ j ] } vs ${ expected.values[ j ] }`;
 
 					}
 
@@ -127,7 +187,9 @@ async function checkAtomic( device, { atomic, reduction }, exact, width, height,
 
 	}
 
-	return tailError;
+	if ( spd.outside ) console.warn( `spd ${ width }x${ height } ${ format } ${ reduction }: ${ spd.outside } of ${ spd.values } values outside the oracle's tolerance (first: ${ spd.first })` );
+	if ( tailOutside ) console.warn( `atomic probe ${ width }x${ height } ${ format } ${ reduction }: ${ tailOutside } tail values outside the format tolerance of 'spd' (max error ${ tailError })` );
+	return { tailError, tailOutside, spdOutside: spd.outside, spdValues: spd.values };
 
 }
 
@@ -164,7 +226,9 @@ function webgpuSpdStrategies( device, format ) {
 
 				const limit = config.filter ? 0 : tolerance( b[ l ][ i ], quantization );
 				if ( Math.abs( value - b[ l ][ i ] ) <= limit ) return;
-				if ( l + 1 <= 6 ) throw new Error( `${ name } ${ texture.width }x${ texture.height } ${ format } level ${ l + 1 } value ${ i }: ${ value } vs ${ against } ${ b[ l ][ i ] }` );
+				// Max is exact on every GPU; averages depend on the sampler's weight rounding (Intel
+				// truncates, results/windows/correctness.md), so they're recorded like the handoff's.
+				if ( l + 1 <= 6 && config.filter ) throw new Error( `${ name } ${ texture.width }x${ texture.height } ${ format } level ${ l + 1 } value ${ i }: ${ value } vs ${ against } ${ b[ l ][ i ] }` );
 				mismatches[ l + 1 ] = ( mismatches[ l + 1 ] ?? 0 ) + 1;
 
 			} ) );
@@ -194,7 +258,8 @@ function webgpuSpdStrategies( device, format ) {
 export async function benchmark( device, { sizes, formats: benchFormats = defaultFormats, rounds = 11, repeats = 16, compare, onProgress = () => {} } = {} ) {
 
 	if ( ! device.features.has( 'timestamp-query' ) ) return { timestamps: false, results: [] };
-	sizes ??= compare === 'spd' ? compareSizes : compare === 'webgpu-spd' ? compareSpdSizes : defaultSizes;
+	sizes ??= compare === 'spd' ? compareSizes : compare === 'webgpu-spd' ? compareSpdSizes : compare === 'render' ? renderCompareSizes : defaultSizes;
+	if ( compare === 'render' ) return measure( device, renderStrategies( device ), { sizes, benchFormats, rounds, repeats, onProgress } );
 	if ( compare === 'webgpu-spd' ) {
 
 		// Strategies differ per format (r32float has no render baseline or average), so measure per format.
@@ -261,7 +326,7 @@ async function measure( device, { strategies, exact, reference }, { sizes, bench
 
 				// The atomic probe reproduces 'spd' (and 'spd' its oracle) before it is timed.
 				const checks = {};
-				for ( const name of names.filter( name => strategies[ name ].atomic ) ) checks[ name ] = { tailError: await checkAtomic( device, strategies[ name ], exact, width, height, format ), tail: strategies[ name ].atomic.prepare( textures[ name ] ).tail, packedLevels: strategies[ name ].atomic.prepare( textures[ name ] ).packed.length };
+				for ( const name of names.filter( name => strategies[ name ].atomic ) ) checks[ name ] = { ...await checkAtomic( device, strategies[ name ], exact, width, height, format ), tail: strategies[ name ].atomic.prepare( textures[ name ] ).tail, packedLevels: strategies[ name ].atomic.prepare( textures[ name ] ).packed.length };
 
 				// Parity with the baseline on the timed input (a sanity check; the
 				// validation suite is the correctness oracle).
