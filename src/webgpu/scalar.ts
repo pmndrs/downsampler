@@ -2,6 +2,7 @@ import { sampledChannels } from '../core/formats.js';
 import { isSumOp, scalarBlock, scalarInvocations, scalarOps, scalarSide, scalarWeightChannel, scalarWorkgroups, type ScalarOp, type ScalarReduce } from '../core/scalar.js';
 import type { ViewDimension } from './kernel.js';
 import { lanes, payloadCombine } from './lanes.js';
+import { asTextureLevel, bindingViewDimension, levelSizeOf, sourceShapeReason, sourceTextureReason, sourceView, type TextureLevel } from './source.js';
 import { checkHooks, checkToolBindings, hookArity, retireBuffers, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolPipelineLayout, type ToolBindings } from './tool.js';
 
 /** Options of `new ScalarReduction( device, options )`. See SPEC.md §4 Scalar reductions. */
@@ -15,7 +16,7 @@ export interface ScalarReductionOptions {
 	/**
 	 * WGSL defining `fn load( texel: vec2i, layer: u32 ) -> vec4f`, the value of
 	 * one in-image texel. It reads the tool's own `@group(1)` resources. Without
-	 * it, runs read a source texture (`ScalarRun.texture`) with `textureLoad`.
+	 * it, runs read a source texture (`ScalarRun.source`) with `textureLoad`.
 	 */
 	load?: string;
 	/**
@@ -53,15 +54,17 @@ export interface ScalarKernelOptions extends ScalarReductionOptions {
  * (combine only) partials a tool wrote; plus where results go without `finish`.
  */
 export interface ScalarRun {
-	/** Source texture, without a `load` hook: any float-sampleable 2D format, including depth (its depth aspect). */
-	texture?: GPUTexture;
-	/** Source level. Default 0. */
-	mipLevel?: number;
-	/** Image size in texels, with a `load` hook (a texture's own size otherwise). */
-	size?: readonly [ number, number ];
+	/**
+	 * Source, without a `load` hook: a texture (its level 0) or `{ texture, mipLevel }`,
+	 * any float-sampleable 2D format, including depth (its depth aspect).
+	 */
+	source?: GPUTexture | TextureLevel;
+	/** Image size in texels: required with a `load` hook; with a source, its level's size (if given, it must match). */
+	width?: number;
+	height?: number;
 	/**
 	 * Layers to reduce, each to its own result: `[ first, count ]`. Default all
-	 * of the texture's layers, or `[ 0, 1 ]` with a `load` hook.
+	 * of the source's layers, or `[ 0, 1 ]` with a `load` hook.
 	 */
 	layers?: readonly [ number, number ];
 	/** The tool's `@group(1)` bind group, required with `bindings`. */
@@ -332,7 +335,7 @@ export interface ScalarCombineKernel {
  * 	load: 'fn load( texel: vec2i, layer: u32 ) -> vec4f { … log( max( luma, 6.1e-5 ) ) … }',
  * 	finish: 'fn finish( value: vec4f, weight: f32 ) { … smoothing, store … }',
  * } );
- * exposure.encodePass( pass, { size: [ width, height ], bindGroup } );
+ * exposure.encodePass( pass, { width, height, bindGroup } );
  * ```
  *
  * A run with `partials` records the combine pass alone, over accumulations a
@@ -444,6 +447,8 @@ export class ScalarReduction {
 	unsupportedReason( run: ScalarRun ): string | null {
 
 		const { load, finish, bindings } = this.options;
+		// Renamed before 1.0 (one source shape for every class): catch the old keys instead of ignoring them.
+		for ( const key of [ 'texture', 'mipLevel', 'size' ] ) if ( ( run as unknown as Record<string, unknown> )[ key ] !== undefined ) return `a ScalarRun takes \`source\` (a texture or { texture, mipLevel }) and \`width\`/\`height\`, not \`${ key }\``;
 		const combineOnly = run.partials !== undefined;
 		if ( ! combineOnly && this.combinesOnly ) return 'an 8-channel reduction without a load hook only combines partials (a run needs `partials`)';
 		if ( combineOnly ) {
@@ -454,21 +459,16 @@ export class ScalarReduction {
 		} else if ( run.texels !== undefined ) return '`texels` belongs to a combine-only run (with `partials`)';
 		else if ( load === undefined ) {
 
-			const texture = run.texture;
-			if ( texture === undefined ) return 'a run needs a source texture (or the reduction a load hook, or the run partials)';
-			if ( texture.dimension !== '2d' ) return `source dimension ${ texture.dimension } is not supported`;
-			const viewDimension = ( texture as GPUTexture & { textureBindingViewDimension?: string } ).textureBindingViewDimension;
-			if ( viewDimension !== undefined && viewDimension !== '2d' && viewDimension !== '2d-array' ) return `textureBindingViewDimension ${ viewDimension } is not supported`;
-			if ( texture.sampleCount !== 1 ) return 'multisampled sources are not supported (resolve first)';
-			if ( ( texture.usage & GPUTextureUsage.TEXTURE_BINDING ) === 0 ) return 'source needs TEXTURE_BINDING usage';
-			if ( /int$/.test( texture.format ) || texture.format === 'stencil8' ) return `source format ${ texture.format } is not float-sampleable`;
-			const mipLevel = run.mipLevel ?? 0;
-			if ( ! Number.isInteger( mipLevel ) || mipLevel < 0 || mipLevel >= texture.mipLevelCount ) return 'mipLevel is outside the source texture';
+			if ( run.source === undefined ) return 'a run needs a source texture (or the reduction a load hook, or the run partials)';
+			const reason = sourceShapeReason( run.source ) ?? sourceTextureReason( asTextureLevel( run.source ) );
+			if ( reason !== null ) return reason;
+			const [ sw, sh ] = levelSizeOf( asTextureLevel( run.source ) );
+			if ( ( run.width !== undefined && run.width !== sw ) || ( run.height !== undefined && run.height !== sh ) ) return `width and height (${ run.width }×${ run.height }) must match the source level (${ sw }×${ sh }), or be left out`;
 
 		} else {
 
-			if ( run.texture !== undefined ) return 'a reduction with a load hook reads its own bindings, not a source texture';
-			if ( run.size === undefined ) return 'a reduction with a load hook needs a run size';
+			if ( run.source !== undefined ) return 'a reduction with a load hook reads its own bindings, not a source texture';
+			if ( run.width === undefined || run.height === undefined ) return 'a reduction with a load hook needs the run\'s width and height';
 
 		}
 
@@ -478,8 +478,9 @@ export class ScalarReduction {
 		if ( ! combineOnly ) {
 
 			const [ width, height ] = this.size( run );
-			if ( ! Number.isInteger( width ) || ! Number.isInteger( height ) || width < 1 || height < 1 ) return 'size must be positive integers';
-			if ( run.texture !== undefined && first + count > run.texture.depthOrArrayLayers ) return 'layers are outside the source texture';
+			if ( ! Number.isInteger( width ) || ! Number.isInteger( height ) || width < 1 || height < 1 ) return 'width and height must be positive integers';
+			const texture = this.sourceTexture( run );
+			if ( texture !== undefined && first + count > texture.depthOrArrayLayers ) return 'layers are outside the source texture';
 			const [ x, y ] = scalarWorkgroups( width, height, this.block );
 			if ( x > limit || y > limit ) return 'too many workgroups for this device';
 
@@ -592,7 +593,7 @@ export class ScalarReduction {
 	private partialsReason( run: ScalarRun ): string | null {
 
 		const { buffer, offset = 0, count } = run.partials!;
-		if ( run.texture !== undefined || run.size !== undefined || run.mipLevel !== undefined ) return 'a combine-only run (with `partials`) takes no texture, size or mipLevel';
+		if ( run.source !== undefined || run.width !== undefined || run.height !== undefined ) return 'a combine-only run (with `partials`) takes no source, width or height';
 		if ( ! Number.isInteger( count ) || count < 1 ) return 'partials.count must be a positive integer';
 		if ( ( buffer.usage & GPUBufferUsage.STORAGE ) === 0 ) return 'the partials buffer needs STORAGE usage';
 		const alignment = this.device.limits.minStorageBufferOffsetAlignment;
@@ -606,15 +607,19 @@ export class ScalarReduction {
 
 	private size( run: ScalarRun ): [ number, number ] {
 
-		if ( run.texture === undefined ) return [ run.size?.[ 0 ] ?? 0, run.size?.[ 1 ] ?? 0 ];
-		const mipLevel = run.mipLevel ?? 0;
-		return [ Math.max( 1, run.texture.width >> mipLevel ), Math.max( 1, run.texture.height >> mipLevel ) ];
+		return run.source === undefined ? [ run.width ?? 0, run.height ?? 0 ] : levelSizeOf( asTextureLevel( run.source ) );
+
+	}
+
+	private sourceTexture( run: ScalarRun ): GPUTexture | undefined {
+
+		return run.source === undefined ? undefined : asTextureLevel( run.source ).texture;
 
 	}
 
 	private layers( run: ScalarRun ): [ number, number ] {
 
-		return run.layers !== undefined ? [ run.layers[ 0 ], run.layers[ 1 ] ] : [ 0, run.texture?.depthOrArrayLayers ?? 1 ];
+		return run.layers !== undefined ? [ run.layers[ 0 ], run.layers[ 1 ] ] : [ 0, this.sourceTexture( run )?.depthOrArrayLayers ?? 1 ];
 
 	}
 
@@ -657,7 +662,9 @@ export class ScalarReduction {
 
 	private plan( run: ScalarRun ): Plan {
 
-		const { texture, output } = run;
+		const { output } = run;
+		const source = run.source === undefined ? undefined : asTextureLevel( run.source );
+		const texture = source?.texture;
 		const [ first, count ] = this.layers( run );
 		const offset = output?.offset ?? 0;
 
@@ -682,23 +689,17 @@ export class ScalarReduction {
 		}
 
 		const [ width, height ] = this.size( run );
-		const mipLevel = run.mipLevel ?? 0;
+		const mipLevel = source?.mipLevel ?? 0;
 		const key = `${ width }:${ height }:${ first }:${ count }:${ mipLevel }:${ offset }`;
 		return this.cachedPlan( texture ?? output?.buffer ?? this, plan => plan.key === key && plan.texture === texture && plan.output === output?.buffer, () => {
 
-			const viewDimension = ( texture as ( GPUTexture & { textureBindingViewDimension?: ViewDimension } ) | undefined )?.textureBindingViewDimension;
-			const dimension: ViewDimension = viewDimension ?? ( texture !== undefined && texture.depthOrArrayLayers > 1 ? '2d-array' : '2d' );
+			const dimension: ViewDimension = texture === undefined ? '2d' : bindingViewDimension( texture );
 			const variant = this.kernel( { dimension, splat: texture !== undefined && sampledChannels( texture.format ) === 1 } );
 			const [ groupsX, groupsY ] = scalarWorkgroups( width, height, this.block );
 			const params = this.params( [ width, height, first, groupsX, groupsX * groupsY, width * height ] );
 			const partials = this.device.createBuffer( { label: 'downsampler scalar partials', size: this.partialsBytes( width, height, count ), usage: GPUBufferUsage.STORAGE } );
 			const entries: GPUBindGroupEntry[] = [ { binding: 0, resource: { buffer: params } }, { binding: 1, resource: { buffer: partials } } ];
-			if ( texture !== undefined ) {
-
-				const aspect = texture.format.includes( 'stencil' ) ? 'depth-only' : 'all';
-				entries.push( { binding: 2, resource: texture.createView( { label: 'downsampler scalar source', dimension, baseMipLevel: mipLevel, mipLevelCount: 1, aspect } ) } );
-
-			}
+			if ( source !== undefined ) entries.push( { binding: 2, resource: sourceView( source, dimension, 'downsampler scalar source' ) } );
 
 			entries.push( ...this.outputEntry( run, count ) );
 			return {

@@ -203,7 +203,7 @@ export async function validateScalar( device, { quick = false, onProgress = () =
 
 			device.queue.writeBuffer( seedBuffer, 0, Uint32Array.of( seed, width, 0, 0 ) );
 			poisonBuffer( device, output );
-			run( device, reduction, { size: [ width, height ], layers: [ 0, layers ], bindGroup, output: { buffer: output, offset: 256 } }, mode );
+			run( device, reduction, { width, height, layers: [ 0, layers ], bindGroup, output: { buffer: output, offset: 256 } }, mode );
 			checkExact( await readResults( device, output, 256, layers ), proceduralReference( variant, width, height, layers, seed ), `scalar procedural ${ variant.name } ${ width }x${ height }x${ layers } seed ${ seed } ${ mode }` );
 			results.push( { scalar: `procedural ${ variant.name }`, width, height, layers, seed, mode } );
 
@@ -243,7 +243,7 @@ export async function validateScalar( device, { quick = false, onProgress = () =
 					for ( const variant of textureVariants ) {
 
 						poisonBuffer( device, output );
-						run( device, variant.reduction, { texture, output: { buffer: output, offset: 256 } } );
+						run( device, variant.reduction, { source: texture, output: { buffer: output, offset: 256 } } );
 						const expected = scalarReference( floats, width, height, layers, variant.reduce );
 						worst = Math.max( worst, checkBound( await readResults( device, output, 256, layers ), expected, `scalar texture ${ variant.name } ${ width }x${ height }x${ layers } ${ format }` ) );
 						results.push( { scalar: `texture ${ variant.name }`, width, height, layers, format } );
@@ -255,7 +255,7 @@ export async function validateScalar( device, { quick = false, onProgress = () =
 
 						const reduction = textureVariants[ 1 ].reduction;
 						poisonBuffer( device, output );
-						run( device, reduction, { texture, layers: [ 1, layers - 1 ], output: { buffer: output } }, 'encodePass' );
+						run( device, reduction, { source: texture, layers: [ 1, layers - 1 ], output: { buffer: output } }, 'encodePass' );
 						const layerFloats = floats.subarray( width * height * 4 );
 						checkBound( await readResults( device, output, 0, layers - 1 ), scalarReference( layerFloats, width, height, layers - 1, textureVariants[ 1 ].reduce ), `scalar layer range ${ width }x${ height }x${ layers } ${ format }` );
 						results.push( { scalar: 'layer range', width, height, layers, format } );
@@ -291,7 +291,7 @@ export async function validateScalar( device, { quick = false, onProgress = () =
 			const reduce = [ 'sum', 'average', 'min', 'max' ];
 			const reduction = textureVariants[ 1 ].reduction;
 			poisonBuffer( device, output );
-			run( device, reduction, { texture, output: { buffer: output, offset: 256 } } );
+			run( device, reduction, { source: texture, output: { buffer: output, offset: 256 } } );
 			checkBound( await readResults( device, output, 256, layers ), scalarReference( toFloats( data, 'rgba8unorm' ), width, height, layers, reduce, { inputError: { relative: 2 ** - 21 } } ), `scalar rgba8unorm ${ width }x${ height }x${ layers }` );
 			results.push( { scalar: 'rgba8unorm', width, height, layers } );
 			texture.destroy();
@@ -317,7 +317,7 @@ export async function validateScalar( device, { quick = false, onProgress = () =
 			if ( values.length > 1 ) values[ values.length - 2 ] = 0.0001;
 			const depth = await createDepthSource( device, { width, height, format }, values );
 			poisonBuffer( device, output );
-			run( device, depthRange, { texture: depth.texture, output: { buffer: output, offset: 256 } } );
+			run( device, depthRange, { source: depth.texture, output: { buffer: output, offset: 256 } } );
 			const splatted = new Float32Array( depth.floats.length );
 			for ( let i = 0; i < splatted.length; i += 4 ) splatted.fill( depth.floats[ i ], i, i + 4 );
 			const slack = format === 'depth16unorm' ? 2 ** - 21 : 0;
@@ -443,7 +443,7 @@ async function validateCombineOnly( device, { quick } ) {
 			poisonBuffer( device, output );
 			const encoder = device.createCommandEncoder();
 			const pass = encoder.beginComputePass();
-			reducer.encodePass( pass, { width, height, layers, bindGroup } );
+			reducer.encodePass( pass, { width, height, layerCount: layers, bindGroup } );
 			scalar.encodePass( pass, { partials: { buffer: partials, count }, texels: width * height, layers: [ 0, layers ], output: { buffer: output, offset: 256 } } );
 			pass.end();
 			device.queue.submit( [ encoder.finish() ] );
@@ -494,8 +494,8 @@ async function validateCombineOnly( device, { quick } ) {
 		[ reduction, { partials: { buffer: partials, count: 65 }, texels: 9, output: { buffer: output } }, 'too small' ],
 		[ reduction, { partials: { buffer: partials, count: 16 }, texels: 9, layers: [ 0, 5 ], output: { buffer: output } }, 'too small' ],
 		[ reduction, { partials: { buffer: partials, count: 0 }, texels: 9, output: { buffer: output } }, 'count' ],
-		[ reduction, { partials: { buffer: partials, count: 4 }, texels: 9, texture, output: { buffer: output } }, 'no texture' ],
-		[ reduction, { texture, texels: 9, output: { buffer: output } }, 'combine-only' ],
+		[ reduction, { partials: { buffer: partials, count: 4 }, texels: 9, source: texture, output: { buffer: output } }, 'no source' ],
+		[ reduction, { source: texture, texels: 9, output: { buffer: output } }, 'combine-only' ],
 		[ weighted, { partials: { buffer: partials, count: 4 }, texels: 0, output: { buffer: output } }, 'positive' ],
 		[ weighted, { partials: { buffer: output, count: 4 } }, 'output buffer' ]
 	] ) {
@@ -586,7 +586,7 @@ async function validateExposure( device, { quick } ) {
 			] } );
 			const encoder = device.createCommandEncoder();
 			const pass = encoder.beginComputePass();
-			reduction.encodePass( pass, { size: [ width, height ], bindGroup } );
+			reduction.encodePass( pass, { width, height, bindGroup } );
 			pass.end();
 			encoder.copyTextureToBuffer( { texture: frameInfo }, { buffer: readback, bytesPerRow: 256 }, [ 1, 1 ] );
 			device.queue.submit( [ encoder.finish() ] );
@@ -637,15 +637,18 @@ async function validateScalarOptions( device ) {
 	const hooked = new ScalarReduction( device, { load: 'fn load(texel: vec2i, layer: u32) -> vec4f { return vec4f(1); }', bindings: proceduralBindings } );
 	const rejected = [
 		[ average, {}, 'source texture' ],
-		[ average, { texture }, 'output buffer' ],
-		[ average, { texture, output: { buffer: output, offset: 16 } }, `multiple of ${ device.limits.minStorageBufferOffsetAlignment }` ],
-		[ average, { texture, output: { buffer: output, offset: 512 } }, 'too small' ],
-		[ average, { texture, layers: [ 0, 2 ], output: { buffer: output } }, 'layers' ],
-		[ average, { texture, mipLevel: 1, output: { buffer: output } }, 'mipLevel' ],
-		[ hooked, { texture, output: { buffer: output } }, 'not a source texture' ],
-		[ hooked, { output: { buffer: output } }, 'size' ],
-		[ hooked, { size: [ 4, 4 ], output: { buffer: output } }, 'bindGroup' ],
-		[ hooked, { size: [ 0, 4 ], output: { buffer: output } }, 'positive' ]
+		[ average, { source: texture }, 'output buffer' ],
+		[ average, { source: texture, output: { buffer: output, offset: 16 } }, `multiple of ${ device.limits.minStorageBufferOffsetAlignment }` ],
+		[ average, { source: texture, output: { buffer: output, offset: 512 } }, 'too small' ],
+		[ average, { source: texture, layers: [ 0, 2 ], output: { buffer: output } }, 'layers' ],
+		[ average, { source: { texture, mipLevel: 1 }, output: { buffer: output } }, 'mipLevel' ],
+		[ average, { texture, output: { buffer: output } }, 'not `texture`' ],
+		[ hooked, { size: [ 4, 4 ], output: { buffer: output } }, 'not `size`' ],
+		[ average, { source: texture, width: 4, output: { buffer: output } }, 'must match the source level' ],
+		[ hooked, { source: texture, output: { buffer: output } }, 'not a source texture' ],
+		[ hooked, { output: { buffer: output } }, 'width and height' ],
+		[ hooked, { width: 4, height: 4, output: { buffer: output } }, 'bindGroup' ],
+		[ hooked, { width: 0, height: 4, output: { buffer: output } }, 'positive' ]
 	];
 
 	for ( const [ reduction, options, message ] of rejected ) {
@@ -672,7 +675,7 @@ async function validateScalarOptions( device ) {
 	}
 
 	// Tools that dispatch themselves: the exposed pipelines, bind group and counts.
-	const prepared = average.prepare( { texture, output: { buffer: output } } );
+	const prepared = average.prepare( { source: texture, output: { buffer: output } } );
 	if ( prepared.workgroups.join() !== '1,1,1' || prepared.combineWorkgroups.join() !== '1,1,1' ) throw new Error( 'scalar prepare(): unexpected workgroup counts' );
 	if ( ! /fn partials/.test( average.kernel().wgsl ) || ! /fn combine/.test( average.kernel().wgsl ) ) throw new Error( 'scalar kernel(): missing entry points' );
 	texture.destroy();
@@ -687,7 +690,7 @@ async function validateScalarOptions( device ) {
 		const aligned = await adapter.requestDevice( { requiredLimits: { ...requiredLimits( adapter ), minStorageBufferOffsetAlignment: alignment } } );
 		const small = createSource( aligned, 8, 8, 1, 'rgba16float' );
 		const buffer = makeBuffer( aligned, 512 );
-		const reason = new ScalarReduction( aligned ).unsupportedReason( { texture: small, output: { buffer, offset: alignment } } );
+		const reason = new ScalarReduction( aligned ).unsupportedReason( { source: small, output: { buffer, offset: alignment } } );
 		aligned.destroy();
 		if ( reason !== null ) throw new Error( `scalar: output offset ${ alignment } (the device's minStorageBufferOffsetAlignment) rejected: ${ reason }` );
 		results.push( { option: `scalar output offset alignment ${ alignment }` } );
@@ -710,7 +713,7 @@ async function validateScalarLifetime( device ) {
 		const average = new ScalarReduction( device );
 		const texture = createSource( device, 8, 8, 2, 'rgba16float' );
 		const output = makeBuffer( device, 512 + 2 * scalarResultBytes );
-		const runs = [ [ [ 0, 1 ], 0 ], [ [ 1, 1 ], 0 ], [ [ 0, 2 ], 0 ], [ [ 0, 1 ], 256 ], [ [ 1, 1 ], 256 ] ].map( ( [ layers, offset ] ) => ( { texture, layers, output: { buffer: output, offset } } ) );
+		const runs = [ [ [ 0, 1 ], 0 ], [ [ 1, 1 ], 0 ], [ [ 0, 2 ], 0 ], [ [ 0, 1 ], 256 ], [ [ 1, 1 ], 256 ] ].map( ( [ layers, offset ] ) => ( { source: texture, layers, output: { buffer: output, offset } } ) );
 		const owned = () => [ ...tracker.labelled( 'downsampler scalar params' ), ...tracker.labelled( 'downsampler scalar partials' ) ];
 		// Recorded now, submitted after its plan is dropped.
 		device.pushErrorScope( 'validation' );
@@ -739,7 +742,7 @@ async function validateScalarLifetime( device ) {
 		// release() without a resource: every plan, including hook runs cached on the reduction itself.
 		const hooked = new ScalarReduction( device, { load: 'fn load(texel: vec2i, layer: u32) -> vec4f { return vec4f(1.0); }', finish: 'fn finish(value: vec4f, weight: f32) {}' } );
 		const before = new Set( owned() );
-		hooked.prepare( { size: [ 4, 4 ] } );
+		hooked.prepare( { width: 4, height: 4 } );
 		average.prepare( runs[ 0 ] );
 		const fresh = owned().filter( buffer => ! before.has( buffer ) );
 		hooked.release();

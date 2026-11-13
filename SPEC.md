@@ -173,8 +173,8 @@ A partial update rewrites only what depends on a changed region: `rect` marks th
   - `'spd'` (`'clamp'` batches): level `l` of a batch reduces the clamped block `[x·2^l, (x+1)·2^l)` of the batch source, so `x ∈ [⌊a/2^l⌋, min(⌊b/2^l⌋, n−1)]`, computed from the batch source directly: a dropped last row or column belongs to no level-1 texel, but can reach a deeper one through the clamp (3 → 1 → 1), so in-batch levels can't be chained. A level whose region is empty writes nothing; a batch with no texels to write is left out.
 - **Bit-identical.** A texel in a region is computed by the same kernel code from the same inputs as in a full dispatch, so when the source changed only inside the rect and the old chain was valid, the result equals a full recompute bit for bit, and every texel outside the regions (and outside the layer range) is untouched. Updates compose: several rect updates in a row (or in one encoder) give the chain of the final source.
 - **Kernels.** A `region` variant of the exact, tail and `'clamp'` kernels adds a uniform (binding 11, 112 bytes): the first workgroup (in tiles) and the first layer, and per level the region's bounds. The dispatch covers the workgroups whose tiles hold any region texel (a tail batch is one workgroup); each computes its whole tile as usual and stores only inside the region. Full updates keep the old kernels: WGSL and layouts unchanged (4420 option sets compared byte for byte).
-- **Everything composes.** Every odd-size policy (`'box'` included), reduction, kernel width, the tail kernel (the default), separate sources (the rect is in source texels, also when resampled), the buffer output path (the shared full-level buffer layout; each level's copy takes the region of the layers in range), compatibility mode (scratch levels get the regions, the copy dispatches copy the regions, and batches read the destination, which the copies have brought up to date) and `encodePass`. Nothing is rejected except invalid values: a rect that isn't integer, at least 1×1 and inside its level (the error names the level), and a layer range outside the texture.
-- **Cost and caching.** Per distinct rect and layer range: one uniform buffer (a 256-byte slot per dispatch) and bind groups, written once. The 16 most recent are cached per texture; evicted ones aren't destroyed (an unsubmitted encoder may hold them), `release( texture )` destroys them. So many partial updates may be recorded before one submit. The buffer path's scratch buffer is shared by a texture's partial plans.
+- **Everything composes.** Every odd-size policy (`'box'` included), reduction, kernel width, the tail kernel (the default), separate sources (the rect is in source texels, also when resampled), the buffer output path (the shared full-level buffer layout; each level's copy takes the region of the layers in range), compatibility mode (scratch levels get the regions, the copy dispatches copy the regions, and batches read the destination, which the copies have brought up to date) and `encodePass`. Nothing is rejected except invalid values: a rect that isn't integer, non-negative and inside its level (the error names the level), and a layer range outside the texture. **An empty rect** (width or height 0, still inside the level: `x ≤ width`, `y ≤ height`) is a no-op, as WebGPU's zero-size copies are (owner, 2026-11-13): once the other options are validated, `prepare` returns no batches and `encode`/`encodePass` record nothing, and no plan, buffer or bind group is created (`planRegions` in core gives every batch null regions and 0 workgroups).
+- **Cost and caching.** Per distinct rect and layer range: one uniform buffer (a 256-byte slot per dispatch) and bind groups, written once. The 16 most recent are cached per texture. An evicted plan's uniform buffer is destroyed after `queue.onSubmittedWorkDone()` (owner, 2026-11-13), as the Reducer's and ScalarReduction's evictions are (§4 Caching), so many partial updates may still be recorded before one submit in the same task; so is a plan replaced by a new source texture. `release( texture )` destroys the rest at once. GPU-tested with a buffer tracker (`region/options`). The buffer path's scratch buffer is shared by a texture's partial plans; a larger one replaces it and the old one is left to the plans that still hold it (GC). A ring buffer of region uniforms with dynamic offsets, for rects that change every frame, is a later task (PROGRESS, Later).
 - **Against SPD's rectInfo:** SPD snaps the rect to 64-texel source tiles and recomputes levels below 64×64 whole; we write only the exact dependent texels of each level (DIVERGES #15). Not timed.
 
 ### Reductions
@@ -194,7 +194,7 @@ A partial update rewrites only what depends on a changed region: `rect` marks th
 - **Resampled source (`resample: 'area'`, M2.5, 2026-11-13):** for a destination whose first level is another size, mainly a power-of-two Hi-Z (1024×512 or 2048×1024 from 1920×1080) whose later levels halve cleanly.
   - **Semantics of the first step.** Destination texel x of n covers `[x·S/n, (x+1)·S/n)` of the source per axis, at any ratio up or down. `'average'` weights each source texel by its overlap (the `'box'` weights, of which nvpro's are the 2:1 case). Folds combine every source texel with a positive overlap, so min/max stay conservative: every source texel a Hi-Z texel's normalized area touches is in its fold, at every level (GPU-checked with `maxViolations` against the source, 1920×1080 → 1024×512 and → 2048×1024, 1129×635 → 512×256, strips, layers). The kernel is the box kernel (`ds_area_first` … `ds_area_last`, ⌈S/n⌉ + 1 taps per axis at most), so it costs loads, not a sampler fetch.
   - **Later levels** follow `oddSizes`. With a power-of-two destination they halve exactly, so a 12-level 2048×1024 Hi-Z takes 2 dispatches at 6 levels per dispatch (the first batch reads the source and writes 6 levels). Under `'spd'` the resampled level is its own 1-level batch, as a copy is.
-  - **Validation:** without `resample`, another size is rejected, and the reason names the option; unknown values are rejected; so are sources more than 8× larger than the destination along an axis (`maxResampleRatio`; at most 9 taps per axis). `resample: 'area'` with a same-size source is a copy.
+  - **Validation:** without `resample`, another size is rejected, and the reason names the option; unknown values are rejected; so are sources more than `maxResampleRatio` times larger than the destination along an axis. The cap is a constructor option (`new Downsampler( device, { maxResampleRatio } )`, any number ≥ 1, default the exported `maxResampleRatio`, 8: at most 9 taps per axis), owner 2026-11-13. It costs nothing: the kernel's tap loops run over each texel's span at run time (`ds_area_first` … `ds_area_last`), so only validation reads it and no pipeline key changes; a raised cap only makes the first level's taps grow with its square (GPU-checked at 16.25:1 against `areaReference`). `resample: 'area'` with a same-size source is a copy.
   - **Others.** Capsaicin's HZB (`914b915`, `visibility_buffer.cpp`) copies depth into a render-size level 0, then `GPUMip` DepthMin (`2x … 2x+2` at odd sizes, SPD once a level is a power of two). FidelityFX SSSR (SDK 1.1.4, `ffx_sssr_depth_downsample.h`) also keeps level 0 at the depth's size and runs SPD's min, which drops odd rows and columns. The power-of-two layout is zeux's niagara (`567ebe3`, `niagara.cpp`): `previousPow2` of the swapchain size, filled by one 2×2 min-reduction-sampler tap at each texel centre. Its comment says this keeps every reduction "at most by 2x2", so conservative; at 1920 → 1024 a texel's area spans up to 3 source texels, and the 2×2 tap misses one (a core test counts over 100 such texels on a 1920-texel row). WebGPU has no reduction sampler anyway, so we fold the overlap.
 - **Planning:** the first batch reads the source and every later batch reads the destination (`Batch.sourceMipLevel === null` marks the source batch). The copy is a runtime branch on equal sizes, uniform across the dispatch, so it needs no pipeline variant.
 - **Source formats:** anything float-sampleable, including depth (through the depth aspect, bound as `unfilterable-float`). Depth and 32-bit float sources always load.
@@ -253,7 +253,7 @@ Every intermediate level is quantized exactly as stored, so a chain equals level
 - Pipelines are cached per `Downsampler` (per device) and per reduction; bind group layouts per format, view dimension, width and access.
 - Bind groups are cached per texture and options in a `WeakMap`.
 - `release(texture)` drops a texture's entries early and destroys the buffers and scratch textures they own.
-- **Buffer lifetime (all three classes, 2026-11-13).** A class destroys only buffers it created (size and layout uniforms, buffer-output buffers, scalar params and partials), never a caller's. `release` destroys them at once, so call it after submitting the last work that uses them. Entries a bounded cache evicts (a `Reducer`'s 16 bind groups, a `ScalarReduction`'s 4 plans per resource) are destroyed after `queue.onSubmittedWorkDone()`, not at once: an evicted entry can still be recorded in an encoder the caller hasn't submitted (more than 16 Reducer dispatches in one encoder), and destroying it then makes that submit fail ("used in submit while destroyed", GPU-tested). The promise resolves in a later task, after the usual encode-and-submit of a frame.
+- **Buffer lifetime (all three classes, 2026-11-13).** A class destroys only buffers it created (size and layout uniforms, region uniforms, buffer-output buffers, scalar params and partials), never a caller's. `release` destroys them at once, so call it after submitting the last work that uses them. Entries a bounded cache evicts or replaces (a `Reducer`'s 16 bind groups, a `ScalarReduction`'s 4 plans per resource, a `Downsampler`'s 16 partial-update plans per texture, and a `Downsampler` plan whose source texture was replaced) are destroyed after `queue.onSubmittedWorkDone()`, not at once: an evicted entry can still be recorded in an encoder the caller hasn't submitted (more than 16 Reducer dispatches in one encoder), and destroying it then makes that submit fail ("used in submit while destroyed", GPU-tested). The promise resolves in a later task, after the usual encode-and-submit of a frame.
 
 ### Compatibility mode (2026-11-11, reflections D4100)
 
@@ -312,7 +312,7 @@ WebGPU compatibility mode is a device without `'core-features-and-limits'` (`req
 import { Downsampler, requiredLimits } from 'downsampler/webgpu';
 
 const device = await adapter.requestDevice( { requiredLimits: requiredLimits( adapter ) } ); // also Downsampler.requiredLimits; covers Reducer and ScalarReduction
-const downsampler = new Downsampler( device );          // { levelsPerDispatch?, output?: 'auto' | 'storage' | 'buffer' (§6.1), averageAccess?: 'sample' | 'load', compatibility?: 'auto' | boolean (§4), tail? (§2.1), f16Rounding?: 'nearest' | 'device', exactTile?: 8 | 16 | 32 }
+const downsampler = new Downsampler( device );          // { levelsPerDispatch?, output?: 'auto' | 'storage' | 'buffer' (§6.1), averageAccess?: 'sample' | 'load', compatibility?: 'auto' | boolean (§4), tail? (§2.1), f16Rounding?: 'nearest' | 'device' (below), exactTile?: 8 | 16 | 32, maxResampleRatio?: number (§4 Separate source) }
                                                          // fields hold the resolved values: downsampler.averageAccess === 'sample', .tail, .exactTile, …
 downsampler.supports( texture );                         // boolean
 downsampler.unsupportedReason( texture );                // string | null
@@ -320,6 +320,8 @@ downsampler.outputPath( texture );                       // 'storage' | 'buffer'
 downsampler.encode( encoder, texture, {
 	baseMipLevel, mipLevelCount, oddSizes: 'exact' | 'box' | 'spd', // 'box': area-weighted odd sizes; 'spd': SPD semantics, ⌈levels/6⌉ dispatches (§2.1)
 	reduction: 'average' | 'min' | 'max' | 'minmax' | { wgsl: 'fn reduce(a: vec4f, b: vec4f) -> vec4f { … }' },
+	source,                                              // a texture or { texture, mipLevel, resample } (Sources below)
+	layers: [ first, count ], rect: { x, y, width, height }, // partial updates (§4); an empty rect is a no-op
 } );
 downsampler.generate( texture );                         // encode + submit
 downsampler.encodePass( pass, texture, options );        // into a compute pass you own (one timestamp pair; storage path only)
@@ -336,7 +338,7 @@ import { planBatches, reduceReference, footprint, spdReference, maxViolations, b
 
 ```ts
 // Separate source: depth → Hi-Z. Level 0 the same size (copy) or half (reduce).
-downsampler.encode( encoder, hiZ /* rg32float */, { source: { texture: depthTexture, mipLevel: 0 }, reduction: 'minmax' } );
+downsampler.encode( encoder, hiZ /* rg32float */, { source: depthTexture, reduction: 'minmax' } ); // or { texture, mipLevel }
 downsampler.sourceUnsupportedReason( destination, source, baseMipLevel ); // string | null
 // Any destination size by area (§4 Separate source): a power-of-two Hi-Z, 2 dispatches for 12 levels.
 downsampler.encode( encoder, hiZ /* 2048×1024 r32float */, { source: { texture: depth1080p, resample: 'area' }, reduction: 'min' } );
@@ -346,13 +348,13 @@ downsampler.encode( encoder, hiZ /* 2048×1024 r32float */, { source: { texture:
 // Scalar reductions (§4 Scalar reductions): one vec4f + weight per layer, 2 dispatches.
 import { ScalarReduction } from 'downsampler/webgpu';
 const range = new ScalarReduction( device, { reduction: 'minmax' } ); // = [ 'min', 'max', 'min', 'max' ]; or 'average', [ 'weighted', …, 'weight' ]
-range.encode( encoder, { texture: depth, output: { buffer, offset: 0 } } ); // { value: vec4f, weight: f32 } per layer; offset aligned to minStorageBufferOffsetAlignment
+range.encode( encoder, { source: depth, output: { buffer, offset: 0 } } ); // { value: vec4f, weight: f32 } per layer; offset aligned to minStorageBufferOffsetAlignment
 const exposure = new ScalarReduction( device, {
 	bindings: { wgsl: '@group(1) @binding(0) var colour: texture_2d<f32>; …', entries }, // the tool's group 1
 	load: 'fn load( texel: vec2i, layer: u32 ) -> vec4f { … log( max( luma, 6.1e-5 ) ) … }',
 	finish: 'fn finish( value: vec4f, weight: f32 ) { … temporal smoothing, store … }',
 } );
-exposure.encodePass( pass, { size: [ width, height ], bindGroup } ); // also { layers: [ first, count ], mipLevel }
+exposure.encodePass( pass, { width, height, bindGroup } ); // also { layers: [ first, count ] }; without a load hook { source: texture | { texture, mipLevel } }
 exposure.prepare( run );        // what encodePass records: pipelines, group 0 and 1 bind groups, workgroup counts (dispatch it yourself)
 exposure.release( resource );   // drop a texture's or buffer's plans, destroy their params/partials (release(): all)
 exposure.kernel();              // { wgsl, layout, partials, combine }
@@ -400,9 +402,14 @@ shadingChange.encodePass( pass, {                        // or encode( encoder, 
 // Payload folds (§14.1): [ 'argmin', 'payload', 'payload', 'payload' ] = min depth + the normal of that texel;
 // ties go to the smaller payload (put a texel index first for row-major ties). Also in ScalarReduction.
 // Without a load hook: { source: texture | { texture, mipLevel } }. Output textures must be at least each level's size.
+// Array layers: { layerCount } from layer 0 (a count: the tile kernel has no layer offset, and hooks see the workgroup's layer).
 
 import { reducePyramid, levelSize } from 'downsampler';  // the CPU oracle and level sizes
 ```
+
+**Sources: one shape (2026-11-13, ship prep).** Every class takes `source: GPUTexture | TextureLevel`, with `TextureLevel = { texture, mipLevel? }` (`src/webgpu/source.ts`): `Downsampler`'s `EncodeOptions.source` (a `SourceOptions`, which adds `resample`), the `Reducer` dispatch's `source` and `outputs`, and the `ScalarRun`'s `source` (it replaced `texture` + `mipLevel`). One module holds the checks, with one wording: dimension `2d`, `textureBindingViewDimension` (where defined) `2d` or `2d-array`, sample count 1, `TEXTURE_BINDING`, float-sampleable (depth through its depth aspect), `mipLevel` in range; and the source view (`depth-only` aspect for depth-stencil formats). Field names follow two rules: sizes are `width`/`height` (`ScalarRun.size: [ w, h ]` became `width`, `height`; with a source they default to its level's size and must match it), and a `layers` field is always `[ first, count ]` (`EncodeOptions.layers`, `ScalarRun.layers`, `PreparedBatch.layers`, `BufferCopy.layers`, which replaced `layer` + `layers`), while a bare count is `layerCount` (the `Reducer` dispatch, `ReducerCopy`). A first layer for the `Reducer` was declined: its tile kernel has no layer offset (a uniform and a kernel change), hook kernels pass the workgroup's layer to the hooks, and compatibility mode can't bind views of part of the layers. The keys used before 0.1 (`ScalarRun.texture`, `mipLevel`, `size`; the Reducer's `layers`) are rejected with a message naming the new ones, not silently ignored.
+
+**`f16Rounding`** (Downsampler and Reducer): `'nearest'` (default) rounds float16 levels to nearest even in the shader, the same bits on every GPU (§4 Quantization). `'device'` uses `pack2x16float`, the device's conversion: it truncates toward zero on D3D12 (NVIDIA, Intel), so each level is up to one f16 step low and the bias carries down the chain. Use it only where the in-shader rounding measurably costs and the bias is acceptable; the default stays `'nearest'` (owner, 2026-11-13; re-measured on Windows in round 2). Guide: docs/guide.md, float16 rounding.
 
 The destination must have `TEXTURE_BINDING` usage, plus `STORAGE_BINDING` (storage path) or `COPY_DST` (buffer path, §6.1), and a format from `formats`: `rgba8unorm`, `rgba16float`, `rgba8snorm`, `r32float`, `rg32float`, `rgba32float`, `rgb9e5ufloat` (buffer path only), plus `bgra8unorm` (storage needs `bgra8unorm-storage`), `rg11b10ufloat` (storage needs `texture-formats-tier1`; else the buffer path) and `r8unorm`, `rg8unorm`, `r8snorm`, `rg8snorm`, `r16float`, `rg16float` and the 16-bit normalized formats (need `texture-formats-tier1`). `unsupportedReason` names a missing feature or usage. Its dimension must be `2d`, with `textureBindingViewDimension` either `2d` or `2d-array`.
 
@@ -423,6 +430,14 @@ downsampler.prepare( texture, { rect } );   // batches carry regions (per level)
 
 import { planRegions, exactDependents, clampDependents } from 'downsampler'; // the region math (core)
 ```
+
+### Package (0.1.0, 2026-11-13)
+
+- **Entry points** (`exports`, each with its types): `downsampler` (core), `downsampler/webgpu`, `downsampler/three`, plus `./package.json`. ESM only (`"type": "module"`), `sideEffects: false`. `typesVersions` maps the subpaths for TypeScript's old `node10` resolution; `bundler` and `node16` resolve through `exports`.
+- **Contents** (`files`): `dist` without source maps (they point at `src/`, which isn't shipped), `README.md`, `LICENSE`, `CHANGELOG.md`. SPEC.md doesn't ship: it is the design record, with process notes and measurements, and the README links to it in the repository. `prepack` cleans and rebuilds `dist`, so no stale module ships.
+- **Types:** the declarations use the WebGPU types of `@webgpu/types` without referencing them (a consumer without them would get an unresolvable reference); the README asks TypeScript users to add it, as any WebGPU project does. Checked from a consumer project against the packed tarball with `moduleResolution` `bundler` and `node16`.
+- **No runtime dependencies;** `three` is an optional peer (`>=0.170.0`), typed structurally. No `engines`: the package runs in browsers, and the core runs in any ES2022 runtime.
+- **Release:** `.github/workflows/release.yml`, manual (`workflow_dispatch`, a version guard and a dry-run default), typecheck + build + core tests, then `npm publish --provenance`. The full GPU matrix runs on real GPUs before it (CI has none).
 
 ### Planned
 
@@ -656,11 +671,11 @@ Build first, benchmark once coverage is broad (decided 2026-11-10). Live status 
 
 ## 12. Open questions
 
-- Publish as bare `downsampler` or `@pmndrs/downsampler`? (`package.json` currently uses `downsampler`.)
+- ~~Publish as bare `downsampler` or `@pmndrs/downsampler`?~~ Decided (owner, 2026-11-12): `downsampler`, unscoped while it is free (still free on 2026-11-13: `npm view downsampler` is a 404), else `@pmndrs/downsampler`. Package shape: §5 Package.
 - ~~Buffer output path (§6.1): should `output: 'auto'` take the buffer path for textures without STORAGE_BINDING?~~ Decided (owner, 2026-11-12): no. `'auto'` takes it only for formats the device can't store; a missing STORAGE_BINDING usage is an error, and the buffer path for storable formats is opt-in (`output: 'buffer'`). ~~Should `Reducer` round rgba16float outputs before the store?~~ Yes: it quantizes with `pack2x16float` first, like `Downsampler`.
 - Cube maps in compatibility mode: they can't be viewed as 2d-array, so either per-face views or the render fallback. (2026-11-11: per-face views don't help either; compatibility mode binds whole textures only, and a `'cube'` texture has no storage view. A 6-layer `'2d-array'` texture works, which is what reflections bakes into, then copies to a cube; §4 Compatibility mode.)
 - ~~`'box'` for `'minmax'` and other folds is meaningless (they already use the full footprint). Should `'box'` simply be ignored there, or rejected?~~ Decided (coordinator, 2026-11-13; owner can overrule): accepted, and identical to `'exact'`. A pipeline can then set `oddSizes: 'box'` once for its average and Hi-Z chains.
-- `source.resample: 'area'` is an explicit opt-in, so a destination of the wrong size (say, stale after a resize) still fails loudly. Should a power-of-two destination take it without the option? And is 8× per axis (`maxResampleRatio`) the right cap?
+- ~~`source.resample: 'area'` is an explicit opt-in, so a destination of the wrong size (say, stale after a resize) still fails loudly. Should a power-of-two destination take it without the option? And is 8× per axis (`maxResampleRatio`) the right cap?~~ Decided (owner, 2026-11-13): it stays explicit; 8× stays the default, as the `maxResampleRatio` constructor option (free: validation only), raised later if a tool needs it.
 
 ## 13. Research (2026-11-10)
 
@@ -897,7 +912,8 @@ Validation: at most one `'weight'` channel, and `'weighted'` needs one. Builtins
 **Recording:**
 - `encode( encoder, dispatch )` opens its own pass.
 - `encodePass( pass, dispatch )` records into a caller-owned pass.
-- For tools that dispatch the kernel themselves: `prepare( dispatch )` (pipeline, group 0, the dispatch's group 1, workgroups, and with output `'buffer'` the copies), or the pieces: `wgsl`, `entryPoint`, `layout` (the `GPUPipelineLayout`), `bindGroupLayouts`, `pipeline`, `bindGroup( dispatch )` (group 0) and `workgroups( width, height, layers )`.
+- For tools that dispatch the kernel themselves: `prepare( dispatch )` (pipeline, group 0, the dispatch's group 1, workgroups, and with output `'buffer'` the copies), or the pieces: `wgsl`, `entryPoint`, `layout` (the `GPUPipelineLayout`), `bindGroupLayouts`, `pipeline`, `bindGroup( dispatch )` (group 0) and `workgroups( width, height, layerCount )`.
+- **Dispatch shape (2026-11-13):** `{ source?, outputs?, width?, height?, layerCount?, bindGroup? }`. `source` and each output are a texture or `{ texture, mipLevel }` with the shared source checks (§5 Sources); `layerCount` counts layers from 0 (it was `layers`, which now always means `[ first, count ]`).
 - **`prepare` means the same on all three classes (2026-11-13):** what `encodePass` (or `encode`) would record, validated (it throws with the same reason) and cached, for a tool that dispatches it itself. `Downsampler.prepare( texture, options )` returns one `PreparedBatch` per dispatch, `Reducer.prepare( dispatch )` a `PreparedReducer`, `ScalarReduction.prepare( run )` a `PreparedScalar` (two pipelines).
 - Pipelines are cached per device by WGSL and layouts, so equal Reducers share one. Group-0 bind groups are cached per size and textures (the 16 most recent). `release( texture? )` drops entries (all, or those using a texture) and destroys the buffers they own (§4 Caching).
 

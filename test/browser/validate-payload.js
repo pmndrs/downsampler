@@ -268,7 +268,7 @@ async function validatePayloadScalar( device, { quick } ) {
 			upload( device, source, data );
 			device.queue.writeBuffer( output, 0, new Float32Array( output.size / 4 ).fill( NaN ) );
 			const encoder = device.createCommandEncoder();
-			scalar.encode( encoder, { texture: source, output: { buffer: output, offset: 256 } } );
+			scalar.encode( encoder, { source, output: { buffer: output, offset: 256 } } );
 			device.queue.submit( [ encoder.finish() ] );
 			checkScalar( await readResults( device, output, 256, layers ), scalarReference( data, width, height, layers, reduce ), `payload scalar ${ reduce } ${ width }x${ height }x${ layers }` );
 			source.destroy();

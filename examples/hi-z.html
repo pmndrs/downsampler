@@ -25,7 +25,7 @@
 		<pre><code>const hiZ = device.createTexture( { format: 'rg32float', size: [ 1280, 720 ], mipLevelCount: 11,
 	usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING } );
 const pass = encoder.beginComputePass();
-downsampler.encodePass( pass, hiZ, { source: { texture: depth }, reduction: 'minmax' } );  // r = min, g = max
+downsampler.encodePass( pass, hiZ, { source: depth, reduction: 'minmax' } );  // r = min, g = max
 pass.end();</code></pre>
 		<p class="muted" id="adapter"></p>
 
@@ -90,7 +90,7 @@ pass.end();</code></pre>
 					usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC
 				} );
 				const downsampler = new Downsampler( device );
-				const options = { source: { texture: depth }, reduction: 'minmax' };
+				const options = { source: depth, reduction: 'minmax' };
 
 				const encoder = device.createCommandEncoder();
 				const render = encoder.beginRenderPass( { colorAttachments: [], depthStencilAttachment: { view: depth.createView(), depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' } } );

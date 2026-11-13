@@ -18,9 +18,9 @@ The kernel is SPD's idea, implemented independently in WGSL: a 64 × 64 source t
 | `SpdStore` | `Reducer` `store` hook: `fn store( level: u32, texel: vec2i, layer: u32, value: vec4f )`, `level` 1 = half size (SPD's mip index + 1). Or output textures. |
 | Choosing which mips to store | `Reducer` `levels: [ 1, 2, 3 ]`: unemitted levels are reduced but get no binding. |
 | `SPD_LINEAR_SAMPLER` | `averageAccess: 'sample'` (the default for averages): one bilinear sample per 2 × 2 block. `'load'` applies the weights in the shader. |
-| Separate source SRV and destination UAV | `source: { texture, mipLevel }`. Destination level `baseMipLevel` may be the **same size** as the source (a converting copy, e.g. depth → `r32float`) or half; SPD always halves. |
-| Texture arrays (`slice` in the dispatch z) | All layers of a `'2d-array'` texture in the same dispatches (workgroup z). A layer range is coming (M2.4). |
-| `rectInfo` (sub-rectangle) | `rect: { x, y, width, height }` on `encode` (M2.4). It rewrites exact per-level regions instead of snapping to 64-texel tiles, bit-identical to a full recompute (DIVERGES #15). |
+| Separate source SRV and destination UAV | `source: texture` or `{ texture, mipLevel }`. Destination level `baseMipLevel` may be the **same size** as the source (a converting copy, e.g. depth → `r32float`) or half, or any size with `resample: 'area'`; SPD always halves. |
+| Texture arrays (`slice` in the dispatch z) | All layers of a `'2d-array'` texture in the same dispatches (workgroup z), or a range with `layers: [ first, count ]`. |
+| `rectInfo` (sub-rectangle) | `rect: { x, y, width, height }` on `encode`. It rewrites exact per-level regions instead of snapping to 64-texel tiles, bit-identical to a full recompute (DIVERGES #15); an empty rect records nothing. |
 | sRGB: sample an sRGB view, write a UNORM alias | Not yet. WebGPU forbids sRGB storage even through a view; planned via a scratch copy (M2.3.5). |
 | Packed fp16 (`A_HALF`, `SPD_PACKED_ONLY`) | Not offered: f32 math. Under review in M3, kept only if measurably faster. |
 | Wave/quad ops (`SpdReduceQuad`, `WaveReadLaneAt`) | Workgroup memory only: WGSL defines quads only in fragment shaders and no lane-to-index mapping in compute. A subgroup kernel is gated on measurement (M3). |
@@ -97,9 +97,10 @@ AMD's exposure covers only the top-left `2^mips` square, and part of that window
 | `preparePass( texture, … )` → `SPDPass.encode( pass )` | `downsampler.encodePass( pass, texture, options )`; `prepare()` for the dispatches |
 | Filters: average, min, max, minmax | `reduction`: the same names |
 | Custom 4-way filter | a binary `{ wgsl }` fold, or a `Reducer` |
-| Separate target | `source: { texture, mipLevel }` (also same-size converting copies) |
+| Separate target | `source: texture` or `{ texture, mipLevel }` (also same-size converting copies) |
 | `maxMipsPerPass` (above 6 uses the atomic handoff) | `levelsPerDispatch` (at most 6; there is no handoff) |
-| Integer formats, `rgb10a2unorm`, sub-rectangles | Not yet (M2.3.7, M2.3.3, M2.4) |
+| Integer formats, `rgb10a2unorm` | Not yet (M2.3.7, M2.3.3) |
+| Sub-rectangles | `rect: { x, y, width, height }`, exact per-level regions |
 
 If you stay on webgpu-spd: set `maxMipsPerPass: 6` (its handoff returned stale levels on Apple), and don't use its min/max for Hi-Z at odd sizes. Measured with the same semantics, our `'spd'` was 1.2–2.1× faster than webgpu-spd on the M5 Pro, and 1.6× / 3.5× faster than its default on an RTX 3060 / Intel UHD in rgba8 ([results/compare/webgpu-spd.md](../results/compare/webgpu-spd.md)).
 
