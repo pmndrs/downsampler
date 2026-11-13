@@ -105,6 +105,10 @@ function renderStrategies( device ) {
 	// exact8 is the previous default for batches of up to four levels.
 	strategies.exact8 = { ...run( new Downsampler( device, { exactTile: 8 } ), {} ), parity: true };
 	strategies.tail = { ...run( new Downsampler( device, { tail: true } ), {} ), parity: true };
+	// Tile sweep (Apple: 32 measured slower than 8 at render sizes, 2026-11-13).
+	strategies.exact16 = { ...run( new Downsampler( device, { exactTile: 16 } ), {} ), parity: true };
+	strategies.tail8 = { ...run( new Downsampler( device, { tail: true, exactTile: 8 } ), {} ), parity: true };
+	strategies.tail16 = { ...run( new Downsampler( device, { tail: true, exactTile: 16 } ), {} ), parity: true };
 	return { strategies, reference: () => 'render' };
 
 }
