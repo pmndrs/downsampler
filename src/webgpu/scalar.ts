@@ -4,6 +4,7 @@ import type { ViewDimension } from './kernel.js';
 import { lanes, payloadCombine } from './lanes.js';
 import { checkHooks, checkToolBindings, hookArity, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolPipelineLayout, type ToolBindings } from './tool.js';
 
+/** Options of `new ScalarReduction( device, options )`. See SPEC.md §4 Scalar reductions. */
 export interface ScalarReductionOptions {
 	/** One op for all channels, or one per channel. Default 'average'. */
 	reduce?: ScalarReduce;
@@ -35,6 +36,7 @@ export interface ScalarReductionOptions {
 	channels?: 4 | 8;
 }
 
+/** Options of the pure generator {@link createScalarKernel}: a reduction plus the source shape. */
 export interface ScalarKernelOptions extends ScalarReductionOptions {
 	/** Source texture view dimension when there is no `load` hook. Default '2d'. */
 	dimension?: ViewDimension;
@@ -42,6 +44,10 @@ export interface ScalarKernelOptions extends ScalarReductionOptions {
 	splat?: boolean;
 }
 
+/**
+ * One run of a ScalarReduction: a source texture, a size for a load hook, or
+ * (combine only) partials a tool wrote; plus where results go without `finish`.
+ */
 export interface ScalarRun {
 	/** Source texture, without a `load` hook: any float-sampleable 2D format, including depth (its depth aspect). */
 	texture?: GPUTexture;
@@ -76,6 +82,7 @@ export interface ScalarRun {
 	texels?: number;
 }
 
+/** What `prepare( run )` returns, for tools that dispatch the two passes themselves. */
 export interface PreparedScalar {
 	/** Null for a combine-only run (`ScalarRun.partials`). */
 	partials: GPUComputePipeline | null;
@@ -327,8 +334,11 @@ export interface ScalarCombineKernel {
 export class ScalarReduction {
 
 	readonly device: GPUDevice;
+	/** The options the reduction was created with. */
 	readonly options: Readonly<ScalarReductionOptions>;
+	/** Per-channel ops, resolved from `reduce` (4 or 8). */
 	readonly ops: readonly ScalarOp[];
+	/** Texels per invocation along each axis (the tile is 16 · block). */
 	readonly block: number;
 	/** Bytes per partial: one vec4f, or a DsWide (32) with 8 channels. */
 	readonly partialBytes: number;

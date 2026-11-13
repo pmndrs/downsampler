@@ -5,6 +5,7 @@ import { isBuiltinReduction, needsTileEdges, reductionKey, resolveReduction, typ
 import { lanes, payloadCombine } from './lanes.js';
 import { checkHooks } from './tool.js';
 
+/** Texture view dimension of kernel sources and outputs: '2d', or '2d-array' (every layer; cube maps as 6 layers). */
 export type ViewDimension = '2d' | '2d-array';
 
 /**
@@ -29,6 +30,7 @@ export type SourceAccess = 'sample' | 'load';
  */
 export type F16Rounding = 'nearest' | 'device';
 
+/** Options of the pure WGSL generator {@link createKernel} and {@link kernelLayoutEntries}. `Downsampler` and `Reducer` build these for you. */
 export interface KernelOptions {
 	/** Storage format of the output levels. Required unless a `store` hook writes them. */
 	format?: SupportedFormat;

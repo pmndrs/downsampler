@@ -126,6 +126,10 @@ export function workgroupSide( tile: number ): number {
 
 }
 
+/**
+ * The dispatches of a mip chain for a `width` × `height` level 0: what
+ * `Downsampler.prepare()` records, without any GPU objects.
+ */
 export function planBatches( width: number, height: number, options: PlanOptions ): Batch[] {
 
 	const { baseMipLevel = 0, mipLevelCount, levelsPerDispatch, oddSizes = 'exact', fromSource = false, copySource = false, tail = false, tailMaxTile = tailTile, exactMinTile = 8 } = options;
