@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Hi-Z from depth</title>
+		<link rel="icon" href="data:,">
+		<link rel="stylesheet" href="style.css">
+	</head>
+	<body>
+		<nav><a href="./">Examples</a> · <a href="../docs/guide.md">Guide</a></nav>
+		<h1>Hi-Z (min/max) pyramid from a depth buffer</h1>
+		<p>
+			A render pass draws a few dozen sloped rectangles into a 1280 × 720 <code>depth32float</code> buffer. Depth formats
+			can't be storage textures, so the pyramid goes into a separate <code>rg32float</code> texture, with the depth buffer as a
+			<code>source</code>: level 0 is a copy (same size), and every level after it holds <code>(min, max)</code> of the depth
+			texels it covers. The chain is recorded with <code>encodePass</code> into a compute pass of the same encoder.
+		</p>
+		<p>
+			Odd sizes (720 → 360 → 180 → 90 → 45 → 22 …) include the extra row or column, so every texel bounds all the depth
+			texels under it: the pyramid is conservative, which is what occlusion culling needs (an object is hidden if its
+			nearest depth is behind the tile's <code>max</code>; with reverse-Z, compare with <code>min</code>). The readout checks
+			this independently of the library, and shows what an SPD-style max pyramid (last odd row or column dropped) would miss.
+		</p>
+		<pre><code>const hiZ = device.createTexture( { format: 'rg32float', size: [ 1280, 720 ], mipLevelCount: 11,
+	usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING } );
+const pass = encoder.beginComputePass();
+downsampler.encodePass( pass, hiZ, { source: { texture: depth }, reduction: 'minmax' } );  // r = min, g = max
+pass.end();</code></pre>
+		<p class="muted" id="adapter"></p>
+
+		<h2>Readout</h2>
+		<ul id="readout"></ul>
+
+		<h2>Levels</h2>
+		<div class="levels" id="levels"></div>
+		<div class="view">
+			<figure><canvas class="level" id="min"></canvas><figcaption>min (nearest), brighter is nearer</figcaption></figure>
+			<figure><canvas class="level" id="max"></canvas><figcaption>max (farthest)</figcaption></figure>
+		</div>
+		<p class="muted" id="caption"></p>
+
+		<script type="module">
+			import { maxViolations, reduceReference } from '../dist/index.js';
+			import { Downsampler, Reducer } from '../dist/webgpu/index.js';
+			import { drawLevel, fail, initDevice, levelButtons, mipLevels, readLevels, report } from './common.js';
+
+			try {
+
+				const { device } = await initDevice();
+				const width = 1280, height = 720;
+
+				// 1. Depth: sloped rectangles at random positions, rasterized at fractional texel edges.
+				const depth = device.createTexture( { label: 'example depth', format: 'depth32float', size: [ width, height ], usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC } );
+				const count = 48;
+				const rects = new Float32Array( count * 8 );
+				let seed = 7;
+				const random = () => ( seed = ( seed * 1664525 + 1013904223 ) >>> 0 ) / 2 ** 32;
+				for ( let i = 0; i < count; i ++ ) {
+
+					const x = random() * 2 - 1.1, y = random() * 2 - 1.1, w = 0.02 + random() * 0.4, h = 0.02 + random() * 0.4;
+					const near = 0.25 + random() * 0.6;
+					rects.set( [ x, y, x + w, y + h, near, near + ( random() - 0.5 ) * 0.2, 0, 0 ], i * 8 );
+
+				}
+
+				const rectBuffer = device.createBuffer( { size: rects.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+				device.queue.writeBuffer( rectBuffer, 0, rects );
+				const module = device.createShaderModule( { code: /* wgsl */ `
+					struct Rect { bounds: vec4f, depth: vec4f }
+					@group(0) @binding(0) var<uniform> rects: array<Rect, ${ count }>;
+					@vertex fn vs(@builtin(vertex_index) v: u32, @builtin(instance_index) i: u32) -> @builtin(position) vec4f {
+						var corners = array<vec2f, 6>(vec2f(0, 0), vec2f(1, 0), vec2f(0, 1), vec2f(1, 0), vec2f(1, 1), vec2f(0, 1));
+						let r = rects[i];
+						let t = corners[v];
+						return vec4f(mix(r.bounds.xy, r.bounds.zw, t), mix(r.depth.x, r.depth.y, t.x), 1.0);
+					}
+				` } );
+				const pipeline = device.createRenderPipeline( {
+					layout: 'auto', vertex: { module, entryPoint: 'vs' }, primitive: { topology: 'triangle-list' },
+					depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'less' }
+				} );
+				const rectGroup = device.createBindGroup( { layout: pipeline.getBindGroupLayout( 0 ), entries: [ { binding: 0, resource: { buffer: rectBuffer } } ] } );
+
+				// 2. The Hi-Z pyramid: every level of an rg32float texture, level 0 the same size as the depth.
+				const levelCount = mipLevels( width, height );
+				const hiZ = device.createTexture( {
+					label: 'example hi-z', format: 'rg32float', size: [ width, height ], mipLevelCount: levelCount,
+					// COPY_DST too: in compatibility mode rg32float has no storage, and the library takes the buffer path.
+					usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC
+				} );
+				const downsampler = new Downsampler( device );
+				const options = { source: { texture: depth }, reduction: 'minmax' };
+
+				const encoder = device.createCommandEncoder();
+				const render = encoder.beginRenderPass( { colorAttachments: [], depthStencilAttachment: { view: depth.createView(), depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' } } );
+				render.setPipeline( pipeline );
+				render.setBindGroup( 0, rectGroup );
+				render.draw( 6, count );
+				render.end();
+				if ( downsampler.outputPath( hiZ ) === 'storage' ) {
+
+					// Storage path: record into a compute pass you own (shared with other dispatches, one timestamp pair).
+					const pass = encoder.beginComputePass( { label: 'hi-z' } );
+					downsampler.encodePass( pass, hiZ, options );
+					pass.end();
+
+				} else downsampler.encode( encoder, hiZ, options ); // buffer path: its copies need the encoder
+
+				// For comparison: SPD-style max levels (clamped loads, ⌊n/2⌋ sizes, the last odd row or column dropped).
+				const spdLevels = Array.from( { length: Math.min( 6, device.limits.maxStorageTexturesPerShaderStage ) }, ( _, i ) => i + 1 );
+				const spdMax = new Reducer( device, { reduction: 'max', levels: spdLevels, edges: 'clamp', format: 'r32float', sourceFormat: 'depth32float' } );
+				const spdTexture = device.createTexture( { label: 'spd-style max', format: 'r32float', size: [ width >> 1, height >> 1 ], mipLevelCount: spdLevels.length, usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC } );
+				spdMax.encode( encoder, { source: depth, outputs: spdLevels.map( ( _, mipLevel ) => ( { texture: spdTexture, mipLevel } ) ) } );
+				device.queue.submit( [ encoder.finish() ] );
+
+				// 3. Checks.
+				const [ base ] = await readLevels( device, depth );
+				const levels = await readLevels( device, hiZ );
+				const checks = [];
+				const minmaxBase = Float32Array.from( base.values, ( v, i ) => i % 4 < 2 ? base.values[ i - i % 4 ] : i % 4 === 3 ? 1 : 0 );
+				const copyOk = levels[ 0 ].values.every( ( v, i ) => v === minmaxBase[ i ] || i % 4 >= 2 );
+				checks.push( { name: 'level 0 is an exact copy of the depth buffer (d, d)', ok: copyOk } );
+
+				let foldFailures = 0;
+				for ( let level = 1; level < levelCount; level ++ ) {
+
+					const previous = levels[ level - 1 ];
+					const reference = reduceReference( previous.values, previous.width, previous.height, 1, 'float32', 'minmax' );
+					for ( let i = 0; i < reference.values.length; i += 4 ) if ( levels[ level ].values[ i ] !== reference.values[ i ] || levels[ level ].values[ i + 1 ] !== reference.values[ i + 1 ] ) foldFailures ++;
+
+				}
+
+				checks.push( { name: `levels 1–${ levelCount - 1 } match the CPU reference exactly (folds select values)`, ok: foldFailures === 0, detail: foldFailures ? `${ foldFailures } texels differ` : '' } );
+
+				// Independent of the library: each texel bounds every depth texel its normalized area touches.
+				const channel = ( { values }, c, sign = 1 ) => Float32Array.from( values, ( v, i ) => i % 4 === 0 ? sign * values[ i + c ] : 0 );
+				const depthMax = channel( base, 0 ), depthMin = channel( base, 0, - 1 );
+				let maxMisses = 0, minMisses = 0;
+				for ( let level = 1; level < levelCount; level ++ ) {
+
+					const { width: w, height: h } = levels[ level ];
+					maxMisses += maxViolations( depthMax, width, height, channel( levels[ level ], 1 ), w, h );
+					minMisses += maxViolations( depthMin, width, height, channel( levels[ level ], 0, - 1 ), w, h );
+
+				}
+
+				checks.push( { name: 'max is conservative at every level (no depth texel above its texel)', ok: maxMisses === 0, detail: `${ maxMisses } violations` } );
+				checks.push( { name: 'min is conservative at every level', ok: minMisses === 0, detail: `${ minMisses } violations` } );
+
+				const spd = await readLevels( device, spdTexture );
+				const spdMisses = spd.map( level => maxViolations( depthMax, width, height, level.values, level.width, level.height ) );
+				const total = spdMisses.reduce( ( a, b ) => a + b, 0 );
+				checks.push( { name: `for comparison, SPD-style max levels 1–${ spd.length } (not a valid Hi-Z)`, ok: true, detail: `${ total } non-conservative texels (${ spdMisses.join( ', ' ) } per level)` } );
+				report( checks );
+
+				// 4. Viewer: nearer is brighter.
+				const shade = channelIndex => ( values, i ) => { const g = ( 1 - values[ i + channelIndex ] ) / 0.75; return [ g, g, g ]; };
+				levelButtons( document.getElementById( 'levels' ), levelCount, level => {
+
+					drawLevel( document.getElementById( 'min' ), levels[ level ], shade( 0 ) );
+					drawLevel( document.getElementById( 'max' ), levels[ level ], shade( 1 ) );
+					document.getElementById( 'caption' ).textContent = `Level ${ level }: ${ levels[ level ].width } × ${ levels[ level ].height }`;
+
+				}, 4 );
+
+			} catch ( error ) {
+
+				fail( error );
+
+			}
+		</script>
+	</body>
+</html>

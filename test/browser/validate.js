@@ -2,12 +2,14 @@
 // the CPU reference, computed from the GPU's own previous level so permitted
 // rounding differences do not accumulate along the chain.
 import { areaReference, boxReference, copyReference, formats, maxViolations, fromHalf, isIntegerDomain, isPackedQuantization, levelSize, pyramidTolerance, quantize, reducePyramid, reduceReference, sampledChannels, spdReference, storageWritable, toHalf, tolerance } from '/dist/index.js';
-import { Downsampler, Reducer } from '/dist/webgpu/index.js';
-import { createDepthSource, createTexture, makeData, poison, readMip, readMips, toFloats, upload } from './gpu.js';
+import { Downsampler, Reducer, requiredLimits } from '/dist/webgpu/index.js';
+import * as three from '/dist/three/index.js';
+import { createDepthSource, createTexture, makeData, poison, readMip, readMips, toFloats, trackBuffers, upload } from './gpu.js';
 import { validateBox } from './validate-box.js';
 import { validatePacked } from './validate-packed.js';
 import { validateScalar } from './validate-scalar.js';
 import { validatePayload } from './validate-payload.js';
+import { validateRegion } from './validate-region.js';
 import { validateWide } from './validate-wide.js';
 import { assignShards, digest, Selection } from '../ci/shard.js';
 
@@ -190,6 +192,7 @@ export const compatibility = device => ! device.features.has( 'core-features-and
  * formats and the buffer output path ('packed-source' and 'packed-api' one piece of it, for debugging).
  * 'odd' runs only the 'spd' and tail variants of the main matrix (part of 'downsampler', for debugging),
  * 'box' the main matrix's 'box' variants and validate-box.js (M2.5; also part of 'downsampler').
+ * 'region' runs only the partial updates (`rect`, `layers`; validate-region.js; part of 'downsampler').
  *
  * `shard` ({ index, total }, 1-based) runs one shard of the case groups (after `only`), split by
  * `durations` (group id → ms; test/ci/README.md). `list` runs nothing and returns the group ids
@@ -234,7 +237,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 	const results = [];
 	const started = performance.now();
-	const cases = only === 'scalar' || only === 'reducer' || only === 'fixtures' ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
+	const cases = only === 'scalar' || only === 'reducer' || only === 'fixtures' || only === 'region' ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
 	let scalarPrecision = null;
 	let runs = 0;
 	const skipped = [];
@@ -420,6 +423,10 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 			results.push( ...await validateBox( device, { quick, onProgress, select } ) );
 
+		} else if ( only === 'region' ) {
+
+			results.push( ...await validateRegion( device, { quick, onProgress, select } ) );
+
 		} else if ( only?.startsWith( 'packed' ) ) {
 
 			// 'packed-source' and 'packed-api' run one part (for debugging).
@@ -432,6 +439,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 				results.push( ...await validateSource( device, { quick, onProgress, select } ) );
 				results.push( ...await select.run( 'downsampler/options', () => validateOptions( device ) ) );
+				results.push( ...await validateRegion( device, { quick, onProgress, select } ) );
 				results.push( ...await validatePacked( device, { quick, onProgress, part: 'downsampler', select } ) );
 				results.push( ...await validateBox( device, { quick, onProgress, select } ) );
 
@@ -922,7 +930,52 @@ async function validateOptions( device ) {
 	tail.release( policy ); buffer?.spd.release( policy ); buffer?.tail.release( policy ); compatPaths?.spd.release( policy ); compatPaths?.tail.release( policy );
 	policy.destroy();
 	results.push( { option: 'odd-size policies: rejections, encodePass, buffer output, compatibility path' } );
+	results.push( ...await validateThree( device ) );
 	return results;
+
+}
+
+// Resolved fields and requiredLimits; the three.js adapter against a structural
+// stand-in for WebGPURenderer: shared Downsamplers per option set, the reason
+// it declines, and recording into the caller's encoder without submitting.
+async function validateThree( device ) {
+
+	const adapter = await navigator.gpu.requestAdapter( device.features.has( 'core-features-and-limits' ) ? {} : { featureLevel: 'compatibility' } );
+	if ( JSON.stringify( requiredLimits( adapter ) ) !== JSON.stringify( Downsampler.requiredLimits( adapter ) ) || three.requiredLimits !== requiredLimits ) throw new Error( 'requiredLimits: the standalone function, Downsampler.requiredLimits and downsampler/three differ' );
+	if ( new Downsampler( device ).averageAccess !== 'sample' || new Downsampler( device, { averageAccess: 'load' } ).averageAccess !== 'load' ) throw new Error( 'Downsampler.averageAccess must read the resolved option (default \'sample\')' );
+
+	const gpuTextures = new Map();
+	const renderer = { backend: { isWebGPUBackend: true, device, get: object => ( { texture: gpuTextures.get( object ) } ) } };
+	const shared = three.getDownsampler( renderer );
+	if ( three.getDownsampler( renderer ) !== shared || three.getDownsampler( renderer, {} ) !== shared ) throw new Error( 'three: getDownsampler must share one Downsampler per device and option set' );
+	const load = three.getDownsampler( renderer, { averageAccess: 'load', f16Rounding: 'device' } );
+	if ( load === shared || load !== three.getDownsampler( renderer, { f16Rounding: 'device', averageAccess: 'load' } ) || load.averageAccess !== 'load' || load.f16Rounding !== 'device' ) throw new Error( 'three: getDownsampler options must select their own shared Downsampler, whatever the key order' );
+
+	const [ unallocated, single, noStorage, chain ] = [ {}, {}, {}, {} ];
+	gpuTextures.set( single, device.createTexture( { size: [ 4, 4 ], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING } ) );
+	gpuTextures.set( noStorage, device.createTexture( { size: [ 4, 4 ], format: 'rgba8unorm', mipLevelCount: 3, usage: GPUTextureUsage.TEXTURE_BINDING } ) );
+	gpuTextures.set( chain, createTexture( device, { width: 64, height: 48, format: 'rgba8unorm' } ) );
+	for ( const [ object, message ] of [ [ unallocated, 'not allocated' ], [ single, 'single mip level' ], [ noStorage, 'STORAGE_BINDING' ] ] ) {
+
+		const reason = three.unsupportedReason( renderer, object );
+		if ( ! reason?.includes( message ) ) throw new Error( `three: expected unsupportedReason "${ message }", got ${ reason }` );
+		if ( three.generateMipmaps( renderer, object ) !== false ) throw new Error( `three: generateMipmaps must decline (${ message })` );
+
+	}
+
+	if ( three.unsupportedReason( renderer, chain ) !== null ) throw new Error( `three: unexpected reason ${ three.unsupportedReason( renderer, chain ) }` );
+	const texture = gpuTextures.get( chain );
+	const data = makeData( 64, 48, 1, 'rgba8unorm', 'random', 3 );
+	upload( device, texture, data );
+	poison( device, texture );
+	const poisoned = await readMip( device, texture, 1 );
+	const encoder = device.createCommandEncoder();
+	if ( three.generateMipmaps( renderer, chain, { encoder, downsampler: { averageAccess: 'load' } } ) !== true ) throw new Error( 'three: generateMipmaps with an encoder declined' );
+	if ( ( await readMip( device, texture, 1 ) ).some( ( value, i ) => value !== poisoned[ i ] ) ) throw new Error( 'three: generateMipmaps with an encoder must not submit' );
+	device.queue.submit( [ encoder.finish() ] );
+	check( await readMip( device, texture, 1 ), reduceReference( toFloats( data, 'rgba8unorm' ), 64, 48, 1, 'unorm8', 'average', { weights: 'shader' } ), 'unorm8', 'three generateMipmaps into an encoder, mip 1' );
+	for ( const gpuTexture of gpuTextures.values() ) gpuTexture.destroy();
+	return [ { option: 'three adapter: options, encoder, unsupportedReason; requiredLimits; averageAccess' } ];
 
 }
 
@@ -1603,6 +1656,65 @@ async function validateReducerOptions( device ) {
 	source.destroy();
 	mipped.destroy();
 	results.push( { option: 'reducer validation' } );
+	results.push( ...await validateReducerLifetime( device ) );
+	return results;
+
+}
+
+// Buffers a Reducer creates (size uniforms, buffer-output buffers) are destroyed
+// by release() and, deferred until the queue is done, when the 16-entry cache
+// evicts them; a dispatch recorded before its entry was evicted still submits.
+async function validateReducerLifetime( device ) {
+
+	const results = [];
+	const tracker = trackBuffers( device );
+	try {
+
+		const hooked = new Reducer( device, { reduction: 'sum', levels: [ 1 ], load: 'fn load(texel: vec2i, layer: u32) -> vec4f { return vec4f(1.0); }', store: 'fn store(level: u32, texel: vec2i, layer: u32, value: vec4f) {}', label: 'lifetime hooked' } );
+		const first = hooked.prepare( { width: 1, height: 1 } );
+		if ( first.pipeline !== hooked.pipeline || first.bindGroup !== hooked.bindGroup( { width: 1, height: 1 } ) || first.toolBindGroup !== undefined || first.workgroups.join() !== '1,1,1' || first.buffer !== undefined ) throw new Error( 'reducer prepare(): unexpected pipeline, bind group, tool group, workgroups or buffer' );
+		// Recorded now, submitted after its entry is evicted.
+		device.pushErrorScope( 'validation' );
+		const early = device.createCommandEncoder();
+		hooked.encode( early, { width: 1, height: 1 } );
+		for ( let width = 2; width <= 17; width ++ ) hooked.prepare( { width, height: 1 } );
+		device.queue.submit( [ early.finish() ] );
+		const error = await device.popErrorScope();
+		if ( error !== null ) throw new Error( `reducer: a dispatch recorded before its cache entry was evicted failed to submit: ${ error.message }` );
+		await tracker.settle();
+		const sizes = tracker.labelled( 'lifetime hooked size' );
+		if ( sizes.length !== 17 ) throw new Error( `reducer: expected 17 size uniforms, got ${ sizes.length }` );
+		if ( ! tracker.destroyed.has( sizes[ 0 ] ) || sizes.slice( 1 ).some( buffer => tracker.destroyed.has( buffer ) ) ) throw new Error( 'reducer: eviction must destroy the evicted entry\'s size uniform, and only it' );
+		hooked.release();
+		if ( sizes.some( buffer => ! tracker.destroyed.has( buffer ) ) ) throw new Error( 'reducer: release() must destroy every size uniform' );
+
+		// Buffer output: release( texture ) destroys the entries that use it, and only them.
+		{
+
+			const reducer = new Reducer( device, { reduction: 'average', levels: [ 1, 2 ], format: 'rgba32float', output: 'buffer', label: 'lifetime buffer' } );
+			const textures = [ 8, 8, 4, 2 ].map( size => device.createTexture( { size: [ size, size ], format: 'rgba32float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST } ) );
+			const [ source, other, half, quarter ] = textures;
+			const dispatch = { source, outputs: [ half, quarter ] };
+			const prepared = reducer.prepare( dispatch );
+			reducer.prepare( { source: other, outputs: [ half, quarter ] } );
+			const owned = tracker.labelled( 'lifetime buffer output' );
+			if ( owned.length !== 4 || prepared.buffer !== owned[ 0 ] || prepared.copies?.length !== 2 ) throw new Error( `reducer buffer output: expected 2 entries of 2 buffers and 2 copies, got ${ owned.length } buffers` );
+			reducer.release( other );
+			if ( tracker.destroyed.has( owned[ 0 ] ) || tracker.destroyed.has( owned[ 1 ] ) || ! tracker.destroyed.has( owned[ 2 ] ) || ! tracker.destroyed.has( owned[ 3 ] ) ) throw new Error( 'reducer: release( texture ) must destroy only the entries that use the texture' );
+			if ( reducer.prepare( dispatch ).bindGroup !== prepared.bindGroup ) throw new Error( 'reducer: release( other ) dropped an unrelated entry' );
+			reducer.release( half );
+			if ( ! tracker.destroyed.has( owned[ 0 ] ) || ! tracker.destroyed.has( owned[ 1 ] ) ) throw new Error( 'reducer: release( output ) must destroy that entry\'s buffers' );
+			for ( const texture of textures ) texture.destroy();
+
+		}
+
+	} finally {
+
+		tracker.restore();
+
+	}
+
+	results.push( { option: 'reducer release, eviction and prepare' } );
 	return results;
 
 }

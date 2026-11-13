@@ -260,7 +260,7 @@ async function validatePayloadScalar( device, { quick } ) {
 	const output = device.createBuffer( { size: 256 + 3 * 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST } );
 	for ( const reduce of scalarPayloadVariants ) {
 
-		const scalar = new ScalarReduction( device, { reduce } );
+		const scalar = new ScalarReduction( device, { reduction: reduce } );
 		for ( const [ width, height, layers = 1 ] of quick ? payloadShapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : payloadShapes ) {
 
 			const source = device.createTexture( { size: [ width, height, layers ], format: 'rgba32float', textureBindingViewDimension: layers > 1 ? '2d-array' : '2d', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST } );
@@ -297,7 +297,7 @@ async function validatePayloadScalar( device, { quick } ) {
 	output.destroy();
 	for ( const [ ops, message ] of [ [ [ 'payload', 'argmin', 'sum', 'sum' ], 'must follow' ], [ [ 'argmin', 'sum', 'payload', 'sum' ], 'must follow' ] ] ) {
 
-		for ( const make of [ () => new ScalarReduction( device, { reduce: ops } ), () => new Reducer( device, { reduction: ops, levels: [ 1 ], format: 'rgba32float' } ) ] ) {
+		for ( const make of [ () => new ScalarReduction( device, { reduction: ops } ), () => new Reducer( device, { reduction: ops, levels: [ 1 ], format: 'rgba32float' } ) ] ) {
 
 			let error = null;
 			try { make(); } catch ( caught ) { error = caught; }

@@ -1,24 +1,25 @@
 // Shared browser-side helpers for the GPU suite, benchmark and device lab.
 import { formats, fromHalf, integerDomains, isIntegerDomain, isPackedQuantization, isSupportedFormat, packTexel, storageWritable, toHalf, unpackTexel } from '/dist/index.js';
-import { Downsampler } from '/dist/webgpu/index.js';
+import { requiredLimits } from '/dist/webgpu/index.js';
 
 /**
  * `compat`: a compatibility-mode device (featureLevel 'compatibility', without 'core-features-and-limits').
  * `maxStorageTextures`: request the adapter's storage texture limit (the atomic probe's tail levels), not just six.
  * `features`: extra optional features to request when the adapter has them (webgpu-spd uses 'subgroups' and 'shader-f16').
+ * `timestamps: false`: don't request timestamp-query even when the adapter has it (the throughput bench's no-timestamp path).
  */
-export async function requestDevice( { compat = false, maxStorageTextures = false, features = [] } = {} ) {
+export async function requestDevice( { compat = false, maxStorageTextures = false, features = [], timestamps: wantTimestamps = true } = {} ) {
 
 	if ( ! navigator.gpu ) throw new Error( 'WebGPU is not available in this browser.' );
 	const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance', ...( compat ? { featureLevel: 'compatibility' } : {} ) } );
 	if ( ! adapter ) throw new Error( 'No WebGPU adapter.' );
-	const timestamps = adapter.features.has( 'timestamp-query' );
+	const timestamps = wantTimestamps && adapter.features.has( 'timestamp-query' );
 	// Format features are requested when available; float32-filterable is not,
 	// so float32 formats keep exercising the load path.
 	const optional = [ 'texture-formats-tier1', 'bgra8unorm-storage', ...features ].filter( feature => adapter.features.has( feature ) );
 	const device = await adapter.requestDevice( {
 		requiredFeatures: [ ...optional, ...( timestamps ? [ 'timestamp-query' ] : [] ) ],
-		requiredLimits: maxStorageTextures ? { maxStorageTexturesPerShaderStage: adapter.limits.maxStorageTexturesPerShaderStage } : Downsampler.requiredLimits( adapter )
+		requiredLimits: maxStorageTextures ? { maxStorageTexturesPerShaderStage: adapter.limits.maxStorageTexturesPerShaderStage } : requiredLimits( adapter )
 	} );
 	if ( compat && device.features.has( 'core-features-and-limits' ) ) throw new Error( 'compat: the browser gave a core device (it cannot enforce compatibility-mode validation).' );
 	const info = adapter.info || {};
@@ -327,5 +328,35 @@ export function median( values ) {
 
 	const sorted = values.slice().sort( ( a, b ) => a - b );
 	return sorted[ Math.floor( sorted.length / 2 ) ];
+
+}
+
+/**
+ * Records the buffers created on `device` from now on, and which of them are
+ * destroyed, by wrapping `createBuffer` (and each new buffer's `destroy`) until
+ * `restore()`. `settle()` waits for the queue and a task, so deferred
+ * destruction (cache evictions, after onSubmittedWorkDone) has happened.
+ */
+export function trackBuffers( device ) {
+
+	const created = [], destroyed = new Set();
+	const createBuffer = device.createBuffer;
+	device.createBuffer = descriptor => {
+
+		const buffer = createBuffer.call( device, descriptor );
+		const destroy = buffer.destroy;
+		buffer.destroy = () => { destroyed.add( buffer ); destroy.call( buffer ); };
+		created.push( buffer );
+		return buffer;
+
+	};
+
+	return {
+		created, destroyed,
+		/** Buffers created since tracking started, by label substring. */
+		labelled: text => created.filter( buffer => buffer.label.includes( text ) ),
+		settle: async () => { await device.queue.onSubmittedWorkDone(); await new Promise( resolve => setTimeout( resolve, 0 ) ); },
+		restore: () => { delete device.createBuffer; }
+	};
 
 }

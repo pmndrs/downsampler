@@ -20,8 +20,12 @@ import { payloadGroups, payloadWins, type PayloadGroup } from './reduction.js';
 
 /** Per-channel scalar ops: those of a tile reduction (`ChannelOp`), including payload folds. */
 export type ScalarOp = 'sum' | 'average' | 'min' | 'max' | 'weight' | 'weighted' | 'argmin' | 'argmax' | 'payload';
-/** One op for every channel, or one per channel: four (a `vec4f`), or eight (`DsWide`, SPEC.md §14.1). */
-export type ScalarReduce = ScalarOp | readonly [ ScalarOp, ScalarOp, ScalarOp, ScalarOp ] | readonly [ ScalarOp, ScalarOp, ScalarOp, ScalarOp, ScalarOp, ScalarOp, ScalarOp, ScalarOp ];
+/**
+ * One op for every channel, `'minmax'` (even channels min, odd channels max, as
+ * in `Downsampler` and `Reducer`), or one op per channel: four (a `vec4f`), or
+ * eight (`DsWide`, SPEC.md §14.1).
+ */
+export type ScalarReduce = ScalarOp | 'minmax' | readonly [ ScalarOp, ScalarOp, ScalarOp, ScalarOp ] | readonly [ ScalarOp, ScalarOp, ScalarOp, ScalarOp, ScalarOp, ScalarOp, ScalarOp, ScalarOp ];
 
 const scalarOpNames: readonly ScalarOp[] = [ 'sum', 'average', 'min', 'max', 'weight', 'weighted', 'argmin', 'argmax', 'payload' ];
 const selections = new Set<ScalarOp>( [ 'min', 'max', 'argmin', 'argmax', 'payload' ] );
@@ -34,13 +38,13 @@ export const scalarInvocations = scalarSide * scalarSide;
 export const scalarBlock = 4;
 
 /**
- * Validated per-channel ops. `channels` (4 or 8) sizes a single op; a list
- * sets it by its length, and must agree with it when it is given.
+ * Validated per-channel ops. `channels` (4 or 8) sizes a single op or
+ * `'minmax'`; a list sets it by its length, and must agree with it when it is given.
  */
-export function scalarOps( reduce: ScalarReduce = 'average', channels?: number ): ScalarOp[] {
+export function scalarOps( reduction: ScalarReduce = 'average', channels?: number ): ScalarOp[] {
 
 	if ( channels !== undefined && channels !== 4 && channels !== 8 ) throw new Error( `downsampler: channels must be 4 or 8, got ${ JSON.stringify( channels ) }.` );
-	const ops: ScalarOp[] = typeof reduce === 'string' ? Array( channels ?? 4 ).fill( reduce ) : Array.from( reduce );
+	const ops: ScalarOp[] = reduction === 'minmax' ? Array.from( { length: channels ?? 4 }, ( _, c ) => c % 2 === 0 ? 'min' : 'max' ) : typeof reduction === 'string' ? Array( channels ?? 4 ).fill( reduction ) : Array.from( reduction );
 	if ( ops.length !== 4 && ops.length !== 8 ) throw new Error( 'downsampler: a scalar reduction takes one op or four (one per channel; eight for 8-channel accumulators).' );
 	if ( channels !== undefined && ops.length !== channels ) throw new Error( `downsampler: ${ ops.length } scalar ops, but channels is ${ channels }.` );
 	for ( const op of ops ) if ( ! scalarOpNames.includes( op ) ) throw new Error( `downsampler: unknown scalar op ${ JSON.stringify( op ) }.` );
@@ -275,9 +279,9 @@ function exactOf( ops: readonly ScalarOp[], length: number, term: ( i: number, c
  * Input error adds `(absolute · n + relative · A) / normaliser` to sum-like
  * channels and `absolute + relative · |r|` to min and max.
  */
-export function scalarReference( texels: ArrayLike<number>, width: number, height: number, layers: number, reduce: ScalarReduce = 'average', options: ScalarReferenceOptions = {} ): ScalarReferenceResult[] {
+export function scalarReference( texels: ArrayLike<number>, width: number, height: number, layers: number, reduction: ScalarReduce = 'average', options: ScalarReferenceOptions = {} ): ScalarReferenceResult[] {
 
-	const ops = scalarOps( reduce );
+	const ops = scalarOps( reduction );
 	const n = ops.length;
 	const block = options.block ?? scalarBlock;
 	const absolute = options.inputError?.absolute ?? 0, relative = options.inputError?.relative ?? 0;
@@ -372,9 +376,9 @@ export interface ScalarCombineReferenceOptions {
  * the bound of {@link scalarReference} at depth `partialDepth` +
  * {@link scalarCombineDepth}.
  */
-export function scalarCombineReference( partials: ArrayLike<number>, count: number, layers: number, reduce: ScalarReduce = 'average', options: ScalarCombineReferenceOptions = {} ): ScalarReferenceResult[] {
+export function scalarCombineReference( partials: ArrayLike<number>, count: number, layers: number, reduction: ScalarReduce = 'average', options: ScalarCombineReferenceOptions = {} ): ScalarReferenceResult[] {
 
-	const ops = scalarOps( reduce );
+	const ops = scalarOps( reduction );
 	const n = ops.length;
 	if ( ! Number.isInteger( count ) || count < 1 ) throw new Error( 'downsampler: a combine needs at least one partial.' );
 	const values = Float32Array.from( partials );

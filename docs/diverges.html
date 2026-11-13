@@ -173,7 +173,7 @@ footer { color: var(--muted); font-size: 13px; display: grid; gap: 6px; max-widt
 			<div class="phase"><span class="st st-done">done</span><h3>M2 · features</h3><p>Reductions, separate source (Hi-Z), 21 formats incl. rgb9e5 and rg11b10 via the buffer path, compatibility mode, encodePass.</p></div>
 			<div class="phase"><span class="st st-done">done</span><h3>M2T · tools first</h3><p>Reducer (hooks, sums, weights, 8 channels, payload folds, level selection), ScalarReduction, FSR 3.1 and upscaler fixtures, 'spd' mode and tail kernel measured.</p></div>
 			<div class="phase"><span class="st st-now">now</span><h3>Windows runs</h3><p>Cross-vendor timings for the upscaler exposure branch, the tool fixtures and the SPD comparison. Run sheet below.</p></div>
-			<div class="phase"><span class="st st-next">next</span><h3>M2.4 / M2.5</h3><p>Layer range and rect; 'box' odd sizes; power-of-two destination from a separate source.</p></div>
+			<div class="phase"><span class="st st-next">next</span><h3>M2.4 / M2.5</h3><p>Layer range and rect: done (2026-11-13). 'box' odd sizes and a power-of-two destination from a separate source: in progress.</p></div>
 			<div class="phase"><span class="st st-next">next</span><h3>M3 · dial in</h3><p>Throughput bench, STORAGE_BINDING cost, a cheaper exact kernel (~20 % headroom at 1024²), subgroups with fallback, fp16.</p></div>
 			<div class="phase"><span class="st st-next">later</span><h3>M4 · docs, M5 · ship</h3><p>Usage docs and examples; npm publish, tools as consumers, three.js PR, gpuweb comment (your review first).</p></div>
 		</div>
@@ -195,7 +195,7 @@ footer { color: var(--muted); font-size: 13px; display: grid; gap: 6px; max-widt
 	<section class="strip" aria-labelledby="strip-title">
 		<div class="strip-head">
 			<h2 id="strip-title">1920×1080, as we batch it today</h2>
-			<p>A batch ends wherever the next 2:1 reduction is inexact. This chain takes 7 dispatches. SPD takes 1 by dropping edges; our <code>oddSizes: 'spd'</code> does the same in 2 and measured 0.66× the time. The exact tail kernel (opt-in) merges the last five levels into one dispatch for 4 in total, with unchanged results, but measured 0.83–1.07×. nvpro would carry odd levels in pairs with a halo (entries 2 and 3).</p>
+			<p>A batch ends wherever the next 2:1 reduction is inexact. This chain takes 7 dispatches. SPD takes 1 by dropping edges; our <code>oddSizes: 'spd'</code> does the same in 2 and measured 0.66× the time. The exact tail kernel (the default since 2026-11-13) merges the last five levels into one dispatch for 4 in total, within one rgba8 step of the same results: 0.82–0.90× on an RTX 3060, 0.81–1.02× on an M5 Pro, neutral on Intel UHD. nvpro would carry odd levels in pairs with a halo (entries 2 and 3).</p>
 		</div>
 		<div class="chain"><div class="chain-row" id="chain"></div></div>
 		<div class="strip-key">
@@ -251,9 +251,9 @@ const entries = [
 		note: 'Revisit only if WGSL gains device-scope acquire/release, and measure first.' },
 	{ n: 2, title: 'A batch ends at every odd size', src: [ 'spd', 'nvpro' ], srcText: 'SPD, nvpro', verdict: 'candidate', effort: 'M–L',
 		they: 'SPD carries every level through odd sizes by dropping the last row or column. nvpro carries 2 levels per dispatch through odd sizes with a 1-texel halo.',
-		we: 'End the batch where the next reduction is inexact: 5–9 dispatches at render sizes (7 for 1920×1080). The exact tail kernel (M2T.4, opt-in tail: true) finishes the chain in one workgroup once a level fits 32×32: 3–6 dispatches.',
+		we: 'End the batch where the next reduction is inexact: 5–9 dispatches at render sizes (7 for 1920×1080). The exact tail kernel (M2T.4, default since 2026-11-13; tail: false turns it off) finishes the chain in one workgroup once a level fits 32×32: 3–6 dispatches.',
 		why: 'The simplest structure that keeps results identical to render passes.',
-		converge: 'Tail kernel: built, opt-in. Halo batches, M–L (candidate): our odd taps share nvpro\'s 2x…2x+2 support. They are what\'s left, because the time goes to the breaks at the large levels.',
+		converge: 'Tail kernel: built, default since 2026-11-13. Halo batches, M–L (candidate): our odd taps share nvpro\'s 2x…2x+2 support. They are what\'s left, because the time goes to the breaks at the large levels.',
 		quality: 'None. The tail matches \'exact\' within one 8-bit step (shader instead of sampler bilinear weights) and passed the full GPU matrix.',
 		perfKind: 'measured', perf: 'Tail 0.83–1.07× of \'exact\' (a gain at 960×540, otherwise mostly within noise): the trailing dispatches it removes are cheap. The \'spd\' structure, 2 dispatches with no batch ends, is 0.47–0.73× (rgba8) at render sizes, which bounds what halo batches could win. One compute pass for all batches measured 0.94–1.03×, so it isn\'t pass overhead.',
 		perfShort: 'Tail 0.83–1.07×; 2-dispatch bound 0.47–0.73×', qualityShort: 'None',
@@ -349,13 +349,13 @@ const entries = [
 		quality: 'None.',
 		perfKind: 'estimate', perf: 'Saves one full-frame write and read per frame for video pyramids.',
 		perfShort: 'Saves a full-frame copy per frame', qualityShort: 'None', note: 'Matters for video, the upscaler and ML preprocessing.' },
-	{ n: 15, title: 'No sub-rectangle yet', src: [ 'spd' ], srcText: 'SPD', verdict: 'planned', effort: 'M',
+	{ n: 15, title: 'Sub-rectangles rewrite exact per-level regions, not 64-texel tiles', src: [ 'spd' ], srcText: 'SPD', verdict: 'keep', effort: '—',
 		they: 'SPD\'s rectInfo snaps to 64-texel source tiles and recomputes levels below 64×64 for the whole texture.',
-		we: 'Not yet: M2.4.',
-		why: 'Scheduled after formats.',
-		converge: 'M. Matching SPD\'s snapping is simplest; a tighter rect saves more work but needs per-level rounding rules.',
-		quality: 'Depends on the snapping decision.',
-		perfKind: 'estimate', perf: 'Saves work on partial updates.', perfShort: 'Saves work on partial updates', qualityShort: 'Depends on snapping', note: 'Decide snapping in M2.4.' },
+		we: 'Done (M2.4, 2026-11-13): encode( …, { rect, layers } ). Each level rewrites exactly the texels whose footprint touches the previous level\'s rewritten ones (2x … 2x+2 under exact and the tail; clamped blocks per batch under spd). Works with every path: tail, spd, buffer output, compatibility mode, separate sources, encodePass.',
+		why: 'Bit-identical to a full recompute when only the rect changed, and fewer texels than snapping to tiles.',
+		converge: 'None needed: tighter by design.',
+		quality: 'None: bit-identical to a full recompute (GPU suite, 11/11 mutations caught).',
+		perfKind: 'estimate', perf: 'Fewer texels per partial update than SPD; not timed yet.', perfShort: 'Fewer texels than SPD (not timed)', qualityShort: 'None', note: 'Resolved.' },
 	{ n: 16, title: 'sRGB through a scratch copy or buffer', src: [ 'spd' ], srcText: 'SPD', verdict: 'planned', effort: 'M',
 		they: 'SPD samples an sRGB view and writes a UNORM alias of the same texture.',
 		we: 'WebGPU forbids sRGB storage even through a view, so reduce in linear, write rgba8unorm scratch or a buffer, then copy.',
@@ -499,7 +499,7 @@ const decisions = [
 	{ q: 'Package name', done: 'npm downsampler (unscoped; free on 2026-11-12), else @pmndrs/downsampler. GitHub pmndrs/downsampler.', meta: '', rec: '' },
 	{ q: 'Devices', done: 'RTX 3060 laptop + Intel UHD now through the windows-testing branch and a Windows agent, which also builds native D3D12/Vulkan matches. Wider coverage after publish.', meta: '', rec: '' },
 	{ q: 'oddSizes: \'spd\' public or test-only?', done: 'Public opt-in.', meta: '', rec: '' },
-	{ q: 'Tail kernel default?', done: 'Stays opt-in, documented. Revisit if Windows shows ≥5 %.', meta: '', rec: '' },
+	{ q: 'Tail kernel default?', done: 'Default since 2026-11-13: faster on the RTX 3060 (0.82–0.90×) and M5 Pro (0.81–1.02×), neutral on Intel UHD. exactTile defaults to 16 on Apple (32 was slower there).', meta: '', rec: '' },
 	{ q: 'Upscaler shading change: 8-channel or sign bit?', done: '8-channel, documented; the sign-bit version stays an experiment.', meta: '', rec: '' },
 	{ q: 'Upscaler exposure: every texel or the 1024 taps?', blocking: false, meta: 'Every texel is FSR\'s approach: a steadier estimate, but the exposure values change. The taps version is bit-identical and already 6–10× faster.', rec: '<strong>Agreed:</strong> merge the bit-identical perf/exposure-parallel first. Every texel is a separate decision (pros and cons sent 2026-11-12).' },
 	{ q: 'Payload folds: smaller-payload ties, or position ties?', blocking: false, meta: 'Ties are rare with continuous depth. Examples sent 2026-11-12.', rec: '<strong>Recommend:</strong> keep smaller-payload ties (order-independent, free); put a texel index first when position matters.' },

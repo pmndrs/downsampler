@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>three.js mipmaps</title>
+		<link rel="icon" href="data:,">
+		<link rel="stylesheet" href="style.css">
+		<!-- three is an optional peer of downsampler; this page loads a pinned build from a CDN. -->
+		<script type="importmap">
+			{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.webgpu.js" } }
+		</script>
+	</head>
+	<body>
+		<nav><a href="./">Examples</a> · <a href="../docs/guide.md">Guide</a></nav>
+		<h1>three.js integration: <code>downsampler/three</code></h1>
+		<p>
+			<code>generateMipmaps( renderer, texture )</code> generates a three.js texture's mip chain with compute shaders. The
+			texture must already be allocated on the GPU with storage usage, which in current three.js means a
+			<code>StorageTexture</code>. It returns <code>false</code> and does nothing when it can't, so you can fall back to
+			three's own path; <code>unsupportedReason( renderer, texture )</code> says why. Pass <code>{ encoder }</code> to record
+			into your own command encoder, and <code>{ downsampler: { averageAccess: 'load' } }</code> to pick the shared
+			Downsampler's options. Set <code>mipmapsAutoUpdate = false</code> so three doesn't regenerate them with render passes after
+			a compute write.
+		</p>
+		<p>
+			Both planes show the same 1000 × 1000 image, repeated, receding into the distance. Left: three's own render-pass
+			mipmaps (a <code>DataTexture</code>). Right: the same image in a <code>StorageTexture</code>, mipmapped by downsampler.
+			The default odd-size policy matches render passes, so they should look the same. The readout checks our levels
+			against the library's CPU reference and reports how far three's levels are from ours.
+		</p>
+		<pre><code>import { generateMipmaps, requiredLimits, unsupportedReason } from 'downsampler/three';
+
+const renderer = new THREE.WebGPURenderer( { requiredLimits: requiredLimits( await navigator.gpu.requestAdapter() ) } );
+await renderer.init();
+const texture = new THREE.StorageTexture( 1000, 1000 );
+texture.generateMipmaps = true;           // allocate the full chain
+texture.mipmapsAutoUpdate = false;        // we write the mips
+texture.minFilter = THREE.LinearMipmapLinearFilter;
+// … write level 0 (a compute pass, or writeTexture on its GPUTexture) …
+if ( ! generateMipmaps( renderer, texture ) ) console.warn( unsupportedReason( renderer, texture ) ); // then use three's own path</code></pre>
+		<p class="muted" id="adapter"></p>
+
+		<h2>Readout</h2>
+		<ul id="readout"></ul>
+
+		<h2>Render</h2>
+		<div id="viewport" style="width: 100%; aspect-ratio: 16 / 9; border: 1px solid var( --line );"></div>
+		<p class="muted">Left: three.js render-pass mipmaps. Right: downsampler compute mipmaps.</p>
+
+		<script type="module">
+			import * as THREE from 'three';
+			import { reduceReference, tolerance } from '../dist/index.js';
+			import { generateMipmaps, getDownsampler, getGPUTexture, requiredLimits, unsupportedReason } from '../dist/three/index.js';
+			import { compare, fail, makeImage, readLevels, report, setText } from './common.js';
+
+			try {
+
+				if ( ! navigator.gpu ) throw new Error( 'WebGPU is not available in this browser.' );
+				const adapter = await navigator.gpu.requestAdapter();
+				if ( ! adapter ) throw new Error( 'No WebGPU adapter.' );
+				const viewport = document.getElementById( 'viewport' );
+				const renderer = new THREE.WebGPURenderer( { antialias: true, requiredLimits: requiredLimits( adapter ) } );
+				await renderer.init();
+				renderer.setPixelRatio( Math.min( 2, devicePixelRatio ) );
+				renderer.setSize( viewport.clientWidth, viewport.clientHeight );
+				viewport.append( renderer.domElement );
+				const device = renderer.backend.device;
+				setText( 'adapter', `three.js r${ THREE.REVISION } · ${ device.limits.maxStorageTexturesPerShaderStage } storage textures per stage` );
+
+				const size = 1000;
+				const pixels = makeImage( size, size );
+				const configure = texture => {
+
+					texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+					texture.repeat.set( 4, 12 );
+					texture.minFilter = THREE.LinearMipmapLinearFilter;
+					texture.magFilter = THREE.LinearFilter;
+					texture.generateMipmaps = true;
+					texture.anisotropy = 1; // so the mip levels, not anisotropic filtering, do the work
+					return texture;
+
+				};
+
+				// three's own mipmaps: a DataTexture, mipmapped with render passes on upload.
+				const reference = configure( new THREE.DataTexture( pixels, size, size ) );
+				reference.needsUpdate = true;
+				renderer.initTexture( reference );
+
+				// Ours: a StorageTexture (allocated with STORAGE_BINDING), level 0 written directly, then generateMipmaps.
+				const storage = configure( new THREE.StorageTexture( size, size ) );
+				storage.mipmapsAutoUpdate = false;
+				renderer.initTexture( storage );
+				const gpuTexture = getGPUTexture( renderer, storage );
+				device.queue.writeTexture( { texture: gpuTexture }, pixels, { bytesPerRow: size * 4 }, [ size, size ] );
+				const declined = unsupportedReason( renderer, storage );
+				const encoder = device.createCommandEncoder();
+				const generated = generateMipmaps( renderer, storage, { encoder } ); // recorded, not submitted
+				device.queue.submit( [ encoder.finish() ] );
+
+				const scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0x202428 );
+				const camera = new THREE.PerspectiveCamera( 50, viewport.clientWidth / viewport.clientHeight, 0.1, 200 );
+				camera.position.set( 0, 1.2, 6 );
+				camera.lookAt( 0, 0, - 10 );
+				for ( const [ map, x ] of [ [ reference, - 2.05 ], [ storage, 2.05 ] ] ) {
+
+					const plane = new THREE.Mesh( new THREE.PlaneGeometry( 4, 60 ), new THREE.MeshBasicMaterial( { map } ) );
+					plane.rotation.x = - Math.PI / 2;
+					plane.position.set( x, 0, - 24 );
+					scene.add( plane );
+
+				}
+
+				renderer.render( scene, camera );
+				addEventListener( 'resize', () => {
+
+					renderer.setSize( viewport.clientWidth, viewport.clientHeight );
+					camera.aspect = viewport.clientWidth / viewport.clientHeight;
+					camera.updateProjectionMatrix();
+					renderer.render( scene, camera );
+
+				} );
+
+				// Checks.
+				const checks = [ { name: 'generateMipmaps( renderer, storageTexture ) returned true', ok: generated, detail: generated ? `${ gpuTexture.format }, ${ gpuTexture.mipLevelCount } levels, ${ getDownsampler( renderer ).prepare( gpuTexture ).length } dispatches` : declined } ];
+				const ours = await readLevels( device, gpuTexture );
+				const theirs = await readLevels( device, getGPUTexture( renderer, reference ) );
+				let failing = 0, maxError = 0, maxDifference = 0;
+				for ( let level = 1; level < ours.length; level ++ ) {
+
+					const previous = ours[ level - 1 ];
+					const expected = reduceReference( previous.values, previous.width, previous.height, 1, 'unorm8' );
+					const result = compare( ours[ level ].values, expected.values, ( value, i ) => tolerance( value, 'unorm8', expected.filterTolerance[ i ] ) );
+					failing += result.failing;
+					maxError = Math.max( maxError, result.maxError );
+					maxDifference = Math.max( maxDifference, compare( ours[ level ].values, theirs[ level ].values, () => Infinity ).maxError );
+
+				}
+
+				checks.push( { name: `levels 1–${ ours.length - 1 } match the CPU reference (render-pass semantics)`, ok: failing === 0, detail: `max error ${ ( maxError * 255 ).toFixed( 2 ) } / 255${ failing ? `, ${ failing } values outside` : '' }` } );
+				checks.push( { name: 'difference from three\'s render-pass mipmaps (information)', ok: true, detail: `max ${ ( maxDifference * 255 ).toFixed( 1 ) } / 255 over every level (sampler weights and per-level rounding differ slightly)` } );
+				report( checks );
+
+			} catch ( error ) {
+
+				fail( error );
+
+			}
+		</script>
+	</body>
+</html>

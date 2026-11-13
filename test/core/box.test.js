@@ -239,3 +239,32 @@ test( 'box kernels: area weights, loads only', () => {
 	assert.doesNotMatch( createKernel( { format: 'rgba8unorm', count: 4 } ), /ds_area/ );
 
 } );
+
+test( 'partial updates of a resampled source: areaDependents is every texel whose span meets the dirty range', async () => {
+
+	const { areaDependents, exactDependents, footprint } = await import( '../../dist/index.js' );
+	for ( const [ source, size ] of [ [ 1920, 1024 ], [ 1080, 512 ], [ 1129, 512 ], [ 1920, 2048 ], [ 635, 1024 ], [ 31, 16 ], [ 17, 8 ], [ 16, 8 ], [ 7, 7 ], [ 3, 8 ], [ 300, 256 ] ] ) {
+
+		const ranges = [ [ 0, 0 ], [ source - 1, source - 1 ], [ 0, source - 1 ], [ 1, 2 ], [ source >> 1, ( source >> 1 ) + 3 ].map( v => Math.min( v, source - 1 ) ), [ 5, 9 ].map( v => Math.min( v, source - 1 ) ) ];
+		for ( const [ a, b ] of ranges ) {
+
+			let lo = null, hi = null;
+			for ( let x = 0; x < size; x ++ ) {
+
+				const [ first, last ] = areaSpan( x, source, size );
+				if ( first <= b && last >= a ) { lo ??= x; hi = x; }
+
+			}
+
+			assert.deepEqual( areaDependents( [ a, b ], source, size ), lo === null ? null : [ lo, hi ], `${ source } → ${ size } [${ a }, ${ b }]` );
+			// exactDependents takes any ratio through it, and agrees at 2:1 and for copies.
+			assert.deepEqual( exactDependents( [ a, b ], source, size ), areaDependents( [ a, b ], source, size ) );
+
+		}
+
+	}
+
+	// At 2:1 the area span is the 'exact' footprint.
+	for ( const source of [ 2, 3, 9, 16, 31 ] ) for ( let x = 0; x < source >> 1; x ++ ) assert.deepEqual( areaSpan( x, source, source >> 1 ), footprint( x, source ) );
+
+} );

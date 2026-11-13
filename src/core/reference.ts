@@ -56,6 +56,12 @@ export interface ReferenceOptions {
 	weights?: 'sampler' | 'shader';
 }
 
+/**
+ * One 'exact' reduction step on the CPU: level n + 1 from level n (`source`,
+ * RGBA floats, layer-major then row-major), quantized to `quantization`, with a
+ * per-value `filterTolerance` for hardware bilinear weights. Compare with
+ * {@link tolerance}.
+ */
 export function reduceReference( source: Float32Array, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction = 'average', { quantizedInput = true, pairing, weights = 'sampler' }: ReferenceOptions = {} ): ReferenceLevel {
 
 	const w = Math.max( 1, Math.floor( width / 2 ) ), h = Math.max( 1, Math.floor( height / 2 ) );

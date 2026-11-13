@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { scalarCombineDepth, scalarCombineReference, scalarDepth, scalarOps, scalarReference, scalarWorkgroups } from '../../dist/index.js';
+import { createScalarKernel } from '../../dist/webgpu/index.js';
 
 let state = 3;
 const random = () => ( state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0 ) / 2 ** 32;
@@ -20,6 +21,18 @@ test( 'ops: one op or four, at most one weight, weighted needs a weight', () => 
 	assert.throws( () => scalarOps( 'median' ), /unknown/ );
 	assert.throws( () => scalarOps( [ 'weight', 'weight', 'sum', 'sum' ] ), /one channel/ );
 	assert.throws( () => scalarOps( [ 'weighted', 'sum', 'sum', 'sum' ] ), /weight/ );
+
+} );
+
+test( '\'minmax\' is even channels min, odd channels max, at 4 or 8 channels, with the same kernel as the list', () => {
+
+	assert.deepEqual( scalarOps( 'minmax' ), [ 'min', 'max', 'min', 'max' ] );
+	assert.deepEqual( scalarOps( 'minmax', 8 ), [ 'min', 'max', 'min', 'max', 'min', 'max', 'min', 'max' ] );
+	assert.equal( createScalarKernel( { reduction: 'minmax' } ), createScalarKernel( { reduction: [ 'min', 'max', 'min', 'max' ] } ) );
+	const texels = image( 67, 33, 1, ( c, i ) => ( i * 7919 + c * 31 ) % 1000 );
+	const [ shorthand ] = scalarReference( texels, 67, 33, 1, 'minmax' );
+	assert.deepEqual( shorthand.value, scalarReference( texels, 67, 33, 1, [ 'min', 'max', 'min', 'max' ] )[ 0 ].value );
+	assert.deepEqual( shorthand.value, [ 0, 999, 0, 999 ] );
 
 } );
 

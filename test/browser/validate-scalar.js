@@ -3,8 +3,8 @@
 // 2^24 (texel counts, bit sums, coordinates, min/max), and within the oracle's
 // stated error bound for float sums.
 import { fromHalf, levelSize, scalarCombineReference, scalarReference, toHalf } from '/dist/index.js';
-import { Reducer, ScalarReduction, scalarResultBytes } from '/dist/webgpu/index.js';
-import { createDepthSource, makeData, toFloats, upload } from './gpu.js';
+import { Reducer, requiredLimits, ScalarReduction, scalarResultBytes } from '/dist/webgpu/index.js';
+import { createDepthSource, makeData, toFloats, trackBuffers, upload } from './gpu.js';
 
 // [ width, height, layers?, viewDimension? ]
 export const scalarShapes = [
@@ -196,7 +196,7 @@ export async function validateScalar( device, { quick = false, onProgress = () =
 	for ( const variant of procedural ) results.push( ...await select.run( `scalar/procedural/${ variant.name.replace( /[^a-z0-9]+/gi, '-' ) }`, async () => {
 
 		const results = [];
-		const reduction = new ScalarReduction( device, { reduce: variant.reduce, load: variant.load, bindings: proceduralBindings } );
+		const reduction = new ScalarReduction( device, { reduction: variant.reduce, load: variant.load, bindings: proceduralBindings } );
 		const bindGroup = device.createBindGroup( { layout: reduction.kernel().partials.getBindGroupLayout( 1 ), entries: [ { binding: 0, resource: { buffer: seedBuffer } } ] } );
 
 		for ( const [ width, height, layers = 1 ] of shapes ) for ( const [ seed, mode ] of [ [ 1, 'encode' ], [ 2, 'encodePass' ] ] ) {
@@ -221,7 +221,7 @@ export async function validateScalar( device, { quick = false, onProgress = () =
 		{ name: 'sum/average/min/max', reduce: [ 'sum', 'average', 'min', 'max' ] },
 		{ name: 'weighted', reduce: [ 'weighted', 'weighted', 'weighted', 'weight' ] },
 		{ name: 'weighted, sum', reduce: [ 'weighted', 'sum', 'max', 'weight' ] }
-	].map( variant => ( { ...variant, reduction: new ScalarReduction( device, { reduce: variant.reduce } ) } ) );
+	].map( variant => ( { ...variant, reduction: new ScalarReduction( device, { reduction: variant.reduce } ) } ) );
 	let worst = 0;
 
 	results.push( ...await select.run( 'scalar/texture', async () => {
@@ -306,7 +306,8 @@ export async function validateScalar( device, { quick = false, onProgress = () =
 	results.push( ...await select.run( 'scalar/depth', async () => {
 
 		const results = [];
-		const depthRange = new ScalarReduction( device, { reduce: [ 'min', 'max', 'min', 'max' ] } );
+		// 'minmax' is [ 'min', 'max', 'min', 'max' ] (the same kernel, test/core/scalar.test.js).
+		const depthRange = new ScalarReduction( device, { reduction: 'minmax' } );
 		const depthShapes = shapes.filter( ( [ , , layers = 1 ] ) => layers === 1 ).filter( shape => shape[ 0 ] * shape[ 1 ] <= 2.1e6 );
 		for ( const format of [ 'depth32float', 'depth16unorm' ] ) for ( const [ width, height ] of depthShapes ) {
 
@@ -335,7 +336,7 @@ export async function validateScalar( device, { quick = false, onProgress = () =
 	results.push( ...await select.run( 'scalar/combine-only', () => validateCombineOnly( device, { quick } ) ) );
 	onProgress( 'validated scalar combine-only' );
 	results.push( ...await select.run( 'scalar/exposure', () => validateExposure( device, { quick } ) ) );
-	results.push( ...await select.run( 'scalar/options', async () => validateScalarOptions( device ) ) );
+	results.push( ...await select.run( 'scalar/options', () => validateScalarOptions( device ) ) );
 	output.destroy();
 	seedBuffer.destroy();
 	// null when no float-sum check ran (a shard without the texture groups).
@@ -384,7 +385,7 @@ async function validateCombineOnly( device, { quick } ) {
 
 	for ( const variant of combineVariants ) {
 
-		const reduction = new ScalarReduction( device, { reduce: variant.reduce } );
+		const reduction = new ScalarReduction( device, { reduction: variant.reduce } );
 
 		for ( const count of quick ? [ 1, 255, 256, 257, 1000 ] : [ 1, 2, 255, 256, 257, 511, 513, 1000, 2040, 8161 ] ) for ( const layers of [ 1, 3 ] ) for ( const integer of [ true, false ] ) {
 
@@ -422,7 +423,7 @@ async function validateCombineOnly( device, { quick } ) {
 
 	// Reducer → combine in one pass: the Reducer's level `deepest` holds one
 	// accumulation per 2^deepest tile; the scalar combines them.
-	const scalar = new ScalarReduction( device, { reduce: [ 'weighted', 'average', 'min', 'weight' ] } );
+	const scalar = new ScalarReduction( device, { reduction: [ 'weighted', 'average', 'min', 'weight' ] } );
 	const shapes = quick ? [ [ 1, 1 ], [ 17, 9 ], [ 65, 129 ], [ 17, 11, 3 ] ] : [ [ 1, 1 ], [ 17, 9 ], [ 63, 65 ], [ 64, 64 ], [ 65, 129 ], [ 255, 257 ], [ 17, 11, 3 ], [ 1920, 1080 ] ];
 	for ( const deepest of [ 4, 6 ] ) {
 
@@ -484,8 +485,8 @@ async function validateCombineOnly( device, { quick } ) {
 	// Rejected runs, and what prepare() hands a tool that dispatches it.
 	const partials = makeBuffer( device, 1024 );
 	const average = combineVariants[ 0 ];
-	const reduction = new ScalarReduction( device, { reduce: average.reduce } );
-	const weighted = new ScalarReduction( device, { reduce: combineVariants[ 1 ].reduce } );
+	const reduction = new ScalarReduction( device, { reduction: average.reduce } );
+	const weighted = new ScalarReduction( device, { reduction: combineVariants[ 1 ].reduce } );
 	const texture = createSource( device, 8, 8, 1, 'rgba16float' );
 	for ( const [ target, options, message ] of [
 		[ reduction, { partials: { buffer: partials, count: 4 }, output: { buffer: output } }, 'texels' ],
@@ -549,7 +550,7 @@ export const exposureFinish = `fn finish(value: vec4f, weight: f32) {
 async function validateExposure( device, { quick } ) {
 
 	const results = [];
-	const reduction = new ScalarReduction( device, { reduce: 'average', load: exposureLoad, finish: exposureFinish, bindings: exposureBindings } );
+	const reduction = new ScalarReduction( device, { reduction: 'average', load: exposureLoad, finish: exposureFinish, bindings: exposureBindings } );
 	const layout = reduction.kernel().partials.getBindGroupLayout( 1 );
 	const params = device.createBuffer( { size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
 	const state = makeBuffer( device, 16 );
@@ -627,7 +628,7 @@ async function validateExposure( device, { quick } ) {
 
 }
 
-function validateScalarOptions( device ) {
+async function validateScalarOptions( device ) {
 
 	const results = [];
 	const texture = createSource( device, 8, 8, 1, 'rgba16float' );
@@ -637,7 +638,7 @@ function validateScalarOptions( device ) {
 	const rejected = [
 		[ average, {}, 'source texture' ],
 		[ average, { texture }, 'output buffer' ],
-		[ average, { texture, output: { buffer: output, offset: 16 } }, 'multiple of 256' ],
+		[ average, { texture, output: { buffer: output, offset: 16 } }, `multiple of ${ device.limits.minStorageBufferOffsetAlignment }` ],
 		[ average, { texture, output: { buffer: output, offset: 512 } }, 'too small' ],
 		[ average, { texture, layers: [ 0, 2 ], output: { buffer: output } }, 'layers' ],
 		[ average, { texture, mipLevel: 1, output: { buffer: output } }, 'mipLevel' ],
@@ -658,7 +659,7 @@ function validateScalarOptions( device ) {
 	}
 
 	for ( const [ options, message ] of [
-		[ { reduce: [ 'weighted', 'sum', 'sum', 'sum' ] }, 'weight' ],
+		[ { reduction: [ 'weighted', 'sum', 'sum', 'sum' ] }, 'weight' ],
 		[ { load: 'fn loader() {}' }, 'load hook' ],
 		[ { finish: 'fn done() {}' }, 'finish hook' ],
 		[ { block: 3 }, 'block' ]
@@ -677,6 +678,84 @@ function validateScalarOptions( device ) {
 	texture.destroy();
 	output.destroy();
 	results.push( { option: 'scalar validation and prepare' } );
+
+	// Offsets follow the device's minStorageBufferOffsetAlignment, where the adapter allows less than 256.
+	const adapter = await navigator.gpu.requestAdapter( device.features.has( 'core-features-and-limits' ) ? {} : { featureLevel: 'compatibility' } );
+	const alignment = adapter?.limits.minStorageBufferOffsetAlignment ?? 256;
+	if ( alignment < 256 ) {
+
+		const aligned = await adapter.requestDevice( { requiredLimits: { ...requiredLimits( adapter ), minStorageBufferOffsetAlignment: alignment } } );
+		const small = createSource( aligned, 8, 8, 1, 'rgba16float' );
+		const buffer = makeBuffer( aligned, 512 );
+		const reason = new ScalarReduction( aligned ).unsupportedReason( { texture: small, output: { buffer, offset: alignment } } );
+		aligned.destroy();
+		if ( reason !== null ) throw new Error( `scalar: output offset ${ alignment } (the device's minStorageBufferOffsetAlignment) rejected: ${ reason }` );
+		results.push( { option: `scalar output offset alignment ${ alignment }` } );
+
+	}
+
+	results.push( ...await validateScalarLifetime( device ) );
 	return results;
+
+}
+
+// The params and partials buffers a ScalarReduction creates are destroyed by
+// release() (one resource, or all) and, deferred until the queue is done, when
+// a resource's 4-shape plan cache drops one; caller buffers never are.
+async function validateScalarLifetime( device ) {
+
+	const tracker = trackBuffers( device );
+	try {
+
+		const average = new ScalarReduction( device );
+		const texture = createSource( device, 8, 8, 2, 'rgba16float' );
+		const output = makeBuffer( device, 512 + 2 * scalarResultBytes );
+		const runs = [ [ [ 0, 1 ], 0 ], [ [ 1, 1 ], 0 ], [ [ 0, 2 ], 0 ], [ [ 0, 1 ], 256 ], [ [ 1, 1 ], 256 ] ].map( ( [ layers, offset ] ) => ( { texture, layers, output: { buffer: output, offset } } ) );
+		const owned = () => [ ...tracker.labelled( 'downsampler scalar params' ), ...tracker.labelled( 'downsampler scalar partials' ) ];
+		// Recorded now, submitted after its plan is dropped.
+		device.pushErrorScope( 'validation' );
+		const early = device.createCommandEncoder();
+		average.encode( early, runs[ 0 ] );
+		const [ firstParams, firstPartials ] = owned();
+		for ( const run of runs.slice( 1 ) ) average.prepare( run );
+		device.queue.submit( [ early.finish() ] );
+		const error = await device.popErrorScope();
+		if ( error !== null ) throw new Error( `scalar: a run recorded before its plan was dropped failed to submit: ${ error.message }` );
+		await tracker.settle();
+		const all = owned();
+		if ( all.length !== 10 ) throw new Error( `scalar: expected 5 plans of 2 buffers, got ${ all.length } buffers` );
+		const dropped = new Set( [ firstParams, firstPartials ] );
+		if ( all.some( buffer => tracker.destroyed.has( buffer ) !== dropped.has( buffer ) ) ) throw new Error( 'scalar: dropping the oldest plan must destroy its params and partials, and only them' );
+		average.release( texture );
+		if ( all.some( buffer => ! tracker.destroyed.has( buffer ) ) ) throw new Error( 'scalar: release( texture ) must destroy every params and partials buffer of its plans' );
+
+		// Combine only: the partials are the caller's, so only the params go.
+		const partials = makeBuffer( device, 256 );
+		average.prepare( { partials: { buffer: partials, count: 4 }, texels: 4, output: { buffer: output } } );
+		const combineParams = owned().filter( buffer => ! all.includes( buffer ) );
+		average.release( partials );
+		if ( combineParams.length !== 1 || ! tracker.destroyed.has( combineParams[ 0 ] ) ) throw new Error( 'scalar: release( partials ) must destroy the combine-only plan\'s params' );
+
+		// release() without a resource: every plan, including hook runs cached on the reduction itself.
+		const hooked = new ScalarReduction( device, { load: 'fn load(texel: vec2i, layer: u32) -> vec4f { return vec4f(1.0); }', finish: 'fn finish(value: vec4f, weight: f32) {}' } );
+		const before = new Set( owned() );
+		hooked.prepare( { size: [ 4, 4 ] } );
+		average.prepare( runs[ 0 ] );
+		const fresh = owned().filter( buffer => ! before.has( buffer ) );
+		hooked.release();
+		average.release();
+		if ( fresh.length !== 4 || fresh.some( buffer => ! tracker.destroyed.has( buffer ) ) ) throw new Error( `scalar: release() must destroy every plan's buffers (${ fresh.length } created)` );
+		if ( tracker.destroyed.has( output ) || tracker.destroyed.has( partials ) ) throw new Error( 'scalar: destroyed a caller buffer' );
+		texture.destroy();
+		output.destroy();
+		partials.destroy();
+
+	} finally {
+
+		tracker.restore();
+
+	}
+
+	return [ { option: 'scalar release and plan eviction' } ];
 
 }

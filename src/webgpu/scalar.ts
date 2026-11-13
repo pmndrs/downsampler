@@ -2,11 +2,16 @@ import { sampledChannels } from '../core/formats.js';
 import { isSumOp, scalarBlock, scalarInvocations, scalarOps, scalarSide, scalarWeightChannel, scalarWorkgroups, type ScalarOp, type ScalarReduce } from '../core/scalar.js';
 import type { ViewDimension } from './kernel.js';
 import { lanes, payloadCombine } from './lanes.js';
-import { checkHooks, checkToolBindings, hookArity, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolPipelineLayout, type ToolBindings } from './tool.js';
+import { checkHooks, checkToolBindings, hookArity, retireBuffers, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolPipelineLayout, type ToolBindings } from './tool.js';
 
+/** Options of `new ScalarReduction( device, options )`. See SPEC.md §4 Scalar reductions. */
 export interface ScalarReductionOptions {
-	/** One op for all channels, or one per channel. Default 'average'. */
-	reduce?: ScalarReduce;
+	/**
+	 * One op for all channels ('sum', 'average', 'min', 'max', …), 'minmax'
+	 * (even channels min, odd channels max), or one op per channel. Default
+	 * 'average'. Named as `Downsampler`'s and `Reducer`'s `reduction`.
+	 */
+	reduction?: ScalarReduce;
 	/**
 	 * WGSL defining `fn load( texel: vec2i, layer: u32 ) -> vec4f`, the value of
 	 * one in-image texel. It reads the tool's own `@group(1)` resources. Without
@@ -35,6 +40,7 @@ export interface ScalarReductionOptions {
 	channels?: 4 | 8;
 }
 
+/** Options of the pure generator {@link createScalarKernel}: a reduction plus the source shape. */
 export interface ScalarKernelOptions extends ScalarReductionOptions {
 	/** Source texture view dimension when there is no `load` hook. Default '2d'. */
 	dimension?: ViewDimension;
@@ -42,6 +48,10 @@ export interface ScalarKernelOptions extends ScalarReductionOptions {
 	splat?: boolean;
 }
 
+/**
+ * One run of a ScalarReduction: a source texture, a size for a load hook, or
+ * (combine only) partials a tool wrote; plus where results go without `finish`.
+ */
 export interface ScalarRun {
 	/** Source texture, without a `load` hook: any float-sampleable 2D format, including depth (its depth aspect). */
 	texture?: GPUTexture;
@@ -56,7 +66,10 @@ export interface ScalarRun {
 	layers?: readonly [ number, number ];
 	/** The tool's `@group(1)` bind group, required with `bindings`. */
 	bindGroup?: GPUBindGroup;
-	/** Where results go without a `finish` hook (`resultBytes` per layer). `offset` must be a multiple of 256. */
+	/**
+	 * Where results go without a `finish` hook (`resultBytes` per layer).
+	 * `offset` must be a multiple of `minStorageBufferOffsetAlignment` (256 by default).
+	 */
 	output?: { buffer: GPUBuffer, offset?: number };
 	/**
 	 * Combine only: `count` accumulations per layer that a tool (e.g. a
@@ -76,6 +89,7 @@ export interface ScalarRun {
 	texels?: number;
 }
 
+/** What `prepare( run )` returns, for tools that dispatch the two passes themselves: `partials` (unless combine-only), then `combine`, each with `bindGroup` at group 0 and `toolBindGroup` at group 1. */
 export interface PreparedScalar {
 	/** Null for a combine-only run (`ScalarRun.partials`). */
 	partials: GPUComputePipeline | null;
@@ -125,7 +139,7 @@ export function scalarLayoutEntries( { load, finish, dimension = '2d', combineOn
 export function createScalarKernel( options: ScalarKernelOptions = {} ): string {
 
 	const { load, finish, bindings, dimension = '2d', splat = false, block = scalarBlock } = options;
-	const ops = scalarOps( options.reduce, options.channels );
+	const ops = scalarOps( options.reduction, options.channels );
 	if ( ! [ 1, 2, 4, 8 ].includes( block ) ) throw new Error( 'downsampler: block must be 1, 2, 4 or 8.' );
 	checkHooks( { load, finish } );
 	checkToolBindings( bindings );
@@ -276,6 +290,8 @@ interface Plan {
 	/** The tool's partials (combine-only runs) or the reduction's own buffer. */
 	partials: GPUBuffer;
 	params: GPUBuffer;
+	/** The buffers this reduction created for the plan (params, and its own partials): destroyed on eviction and release. */
+	owned: GPUBuffer[];
 	bindGroup: GPUBindGroup;
 	/** Null for a combine-only run. */
 	partialsPipeline: GPUComputePipeline | null;
@@ -327,8 +343,11 @@ export interface ScalarCombineKernel {
 export class ScalarReduction {
 
 	readonly device: GPUDevice;
+	/** The options the reduction was created with. */
 	readonly options: Readonly<ScalarReductionOptions>;
+	/** Per-channel ops, resolved from `reduction` (4 or 8). */
 	readonly ops: readonly ScalarOp[];
+	/** Texels per invocation along each axis (the tile is 16 · block). */
 	readonly block: number;
 	/** Bytes per partial: one vec4f, or a DsWide (32) with 8 channels. */
 	readonly partialBytes: number;
@@ -338,15 +357,19 @@ export class ScalarReduction {
 	private readonly variants = new Map<string, ScalarKernel>();
 	private combineOnly: ScalarCombineKernel | undefined;
 	private readonly plans = new WeakMap<object, Plan[]>();
+	/** Every plan owner, held weakly (so caching never keeps a texture alive), for `release()` without a resource. */
+	private owners: WeakRef<object>[] = [];
 
 	constructor( device: GPUDevice, options: ScalarReductionOptions = {} ) {
 
+		// Renamed before 1.0: catch the old key instead of silently averaging.
+		if ( 'reduce' in options ) throw new Error( 'downsampler: ScalarReduction takes `reduction`, not `reduce`.' );
 		this.device = device;
 		this.options = { ...options };
-		this.ops = scalarOps( options.reduce, options.channels );
+		this.ops = scalarOps( options.reduction, options.channels );
 		this.block = options.block ?? scalarBlock;
 		const { maxComputeInvocationsPerWorkgroup: invocations, maxComputeWorkgroupSizeX: sizeX } = device.limits;
-		if ( invocations < scalarInvocations || sizeX < scalarInvocations ) throw new Error( `downsampler: a ScalarReduction needs workgroups of ${ scalarInvocations } invocations (${ scalarInvocations } wide); this device allows ${ invocations } (maxComputeInvocationsPerWorkgroup) and ${ sizeX } wide (maxComputeWorkgroupSizeX). Compatibility-mode devices default to 128: request more (Downsampler.requiredLimits).` );
+		if ( invocations < scalarInvocations || sizeX < scalarInvocations ) throw new Error( `downsampler: a ScalarReduction needs workgroups of ${ scalarInvocations } invocations (${ scalarInvocations } wide); this device allows ${ invocations } (maxComputeInvocationsPerWorkgroup) and ${ sizeX } wide (maxComputeWorkgroupSizeX). Compatibility-mode devices default to 128: request more (requiredLimits( adapter ) from downsampler/webgpu).` );
 		this.partialBytes = this.ops.length * 4;
 		this.resultBytes = scalarResultSize( this.ops.length );
 		createScalarKernel( options ); // validates
@@ -469,7 +492,8 @@ export class ScalarReduction {
 
 			if ( run.output === undefined ) return 'without a finish hook, a run needs an output buffer';
 			const offset = run.output.offset ?? 0;
-			if ( offset % 256 !== 0 ) return 'output offset must be a multiple of 256';
+			const alignment = this.device.limits.minStorageBufferOffsetAlignment;
+			if ( ! Number.isInteger( offset ) || offset < 0 || offset % alignment !== 0 ) return `output offset must be a multiple of ${ alignment } (minStorageBufferOffsetAlignment)`;
 			if ( ( run.output.buffer.usage & GPUBufferUsage.STORAGE ) === 0 ) return 'output buffer needs STORAGE usage';
 			if ( offset + count * this.resultBytes > run.output.buffer.size ) return 'output buffer is too small';
 
@@ -507,8 +531,11 @@ export class ScalarReduction {
 	}
 
 	/**
-	 * Pipelines, bind groups and workgroup counts for a run (cached), for tools
-	 * that dispatch themselves. `partials` is null for a combine-only run.
+	 * What `encodePass` records for a run, for tools that dispatch it
+	 * themselves: both pipelines (`partials` is null for a combine-only run), the
+	 * group-0 bind group, the run's group 1 and both workgroup counts. Validates
+	 * like `encode` and throws with {@link ScalarReduction.unsupportedReason}.
+	 * Cached per resource and run shape (see {@link ScalarReduction.release}).
 	 */
 	prepare( run: ScalarRun ): PreparedScalar {
 
@@ -522,10 +549,26 @@ export class ScalarReduction {
 
 	}
 
-	/** Drop cached bind groups and buffers for a source texture, partials buffer or output buffer. */
-	release( resource: GPUTexture | GPUBuffer ): void {
+	/**
+	 * Drop the cached plans of a source texture, partials buffer or output
+	 * buffer (without one: every plan), and destroy the uniform and partials
+	 * buffers the reduction created for them, never `resource` itself nor any
+	 * other buffer of yours. Call it after submitting the last work that uses
+	 * them. Plans are also kept for at most 4 run shapes per resource; older ones
+	 * are dropped and their buffers destroyed once the queue has finished the
+	 * work submitted so far.
+	 */
+	release( resource?: GPUTexture | GPUBuffer ): void {
 
-		this.plans.delete( resource );
+		const owners = resource !== undefined ? [ resource ] : this.owners.map( owner => owner.deref() ).filter( owner => owner !== undefined );
+		for ( const owner of owners ) {
+
+			for ( const plan of this.plans.get( owner ) ?? [] ) for ( const buffer of plan.owned ) buffer.destroy();
+			this.plans.delete( owner );
+
+		}
+
+		if ( resource === undefined ) this.owners = [];
 
 	}
 
@@ -552,8 +595,8 @@ export class ScalarReduction {
 		if ( run.texture !== undefined || run.size !== undefined || run.mipLevel !== undefined ) return 'a combine-only run (with `partials`) takes no texture, size or mipLevel';
 		if ( ! Number.isInteger( count ) || count < 1 ) return 'partials.count must be a positive integer';
 		if ( ( buffer.usage & GPUBufferUsage.STORAGE ) === 0 ) return 'the partials buffer needs STORAGE usage';
-		const alignment = this.device.limits.minStorageBufferOffsetAlignment ?? 256;
-		if ( ! Number.isInteger( offset ) || offset < 0 || offset % alignment !== 0 ) return `partials.offset must be a multiple of ${ alignment }`;
+		const alignment = this.device.limits.minStorageBufferOffsetAlignment;
+		if ( ! Number.isInteger( offset ) || offset < 0 || offset % alignment !== 0 ) return `partials.offset must be a multiple of ${ alignment } (minStorageBufferOffsetAlignment)`;
 		const texels = run.texels;
 		const needsTexels = this.ops.includes( 'average' ) || scalarWeightChannel( this.ops ) < 0;
 		if ( texels === undefined ? needsTexels : ! Number.isInteger( texels ) || texels < 1 || texels > 0xffffffff ) return needsTexels ? 'a combine-only run without a \'weight\' channel, or with \'average\' channels, needs `texels` (the texel count behind the partials)' : 'texels must be a positive integer';
@@ -579,13 +622,19 @@ export class ScalarReduction {
 	private cachedPlan( owner: object, find: ( plan: Plan ) => boolean, make: () => Plan ): Plan {
 
 		let plans = this.plans.get( owner );
-		if ( plans === undefined ) this.plans.set( owner, plans = [] );
+		if ( plans === undefined ) {
+
+			this.plans.set( owner, plans = [] );
+			if ( this.owners.length >= 64 ) this.owners = this.owners.filter( ref => ref.deref() !== undefined && this.plans.has( ref.deref()! ) );
+			this.owners.push( new WeakRef( owner ) );
+
+		}
 		const cached = plans.find( find );
 		if ( cached !== undefined ) return cached;
 		const plan = make();
 		// A few shapes per owner (e.g. a resize); the oldest is dropped.
 		plans.push( plan );
-		if ( plans.length > 4 ) plans.shift();
+		if ( plans.length > 4 ) retireBuffers( this.device, plans.shift()!.owned );
 		return plan;
 
 	}
@@ -623,7 +672,7 @@ export class ScalarReduction {
 				const params = this.params( [ 0, 0, first, 0, partialCount, texels ] );
 				const entries: GPUBindGroupEntry[] = [ { binding: 0, resource: { buffer: params } }, { binding: 1, resource: { buffer, offset: partialsOffset, size: partialCount * count * this.partialBytes } }, ...this.outputEntry( run, count ) ];
 				return {
-					key, texture: undefined, output: output?.buffer, partials: buffer, params, partialsPipeline: null, combine: kernel.combine,
+					key, texture: undefined, output: output?.buffer, partials: buffer, params, owned: [ params ], partialsPipeline: null, combine: kernel.combine,
 					bindGroup: this.device.createBindGroup( { label: 'downsampler scalar combine-only', layout: kernel.layout, entries } ),
 					workgroups: [ 0, 0, count ]
 				};
@@ -653,7 +702,7 @@ export class ScalarReduction {
 
 			entries.push( ...this.outputEntry( run, count ) );
 			return {
-				key, texture, output: output?.buffer, partials, params, partialsPipeline: variant.partials, combine: variant.combine,
+				key, texture, output: output?.buffer, partials, params, owned: [ params, partials ], partialsPipeline: variant.partials, combine: variant.combine,
 				bindGroup: this.device.createBindGroup( { label: 'downsampler scalar', layout: variant.layout, entries } ),
 				workgroups: [ groupsX, groupsY, count ]
 			};
