@@ -1,24 +1,41 @@
 {
   "name": "downsampler",
-  "version": "0.0.0",
-  "description": "GPU texture downsampling: mip chains, reduction pyramids, Hi-Z and more. WebGPU first, engine agnostic.",
+  "version": "0.1.0",
+  "description": "GPU texture downsampling for WebGPU: mip chains, Hi-Z (min/max) pyramids, tile reductions and reductions to one value, as generated WGSL compute kernels. Engine agnostic, with a three.js adapter.",
   "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/pmndrs/downsampler.git"
   },
-  "keywords": [ "webgpu", "mipmaps", "downsample", "hi-z", "spd", "three" ],
+  "homepage": "https://github.com/pmndrs/downsampler#readme",
+  "bugs": {
+    "url": "https://github.com/pmndrs/downsampler/issues"
+  },
+  "keywords": [ "webgpu", "wgsl", "compute", "mipmaps", "mipmap", "mip-chain", "downsample", "hi-z", "hzb", "depth-pyramid", "spd", "reduction", "three", "threejs" ],
   "sideEffects": false,
-  "files": [ "dist", "SPEC.md" ],
+  "files": [ "dist", "!dist/**/*.map", "CHANGELOG.md" ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
     "./webgpu": { "types": "./dist/webgpu/index.d.ts", "default": "./dist/webgpu/index.js" },
     "./three": { "types": "./dist/three/index.d.ts", "default": "./dist/three/index.js" },
-    "./mipmap": { "types": "./dist/mipmap.d.ts", "default": "./dist/mipmap.js" }
+    "./mipmap": { "types": "./dist/mipmap.d.ts", "default": "./dist/mipmap.js" },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "webgpu": [ "./dist/webgpu/index.d.ts" ],
+      "three": [ "./dist/three/index.d.ts" ],
+      "mipmap": [ "./dist/mipmap.d.ts" ]
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "prepack": "npm run clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && npm run test:core && npm run test:gpu",
     "test:core": "node --test test/core/*.test.js",

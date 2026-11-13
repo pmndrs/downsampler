@@ -809,7 +809,8 @@ async function validateOptions( device ) {
 	for ( const seed of [ 7, 8 ] ) {
 
 		const depth = await createDepthSource( device, { width: 64, height: 64 }, makeData( 64, 64, 1, 'r32float', 'random', seed, { unit: true } ) );
-		downsampler.generate( destination, { source: { texture: depth.texture }, reduction: 'max' } );
+		// A bare texture is a source at its level 0.
+		downsampler.generate( destination, { source: seed === 7 ? depth.texture : { texture: depth.texture }, reduction: 'max' } );
 		check( await readMip( device, destination, 0 ), reduceReference( splat( depth.floats ), 64, 64, 1, 'float32', 'max' ), 'float32', `replaced source ${ seed }`, 'max', 1 );
 		depth.texture.destroy();
 
@@ -1259,7 +1260,7 @@ async function validateReducer( device, { quick, onProgress, select } ) {
 							const tool = tools.get( edges );
 							device.queue.writeBuffer( tool.input, 0, data );
 							device.queue.writeBuffer( tool.atlas, 0, new Float32Array( tool.layout.texels * 4 ).fill( poisonValue ) );
-							reducer.encode( encoder, { width, height, layers, bindGroup: tool.bindGroup } );
+							reducer.encode( encoder, { width, height, layerCount: layers, bindGroup: tool.bindGroup } );
 							device.queue.submit( [ encoder.finish() ] );
 							const levels = atlasLevels( await readBuffer( device, tool.atlas ), tool.layout, layers );
 
@@ -1616,7 +1617,7 @@ async function validateReducerOptions( device ) {
 		device.queue.writeBuffer( tool.input, 0, data );
 		device.queue.writeBuffer( tool.atlas, 0, new Float32Array( tool.layout.texels * 4 ).fill( poisonValue ) );
 		const encoder = device.createCommandEncoder();
-		const dispatch = { width, height, layers, bindGroup: tool.bindGroup };
+		const dispatch = { width, height, layerCount: layers, bindGroup: tool.bindGroup };
 		if ( mode === 'encode' || mode === 'size hook' ) target.encode( encoder, dispatch );
 		else {
 
@@ -1645,7 +1646,7 @@ async function validateReducerOptions( device ) {
 	}
 
 	for ( const [ mode, values ] of readbacks.slice( 1 ) ) if ( values.some( ( value, i ) => ! Object.is( value, readbacks[ 0 ][ 1 ][ i ] ) ) ) throw new Error( `reducer ${ mode } differs from encode()` );
-	if ( reducer.bindGroup( { width, height, layers } ) !== reducer.bindGroup( { width, height, layers } ) ) throw new Error( 'reducer: bind groups are not cached' );
+	if ( reducer.bindGroup( { width, height, layerCount: layers } ) !== reducer.bindGroup( { width, height, layerCount: layers } ) ) throw new Error( 'reducer: bind groups are not cached' );
 	results.push( { option: 'reducer encode / encodePass / self-dispatch / size hook' } );
 
 	// One Reducer at two sizes in one submit: each dispatch keeps its own size.
@@ -1663,7 +1664,7 @@ async function validateReducerOptions( device ) {
 		} );
 		const encoder = device.createCommandEncoder();
 		const pass = encoder.beginComputePass();
-		for ( const { tool, w, h } of tools ) reducer.encodePass( pass, { width: w, height: h, layers: 1, bindGroup: tool.bindGroup } );
+		for ( const { tool, w, h } of tools ) reducer.encodePass( pass, { width: w, height: h, layerCount: 1, bindGroup: tool.bindGroup } );
 		pass.end();
 		device.queue.submit( [ encoder.finish() ] );
 
@@ -1691,8 +1692,12 @@ async function validateReducerOptions( device ) {
 	expectThrow( () => textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { source, outputs: mipOutputs.slice( 1 ) } ), 'one output per emitted level', 'output count' );
 	expectThrow( () => textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { outputs: mipOutputs } ), 'pass `source`', 'missing source' );
 	expectThrow( () => new Reducer( device, { reduction: 'average', levels: [ 1, 2 ], format: 'rgba16float' } ).encode( device.createCommandEncoder(), { source, outputs: mipOutputs } ), 'this Reducer writes rgba16float', 'output format' );
-	expectThrow( () => reducer.encode( device.createCommandEncoder(), { width, height, layers } ), 'group-1 bindGroup', 'missing tool bind group' );
-	expectThrow( () => reducer.encode( device.createCommandEncoder(), { layers } ), 'width and height', 'missing size' );
+	expectThrow( () => reducer.encode( device.createCommandEncoder(), { width, height, layerCount: layers } ), 'group-1 bindGroup', 'missing tool bind group' );
+	expectThrow( () => reducer.encode( device.createCommandEncoder(), { layerCount: layers } ), 'width and height', 'missing size' );
+	// One source shape (SPEC §5 Sources): the shared checks, and the renamed layer count.
+	expectThrow( () => textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { source, outputs: mipOutputs, layers: 1 } ), '`layerCount`', 'reducer layers → layerCount' );
+	expectThrow( () => textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { source: { texture: source, mipLevel: 9 }, outputs: mipOutputs } ), 'mipLevel 9 is outside', 'reducer source mipLevel' );
+	expectThrow( () => textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { source: { texture: null }, outputs: mipOutputs } ), 'must be a GPUTexture', 'reducer source shape' );
 	expectThrow( () => new Reducer( device, { levels: [ 3, 2 ], format: 'rgba32float' } ), 'strictly increasing', 'unsorted levels' );
 	expectThrow( () => new Reducer( device, { levels: [ 1 ], format: 'rgba32float', edges: 'exact' } ), 'Downsampler', 'exact edges' );
 	expectThrow( () => new Reducer( device, { levels: [ 1 ], format: 'rgba32float', reduction: [ 'weighted', 'sum', 'sum', 'sum' ] } ), 'need a \'weight\'', 'weighted without weight' );

@@ -160,9 +160,8 @@ downsampler.encode( encoder, faces, { layers: [ 4, 1 ], rect } );          // a 
 				state.written += regions.slice( 1 ).flat().reduce( ( sum, r ) => sum + area( r ), 0 );
 				state.flushes ++;
 
-				// Each new rect creates a small uniform buffer; the 16 most recent are cached and evicted
-				// ones are only destroyed by release(). A painter releases now and then, after submitting.
-				if ( state.flushes % 16 === 0 ) downsampler.release( painted );
+				// Each new rect creates a small uniform buffer: the 16 most recent are cached, and evicted
+				// ones are destroyed once the queue has finished the work submitted so far. No cleanup needed.
 
 				const context = document.getElementById( 'paint' ).getContext( '2d' );
 				const image = context.createImageData( rect.width, rect.height );

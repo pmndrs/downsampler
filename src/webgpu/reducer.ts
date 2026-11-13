@@ -1,9 +1,10 @@
-import { bufferWritable, formats, isIntFormat, isSupportedFormat, sampleKind, storageWritable, type FormatInfo, type SupportedFormat } from '../core/formats.js';
+import { bufferWritable, formats, isIntFormat, isSupportedFormat, storageWritable, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { outputBufferLayout, tileSize, workgroupSide } from '../core/plan.js';
 import { levelSize, tileDispatch } from '../core/pyramid.js';
 import { resolveReduction, type Channels, type Reduction, type TileEdgePolicy } from '../core/reduction.js';
 import { isCompatibilityTexture } from './compat.js';
 import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, sizeBinding, type F16Rounding, type KernelOptions, type OutputPath, type ViewDimension } from './kernel.js';
+import { asTextureLevel, sourceShapeReason, sourceTextureReason, sourceView, type TextureLevel } from './source.js';
 import { checkToolBindings, retireBuffers, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolGroupLayouts, toolPipelineLayout, type ToolBindings } from './tool.js';
 
 export type { ToolBindings } from './tool.js';
@@ -66,20 +67,18 @@ export interface ReducerOptions {
 	label?: string;
 }
 
-/** A texture level: a texture's level `mipLevel` (default 0). */
-export interface TextureLevel {
-	texture: GPUTexture;
-	mipLevel?: number;
-}
-
 /** One dispatch of a Reducer: the source size, textures and the tool's group 1. */
 export interface ReducerDispatch {
 	/** Source size in texels. Required with a load hook; otherwise the source level's size. */
 	width?: number;
 	height?: number;
-	/** Array layers (workgroup z). Default: the source's or first output's layers with a '2d-array' dimension, else 1. */
-	layers?: number;
-	/** The source texture (no load hook). */
+	/**
+	 * Array layers to reduce, from layer 0 (workgroup z). Default: the source's or first
+	 * output's layers with a '2d-array' dimension, else 1. (A count, not `[ first, count ]`:
+	 * the tile kernel has no layer offset, and hooks see the workgroup's layer.)
+	 */
+	layerCount?: number;
+	/** The source (no load hook): a texture (its level 0) or `{ texture, mipLevel }`. */
 	source?: GPUTexture | TextureLevel;
 	/** One output per emitted level, in `levels` order (no store hook). Each must be at least the level's size. */
 	outputs?: readonly ( GPUTexture | TextureLevel )[];
@@ -97,7 +96,8 @@ export interface ReducerCopy {
 	rowsPerImage: number;
 	width: number;
 	height: number;
-	layers: number;
+	/** Array layers copied, from layer 0. */
+	layerCount: number;
 }
 
 /**
@@ -146,7 +146,6 @@ const idOf = ( texture: GPUTexture ) => {
 
 };
 
-const asLevel = ( value: GPUTexture | TextureLevel ): Required<TextureLevel> => 'texture' in value ? { texture: value.texture, mipLevel: value.mipLevel ?? 0 } : { texture: value, mipLevel: 0 };
 const mipSize = ( size: number, level: number ) => Math.max( 1, size >> level );
 
 /** Bind groups (and their size uniforms and output buffers) kept per Reducer, most recent last. */
@@ -267,11 +266,11 @@ export class Reducer {
 
 	}
 
-	/** Workgroup counts for a `width` × `height` source with `layers` array layers. */
-	workgroups( width: number, height: number, layers = 1 ): [ number, number, number ] {
+	/** Workgroup counts for a `width` × `height` source with `layerCount` array layers. */
+	workgroups( width: number, height: number, layerCount = 1 ): [ number, number, number ] {
 
 		const { groupsX, groupsY } = tileDispatch( width, height, this.levels[ this.levels.length - 1 ], this.edges );
-		return [ groupsX, groupsY, layers ];
+		return [ groupsX, groupsY, layerCount ];
 
 	}
 
@@ -319,9 +318,9 @@ export class Reducer {
 	encodeCopies( encoder: GPUCommandEncoder, dispatch: ReducerDispatch = {} ): void {
 
 		const { buffer, copies = [] } = this.entry( dispatch );
-		for ( const { texture, mipLevel, offset, bytesPerRow, rowsPerImage, width, height, layers } of copies ) {
+		for ( const { texture, mipLevel, offset, bytesPerRow, rowsPerImage, width, height, layerCount } of copies ) {
 
-			encoder.copyBufferToTexture( { buffer: buffer!, offset, bytesPerRow, rowsPerImage }, { texture, mipLevel }, [ width, height, layers ] );
+			encoder.copyBufferToTexture( { buffer: buffer!, offset, bytesPerRow, rowsPerImage }, { texture, mipLevel }, [ width, height, layerCount ] );
 
 		}
 
@@ -367,8 +366,18 @@ export class Reducer {
 	private entry( dispatch: ReducerDispatch ): Prepared {
 
 		const { load, store, size, format, dimension = '2d' } = this.options;
-		const source = dispatch.source === undefined ? undefined : asLevel( dispatch.source );
-		const outputs = dispatch.outputs?.map( asLevel );
+		// Renamed before 1.0: a count is `layerCount` (a `layers` field is always [ first, count ]).
+		if ( ( dispatch as { layers?: unknown } ).layers !== undefined ) throw new Error( 'downsampler: a Reducer dispatch takes `layerCount` (the layers from 0), not `layers`.' );
+		const shape = dispatch.source === undefined ? null : sourceShapeReason( dispatch.source );
+		if ( shape !== null ) throw new Error( `downsampler: ${ shape }.` );
+		const source = dispatch.source === undefined ? undefined : asTextureLevel( dispatch.source );
+		const outputs = dispatch.outputs?.map( output => {
+
+			const reason = sourceShapeReason( output, 'each output' );
+			if ( reason !== null ) throw new Error( `downsampler: ${ reason }.` );
+			return asTextureLevel( output );
+
+		} );
 		const array = dimension === '2d-array';
 
 		if ( load === undefined && source === undefined ) throw new Error( 'downsampler: this Reducer reads a source texture; pass `source`.' );
@@ -380,9 +389,8 @@ export class Reducer {
 		if ( source !== undefined ) {
 
 			const { texture, mipLevel } = source;
-			if ( ! Number.isInteger( mipLevel ) || mipLevel < 0 || mipLevel >= texture.mipLevelCount ) throw new Error( 'downsampler: source mipLevel is outside the source texture.' );
-			if ( ( texture.usage & GPUTextureUsage.TEXTURE_BINDING ) === 0 ) throw new Error( 'downsampler: source needs TEXTURE_BINDING usage.' );
-			if ( sampleKind( texture.format ) !== 'float' ) throw new Error( `downsampler: a Reducer reads float-sampleable sources, not ${ texture.format }; read integer textures in a load hook.` );
+			const reason = sourceTextureReason( source, 'source', { mismatch: format => `a Reducer reads float-sampleable sources, not ${ format }; read integer textures in a load hook` } );
+			if ( reason !== null ) throw new Error( `downsampler: ${ reason }.` );
 			const sw = mipSize( texture.width, mipLevel ), sh = mipSize( texture.height, mipLevel );
 			if ( ( width !== undefined && width !== sw ) || ( height !== undefined && height !== sh ) ) throw new Error( `downsampler: width and height (${ width }×${ height }) must match the source level (${ sw }×${ sh }), or be left out.` );
 			width = sw; height = sh;
@@ -390,7 +398,8 @@ export class Reducer {
 		}
 
 		if ( width === undefined || height === undefined ) throw new Error( 'downsampler: pass the source width and height.' );
-		const layers = dispatch.layers ?? ( array ? ( source ?? outputs?.[ 0 ] )?.texture.depthOrArrayLayers ?? 1 : 1 );
+		const layers = dispatch.layerCount ?? ( array ? ( source ?? outputs?.[ 0 ] )?.texture.depthOrArrayLayers ?? 1 : 1 );
+		if ( ! Number.isInteger( layers ) || layers < 1 ) throw new Error( `downsampler: layerCount must be a positive integer, got ${ layers }.` );
 		if ( ! array && layers !== 1 ) throw new Error( 'downsampler: several layers need dimension \'2d-array\'.' );
 		const workgroups = this.workgroups( width, height, layers );
 
@@ -409,8 +418,7 @@ export class Reducer {
 		if ( source !== undefined ) {
 
 			if ( source.texture.depthOrArrayLayers < layers ) throw new Error( `downsampler: source has ${ source.texture.depthOrArrayLayers } layers, the dispatch ${ layers }.` );
-			const aspect = source.texture.format.includes( 'stencil' ) ? 'depth-only' : 'all';
-			entries.push( { binding: 1, resource: source.texture.createView( { label: `${ this.label } source`, dimension, baseMipLevel: source.mipLevel, mipLevelCount: 1, aspect } ) } );
+			entries.push( { binding: 1, resource: sourceView( source, dimension, `${ this.label } source` ) } );
 
 		}
 
@@ -460,7 +468,7 @@ export class Reducer {
 			this.device.queue.writeBuffer( uniform, 0, words );
 			owned.push( buffer, uniform );
 			entries.push( { binding: outputLayoutBinding, resource: { buffer: uniform } }, { binding: outputBufferBinding, resource: { buffer } } );
-			copies = layout.levels.map( ( level, i ) => ( { texture: outputs[ i ].texture, mipLevel: outputs[ i ].mipLevel, offset: level.offset, bytesPerRow: level.bytesPerRow, rowsPerImage: level.rowsPerImage, width: level.width, height: level.height, layers } ) );
+			copies = layout.levels.map( ( level, i ) => ( { texture: outputs[ i ].texture, mipLevel: outputs[ i ].mipLevel, offset: level.offset, bytesPerRow: level.bytesPerRow, rowsPerImage: level.rowsPerImage, width: level.width, height: level.height, layerCount: layers } ) );
 
 		}
 

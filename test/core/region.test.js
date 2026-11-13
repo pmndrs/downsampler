@@ -319,7 +319,11 @@ test( 'regions are conservative against the CPU oracles (exact average/max, spd 
 test( 'invalid rects and layer ranges are named', () => {
 
 	assert.equal( rectProblem( { x: 0, y: 0, width: 8, height: 4 }, 8, 4 ), null );
-	assert.match( rectProblem( { x: 0, y: 0, width: 0, height: 4 }, 8, 4 ), /at least 1×1/ );
+	// Empty rects are valid no-ops, still inside the level.
+	assert.equal( rectProblem( { x: 0, y: 0, width: 0, height: 4 }, 8, 4 ), null );
+	assert.equal( rectProblem( { x: 8, y: 4, width: 0, height: 0 }, 8, 4 ), null );
+	assert.match( rectProblem( { x: 9, y: 0, width: 0, height: 1 }, 8, 4 ), /outside the 8×4 level/ );
+	assert.match( rectProblem( { x: 0, y: 0, width: - 1, height: 4 }, 8, 4 ), /must not be negative/ );
 	assert.match( rectProblem( { x: 1, y: 0, width: 8, height: 4 }, 8, 4 ), /outside the 8×4 level/ );
 	assert.match( rectProblem( { x: - 1, y: 0, width: 2, height: 2 }, 8, 4 ), /outside/ );
 	assert.match( rectProblem( { x: 0.5, y: 0, width: 2, height: 2 }, 8, 4 ), /integers/ );
@@ -330,6 +334,11 @@ test( 'invalid rects and layer ranges are named', () => {
 	assert.match( layersProblem( [ 0 ], 3 ), /\[ first, count \]/ );
 	const batches = planBatches( 16, 16, { mipLevelCount: 5, levelsPerDispatch: 4 } );
 	assert.throws( () => planRegions( batches, { x: 0, y: 0, width: 17, height: 1 }, 16, 16 ), /outside the 16×16 level/ );
+	for ( const rect of [ { x: 3, y: 2, width: 0, height: 5 }, { x: 16, y: 16, width: 0, height: 0 } ] ) {
+
+		for ( const region of planRegions( batches, rect, 16, 16 ) ) assert.deepEqual( region, { levels: region.levels.map( () => null ), groupX: 0, groupY: 0, groupsX: 0, groupsY: 0 } );
+
+	}
 
 } );
 

@@ -4,7 +4,7 @@ GPU texture pyramids for WebGPU: mip chains, min/max (Hi-Z) pyramids from depth,
 
 It implements the ideas of AMD FidelityFX SPD independently in WGSL (a 64×64 tile reduced through six levels in workgroup memory, every level written once) and targets SPD's feature set, with two deliberate differences explained below. Every kernel is checked against a CPU oracle on real GPUs.
 
-> Status: pre-release (milestone 4, docs and examples). Not yet on npm. [PROGRESS.md](PROGRESS.md) has the live status; [SPEC.md](SPEC.md) is the design record.
+> Status: 0.1 (pre-1.0: a minor version may still change the API; see [CHANGELOG.md](CHANGELOG.md)). [PROGRESS.md](PROGRESS.md) has the live status; [SPEC.md](SPEC.md) is the design record.
 
 ## Install
 
@@ -12,13 +12,14 @@ It implements the ideas of AMD FidelityFX SPD independently in WGSL (a 64×64 ti
 npm install downsampler
 ```
 
-`three` is an optional peer dependency (`>=0.170.0`), needed only for `downsampler/three`.
+`three` is an optional peer dependency (`>=0.170.0`), needed only for `downsampler/three`. No runtime dependencies. TypeScript declarations ship with the package and use the standard WebGPU types: add [`@webgpu/types`](https://www.npmjs.com/package/@webgpu/types) to your project (`"types": [ "@webgpu/types" ]`), as for any WebGPU code.
 
 | Entry point | What it holds |
 |---|---|
 | `downsampler/webgpu` | `Downsampler`, `Reducer`, `ScalarReduction` and the WGSL generators |
 | `downsampler/three` | `generateMipmaps( renderer, texture )` for `WebGPURenderer` |
 | `downsampler` | the backend-neutral core: planning, formats and the CPU reference implementations (oracles) |
+| `downsampler/mipmap` | one self-contained file (no imports) for vendoring in-place `'average'` mip chains, e.g. into three.js: the kernel generator, planner and `kernelDefaults` |
 
 ## Quick start
 
@@ -50,10 +51,10 @@ downsampler.encode( encoder, cubeAs2dArray, { layers: [ 2, 1 ] } );
 
 **Reductions and Hi-Z.** `reduction: 'average' | 'min' | 'max' | 'minmax' | { wgsl }`. Folds combine every texel an output covers, including the extra row or column at odd sizes, so min/max pyramids are conservative: the property Hi-Z occlusion culling needs. `'minmax'` stores (min, max) pairs.
 
-**Separate source.** `source: { texture, mipLevel }` reads the first level from another texture, such as a depth buffer that can't be a storage texture. Destination level `baseMipLevel` is a converting copy (same size) or one reduction step (half size), or any size with `resample: 'area'`, such as a power-of-two Hi-Z whose later levels halve cleanly. Area-resampled min/max fold every source texel a destination texel overlaps, so they stay conservative.
+**Separate source.** `source: texture` (or `{ texture, mipLevel }`) reads the first level from another texture, such as a depth buffer that can't be a storage texture. Destination level `baseMipLevel` is a converting copy (same size) or one reduction step (half size), or any size with `resample: 'area'`, such as a power-of-two Hi-Z whose later levels halve cleanly (up to 8× smaller per axis by default, `maxResampleRatio`). Area-resampled min/max fold every source texel a destination texel overlaps, so they stay conservative. `Reducer` and `ScalarReduction` take their `source` in the same shape, with the same checks.
 
 ```js
-downsampler.generate( hiZ /* rg32float */, { source: { texture: depth }, reduction: 'minmax' } );
+downsampler.generate( hiZ /* rg32float */, { source: depth, reduction: 'minmax' } );
 downsampler.generate( hiZPow2 /* 2048×1024 r32float */, { source: { texture: depth1080p, resample: 'area' }, reduction: 'min' } ); // 2 dispatches
 ```
 
@@ -70,6 +71,8 @@ downsampler.generate( hiZPow2 /* 2048×1024 r32float */, { source: { texture: de
 **sRGB colour.** `rgba8unorm-srgb` and `bgra8unorm-srgb` are reduced in linear light (the sRGB view decodes, the shader encodes each level with correct rounding, alpha stays linear), as render-pass mipmaps of an sRGB texture are, so regular three.js colour textures work.
 
 **Identical results on every GPU.** Two options: `f16Rounding` (default `'nearest'`) rounds float16 levels to nearest even in the shader, because D3D12 truncates; `averageAccess: 'load'` applies bilinear weights in the shader instead of the hardware sampler, whose 8-bit weights round differently per vendor (2–13 % slower on an RTX 3060, 22–31 % on Intel UHD).
+
+**`f16Rounding: 'device'`** uses the GPU's own float16 conversion instead. It rounded on an Apple M5 Pro, but it truncates on D3D12 (NVIDIA, Intel): there every level comes out up to one f16 step low, and the bias carries down the chain, which matters to anything that reads levels as numbers (exposure, Hi-Z in half precision, tests). Use it only where the in-shader rounding measurably costs (14–29 % of an rgba16float chain on Intel UHD, noise on an RTX 3060) and a low bias is acceptable. The default stays `'nearest'` ([guide](docs/guide.md#float16-rounding-f16rounding)).
 
 **Formats.** `rgba8unorm`, `rgba8snorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, `rgb9e5ufloat`; with `texture-formats-tier1` also `r8unorm`, `rg8unorm`, `r8snorm`, `rg8snorm`, `r16float`, `rg16float`, the 16-bit normalized formats and `rg11b10ufloat` and `rgb10a2unorm` storage; `bgra8unorm` with `bgra8unorm-storage`; `rgba8unorm-srgb` and `bgra8unorm-srgb` through the buffer path. Integer formats (`r32uint`, `rgba8sint`, … and `rgb10a2uint`) reduce exactly: averages round to nearest with ties to even at any width, folds (min, max, a bitwise custom `reduce` on `vec4u`/`vec4i`) for ID and occupancy pyramids. Sources: any float-sampleable 2D format, including depth; integer destinations read integer sources of the same signedness.
 
