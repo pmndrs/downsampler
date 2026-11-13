@@ -25,12 +25,12 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 - [ ] M2.4 layer range + rect (agent, branch `m2.4-layers-rect`)
 - [ ] M2.5 `oddSizes: 'box'` + power-of-two destination from a separate source (agent, branch `m2.5-box-pow2`)
 - [ ] M3 measurement modes: throughput, `STORAGE_BINDING` cost, subgroup and fp16 upper bounds (agent, branch `m3-measure`); timed runs by the coordinator, idle, then Windows
-- [ ] M4 docs and examples (agent, branch `m4-docs`)
 - [ ] Windows pass before merge to main for `5f97c86` (f16 rounding rewrite), `198728a` (defaults) and M2.4/M2.5: RTX full + Intel quick via `test/parallel.js`
 - [ ] CI: first GitHub run of the shards (`test/ci/README.md`): real shard times, Linux SwiftShader compat device, artifact collection. Then commit its `gpu-durations` artifact
 
 ## Next (SPEC §11)
 
+- [ ] API consistency before publish (found writing the docs; pre-1.0, so no compatibility shims): `ScalarReduction` `reduce` → `reduction`; one source shape across `Downsampler` / `Reducer` / `ScalarReduction`; `release()` on `Reducer` and buffers destroyed on `ScalarReduction` eviction/release (they leak today); one meaning for `prepare`; export `requiredLimits` as a function; three adapter takes options (`averageAccess`, `f16Rounding`), an optional encoder, and reports why it declined; `'minmax'` on `ScalarReduction`; `output.offset` alignment from the device limit; `averageAccess` reads `'sample'` by default; SPEC §5 constructor list current
 - [ ] Test hardening from the review: oracle `weights` default `'shader'` (fail closed; callers that sample opt into `'sampler'`); tile-equivalence at 16/32 on the buffer path, compat, `baseMipLevel` sub-range, separate source and tail; an f16 tie check through in-tile combine, tail and `'spd'` batches; a same-size copy next to Inf/NaN
 - [ ] M2.4: layer range + rect
 - [ ] M2.5: `oddSizes: 'box'`, power-of-two destination from a separate source (SPEC §2.1, §13)
@@ -49,6 +49,7 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] M4: README front door, docs/guide.md (every option and default), docs/spd-users.md, examples/ (mip chain, Hi-Z from depth, Reducer block stats, ScalarReduction exposure, three.js r187) with on-page oracle readouts, `npm run examples` / `test:examples`, JSDoc pass (`f18c236`, `be2afe7`, `0c31357`, merged); M5 Pro: 10/10 example pages pass. Guide sections for M2.4/M2.5 are placeholders until those merge
 - [x] M5 Pro render compare + tile sweep (3 idle runs each, `results/render/m5-pro-render-*.json`): `exactTile` 32 is 1.04–1.28× slower than 8 at render sizes on Apple, 16 ties 8 → default 16 on Apple, 32 on other hardware; tail with 16 tiles 0.81–1.02× of exact (`261e354`, `198728a`)
 - [x] f16 rounding fixed on Apple: `(x + c) − c` folded by Metal fast math, outputs truncated; branch-free integer rounding (`5f97c86`)
 - [x] Review of the Windows `src/` diff (independent agent): no defects; flagged the fast-math risk (confirmed on M5, fixed), the oracle's loose `weights: 'sampler'` default where callers omit it, and missing tile-equivalence coverage (buffer/compat/sub-range/tail at 16/32)
