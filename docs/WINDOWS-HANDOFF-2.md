@@ -10,7 +10,7 @@ Since round 1, `m2-reductions` gained library changes that were verified on the 
 | `tail: true` by default; `exactTile` 16 on Apple, 32 elsewhere | `198728a` | The default chain on Windows is now the tail kernel |
 | Partial updates (`rect`) and layer ranges (M2.4) | `f78847b` | New kernel variants (a region uniform at binding 11) |
 | API consistency: `reduction` on ScalarReduction, `release()` destroys owned buffers, `requiredLimits()` | `9a49043` | Eviction now destroys buffers after `onSubmittedWorkDone` |
-| `oddSizes: 'box'`, power-of-two destinations from a separate source (M2.5) | see PROGRESS | New kernels and planning |
+| `oddSizes: 'box'` and `source.resample: 'area'` (M2.5), merged with M2.4 | `bb16237`, `a39022b` | New box/area kernels; `rect` with resampled sources |
 | M3 bench modes: throughput, storage-usage, subgroups, f16 | `5b137a3` | Cross-vendor answers are the point of M3 |
 
 Read `CLAUDE.md`, `PROGRESS.md`, `docs/WINDOWS-REPORT.md` (your own round 1) and `test/bench/README.md` first.
@@ -40,6 +40,8 @@ Expected: no failures except, as in round 1, the two FSR luma-pyramid fixtures t
 npm run bench -- --compare=render --skip-validation --power=high --output=results/windows/round2/rtx-render.json
 npm run bench -- --compare=render --skip-validation --power=low  --output=results/windows/round2/intel-render.json
 ```
+
+Also time `'box'`: `npm run bench -- --compare=spd --strategies=box,tailBox --skip-validation --power=high|low` (the reference column is kept).
 
 The render compare now has `exact8`, `exact16`, `tail`, `tail8`, `tail16` columns (`exact` is the device default tile, 32 here). Report, at the render sizes:
 - `exact16 ÷ exact` and `tail16 ÷ tail`: if 16 ties 32 on both GPUs (within 5 %), the default can be 16 everywhere, which is simpler.

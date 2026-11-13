@@ -20,7 +20,7 @@ The kernel is SPD's idea, implemented independently in WGSL: a 64 × 64 source t
 | `SPD_LINEAR_SAMPLER` | `averageAccess: 'sample'` (the default for averages): one bilinear sample per 2 × 2 block. `'load'` applies the weights in the shader. |
 | Separate source SRV and destination UAV | `source: { texture, mipLevel }`. Destination level `baseMipLevel` may be the **same size** as the source (a converting copy, e.g. depth → `r32float`) or half; SPD always halves. |
 | Texture arrays (`slice` in the dispatch z) | All layers of a `'2d-array'` texture in the same dispatches (workgroup z). A layer range is coming (M2.4). |
-| `rectInfo` (sub-rectangle) | Not yet; planned for M2.4. |
+| `rectInfo` (sub-rectangle) | `rect: { x, y, width, height }` on `encode` (M2.4). It rewrites exact per-level regions instead of snapping to 64-texel tiles, bit-identical to a full recompute (DIVERGES #15). |
 | sRGB: sample an sRGB view, write a UNORM alias | Not yet. WebGPU forbids sRGB storage even through a view; planned via a scratch copy (M2.3.5). |
 | Packed fp16 (`A_HALF`, `SPD_PACKED_ONLY`) | Not offered: f32 math. Under review in M3, kept only if measurably faster. |
 | Wave/quad ops (`SpdReduceQuad`, `WaveReadLaneAt`) | Workgroup memory only: WGSL defines quads only in fragment shaders and no lane-to-index mapping in compute. A subgroup kernel is gated on measurement (M3). |
