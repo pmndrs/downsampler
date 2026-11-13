@@ -541,6 +541,15 @@ New features add their own oracle first: each new format family, sRGB, rect, lay
 
 **Tool fixtures** (`npm run tools`, `test/tools/`) time compute passes with their own `timestampWrites` around 16 repeats (never empty), 11 rotated rounds, median.
 
+**M3 measurement modes** (2026-11-13; details, flags and JSON in [test/bench/README.md](test/bench/README.md)). Each takes `--strategies=a,b,c` (as do `spd` and `render`); the reference a mode divides by is always kept. Bench `exact*` strategies pin `tail: false`, since the library default is now the tail kernel.
+- **Throughput** (`--compare=throughput`): greggman's work-per-frame method, which needs no timestamp-query. N chains per submit (calibrated to about 8 ms), submits kept in flight for a 1 s window (or one per `requestAnimationFrame`), wall ms per chain, rotated, median of 5. Strategies: render, `'exact'`, `'spd'`, tail. Rows where JS encoding takes over 80 % of the window are flagged as CPU-bound. Where timestamps exist, the same cases are then timed with timestamps, and the report counts strategy pairs that both methods order alike (ties under 5 %).
+- **`STORAGE_BINDING` sampling cost** (`--compare=storage-usage`): two otherwise identical textures, with and without the usage. Each is read by a fullscreen pass (1 tap) and a material pass (9 trilinear taps), and also rendered into. Content is either rendered (compressible) or uploaded noise (the control). Formats rgba8unorm/rgba16float/r32float, at render sizes and 4096². Timed by `timestampWrites` on the passes; storage ÷ plain paired per round.
+- **Subgroup upper bound** (`--compare=subgroups`): the library's chain with each multi-level `'exact'` batch's `main()` replaced:
+  - `slot`: one barrier per level, identical results.
+  - `shuffle`: the first reduction by `subgroupShuffleXor`, then `slot`. It checks itself against the library.
+  - `nosync`: no barriers or workgroup memory for levels 2+; timing only. (lds − nosync) ÷ lds bounds any subgroup kernel's gain. The §13 rule applies: build one only if the bound is at least 5 %.
+- **fp16** (`--compare=f16`): the same harness with levels 2+ averaged in f16 (`f16`), and with quarters held in workgroup memory so sums can't overflow (`f16safe`). Precision is reported against the library's f32 chain, in steps and ulps, including non-finite values.
+
 **Baseline results.** Apple M5 Pro, Metal 3, Chrome 155, 2026-11-10, GPU ms per chain:
 
 | Size | Format | render | compute (4 levels) | compute (6 levels) | 6 vs render |

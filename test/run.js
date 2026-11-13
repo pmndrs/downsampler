@@ -16,6 +16,16 @@
 //   node test/run.js --bench --compare=webgpu-spd --formats=rgba8unorm,rgba16float,r32float --skip-validation
 //                                        webgpu-spd 3.0.0 vs exact / tail / spd / render (results/compare/webgpu-spd.md)
 //   node test/run.js --webgpu-spd-check --skip-validation [--frames=64]   its correctness against our oracles
+// M3 measurement modes (test/bench/README.md; all with --bench --skip-validation, i.e. npm run bench -- …):
+//   --compare=throughput (or --throughput)   chains per second without timestamps: render / exact / spd / tail,
+//                                        then the same by timestamps and whether both order them alike
+//       [--window=1000] [--pacing=queue|raf] [--in-flight=2] [--batch-ms=8] [--max-batch=1024] [--textures=1]
+//       [--no-timestamps] skip the timestamp check; [--no-timestamp-query] a device without timestamp-query
+//   --compare=storage-usage              sampling a texture with vs without STORAGE_BINDING (--strategies=fullscreen,material,write)
+//   --compare=subgroups                  upper bound for a subgroup kernel (--strategies=lds,slot,shuffle,nosync)
+//   --compare=f16                        averaging in f16 vs f32, with the precision cost (--strategies=f32,f16,f16safe)
+//   --throughput with --compare=storage-usage|subgroups|f16 adds per-frame throughput to the timestamps
+//   --strategies=a,b,c                   time a subset (any --compare mode; the ratios' reference is always kept)
 // Shards (test/ci/README.md):
 //   node test/run.js --quick --adapter=swiftshader --shard=2/8   one of 8 disjoint shards, balanced by test/ci/durations.json
 //   node test/run.js --quick --adapter=swiftshader --list --shards=4,8   check the partitions (runs nothing); --verbose lists ids
@@ -46,6 +56,17 @@ if ( args.includes( '--skip-validation' ) ) options.skipValidation = true;
 if ( args.includes( '--webgpu-spd-check' ) ) options.webgpuSpdCheck = true;
 if ( args.includes( '--keep-going' ) ) options.keepGoing = true;
 if ( value( 'frames' ) ) options.frames = Number( value( 'frames' ) );
+if ( value( 'strategies' ) ) options.strategies = value( 'strategies' ).split( ',' );
+if ( args.includes( '--throughput' ) ) {
+
+	options.throughput = true;
+	options.compare ??= 'throughput';
+
+}
+if ( args.includes( '--no-timestamps' ) ) options.noTimestamps = true;
+if ( args.includes( '--no-timestamp-query' ) ) options.timestampQuery = false;
+for ( const [ flag, key ] of [ [ 'window', 'windowMs' ], [ 'in-flight', 'inFlight' ], [ 'batch-ms', 'batchMs' ], [ 'max-batch', 'maxBatch' ], [ 'textures', 'textures' ] ] ) if ( value( flag ) ) options[ key ] = Number( value( flag ) );
+if ( value( 'pacing' ) ) options.pacing = value( 'pacing' );
 const loadBefore = loadavg();
 const startedAt = Date.now();
 
@@ -138,9 +159,49 @@ try {
 	if ( timingPath ) await writeTiming( { ok: true, adapter, cases: validation.cases, checks: validation.checks, validationMs: validation.ms, listing: validation.listing, groups: validation.groups, skipped: validation.skipped } );
 	if ( recordPath ) await recordDurations( recordPath, validation, adapter );
 
-	if ( timing?.timestamps === false ) console.log( 'timestamp-query unavailable: benchmark skipped' );
+	if ( timing?.timestamps === false && ! timing.mode ) console.log( 'timestamp-query unavailable: benchmark skipped' );
+	if ( timing?.mode && ! timing.timestamps ) console.log( 'timestamp-query unavailable or off: throughput only' );
+	const fixed = ( x, digits = 4 ) => x === undefined || x === null ? '—' : x.toFixed( digits );
 
-	if ( timing?.results.length && options.compare === 'spd' ) {
+	if ( timing?.mode === 'throughput' ) {
+
+		// Wall ms per chain ×(÷ render, paired per round) [CPU share], then timestamps for the check.
+		console.table( timing.results.map( row => ( {
+			size: `${ row.width }x${ row.height }`, format: row.format,
+			...Object.fromEntries( timing.strategies.map( name => {
+
+				const t = row.throughput[ name ];
+				return [ name, `${ fixed( t.msPerUnit ) } ×${ fixed( t.ratio, 2 ) } [cpu ${ Math.round( t.cpuShare * 100 ) } %${ t.cpuBound ? ' BOUND' : '' }, n ${ t.batch }]${ row.gpuMs ? ` ts ${ fixed( row.gpuMs[ name ] ) }` : '' }` ];
+
+			} ) ),
+			...( row.agreement ? { order: `${ row.agreement.agree }/${ row.agreement.counted } τ ${ fixed( row.agreement.tau, 2 ) }` } : {} )
+		} ) ) );
+		if ( timing.agreement ) console.log( `throughput vs timestamps: ${ timing.agreement.agree } of ${ timing.agreement.counted } strategy pairs ordered alike (pairs within ${ timing.agreement.tie * 100 } % by timestamps are ties); mean Kendall τ ${ fixed( timing.agreement.meanTau, 2 ) }` );
+		for ( const row of timing.results ) for ( const line of row.agreement?.disagree ?? [] ) console.log( `  ${ row.width }x${ row.height } ${ row.format }: ${ line }` );
+
+	} else if ( timing?.mode === 'storage-usage' ) {
+
+		console.table( timing.results.map( row => ( {
+			size: `${ row.width }x${ row.height }`, format: row.format, content: row.content, shader: row.shader,
+			'plain ms': fixed( row.gpuMs?.plain ), 'storage ms': fixed( row.gpuMs?.storage ), 'storage ÷ plain': fixed( row.ratio, 3 ),
+			...( row.throughput ? { 'throughput ÷': fixed( row.throughputRatio, 3 ) } : {} )
+		} ) ) );
+		console.log( 'median storage ÷ plain over sizes (min–max):' );
+		console.table( Object.entries( timing.summary ).map( ( [ key, v ] ) => ( { case: key, median: fixed( v.median, 3 ), range: `${ fixed( v.min, 3 ) }–${ fixed( v.max, 3 ) }` } ) ) );
+
+	} else if ( timing?.mode === 'subgroups' || timing?.mode === 'f16' ) {
+
+		if ( timing.skipped.length ) console.log( `skipped (feature unavailable): ${ timing.skipped.join( ', ' ) }` );
+		console.log( `plan: exactTile ${ timing.exactTile }, tail ${ timing.tail }` );
+		const check = c => c ? Object.entries( c ).map( ( [ pattern, d ] ) => `${ pattern } ${ d.differing ? `${ d.differing }/${ d.values } differ${ d.worstSteps ? `, worst ${ d.worstSteps } steps (L${ d.worstLevel })` : '' }${ d.nonFinite ? `, ${ d.nonFinite } non-finite` : '' }` : 'identical' }` ).join( '; ' ) : '';
+		console.table( timing.results.map( row => ( {
+			size: `${ row.width }x${ row.height }`, format: row.format, batches: row.batches.join( ', ' ),
+			...Object.fromEntries( timing.variants.map( name => [ name, `${ fixed( row.gpuMs?.[ name ] ) } ×${ fixed( row.ratios?.[ name ] ?? row.throughput?.[ name ].ratio, 3 ) }${ row.throughput && row.gpuMs ? ` (tp ×${ fixed( row.throughput[ name ].ratio, 3 ) })` : '' } ${ check( row.checks[ name ] ) }` ] ) )
+		} ) ) );
+		console.log( 'median ratio to the library kernel (render sizes / squares), and the check over every size and pattern:' );
+		console.table( Object.entries( timing.summary ).map( ( [ key, v ] ) => ( { case: key, 'render sizes': fixed( v.renderSizes, 3 ), squares: fixed( v.squares, 3 ), ...( 'identical' in v ? { check: v.identical ? 'identical' : `${ v.differing }/${ v.values } differ${ v.worstSteps ? `, worst ${ v.worstSteps } steps` : '' }${ v.nonFinite ? `, ${ v.nonFinite } non-finite` : '' }` } : {} ) } ) ) );
+
+	} else if ( timing?.results.length && options.compare === 'spd' ) {
 
 		// Same-run ratios to 'exact' (average) and 'exactMax' (max).
 		const names = timing.strategies;
