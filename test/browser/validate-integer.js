@@ -434,7 +434,7 @@ async function validateIntApi( device ) {
 	expectThrow( () => new Reducer( device, { levels: [ 1 ], format: 'r32uint' } ), 'doesn\'t write integer formats', 'Reducer r32uint output' );
 	const reducer = new Reducer( device, { levels: [ 1 ], format: 'r32float' } );
 	expectThrow( () => reducer.prepare( { source: { texture: sint, mipLevel: 0 }, outputs: [ { texture: floatDestination, mipLevel: 1 } ] } ), 'reads float-sampleable sources, not r32sint', 'Reducer r32sint source' );
-	if ( ! new ScalarReduction( device ).unsupportedReason( { texture: sint } )?.includes( 'not float-sampleable' ) ) throw new Error( 'ScalarReduction accepted r32sint' );
+	if ( ! new ScalarReduction( device ).unsupportedReason( { source: sint } )?.includes( 'not float-sampleable' ) ) throw new Error( 'ScalarReduction accepted r32sint' );
 	// unsupportedReason names tier1 for the 1- and 2-byte formats where the device lacks it.
 	if ( ! device.features.has( 'texture-formats-tier1' ) ) {
 
