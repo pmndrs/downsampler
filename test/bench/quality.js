@@ -92,7 +92,7 @@ function difference( a, b ) {
 
 export async function quality( device, { sizes = qualitySizes, formats = [ 'rgba8unorm', 'rgba16float' ], patterns = [ 'scene', 'noise' ], onProgress = () => {} } = {} ) {
 
-	const exact = new Downsampler( device ), tail = new Downsampler( device, { tail: true } );
+	const exact = new Downsampler( device, { tail: false } ), tail = new Downsampler( device, { tail: true } );
 	const runs = { exact: [ exact, {} ], spd: [ exact, { oddSizes: 'spd' } ], tail: [ tail, {} ] };
 	const results = [];
 
