@@ -42,6 +42,7 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Later
 
+- Rect updates without allocation: one ring buffer of region uniforms with dynamic offsets, for tools that change rects every frame (owner 2026-11-13: not now). Caveat to design around: more than N updates recorded before a submit would overwrite slots
 - **M3, dial in:** per-frame throughput benchmark; cross-vendor device lab runs (NVIDIA/D3D12 first); `STORAGE_BINDING` sampling cost; float32 sampler vs load; subgroup kernel with fallback (upper-bound test first); fp16
 - **M4, examples and docs:** usage docs, notes for SPD users, examples (mip chain, Hi-Z from depth, custom reduction, three.js)
 - **M5, ship:** npm publish, the upscaler and other tools as consumers, three.js in-tree PR, the gpuweb#5253 comment
@@ -95,14 +96,19 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Waiting on owner
 
-- M2.5: should an any-size destination take `resample: 'area'` implicitly? It is explicit now, so a stale destination after a resize still fails loudly. Is 8× per axis the right cap?
-- M2.4: an empty rect (0×0) is rejected rather than treated as a no-op. Keep? And rects that change every frame allocate a small uniform + bind groups per new rect (16 cached); a ring buffer with dynamic offsets avoids that, with a "submit within N updates" caveat. Worth it?
-- Payload-fold ties (smaller payload vs position): examples sent 2026-11-12; awaiting a call
-- Reducer defaults (`'zero-weight'` edges, no rounding between levels, scalar `finish` layer argument): impact explained 2026-11-12; awaiting a call
-- Upscaler exposure, every texel vs 1024 taps: pros/cons and sources sent 2026-11-12. Agreed: merge the bit-identical `perf/exposure-parallel` first
-- Review drafts (local only, gitignored, never pushed): `drafts/webgpu-spd-issues.md` (6 issues), `drafts/gpuweb-5253-comment.md` (numbers to fill from Windows)
-- Windows, render fallback (DIVERGES #17): answered by measurement, no render path needed. After the exact-tile fix, `'exact'` ÷ render passes is 1.19 / 1.04 in rgba8 (RTX / Intel) and 1.06 / 0.66 in rgba16f
-- f16 rounding cost: the f32-add version (14 % on Intel, noise on the RTX) didn't round on Apple (Metal's fast math folds `(x + c) − c`); `5f97c86` replaces it with branch-free integer rounding. Its cost on Intel needs a Windows re-measure before deciding whether any device should default to `'device'`
+- Upscaler exposure, every texel vs 1024 taps: agreed to merge the bit-identical `perf/exposure-parallel` first (upscaler project)
+
+## Decided (owner, 2026-11-13)
+
+- Empty rect (0×0): a no-op, as WebGPU's zero-size copies are
+- Rect ring buffer (dynamic offsets, no allocation per new rect): not now; documented as a future task (Later)
+- `source.resample: 'area'` stays explicit; the ratio cap stays 8× per axis, as an option if that is free (`maxResampleRatio`), raised later if a tool needs it
+- f16: keep `'nearest'` everywhere, document `'device'`; re-test the cost on Windows (round 2) and decide per device only if it is large
+- Payload-fold ties: smaller payload wins (texel index first for position ties)
+- Reducer defaults kept: `'zero-weight'` edges, no rounding between in-tile levels, optional `layer` on scalar `finish`
+- Drafts (webgpu-spd issues, gpuweb#5253): done for now; kept local until the repo is public with solid work and examples to point at
+- Render fallback (DIVERGES #17): not needed (measured)
+- Process: the Windows machine takes the M3 measurement and tuning work (round 2, `windows-testing`); this machine does three.js, formats, docs and ship prep. Goal: finish the remaining phases today
 
 ## Decided (owner, 2026-11-12)
 
