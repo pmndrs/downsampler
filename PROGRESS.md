@@ -22,7 +22,6 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
   - [x] Report: [docs/WINDOWS-REPORT.md](docs/WINDOWS-REPORT.md), with answers, method, what was ruled out, open questions and how to reproduce, linking every result file
   - Handoff summary: [results/windows/README.md](results/windows/README.md); library changes are on branch `f16-rounding`
   - [x] `test/parallel.js`: the suite in capped parallel shards, one summary; full matrix 35+ → 17 min, quick 4.6 → 2 min (RTX 3060)
-- [ ] M2.4 layer range + rect (agent, branch `m2.4-layers-rect`)
 - [ ] M2.5 `oddSizes: 'box'` + power-of-two destination from a separate source (agent, branch `m2.5-box-pow2`)
 - [ ] M3 runs: M5 Pro idle (throughput, throughput rAF, storage-usage, subgroups, f16; commands in test/bench/README.md), then RTX 3060 / Intel UHD via `--power=high|low`; decide the subgroup kernel on the `nosync` bound (≥ 5 % at render sizes) and fp16 on speed vs its precision and overflow cost
 - [ ] Windows pass before merge to main for `5f97c86` (f16 rounding rewrite), `198728a` (defaults) and M2.4/M2.5: RTX full + Intel quick via `test/parallel.js`
@@ -30,9 +29,9 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Next (SPEC §11)
 
-- [ ] API consistency before publish (found writing the docs; pre-1.0, so no compatibility shims): `ScalarReduction` `reduce` → `reduction`; one source shape across `Downsampler` / `Reducer` / `ScalarReduction`; `release()` on `Reducer` and buffers destroyed on `ScalarReduction` eviction/release (they leak today); one meaning for `prepare`; export `requiredLimits` as a function; three adapter takes options (`averageAccess`, `f16Rounding`), an optional encoder, and reports why it declined; `'minmax'` on `ScalarReduction`; `output.offset` alignment from the device limit; `averageAccess` reads `'sample'` by default; SPEC §5 constructor list current
+- [ ] One source shape after M2.5: `source: GPUTexture | TextureLevel` everywhere (ScalarRun's `texture` + `mipLevel` too), shared source checks in one module, `width`/`height` instead of `size: [ w, h ]`, `layers: [ first, count ]` everywhere (Reducer's count → `layerCount` until it takes a first layer)
+- [ ] Re-record `test/ci/durations.json` (41 new `region/*` groups, plus M2.5's)
 - [ ] Test hardening from the review: oracle `weights` default `'shader'` (fail closed; callers that sample opt into `'sampler'`); tile-equivalence at 16/32 on the buffer path, compat, `baseMipLevel` sub-range, separate source and tail; an f16 tie check through in-tile combine, tail and `'spd'` batches; a same-size copy next to Inf/NaN
-- [ ] M2.4: layer range + rect
 - [ ] M2.5: `oddSizes: 'box'`, power-of-two destination from a separate source (SPEC §2.1, §13)
 
 ## Deferred (three.js-driven)
@@ -49,6 +48,8 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] M2.4: layer ranges + partial updates (`rect`): per-level dependent regions in core (exact footprint inverse, `'spd'` clamped blocks), bit-identical to a full recompute; composes with tail, `'spd'`, buffer path, compat, separate sources, `encodePass`; 11/11 mutations caught (`6ef5aa7`, `f78847b`, `9bc4c7e`, merged); DIVERGES #15 resolved
+- [x] API consistency before publish (`9a49043`, `7e09a59`, merged): ScalarReduction `reduce` → `reduction` (old key rejected), `'minmax'`; `Reducer.release( texture? )` / `ScalarReduction.release( resource? )` destroy owned buffers, evictions after `onSubmittedWorkDone`; `requiredLimits( adapter )` exported; `prepare` = what `encodePass` records on all three; `output.offset` from the device alignment; `averageAccess` reads `'sample'`; three: `getDownsampler( renderer, options )`, `generateMipmaps { encoder, downsampler }`, `unsupportedReason`. Source-shape unification waits for M2.5
 - [x] M3 measurement modes (`5b137a3`, merged): `--compare=throughput` (greggman work-per-frame, works without timestamp-query, order check against timestamps), `--compare=storage-usage`, `--compare=subgroups` (upper bound: `nosync` / `slot` / `shuffle`), `--compare=f16` (`f16` / `f16safe` with precision cost), `--strategies` for every mode; test/bench/README.md, SPEC §8. Bench `exact*` strategies pinned to `tail: false`
 - [x] M4: README front door, docs/guide.md (every option and default), docs/spd-users.md, examples/ (mip chain, Hi-Z from depth, Reducer block stats, ScalarReduction exposure, three.js r187) with on-page oracle readouts, `npm run examples` / `test:examples`, JSDoc pass (`f18c236`, `be2afe7`, `0c31357`, merged); M5 Pro: 10/10 example pages pass. Guide sections for M2.4/M2.5 are placeholders until those merge
 - [x] M5 Pro render compare + tile sweep (3 idle runs each, `results/render/m5-pro-render-*.json`): `exactTile` 32 is 1.04–1.28× slower than 8 at render sizes on Apple, 16 ties 8 → default 16 on Apple, 32 on other hardware; tail with 16 tiles 0.81–1.02× of exact (`261e354`, `198728a`)
@@ -93,6 +94,7 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Waiting on owner
 
+- M2.4: an empty rect (0×0) is rejected rather than treated as a no-op. Keep? And rects that change every frame allocate a small uniform + bind groups per new rect (16 cached); a ring buffer with dynamic offsets avoids that, with a "submit within N updates" caveat. Worth it?
 - Payload-fold ties (smaller payload vs position): examples sent 2026-11-12; awaiting a call
 - Reducer defaults (`'zero-weight'` edges, no rounding between levels, scalar `finish` layer argument): impact explained 2026-11-12; awaiting a call
 - Upscaler exposure, every texel vs 1024 taps: pros/cons and sources sent 2026-11-12. Agreed: merge the bit-identical `perf/exposure-parallel` first
@@ -142,6 +144,9 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 | 2026-11-12 | `b6aca67` + harness fixes | RTX 3060 Laptop, D3D12 | quick / compat quick, parallel | ❌ 10444 cases, 2 min, 189 failures / ❌ 10355 cases, 2 min, 187 (same causes) |
 | 2026-11-12 | `b6aca67` + harness fixes | Intel UHD, D3D12, driver 31.0.101.5333 | quick, parallel (12 × 4) | ❌ 10437 cases, 2.4 min, 629 failures (f16 truncation + Intel-only deviations) |
 | 2026-11-13 | `198728a` | Apple M5 Pro, Chrome 148 | quick (unsharded) | ✅ 10477 cases, 731 groups, 40 s (before `5f97c86`: ❌ f16 truncation, separate-source rgba16float) |
+| 2026-11-13 | `9bc4c7e` | Apple M5 Pro, Chrome 148, loaded | full GPU matrix (6 shards) / region quick on a compat device / core | ✅ 18830 cases / ✅ 267 / ✅ 80 (branch `m2.4-layers-rect`) |
+| 2026-11-13 | `9a49043` | Apple M5 Pro, Chrome 148, loaded | full GPU matrix (parallel, 3 jobs) / quick / core / examples | ✅ 18370 cases, 1674 groups / ✅ 10480 / ✅ 74 / ✅ 10 (branch `api-consistency`) |
+| 2026-11-13 | merge of both | Apple M5 Pro, Chrome 148 | quick / core / examples | ✅ 10797 cases / ✅ 81 / ✅ 10 |
 | 2026-11-13 | `5b137a3` | Apple M5 Pro, Chrome 148, loaded | quick `--only=downsampler` + core | ✅ 7885 cases, 570 groups; 73 core |
 | 2026-11-13 | `198728a` | Apple M5 Pro, Chrome 148 | full GPU matrix, `test/parallel.js` (12 shards × 4) | ✅ 18367 cases, 53600 pattern runs, 1674/1674 groups, 0 failures, 11 min 50 s |
 

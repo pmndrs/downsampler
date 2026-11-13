@@ -355,8 +355,23 @@ The WGSL generators are exported from `downsampler/webgpu` for vendoring: `creat
 
 ### Layer range and sub-rectangle (M2.4)
 
-<!-- TODO M2.4 -->
-Planned: `layers: [ first, count ]` to reduce part of an array texture, and `rect: { x, y, width, height }` (SPD's `rectInfo`) for partial updates. Today every layer is reduced and the whole level is written.
+`encode`, `encodePass`, `generate` and `prepare` take:
+
+| Option | Meaning |
+|---|---|
+| `layers: [ first, count ]` | Reduce only these array layers (2d-array, or a cube viewed as one). Other layers are untouched. |
+| `rect: { x, y, width, height }` | The dirty texels of level `baseMipLevel`, or of the source level with a separate `source`. Integers, at least 1×1, inside that level. |
+
+Each later level rewrites exactly the texels whose footprint touches the previous level's rewritten ones (`2x … 2x+2` under `'exact'` and the tail kernel; each batch's clamped blocks under `'spd'`). If the source changed only inside `rect` and the old chain was valid, the result is **bit-identical to a full recompute**, and every other texel and layer is untouched. This is tighter than SPD's `rectInfo`, which snaps to 64-texel tiles (DIVERGES #15).
+
+It works on every path: the tail kernel, `'spd'`, the buffer output path, compatibility mode, separate sources and `encodePass`. Each distinct rect and layer range creates one small uniform buffer and its bind groups; the 16 most recent are cached per texture, and `release()` destroys them. Many partial updates can be recorded in one encoder.
+
+```js
+// A decal was painted into level 0 at (128, 64), 32×32: refresh only what depends on it.
+downsampler.encode( encoder, texture, { rect: { x: 128, y: 64, width: 32, height: 32 } } );
+// One face of a cube baked into a 6-layer 2d-array texture.
+downsampler.encode( encoder, faces, { layers: [ 2, 1 ] } );
+```
 
 ### `oddSizes: 'box'` and power-of-two destinations from a separate source (M2.5)
 

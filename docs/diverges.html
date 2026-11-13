@@ -173,7 +173,7 @@ footer { color: var(--muted); font-size: 13px; display: grid; gap: 6px; max-widt
 			<div class="phase"><span class="st st-done">done</span><h3>M2 · features</h3><p>Reductions, separate source (Hi-Z), 21 formats incl. rgb9e5 and rg11b10 via the buffer path, compatibility mode, encodePass.</p></div>
 			<div class="phase"><span class="st st-done">done</span><h3>M2T · tools first</h3><p>Reducer (hooks, sums, weights, 8 channels, payload folds, level selection), ScalarReduction, FSR 3.1 and upscaler fixtures, 'spd' mode and tail kernel measured.</p></div>
 			<div class="phase"><span class="st st-now">now</span><h3>Windows runs</h3><p>Cross-vendor timings for the upscaler exposure branch, the tool fixtures and the SPD comparison. Run sheet below.</p></div>
-			<div class="phase"><span class="st st-next">next</span><h3>M2.4 / M2.5</h3><p>Layer range and rect; 'box' odd sizes; power-of-two destination from a separate source.</p></div>
+			<div class="phase"><span class="st st-next">next</span><h3>M2.4 / M2.5</h3><p>Layer range and rect: done (2026-11-13). 'box' odd sizes and a power-of-two destination from a separate source: in progress.</p></div>
 			<div class="phase"><span class="st st-next">next</span><h3>M3 · dial in</h3><p>Throughput bench, STORAGE_BINDING cost, a cheaper exact kernel (~20 % headroom at 1024²), subgroups with fallback, fp16.</p></div>
 			<div class="phase"><span class="st st-next">later</span><h3>M4 · docs, M5 · ship</h3><p>Usage docs and examples; npm publish, tools as consumers, three.js PR, gpuweb comment (your review first).</p></div>
 		</div>
@@ -349,13 +349,13 @@ const entries = [
 		quality: 'None.',
 		perfKind: 'estimate', perf: 'Saves one full-frame write and read per frame for video pyramids.',
 		perfShort: 'Saves a full-frame copy per frame', qualityShort: 'None', note: 'Matters for video, the upscaler and ML preprocessing.' },
-	{ n: 15, title: 'No sub-rectangle yet', src: [ 'spd' ], srcText: 'SPD', verdict: 'planned', effort: 'M',
+	{ n: 15, title: 'Sub-rectangles rewrite exact per-level regions, not 64-texel tiles', src: [ 'spd' ], srcText: 'SPD', verdict: 'keep', effort: '—',
 		they: 'SPD\'s rectInfo snaps to 64-texel source tiles and recomputes levels below 64×64 for the whole texture.',
-		we: 'Not yet: M2.4.',
-		why: 'Scheduled after formats.',
-		converge: 'M. Matching SPD\'s snapping is simplest; a tighter rect saves more work but needs per-level rounding rules.',
-		quality: 'Depends on the snapping decision.',
-		perfKind: 'estimate', perf: 'Saves work on partial updates.', perfShort: 'Saves work on partial updates', qualityShort: 'Depends on snapping', note: 'Decide snapping in M2.4.' },
+		we: 'Done (M2.4, 2026-11-13): encode( …, { rect, layers } ). Each level rewrites exactly the texels whose footprint touches the previous level\'s rewritten ones (2x … 2x+2 under exact and the tail; clamped blocks per batch under spd). Works with every path: tail, spd, buffer output, compatibility mode, separate sources, encodePass.',
+		why: 'Bit-identical to a full recompute when only the rect changed, and fewer texels than snapping to tiles.',
+		converge: 'None needed: tighter by design.',
+		quality: 'None: bit-identical to a full recompute (GPU suite, 11/11 mutations caught).',
+		perfKind: 'estimate', perf: 'Fewer texels per partial update than SPD; not timed yet.', perfShort: 'Fewer texels than SPD (not timed)', qualityShort: 'None', note: 'Resolved.' },
 	{ n: 16, title: 'sRGB through a scratch copy or buffer', src: [ 'spd' ], srcText: 'SPD', verdict: 'planned', effort: 'M',
 		they: 'SPD samples an sRGB view and writes a UNORM alias of the same texture.',
 		we: 'WebGPU forbids sRGB storage even through a view, so reduce in linear, write rgba8unorm scratch or a buffer, then copy.',
