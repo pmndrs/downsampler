@@ -177,6 +177,16 @@ export interface EncodeOptions {
 	 * (the 16 most recent are cached per texture). See SPEC.md §5.
 	 */
 	rect?: Rect;
+	/**
+	 * Buffer output path (sRGB, rgb9e5ufloat, …; SPEC.md §6.1): write through this buffer
+	 * instead of one the Downsampler allocates and keeps per texture and option set. Share
+	 * one across textures to bound memory (each chain's copies are recorded before the
+	 * next dispatch writes it, and commands run in order; don't interleave batches of
+	 * different chains when dispatching `prepare()` yourself). Needs STORAGE and COPY_SRC
+	 * usage and at least {@link Downsampler.scratchSize} bytes. Never destroyed by the
+	 * Downsampler. Ignored on the storage path.
+	 */
+	scratch?: GPUBuffer;
 }
 
 /** A `copyBufferToTexture` of one level, after a buffer-path batch. */
@@ -228,6 +238,8 @@ export interface PreparedBatch extends Batch {
 
 interface CachedPlan {
 	source: GPUTexture | undefined;
+	/** The caller's scratch buffer the plan writes (EncodeOptions.scratch), if any. */
+	scratch: GPUBuffer | undefined;
 	batches: PreparedBatch[];
 	/** Buffer path: the scratch buffer and layout uniforms, destroyed on release. */
 	buffers: GPUBuffer[];
@@ -265,6 +277,7 @@ interface PlanParameters {
 	oddSizes: OddSizePolicy;
 	reduction: Reduction;
 	sourceMipLevel: number;
+	scratch: GPUBuffer | undefined;
 }
 
 /**
@@ -448,6 +461,23 @@ export class Downsampler {
 
 	}
 
+	/**
+	 * Bytes an {@link EncodeOptions.scratch} buffer needs for `texture` with these options
+	 * (`baseMipLevel`, `mipLevelCount`, `source`): every written level and layer in the
+	 * buffer path's layout, which holds any batch of the chain (about a third of the base
+	 * level in place, 256-byte rows). 0 when `texture` takes the storage path.
+	 */
+	scratchSize( texture: GPUTexture, options: EncodeOptions = {} ): number {
+
+		if ( this.outputPath( texture ) !== 'buffer' ) return 0;
+		const baseMipLevel = options.baseMipLevel ?? 0;
+		const end = options.mipLevelCount === undefined ? texture.mipLevelCount : baseMipLevel + options.mipLevelCount;
+		const first = options.source === undefined ? baseMipLevel + 1 : baseMipLevel;
+		const levels = Array.from( { length: Math.max( 0, end - first ) }, ( _, i ) => [ mipSize( texture.width, first + i ), mipSize( texture.height, first + i ) ] as const );
+		return levels.length === 0 ? 0 : outputBufferLayout( levels, texture.depthOrArrayLayers, formats[ texture.format as SupportedFormat ].bytesPerTexel ).size;
+
+	}
+
 	/** Record the mip chain into an encoder. Throws for unsupported textures. */
 	encode( encoder: GPUCommandEncoder, texture: GPUTexture, options: EncodeOptions = {} ): void {
 
@@ -533,7 +563,7 @@ export class Downsampler {
 		if ( oddSizes === 'spd' && isIntFormat( texture.format as SupportedFormat ) ) throw new Error( `downsampler: oddSizes 'spd' isn't available for integer formats (${ texture.format }): its batches carry unrounded float sums between levels, which can't hold 32-bit integers exactly. Use oddSizes 'exact' (the default) or 'box', which reduce integers exactly.` );
 		if ( oddSizes === 'spd' && reduction !== 'average' ) throw new Error( 'downsampler: oddSizes \'spd\' is for \'average\' only. It drops the last odd row or column, so min/max/minmax and custom folds would not be a conservative Hi-Z; use oddSizes \'exact\' (the default), or a Reducer with edges \'zero-weight\' (⌈n/2⌉ sizes, every texel counted).' );
 		const sourceMipLevel = source?.mipLevel ?? 0;
-		const parameters: PlanParameters = { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel };
+		const parameters: PlanParameters = { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel, scratch: options.scratch };
 		const key = `${ baseMipLevel }:${ mipLevelCount }:${ oddSizes }:${ reductionKey( reduction ) }:${ source === undefined ? 'self' : `source:${ sourceMipLevel }${ source.resample === 'area' ? ':area' : '' }` }`;
 
 		if ( options.rect === undefined && options.layers === undefined ) {
@@ -541,7 +571,7 @@ export class Downsampler {
 			let cache = this.plans.get( texture );
 			if ( cache === undefined ) this.plans.set( texture, cache = new Map() );
 			const cached = cache.get( key );
-			if ( cached !== undefined && cached.source === source?.texture ) return cached.batches;
+			if ( cached !== undefined && cached.source === source?.texture && cached.scratch === options.scratch ) return cached.batches;
 			const plan = this.build( texture, parameters, null );
 			cache.set( key, plan );
 			return plan.batches;
@@ -564,7 +594,7 @@ export class Downsampler {
 		if ( cache === undefined ) this.regionPlans.set( texture, cache = new Map() );
 		const cached = cache.get( regionKey );
 		cache.delete( regionKey );
-		if ( cached !== undefined && cached.source === source?.texture ) {
+		if ( cached !== undefined && cached.source === source?.texture && cached.scratch === options.scratch ) {
 
 			cache.set( regionKey, cached );
 			return cached.batches;
@@ -580,7 +610,7 @@ export class Downsampler {
 	}
 
 	/** Prepares the batches of one plan; `region` makes it a partial update. */
-	private build( texture: GPUTexture, { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel }: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null ): CachedPlan {
+	private build( texture: GPUTexture, { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel, scratch: scratchBuffer }: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null ): CachedPlan {
 
 		const format = texture.format as SupportedFormat;
 		const viewDimension = ( texture as GPUTexture & { textureBindingViewDimension?: ViewDimension } ).textureBindingViewDimension;
@@ -623,7 +653,15 @@ export class Downsampler {
 			const size = Math.max( ...included.map( ( { index } ) => layouts[ index ].size ) );
 			const limit = Math.min( this.device.limits.maxStorageBufferBindingSize, this.device.limits.maxBufferSize );
 			if ( size > limit ) throw new Error( `downsampler: the buffer output path needs a ${ size }-byte buffer for this texture, above this device's maxStorageBufferBindingSize / maxBufferSize (${ limit }); request higher limits.` );
-			if ( region === null ) buffers.push( scratch = this.device.createBuffer( { label: `downsampler output ${ format }`, size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC } ) );
+			// A caller's scratch buffer (EncodeOptions.scratch): checked, never destroyed here.
+			if ( scratchBuffer !== undefined ) {
+
+				const usage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC;
+				if ( ( scratchBuffer.usage & usage ) !== usage ) throw new Error( 'downsampler: the scratch buffer needs STORAGE and COPY_SRC usage.' );
+				if ( scratchBuffer.size < size ) throw new Error( `downsampler: the scratch buffer has ${ scratchBuffer.size } bytes; this chain needs ${ size } (scratchSize( texture, options ) gives a size that fits).` );
+				scratch = scratchBuffer;
+
+			} else if ( region === null ) buffers.push( scratch = this.device.createBuffer( { label: `downsampler output ${ format }`, size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC } ) );
 			else scratch = this.sharedScratch( texture, size );
 
 		}
@@ -747,7 +785,7 @@ export class Downsampler {
 		}
 
 		for ( const create of deferred ) create();
-		return { source: source?.texture, batches, buffers };
+		return { source: source?.texture, scratch: scratchBuffer, batches, buffers };
 
 	}
 

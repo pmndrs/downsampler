@@ -14,6 +14,7 @@ export { checkChannels, footprint, foldChannel, isBuiltinReduction, isChannelOps
 export type { BuiltinReduction, ChannelOp, ChannelOps, Channels, CustomReduction, PayloadGroup, EdgePolicy, PyramidReferenceReduction, Reduction, ReferenceReduction, ResolvedReduction, TileEdgePolicy } from './core/reduction.js';
 export { maxViolations, spdChainReference, spdReference } from './core/spd.js';
 export { areaOverlap, areaReference, areaSpan, boxChainReference, boxReference } from './core/box.js';
+export { quantizeSrgb, srgbBounds, srgbCode, srgbDecode, srgbDecodeTable, srgbEncode, srgbLevel, srgbSteps, srgbThresholds } from './core/srgb.js';
 export { checkLevels, levelSize, maxTileLevels, pyramidTolerance, reducePyramid, tileDispatch } from './core/pyramid.js';
 export type { PyramidLevel, PyramidReferenceOptions, TileDispatch } from './core/pyramid.js';
 export { isSumOp, scalarBlock, scalarCombineDepth, scalarCombineReference, scalarDepth, scalarInvocations, scalarOps, scalarReference, scalarSide, scalarWeightChannel, scalarWorkgroups } from './core/scalar.js';

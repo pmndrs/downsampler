@@ -11,6 +11,7 @@ import { validatePacked } from './validate-packed.js';
 import { validateScalar } from './validate-scalar.js';
 import { validatePayload } from './validate-payload.js';
 import { validateRegion } from './validate-region.js';
+import { validateSrgb } from './validate-srgb.js';
 import { validateWide } from './validate-wide.js';
 import { assignShards, digest, Selection } from '../ci/shard.js';
 
@@ -85,7 +86,7 @@ export const variants = [
 ];
 
 /** Formats the 'box' variants run on: each quantization family's 4-channel format, the packed floats and r32float. */
-export const boxFormats = [ ...familyFormats, 'rgb9e5ufloat', 'rg11b10ufloat', 'r32float' ];
+export const boxFormats = [ ...familyFormats, 'rgb9e5ufloat', 'rg11b10ufloat', 'r32float', 'rgba8unorm-srgb' ];
 
 const mipSize = ( size, level ) => Math.max( 1, size >> level );
 
@@ -149,8 +150,8 @@ export function check( actual, expected, quantization, label, reduction = 'avera
 		// The largest channel may be off by its own filter allowance, and so cross an exponent: take its upper bound.
 		const t = i - i % 4;
 		const upper = c => expected.values[ t + c ] + expected.filterTolerance[ t + c ];
-		// The channel also sets rgb10a2unorm's step (2-bit alpha).
-		const texel = packed ? { channel: i % 4, texelMax: Math.max( upper( 0 ), upper( 1 ), upper( 2 ) ) } : { channel: i % 4, texelMax: 0 };
+		// The channel also sets rgb10a2unorm's step (2-bit alpha) and sRGB's (linear alpha).
+		const texel = packed || quantization === 'srgb8' ? { channel: i % 4, texelMax: Math.max( upper( 0 ), upper( 1 ), upper( 2 ) ) } : { channel: i % 4, texelMax: 0 };
 		const limit = exact ? 0 : tolerance( expected.values[ i ], quantization, expected.filterTolerance[ i ], reduction, texel ) + Math.abs( expected.values[ i ] ) * slack;
 		if ( ! Number.isFinite( actual[ i ] ) || error > limit ) {
 
@@ -195,6 +196,7 @@ export const compatibility = device => ! device.features.has( 'core-features-and
  * 'odd' runs only the 'spd' and tail variants of the main matrix (part of 'downsampler', for debugging),
  * 'box' the main matrix's 'box' variants and validate-box.js (M2.5; also part of 'downsampler').
  * 'region' runs only the partial updates (`rect`, `layers`; validate-region.js; part of 'downsampler').
+ * 'srgb' runs the sRGB formats of the main matrix, sRGB separate sources and validate-srgb.js (M2.3.5; part of 'downsampler').
  * 'integer' runs only the integer formats (validate-integer.js; part of 'downsampler'), and 'format:<name>'
  * the main matrix of one format (for debugging and mutation checks).
  *
@@ -266,7 +268,10 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 		for ( const format of Object.keys( formats ) ) {
 
 			const { quantization, channels, filterable, feature, coreStorage } = formats[ format ];
-			const packed = isPackedQuantization( quantization );
+			const packed = isPackedQuantization( quantization ), srgb = quantization === 'srgb8';
+			if ( only === 'srgb' && ! srgb ) continue;
+			// Compatibility mode has no bgra8unorm-srgb textures at all.
+			if ( format === 'bgra8unorm-srgb' && compatibility( device ) ) { skipped.push( 'bgra8unorm-srgb (no such texture in compatibility mode)' ); continue; }
 			if ( only?.startsWith( 'packed' ) && ( ! packed || only !== 'packed' ) ) continue;
 			const int = isIntQuantization( quantization );
 			if ( only?.startsWith( 'integer' ) && ( ! int || only !== 'integer' ) ) continue;
@@ -274,9 +279,9 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 			if ( only?.startsWith( 'format:' ) && format !== only.slice( 7 ) ) continue;
 			const compatNoStorage = coreStorage === true && compatibility( device );
 			const storagePath = storageWritable( format, device.features ) && ! compatNoStorage;
-			// Without storage, packed formats, rgb10a2unorm (tier1) and rg32float in compatibility mode fall
-			// back to the buffer path ('auto' takes it for them); the rest are skipped.
-			const fallback = packed || compatNoStorage || ( ( format === 'rgb10a2unorm' || int ) && bufferWritable( format ) );
+			// Without storage, packed and sRGB formats, rgb10a2unorm (tier1) and rg32float in compatibility mode
+			// fall back to the buffer path ('auto' takes it for them); the rest are skipped.
+			const fallback = packed || srgb || compatNoStorage || ( ( format === 'rgb10a2unorm' || int ) && bufferWritable( format ) );
 			if ( compatNoStorage ) {
 
 				skipped.push( `${ format } storage path (no storage in compatibility mode)` );
@@ -301,16 +306,16 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 			// patterns. SwiftShader takes 30 s or more to compile a 32×32-tile pipeline.
 			const odd = variant => variant.oddSizes !== undefined || variant.tail === true;
 			const quickOdd = variant => quick && odd( variant );
-			const quickFormats = variant => variant.tail ? [ 'rgba8unorm', 'rgba16float' ] : familyFormats;
+			const quickFormats = variant => variant.tail ? [ 'rgba8unorm', 'rgba16float' ] : [ ...familyFormats, 'rgba8unorm-srgb' ];
 			const formatVariants = variants.filter( variant => ( filterable || ! variant.filterableOnly ) && ( only !== 'odd' || odd( variant ) ) && ! ( quickOdd( variant ) && ! quickFormats( variant ).includes( format ) ) && ( ! variant.box || boxFormats.includes( format ) ) && ( only !== 'box' || variant.box ) );
-			const family = familyFormats.includes( format ) || packed;
+			const family = familyFormats.includes( format ) || packed || format === 'rgba8unorm-srgb';
 			const storageShapes = ! storagePath ? [] : family ? cases : subset;
 			// The buffer path runs every shape when it is a packed format's only path (rgb9e5ufloat;
 			// rg11b10ufloat without tier1), else the subset, for each family format plus a few
 			// others with a distinct word layout (bgra byte order, two 16-bit channels, 1–2 float words).
 			// --quick (CI, SwiftShader, where the packed encoders are slow): the buffer path runs
 			// the subset shapes at widths 1, 4 and 6, for the fallback formats only.
-			const bufferShapes = packed && ! storagePath && ! quick ? cases : fallback || ( bufferFormats.includes( format ) && ! quick ) ? subset : [];
+			const bufferShapes = ( packed || srgb ) && ! storagePath && ! quick ? cases : fallback || ( bufferFormats.includes( format ) && ! quick ) ? subset : [];
 			const formatBufferSets = quick ? bufferSets.filter( set => set.levels !== 5 ) : bufferSets;
 			const formatCases = storageShapes === cases || bufferShapes === cases ? cases : subset;
 			for ( const [ shapeIndex, shape ] of formatCases.entries() ) {
@@ -390,7 +395,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 							// formats are exact there too, against an oracle that sums in
 							// float32 in the kernel's order (their sums aren't always exact).
 							// A tail's odd steps get the tolerance too (toleratedLevels).
-							const firstOutputs = toleratedLevels( downsampler.prepare( texture, options ), width, height, packed );
+							const firstOutputs = toleratedLevels( downsampler.prepare( texture, options ), width, height, packed || srgb );
 							let previous = input.floats, w = width, h = height;
 
 							for ( let level = 1; level < texture.mipLevelCount; level ++ ) {
@@ -398,10 +403,10 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 								const key = `${ variant.name }:${ pattern }`;
 								const inTile = ! firstOutputs.has( level );
 								let expected = level === 1 ? firstLevels.get( key ) : undefined;
-								if ( expected === undefined ) expected = ( variant.oddSizes === 'box' ? boxReference : reduceReference )( previous, w, h, layers, quantization, reference, { ...( packed && inTile ? { pairing: 'float32' } : {} ), weights: sampledLevels.has( level ) ? 'sampler' : 'shader' } );
+								if ( expected === undefined ) expected = ( variant.oddSizes === 'box' ? boxReference : reduceReference )( previous, w, h, layers, quantization, reference, { ...( ( packed || srgb ) && inTile ? { pairing: 'float32' } : {} ), weights: sampledLevels.has( level ) ? 'sampler' : 'shader' } );
 								if ( level === 1 ) firstLevels.set( key, expected );
 								const actual = mips[ level - 1 ];
-								result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ label } mip ${ level }`, reference, channels, 0, ( isIntegerDomain( quantization ) || packed ) && inTile ) );
+								result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ label } mip ${ level }`, reference, channels, 0, ( isIntegerDomain( quantization ) || packed || srgb ) && inTile ) );
 								previous = actual; w = expected.width; h = expected.height;
 
 							}
@@ -439,6 +444,12 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 			results.push( ...await validateRegion( device, { quick, onProgress, select } ) );
 
+		} else if ( only === 'srgb' ) {
+
+			// The main matrix's sRGB formats (above), sRGB separate sources and validate-srgb.js.
+			results.push( ...await validateSource( device, { quick, onProgress, select, srgbOnly: true } ) );
+			results.push( ...await validateSrgb( device, { quick, onProgress, select } ) );
+
 		} else if ( only?.startsWith( 'format:' ) ) {
 
 			// The main matrix of one format (above).
@@ -462,6 +473,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 				results.push( ...await validateRegion( device, { quick, onProgress, select } ) );
 				results.push( ...await validatePacked( device, { quick, onProgress, part: 'downsampler', select } ) );
 				results.push( ...await validateBox( device, { quick, onProgress, select } ) );
+				results.push( ...await validateSrgb( device, { quick, onProgress, select } ) );
 				results.push( ...await validateInteger( device, { quick, onProgress, select } ) );
 
 			}
@@ -537,7 +549,13 @@ export const sourceCases = [
 	// HDR into the GI formats, on the buffer path (rg11b10ufloat: storage when tier1 is available).
 	{ source: 'rgba16float', destination: 'rgb9e5ufloat', relation: 'half', reductions: [ 'average', 'max' ] },
 	{ source: 'rgba32float', destination: 'rgb9e5ufloat', relation: 'same', reductions: [ 'average' ] },
-	{ source: 'rgba16float', destination: 'rg11b10ufloat', relation: 'half', reductions: [ 'average', 'min' ] }
+	{ source: 'rgba16float', destination: 'rg11b10ufloat', relation: 'half', reductions: [ 'average', 'min' ] },
+	// sRGB (M2.3.5): decoded (and snapped to the exact table on loads), reduced in linear,
+	// encoded as stored; HDR clamps into it, and an sRGB source converts to linear float.
+	{ source: 'rgba8unorm-srgb', destination: 'rgba8unorm-srgb', relation: 'same', reductions: [ 'average', 'max' ] },
+	{ source: 'bgra8unorm-srgb', destination: 'bgra8unorm-srgb', relation: 'half', reductions: [ 'average', 'min' ] },
+	{ source: 'rgba16float', destination: 'rgba8unorm-srgb', relation: 'half', reductions: [ 'average', 'max' ] },
+	{ source: 'rgba8unorm-srgb', destination: 'rgba16float', relation: 'half', reductions: [ 'average' ] }
 ];
 
 // After the source batch, every batch is the in-place code the main matrix covers
@@ -573,7 +591,7 @@ export function splat( floats ) {
 
 }
 
-async function validateSource( device, { quick, onProgress, select, packedOnly = false } ) {
+async function validateSource( device, { quick, onProgress, select, packedOnly = false, srgbOnly = false } ) {
 
 	const results = [];
 	const shapes = quick ? sourceShapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : sourceShapes;
@@ -593,7 +611,9 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 	for ( const { source: sourceFormat, destination: format, relation, reductions } of sourceCases ) {
 
 		if ( packedOnly && ! isPackedQuantization( formats[ format ].quantization ) ) continue;
+		if ( srgbOnly && ! [ format, sourceFormat ].some( f => f.endsWith( '-srgb' ) ) ) continue;
 		if ( formats[ format ].coreStorage && compatibility( device ) ) continue;
+		if ( [ format, sourceFormat ].includes( 'bgra8unorm-srgb' ) && compatibility( device ) ) continue;
 
 		const { quantization, channels } = formats[ format ];
 

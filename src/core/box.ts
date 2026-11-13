@@ -19,6 +19,7 @@
  * the smallest conservative footprint at any ratio. For a 2:1 step it is
  * `footprint()`, so under `oddSizes: 'box'` folds are the 'exact' folds.
  */
+import { srgbLevel } from './srgb.js';
 import { channelDomain, isIntegerDomain, isIntQuantization, isPackedQuantization, quantize, quantizeTexel, roundHalfEven, type Quantization } from './formats.js';
 import { pyramidTolerance } from './pyramid.js';
 import { foldChannel, type ReferenceReduction } from './reduction.js';
@@ -75,6 +76,8 @@ export function areaReference( source: ArrayLike<number>, width: number, height:
 
 	if ( ! Number.isInteger( outWidth ) || ! Number.isInteger( outHeight ) || outWidth < 1 || outHeight < 1 ) throw new Error( `downsampler: area reference size ${ outWidth }×${ outHeight } is not a texture size.` );
 	if ( isIntQuantization( quantization ) ) throw new Error( `downsampler: ${ quantization } is an integer format; use intReference with weights 'area'.` );
+	// sRGB: colour in linear float32 then encoded as stored, alpha as unorm8 (src/core/srgb.ts).
+	if ( quantization === 'srgb8' ) return srgbLevel( ( q, quantizedInput ) => areaReference( source, width, height, layers, q, reduction, outWidth, outHeight, { ...options, quantizedInput } ), options.quantizedInput ?? true );
 	const twoToOne = halves( width, outWidth ) && halves( height, outHeight );
 	if ( twoToOne && ( reduction !== 'average' || ( exactBox( width, outWidth ) && exactBox( height, outHeight ) ) ) ) return reduceReference( Float32Array.from( source ), width, height, layers, quantization, reduction, options );
 

@@ -174,12 +174,13 @@ downsampler.encodePass( pass, texture, encodeOptions );  // into a compute pass 
 | `bgra8unorm` | `bgra8unorm-storage` |
 | `rg11b10ufloat`, `rgb10a2unorm` | storage with `texture-formats-tier1`; otherwise the buffer path |
 | `rgb9e5ufloat` | always the buffer path (it is never a storage texture) |
+| `rgba8unorm-srgb`, `bgra8unorm-srgb` | always the buffer path (WebGPU has no sRGB storage textures); reduced in linear light ([sRGB colour](#srgb-colour)) |
 | `rgba8uint`, `rgba8sint`, `rgba16uint`, `rgba16sint`, `r32uint`, `r32sint`, `rg32uint`, `rg32sint`, `rgba32uint`, `rgba32sint` | core (`rg32uint`/`rg32sint`: the buffer path in compatibility mode) |
 | `r8uint`, `r8sint`, `rg8uint`, `rg8sint`, `r16uint`, `r16sint`, `rg16uint`, `rg16sint`, `rgb10a2uint` | `texture-formats-tier1`; without it the 4-byte ones (`rg16uint`, `rg16sint`, `rgb10a2uint`) take the buffer path |
 
 **Integer formats** are reduced in exact integer arithmetic (SPEC §6.1 Integer formats). `'average'` is the exact mean, rounded to the nearest integer with ties to even, at every width (32-bit sums don't overflow): the 2×2 mean at even sizes, the render-pass bilinear weights as exact fractions at odd sizes under `'exact'`, area weights under `'box'`. Folds work as for any format; a custom fold is `fn reduce(a: vec4u, b: vec4u) -> vec4u` for uint formats (e.g. `a | b` for occupancy) and takes `vec4i` for sint formats. A separate source must be an integer format of the same signedness; values are clamped to the destination's range. `oddSizes: 'spd'`, `Reducer` and `ScalarReduction` don't take integer formats (they accumulate floats).
 
-Not yet: sRGB formats (deferred, SPEC §11). Depth formats can't be destinations: use a separate source into `r32float` or `rg32float`.
+Depth formats can't be destinations: use a separate source into `r32float` or `rg32float`.
 
 `supports( texture )` and `unsupportedReason( texture )` (a string or `null`) say whether it can, and why not: a missing feature, usage or format. `encode`, `generate` and `prepare` throw with the same reason.
 
@@ -208,6 +209,7 @@ The constructor validates every option and throws on an unknown value. The resol
 | `source` | none | `{ texture, mipLevel = 0, resample? }`: read the first level from another texture; `resample: 'area'` allows any destination size ([Separate source](#separate-source-hi-z-from-depth)). |
 | `layers` | every layer | `[ first, count ]`: reduce only these array layers ([Partial updates](#partial-updates-rect-and-layers)). |
 | `rect` | none | `{ x, y, width, height }`: the dirty texels of the first source level; later levels rewrite only what depends on them ([Partial updates](#partial-updates-rect-and-layers)). |
+| `scratch` | none | Buffer path only: a `GPUBuffer` (STORAGE \| COPY_SRC, at least `scratchSize( texture, options )` bytes) to write through instead of one the Downsampler allocates per texture. Share one across textures to bound memory ([Output paths](#output-paths)). Ignored on the storage path; never destroyed by the library. |
 
 ### Odd sizes
 
@@ -301,9 +303,30 @@ Pipelines are cached per `Downsampler` and compiled synchronously on first use o
 |---|---|---|
 | `'storage'` | one write-only storage texture per level | `STORAGE_BINDING` |
 | `'buffer'` | packed texels into one storage buffer, then a `copyBufferToTexture` per level | `COPY_DST`, a format of whole 32-bit words |
-| `'auto'` (default) | storage whenever the device can store the format; the buffer path only for formats it can't (`rgb9e5ufloat`, `rg11b10ufloat` without tier1, `rg32float` in compatibility mode) | as above |
+| `'auto'` (default) | storage whenever the device can store the format; the buffer path only for formats it can't (`rgb9e5ufloat`, the sRGB formats, `rg11b10ufloat` without tier1, `rg32float` in compatibility mode) | as above |
 
-`outputPath( texture )` returns `'storage'`, `'buffer'` or `null`. A storable texture without `STORAGE_BINDING` is an error under `'auto'`, not a silent switch to the slower buffer path. The buffer path writes six levels per dispatch at any storage texture limit, and costs one extra write and read of the written levels (1.6–2.3× the storage path where both exist; SPEC §6.1).
+`outputPath( texture )` returns `'storage'`, `'buffer'` or `null`. A storable texture without `STORAGE_BINDING` is an error under `'auto'`, not a silent switch to the slower buffer path. The buffer path writes six levels per dispatch at any storage texture limit, and costs one extra write and read of the written levels (1.6–2.3× the storage path where both exist; SPEC §6.1). It can't record into a caller's compute pass (`encodePass` throws; use `encode`).
+
+Each texture's plan keeps its own scratch buffer, sized for its largest batch (about a third of the base level), until `release( texture )`. With many textures, share one instead:
+
+```js
+const scratch = device.createBuffer( { size: downsampler.scratchSize( largest ), usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC } );
+for ( const texture of textures ) downsampler.encode( encoder, texture, { scratch } ); // one encoder is fine: each chain copies out before the next writes
+```
+
+`scratchSize( texture, options? )` is the size that fits any batch of that chain (every written level in the buffer layout), and 0 for storage-path textures. A smaller buffer is rejected with the size the chain needs.
+
+### sRGB colour
+
+`rgba8unorm-srgb` and `bgra8unorm-srgb` textures (most colour textures in three.js) are reduced in **linear light** and stored sRGB-encoded, as render-pass mipmaps of an sRGB texture are:
+
+- Each batch reads the sRGB view, so the hardware decodes every texel to linear (and filters in linear on the sample path). Black and white average to 0.5 linear, code 188, not 128.
+- Each level is encoded to 8-bit codes in the shader with the exact sRGB curve, **rounded to nearest** (correctly rounded for the shader's f32 value: a `pow` estimate, corrected against the exact thresholds), and written through the buffer path, since WebGPU has no sRGB storage textures, even through a view. Later levels in a batch read it back through the exact decode table, so a chain equals level-by-level generation.
+- Alpha is linear (these formats store it as plain unorm8): averaged in 0–255 units, ties to even, as `rgba8unorm`.
+- `'min'`, `'max'` and `'minmax'` select stored codes exactly: the decode is monotonic and the encoder inverts it, so they equal folding the codes themselves.
+- Hardware decoding isn't exact everywhere: an Apple M5 Pro decodes to 12-bit linear values (254 of 256 codes inexact, up to 0.39 of a code step off). `averageAccess: 'load'` snaps every loaded texel to the exact decode table, so results are the same on every GPU; the default `'sample'` keeps the hardware's decode and filtering, as render passes do (about a code from the exact result at most).
+- Cost (M5 Pro, not idle, SPEC §6.1 sRGB): 1.2–2× faster than render passes up to 1280×720 and at 1024², a tie at 1707×960, and slower from 1080p up (render passes take 0.55–0.79× the time), where the buffer path's extra copy of every level dominates. For large sRGB textures, three's own render-pass mipmaps may be the faster choice. `'load'` costs 1.7–2.1×.
+- The texture needs `COPY_DST` (three.js gives its textures that). `oddSizes`, `rect`, `layers`, separate sources (into or out of sRGB), the tail kernel and compatibility mode all work; `encodePass` doesn't (the buffer path's copies).
 
 ### Compatibility mode
 
@@ -492,7 +515,7 @@ generateMipmaps( renderer, texture, { encoder, downsampler: { averageAccess: 'lo
 | `requiredLimits( adapter )` | The same function as in `downsampler/webgpu`, for `new WebGPURenderer( { requiredLimits } )`. |
 | `Downsampler` | Re-exported. |
 
-The texture must have `STORAGE_BINDING` usage (in current three.js a `StorageTexture` or `StorageArrayTexture`), or `COPY_DST` for formats that take the buffer path. Regular textures don't get storage usage from three today; native support for them is planned as an in-tree three.js option (SPEC §10). See [examples/three.html](../examples/three.html).
+The texture must have `STORAGE_BINDING` usage (in current three.js a `StorageTexture` or `StorageArrayTexture`), or `COPY_DST` for formats that take the buffer path. sRGB colour textures (`SRGBColorSpace`, so `rgba8unorm-srgb`) always take the buffer path, so regular three.js colour textures, which have `COPY_DST`, work today. Other regular textures don't get storage usage from three; native support for them is planned as an in-tree three.js option (SPEC §10). See [examples/three.html](../examples/three.html).
 
 ## The core package: oracles and planning
 
@@ -509,10 +532,11 @@ The texture must have `STORAGE_BINDING` usage (in current three.js a `StorageTex
 | `intReference( values, width, height, layers, quantization, reduction, { weights, width, height, source } )`, `roundedMean` | Integer-format steps, exact: `weights: 'bilinear'` (`'exact'`) or `'area'` (`'box'`, a resampled source). |
 | `maxViolations( base, width, height, level, w, h )` | Counts max-pyramid texels below some base texel in their area: 0 for a conservative Hi-Z. |
 | `planBatches( width, height, options )`, `mipSize`, `mipLevelCountFor`, `levelSize`, `footprint` | Planning and sizes. |
-| `formats`, `quantize`, `toHalf`, `fromHalf`, `packRgb9e5`, … | Format table and encoders. |
+| `formats`, `quantize`, `quantizeTexel`, `toHalf`, `fromHalf`, `packRgb9e5`, … | Format table and encoders. |
+| `srgbCode`, `srgbDecodeTable`, `quantizeSrgb`, `srgbThresholds`, `srgbBounds`, `srgbDecode`, `srgbEncode` | sRGB: the correctly rounded encoder, the exact decode table, the rounding thresholds and the f32 bounds the shader compares against. The oracles take the quantization `'srgb8'`. |
 
-The WGSL generators are exported from `downsampler/webgpu` for vendoring: `createKernel`, `kernelLayoutEntries`, `float16Wgsl`, `packedFloatWgsl`, `bufferOutputWgsl`, `createIntKernel`, `intMeanWgsl`, `createScalarKernel`.
+The WGSL generators are exported from `downsampler/webgpu` for vendoring: `createKernel`, `kernelLayoutEntries`, `float16Wgsl`, `packedFloatWgsl`, `srgbWgsl`, `bufferOutputWgsl`, `createIntKernel`, `intMeanWgsl`, `createScalarKernel`. An exact kernel for an sRGB format with `output: 'storage'` writes the encoded bytes to storage textures of the linear alias format (`srgbScratchFormat`: `rgba8unorm` or `bgra8unorm`), for a self-dispatching tool that copies them into the sRGB level with `copyTextureToTexture`.
 
 ## Coming next
 
-sRGB destinations (deferred, three.js-driven); subgroup kernels and fp16 math only if measured faster (M3). The full list is in [SPEC.md §11](../SPEC.md#11-milestones) and [DIVERGES.md](../DIVERGES.md).
+Transform hooks around the average (premultiplied alpha, log-luminance; SPEC §5 Planned); subgroup kernels and fp16 math only if measured faster (M3). The full list is in [SPEC.md §11](../SPEC.md#11-milestones) and [DIVERGES.md](../DIVERGES.md).

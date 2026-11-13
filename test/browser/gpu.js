@@ -1,5 +1,5 @@
 // Shared browser-side helpers for the GPU suite, benchmark and device lab.
-import { channelDomain, formats, fromHalf, intRange, isIntegerDomain, isIntQuantization, isPackedQuantization, isSupportedFormat, packTexel, storageWritable, toHalf, unpackTexel } from '/dist/index.js';
+import { channelDomain, formats, fromHalf, intRange, isIntegerDomain, isIntQuantization, isPackedQuantization, isSupportedFormat, packTexel, srgbDecodeTable, storageWritable, toHalf, unpackTexel } from '/dist/index.js';
 import { requiredLimits } from '/dist/webgpu/index.js';
 
 /**
@@ -66,7 +66,7 @@ function storage( format ) {
 	const { quantization, channels } = formats[ format ];
 	if ( isPackedQuantization( quantization ) ) return { channels: 1, Array: Uint32Array, quantization, packed: true };
 	if ( quantization === 'unorm10a2' || quantization === 'uint10a2' ) return { channels: 1, Array: Uint32Array, quantization, word10a2: true };
-	const arrays = { unorm8: Uint8Array, snorm8: Int8Array, unorm16: Uint16Array, snorm16: Int16Array, float16: Uint16Array, float32: Float32Array, uint8: Uint8Array, sint8: Int8Array, uint16: Uint16Array, sint16: Int16Array, uint32: Uint32Array, sint32: Int32Array };
+	const arrays = { unorm8: Uint8Array, snorm8: Int8Array, unorm16: Uint16Array, snorm16: Int16Array, float16: Uint16Array, float32: Float32Array, srgb8: Uint8Array, uint8: Uint8Array, sint8: Int8Array, uint16: Uint16Array, sint16: Int16Array, uint32: Uint32Array, sint32: Int32Array };
 	return { channels, Array: arrays[ quantization ], quantization };
 
 }
@@ -75,9 +75,14 @@ function storage( format ) {
 export const pack10a2 = ( r, g, b, a ) => ( r | ( g << 10 ) | ( b << 20 ) | ( a << 30 ) ) >>> 0;
 export const unpack10a2 = word => [ word & 0x3ff, ( word >>> 10 ) & 0x3ff, ( word >>> 20 ) & 0x3ff, word >>> 30 ];
 
-/** A value in a format's encoding (the inverse of `decode`), rounding to nearest. `channel` matters for rgb10a2unorm's 2-bit alpha. */
+/**
+ * A value in a format's encoding (the inverse of `decode`), rounding to nearest. `channel` matters for
+ * rgb10a2unorm's 2-bit alpha. sRGB fixtures are made as codes: the value is the encoded one (code / 255)
+ * in every channel.
+ */
 function encode( value, quantization, channel = 0 ) {
 
+	if ( quantization === 'srgb8' ) return Math.min( 255, Math.max( 0, Math.round( value * 255 ) ) );
 	if ( isIntegerDomain( quantization ) ) {
 
 		const { scale, min, max } = channelDomain( quantization, channel );
@@ -89,8 +94,10 @@ function encode( value, quantization, channel = 0 ) {
 
 }
 
+/** A stored value as a read returns it; sRGB colour channels through the exact decode table (alpha is linear). */
 function decode( stored, quantization, channel = 0 ) {
 
+	if ( quantization === 'srgb8' ) return channel === 3 ? Math.fround( stored / 255 ) : srgbDecodeTable[ stored ];
 	if ( isIntegerDomain( quantization ) ) return Math.max( - 1, stored / channelDomain( quantization, channel ).scale );
 	if ( isIntQuantization( quantization ) ) return stored;
 	return quantization === 'float16' ? fromHalf( stored ) : stored;
