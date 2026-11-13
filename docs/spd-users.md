@@ -20,7 +20,7 @@ The kernel is SPD's idea, implemented independently in WGSL: a 64 × 64 source t
 | `SPD_LINEAR_SAMPLER` | `averageAccess: 'sample'` (the default for averages): one bilinear sample per 2 × 2 block. `'load'` applies the weights in the shader. |
 | Separate source SRV and destination UAV | `source: { texture, mipLevel }`. Destination level `baseMipLevel` may be the **same size** as the source (a converting copy, e.g. depth → `r32float`) or half; SPD always halves. |
 | Texture arrays (`slice` in the dispatch z) | All layers of a `'2d-array'` texture in the same dispatches (workgroup z). A layer range is coming (M2.4). |
-| `rectInfo` (sub-rectangle) | `rect: { x, y, width, height }` on `encode` (M2.4). It rewrites exact per-level regions instead of snapping to 64-texel tiles, bit-identical to a full recompute (DIVERGES #15). |
+| `rectInfo` (sub-rectangle) | `rect: { x, y, width, height }` on `encode` (M2.4). It rewrites exact per-level regions instead of snapping to 64-texel tiles, bit-identical to a full recompute (DIVERGES #15; [examples/partial-update.html](../examples/partial-update.html)). |
 | sRGB: sample an sRGB view, write a UNORM alias | Not yet. WebGPU forbids sRGB storage even through a view; planned via a scratch copy (M2.3.5). |
 | Packed fp16 (`A_HALF`, `SPD_PACKED_ONLY`) | Not offered: f32 math. Under review in M3, kept only if measurably faster. |
 | Wave/quad ops (`SpdReduceQuad`, `WaveReadLaneAt`) | Workgroup memory only: WGSL defines quads only in fragment shaders and no lane-to-index mapping in compute. A subgroup kernel is gated on measurement (M3). |
@@ -43,7 +43,7 @@ SPD halves with ⌊n/2⌋ and drops the last odd row or column. The default here
 
 The cost is dispatches: `'exact'` ends a batch at an odd size, 5–9 dispatches at render sizes before the tail kernel, which (on by default) brings 1920×1080 to 4. On an M5 Pro `'spd'` was 1.4–2.1× faster than `'exact'` at render sizes in rgba8, which is tens of µs per chain.
 
-For area-correct averages (SPD's 2×2 box generalized to odd sizes), `oddSizes: 'box'` takes nvpro_pyramid's weights: along an odd size `2n+1`, three taps weighted `(n−x, n, x+1)/(2n+1)`, so every texel counts in proportion to its overlap. Same dispatches as `'exact'`.
+For area-correct averages (SPD's 2×2 box generalized to odd sizes), `oddSizes: 'box'` takes nvpro_pyramid's weights: along an odd size `2n+1`, three taps weighted `(n−x, n, x+1)/(2n+1)`, so every texel counts in proportion to its overlap. Same dispatches as `'exact'`. [examples/odd-sizes.html](../examples/odd-sizes.html) puts the three policies side by side against the area-weighted ideal.
 
 ### Edges and rounding
 
@@ -99,7 +99,7 @@ AMD's exposure covers only the top-left `2^mips` square, and part of that window
 | Custom 4-way filter | a binary `{ wgsl }` fold, or a `Reducer` |
 | Separate target | `source: { texture, mipLevel }` (also same-size converting copies) |
 | `maxMipsPerPass` (above 6 uses the atomic handoff) | `levelsPerDispatch` (at most 6; there is no handoff) |
-| Integer formats, `rgb10a2unorm`, sub-rectangles | Not yet (M2.3.7, M2.3.3, M2.4) |
+| Integer formats, `rgb10a2unorm` | Not yet (M2.3.7, M2.3.3) |
 
 If you stay on webgpu-spd: set `maxMipsPerPass: 6` (its handoff returned stale levels on Apple), and don't use its min/max for Hi-Z at odd sizes. Measured with the same semantics, our `'spd'` was 1.2–2.1× faster than webgpu-spd on the M5 Pro, and 1.6× / 3.5× faster than its default on an RTX 3060 / Intel UHD in rgba8 ([results/compare/webgpu-spd.md](../results/compare/webgpu-spd.md)).
 

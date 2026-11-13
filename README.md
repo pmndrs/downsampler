@@ -123,7 +123,7 @@ Any browser with WebGPU compute and storage textures. Tested so far: Chrome 148â
 
 - [docs/guide.md](docs/guide.md): usage guide with every option.
 - [docs/spd-users.md](docs/spd-users.md): coming from AMD SPD, webgpu-spd or FSR.
-- [examples/](examples/): mip chain, Hi-Z from depth, `Reducer` block statistics, `ScalarReduction` exposure, three.js. `npm run examples`, then open http://localhost:8080/examples/.
+- [examples/](examples/): mip chain, Hi-Z from depth, power-of-two Hi-Z (`resample`), odd-size policies against the area-weighted ideal, partial updates (`rect`, `layers`), `Reducer` block statistics, `ScalarReduction` exposure, three.js. [Recipes](docs/guide.md#recipes) has the lines that matter from each. `npm run examples`, then open http://localhost:8080/examples/.
 - [SPEC.md](SPEC.md): design decisions and measurements. [DIVERGES.md](DIVERGES.md): every difference from SPD, nvpro and the WebGPU community, and why.
 
 ## Development
