@@ -1,6 +1,6 @@
 # downsampler — core specification
 
-Status: milestone 2 in progress, refocused on our tools (M2T, §11). M2.1 (reductions, load path), M2.2 (separate source, float32 formats), format steps 1–2 and the GI formats (buffer output path, rgb9e5ufloat, rg11b10ufloat) are done. This document is the source of truth for scope, design decisions, correctness requirements and the remaining plan. Update it when a decision changes.
+Status: milestone 2 in progress, refocused on our tools (M2T, §11). M2.1 (reductions, load path), M2.2 (separate source, float32 formats), format steps 1–2, the GI formats (buffer output path, rgb9e5ufloat, rg11b10ufloat) and M2.4 (layer ranges and partial updates, `rect`) are done. This document is the source of truth for scope, design decisions, correctness requirements and the remaining plan. Update it when a decision changes.
 
 ## 1. Purpose
 
@@ -158,7 +158,19 @@ A batch reads one source level and writes up to `levelsPerDispatch` consecutive 
 - **First output:** a hardware bilinear sample at each texel centre, using normalized coordinates. That is an exact 2×2 box for even sizes. For odd sizes it reproduces render-pass and WebGL mipmaps, which is **not** area-correct: 3→1 takes only the centre texel, so a 31×31 texture can reduce to an unrepresentative 1×1 (`greggman`'s example in gpuweb#5253). Area-weighted odd sizes are a candidate opt-in (§13).
 - **Later levels in the batch:** exact 2:1 reductions in workgroup memory, with clamped reads for unit dimensions and partial tiles.
 - **Batch boundaries:** a batch ends at `levelsPerDispatch`, or where the next reduction is inexact under `'exact'`. With `tail: true`, a first output of at most 32×32 (8×8 below 256 invocations per workgroup) starts a tail batch that finishes the chain (up to `levelsPerDispatch` levels) in one workgroup by the same rule. Under `'spd'`, batches end only at `levelsPerDispatch` (§2.1).
-- **Layers:** workgroup z selects the array layer, so all layers go in one dispatch.
+- **Layers:** workgroup z selects the array layer, so all layers go in one dispatch. A layer range (`layers`, §5) offsets z by the region uniform below.
+
+### Partial updates (`rect`, `layers`; M2.4, 2026-11-13)
+
+A partial update rewrites only what depends on a changed region: `rect` marks the dirty texels of the first source level (level `baseMipLevel` in place, or the separate source's level), `layers: [ first, count ]` the array layers. The region math is in core (`src/core/region.ts`: `planRegions`, `exactDependents`, `clampDependents`).
+- **Per-level regions.** Each level's region is the set of texels whose footprint touches the previous level's region, per axis:
+  - `'exact'` and tail batches: the fold footprint `2x … 2x+1`, plus `2x+2` along an odd source size (`footprint()`), so output `x` depends on dirty `[a, b]` when `⌊(a−1)/2⌋ ≤ x ≤ ⌊b/2⌋` (odd) or `⌊a/2⌋ ≤ x ≤ ⌊b/2⌋` (even or unit). It covers the bilinear average too, at any sampler weight rounding: a truncating sampler (Intel) moves a weight-0 tap from `2x+1` to `2x`, still inside. A same-size copy maps `[a, b]` to itself. Levels chain one step at a time.
+  - `'spd'` (`'clamp'` batches): level `l` of a batch reduces the clamped block `[x·2^l, (x+1)·2^l)` of the batch source, so `x ∈ [⌊a/2^l⌋, min(⌊b/2^l⌋, n−1)]`, computed from the batch source directly: a dropped last row or column belongs to no level-1 texel, but can reach a deeper one through the clamp (3 → 1 → 1), so in-batch levels can't be chained. A level whose region is empty writes nothing; a batch with no texels to write is left out.
+- **Bit-identical.** A texel in a region is computed by the same kernel code from the same inputs as in a full dispatch, so when the source changed only inside the rect and the old chain was valid, the result equals a full recompute bit for bit, and every texel outside the regions (and outside the layer range) is untouched. Updates compose: several rect updates in a row (or in one encoder) give the chain of the final source.
+- **Kernels.** A `region` variant of the exact, tail and `'clamp'` kernels adds a uniform (binding 11, 112 bytes): the first workgroup (in tiles) and the first layer, and per level the region's bounds. The dispatch covers the workgroups whose tiles hold any region texel (a tail batch is one workgroup); each computes its whole tile as usual and stores only inside the region. Full updates keep the old kernels: WGSL and layouts unchanged (4420 option sets compared byte for byte).
+- **Everything composes.** Every odd-size policy, reduction, kernel width, the tail kernel (the default), separate sources (the rect is in source texels), the buffer output path (the shared full-level buffer layout; each level's copy takes the region of the layers in range), compatibility mode (scratch levels get the regions, the copy dispatches copy the regions, and batches read the destination, which the copies have brought up to date) and `encodePass`. Nothing is rejected except invalid values: a rect that isn't integer, at least 1×1 and inside its level (the error names the level), and a layer range outside the texture.
+- **Cost and caching.** Per distinct rect and layer range: one uniform buffer (a 256-byte slot per dispatch) and bind groups, written once. The 16 most recent are cached per texture; evicted ones aren't destroyed (an unsubmitted encoder may hold them), `release( texture )` destroys them. So many partial updates may be recorded before one submit. The buffer path's scratch buffer is shared by a texture's partial plans.
+- **Against SPD's rectInfo:** SPD snaps the rect to 64-texel source tiles and recomputes levels below 64×64 whole; we write only the exact dependent texels of each level (DIVERGES #15). Not timed.
 
 ### Reductions
 
@@ -390,12 +402,20 @@ new Reducer( device, { levels: [ 1, 2, 3 ], format: 'rgb9e5ufloat', … } ); // 
 reducer.encodePass( pass, dispatch ); pass.end(); reducer.encodeCopies( encoder, dispatch ); // buffer outputs
 ```
 
+```ts
+// Partial updates (§4 Partial updates): rewrite only what depends on a changed region.
+downsampler.encode( encoder, texture, { rect: { x, y, width, height } } );   // dirty texels of level baseMipLevel
+downsampler.encode( encoder, cubeAs2dArray, { layers: [ 2, 1 ] } );          // only layer 2; others untouched
+downsampler.encode( encoder, hiZ, { source: { texture: depth }, rect, reduction: 'minmax' } ); // rect in source texels
+downsampler.prepare( texture, { rect } );   // batches carry regions (per level), groupX/groupY and layers
+
+import { planRegions, exactDependents, clampDependents } from 'downsampler'; // the region math (core)
+```
+
 ### Planned
 
 ```ts
 downsampler.encode( encoder, destination, {
-	layers: [ first, count ],
-	rect: { x, y, width, height },      // SPD rectInfo
 	oddSizes: 'exact' | 'spd' | 'box',
 	scratch: GPUTexture,                 // optional reusable scratch for sRGB destinations
 } );
@@ -410,8 +430,8 @@ downsampler.encode( encoder, destination, {
 | Custom reduction (`SpdReduce4`) | ✅ | average/min/max/minmax + custom WGSL `reduce(a, b)` fold (§4 Reductions). A weighted custom reduction (SPD's `SpdReduce4` used for averages) isn't offered under `'exact'`, where it has no defined odd-size meaning; tile kernels (`Reducer`, §14.1) add sums, weighted means and custom sums under `'zero-weight'` and `'clamp'`. Transforms around an average (premultiply, sRGB) are planned as load/store hooks with §6.1. |
 | Load vs. linear-sampler source | ✅ | `textureLoad` path (§4 Source access). `textureGather` for single-channel Hi-Z is an M3 candidate: one gather replaces four loads. |
 | Separate source/destination | ✅ | `source: { texture, mipLevel }`, same size (copy) or half (§4 Separate source). Depth sources supported. |
-| Texture arrays | ✅ all layers | add a layer range; cube maps as 6 layers (2d-array view; not available in compatibility mode) |
-| Sub-rectangle (`rectInfo`) | ❌ | offset/size uniform; output tile offset. SPD snaps the rect to 64-texel source tiles and recomputes levels below 64×64 for the whole texture: decide whether to match |
+| Texture arrays | ✅ all layers, or a range | `layers: [ first, count ]` (M2.4); cube maps as 6 layers (2d-array view; not available in compatibility mode) |
+| Sub-rectangle (`rectInfo`) | ✅ tighter | `rect` (M2.4, §4 Partial updates): each level rewrites exactly the texels that depend on the rect, bit-identical to a full recompute, under `'exact'` and `'spd'`. SPD snaps to 64-texel tiles and recomputes levels below 64×64 whole (DIVERGES #15) |
 | Custom load/store (format conversion) | 5 destination formats; any float/depth source | see §6.1; load/store hooks (premultiply, sRGB) planned with M2.3 |
 | Global atomic counter, `globallycoherent` mip 6 | ❌ by design | No counter buffer to allocate, reset or alias; the dispatch boundary replaces it (§2.2) |
 | Mip count (`mips`, max 12) | ✅ no cap | **Off by one for SPD users:** in place, `mipLevelCount` includes the source level, so SPD `mips = N` is `mipLevelCount: N + 1` |
@@ -536,6 +556,8 @@ Optimisation: with `float32-filterable`, float32 formats may take the sample pat
 
 - **Packed float formats and the buffer path (§6.1):** rgb9e5ufloat and rg11b10ufloat are families of their own and run every shape: rgb9e5 on the buffer path, rg11b10 on the storage path with tier1 and on the buffer path (subset shapes; every shape without tier1). The buffer path runs widths 1, 4, 5 and 6 on any device, and the subset shapes for each family's 4-channel format plus bgra8unorm, rg16float, r32float and rg32float (not with `--quick`, where only the packed formats take the buffer path, on the subset shapes at widths 1, 4 and 6, and the extra checks below use smaller shapes: the packed encoders are slow on SwiftShader, and quick runs with the full additions hit the runner's 30-minute protocol timeout before CI split the suite). In the `--only` partition, the matrix, codec and Downsampler buffer-path checks run in `downsampler`, the Reducer buffer-output and float16-rounding checks in `reducer`. In compatibility mode rg32float has no storage, so it runs the buffer path's subset instead. Fixtures pack r, g, b with the core encoder: HDR values in [−4, 12) mixed with channels spread over 2⁻¹⁴ … 2¹⁰, so texels mix small and large channels. Tolerance on a batch's first output: two steps of the stored value (rgb9e5: of the texel's shared exponent). In-tile levels are exact, against `reduceReference( …, { pairing: 'float32' } )`, which sums the 2×2 block in float32 in the kernel's order (packed sums aren't always exact in f32). Plus: the WGSL codecs against core bit for bit (every 11- and 10-bit code decoded; every rounding midpoint and its neighbouring floats, specials and 20000 random values encoded; rgb9e5 decoded for every exponent × mantissa and encoded at bump, tie, power-of-two and clamp boundaries plus 30000 random texels); buffer path bit-identical to storage path (rgba16float, rg11b10ufloat, rgba8unorm, rgba32float; average and max); a default-limit device without features (6-level batches, rg11b10 falls back to the buffer path); separate sources into both formats; `Reducer` buffer outputs against `reducePyramid` and bit-identical to its storage outputs (rgba32float; rg11b10ufloat), `encodePass` + `encodeCopies` equal to `encode`; API reasons. Core tests: decode → encode identity for every 11-/10-bit code, value identity for every rgb9e5 (exponent, mantissa, mantissa) and 300000 random codes, every 11-/10-bit rounding boundary, and random values against independent oracles (nearest-value search; a log2-free restatement of the extension).
 
+- **Partial updates (`validate-region.js`, `--only=region`, part of `downsampler`):** sequences of updates on one texture, each changing the source inside a rect (and a layer range) with `writeTexture` of that rect alone, from the state the last update left. After each: (1) bit-identical to a full GPU recompute of the changed source, and every written level against the CPU oracle from the GPU's own previous level (`spdReference` per batch under `'spd'`); (2) outside each level's region and layer range, bit-identical to the previous chain; (3) on a poisoned chain, everything outside the regions still poisoned (no stray writes). Rects: both corners 1×1, the last column and row, an interior block, the whole level and seeded random ones. Modes: `'exact'`, the tail (default), 1 level per dispatch, 4 (where the limit is above 4), `'spd'`, the buffer path, the compatibility path forced, `encodePass`; rgba8unorm average (sample, load), max, minmax and the custom fold, rgba16float average and max, r32float min; 9 small shapes (1×1, odd, prime, 1D, 133×75, 255×257) plus 1129×635, and 1920×1080 and 1477×831 for the main policies. Layer ranges alone and with rects on 3- and 6-layer arrays and a 1-layer 2d-array, on the tail, exact, buffer and compatibility paths; separate sources (r32float → rg32float copy, depth32float → r32float, rgba16float → rgba8unorm half, and copy and half under `'spd'`) with source rects and layer ranges; rejections (rect size, bounds, integers, the level named; layer ranges), a rect valid for a larger source, encodePass on the buffer path, 1×1, and 20 updates in one encoder (more than the 16 cached) against one submit each and a full recompute. Core tests check the regions against brute-force propagation of the footprint over 10 shapes × 11 plans × 3 source relations × 9 rects, and conservativeness against the CPU oracles (exact average and max, `'spd'` at 1, 4 and 6 levels per dispatch). First chains come from a second Downsampler with the same settings, so an update never leans on state its own instance left (the compatibility path's scratch levels). Mutation checks (M5 Pro, `--only=region --quick`, 2026-11-13), 11 of 11 caught: the odd footprint not expanded (`⌊a/2⌋` at odd sizes), a region one texel short at the end, a `'clamp'` region one texel late, `'clamp'` regions chained per level (misses 3 → 1 → 1), the exact kernel ignoring the workgroup origin, the exact, tail and tile kernels storing outside the region (three mutations), the layer offset ignored, buffer copies ignoring the first layer, and compatibility updates reading their scratch levels instead of the destination. The last one survived until first chains came from another instance.
+
 New features add their own oracle first: each new format family, sRGB, rect, layer range, and `'box'`.
 
 ## 8. Performance methodology
@@ -607,7 +629,7 @@ Build first, benchmark once coverage is broad (decided 2026-11-10). Live status 
    2. Reduce-to-scalar in 2 dispatches with an epilogue hook.
    3. Proof on the upscaler's FSR 3.1 passes as bench fixtures, against an oracle, timed on M5 and by the owner on RTX 3060 / Intel UHD. Done on M5 (§14, M2T.3); RTX 3060 / Intel UHD pending.
    4. An SPD-style mode, built at least as a measured comparison that justifies, or not, its not being the primary method. Done (2026-11-11): `oddSizes: 'spd'` (opt-in, 'average' only), the exact tail kernel (opt-in) and an atomic single-dispatch probe (test-only), measured at render sizes; `'exact'` stays the default (§2.1, §2.2).
-   Then: buffer output + rgb9e5ufloat and rg11b10ufloat (GI formats; done 2026-11-11, §6.1); layer range + rect; `'box'`, power-of-two destination from a separate source, and the tail kernel's default (idle re-measure, §2.1).
+   Then: buffer output + rgb9e5ufloat and rg11b10ufloat (GI formats; done 2026-11-11, §6.1); layer range + rect (done 2026-11-13, M2.4, §4 Partial updates); `'box'`, power-of-two destination from a separate source, and the tail kernel's default (idle re-measure, §2.1).
    Deferred, three.js-driven: rgb10a2unorm, sRGB, integer formats.
 3. **M3 (dial in: coverage and tuning):**
    - per-frame throughput benchmark alongside timestamps (§13)

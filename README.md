@@ -33,6 +33,11 @@ const downsampler = new Downsampler( device );
 // texture: any supported format, TEXTURE_BINDING | STORAGE_BINDING usage, level 0 filled.
 downsampler.generate( texture );                                  // levels 1 … n, encoded and submitted
 downsampler.encode( encoder, texture, { reduction: 'max' } );     // or into your own encoder
+
+// Partial updates: only the texels that depend on a changed region (bit-identical to a full
+// recompute), and only some array layers.
+downsampler.encode( encoder, texture, { rect: { x: 128, y: 64, width: 32, height: 32 } } );
+downsampler.encode( encoder, cubeAs2dArray, { layers: [ 2, 1 ] } );
 ```
 
 ## Concepts

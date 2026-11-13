@@ -4,6 +4,8 @@ export { outputBufferLayout, planBatches, mipSize, mipLevelCountFor, tailTile, t
 export type { Batch, BatchKernel, BufferLevel, PlanOptions, OddSizePolicy } from './core/plan.js';
 export { bufferWritable, formats, fromHalf, fromUfloat, integerDomains, isIntegerDomain, isPackedQuantization, isSupportedFormat, packedStep, packRg11b10, packRgb9e5, packTexel, quantize, quantizeTexel, rg11b10Max, rgb9e5Max, roundHalfEven, sampledChannels, storageWritable, toHalf, toUfloat, unpackRg11b10, unpackRgb9e5, unpackTexel } from './core/formats.js';
 export type { FormatInfo, IntegerQuantization, PackedQuantization, Quantization, SupportedFormat } from './core/formats.js';
+export { clampDependents, exactDependents, layersProblem, planRegions, rectProblem } from './core/region.js';
+export type { BatchRegion, Rect } from './core/region.js';
 export { copyReference, reduceReference, tolerance } from './core/reference.js';
 export type { ReferenceLevel, ReferenceOptions, ToleranceTexel } from './core/reference.js';
 export { checkChannels, footprint, foldChannel, isBuiltinReduction, isChannelOps, needsTileEdges, payloadGroups, payloadWins, reductionKey, resolveReduction } from './core/reduction.js';
