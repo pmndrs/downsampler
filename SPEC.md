@@ -1,6 +1,6 @@
 # downsampler — core specification
 
-Status: milestone 2 in progress, refocused on our tools (M2T, §11). M2.1 (reductions, load path), M2.2 (separate source, float32 formats), format steps 1–2, the GI formats (buffer output path, rgb9e5ufloat, rg11b10ufloat), M2.4 (layer ranges and partial updates, `rect`) and M2.5 (`oddSizes: 'box'`, resampled separate sources) are done. This document is the source of truth for scope, design decisions, correctness requirements and the remaining plan. Update it when a decision changes.
+Status: milestone 2 in progress, refocused on our tools (M2T, §11). M2.1 (reductions, load path), M2.2 (separate source, float32 formats), format steps 1–2, the GI formats (buffer output path, rgb9e5ufloat, rg11b10ufloat), M2.4 (layer ranges and partial updates, `rect`), M2.5 (`oddSizes: 'box'`, resampled separate sources) and M2.3.5 (sRGB destinations) are done. This document is the source of truth for scope, design decisions, correctness requirements and the remaining plan. Update it when a decision changes.
 
 ## 1. Purpose
 
@@ -208,6 +208,7 @@ A partial update rewrites only what depends on a changed region: `rect` marks th
 - **`'load'`:** `textureLoad` of the footprint, bound as `unfilterable-float`. Required for folds, depth, float32 formats without `float32-filterable`, and the box kernel (`'box'` batches that read an odd level, tails under `'box'`, a resampled source). For `'average'` it computes the bilinear weights in the shader, without the sampler's fixed-point weight rounding.
   - **Integer weights:** the position `(x + 0.5)·S/n − 0.5` is computed as `((2x+1)·S − n) / 2n`, giving an exact base texel and a weight of `remainder / 2n`. GPU float division isn't correctly rounded (WGSL allows 2.5 ulp). A float version computed 2.9999998 for an exact 3.0, so `floor` picked the wrong pair.
   - **unorm8:** texels are rounded back to exact integers on load, so even-size averages are exact.
+- **sRGB sources** (M2.3.5, §6.1 sRGB) are read through their sRGB view, so the hardware decodes every texel to linear, and the sampler filters in linear. Hardware decoding isn't exact everywhere: the M5 Pro returns 12-bit linear values (k/4095; 254 of 256 codes differ from the exact decode, by up to 0.39 of a code step; each still re-encodes to its own code; `results/probes/srgb-probe.mjs`). So `'load'` snaps every loaded texel to the exact decode table (re-encode, then look up), and its results are the same on every GPU; `'sample'` keeps the hardware's decode and filtering, as render passes do, within about a code of the exact result (the main matrix's tolerance is two codes).
 - Bind group layouts are explicit, not `'auto'`, so layouts can be shared across reductions and the load path can declare `unfilterable-float`.
 - **`'average'` keeps the sampler by default.** Load against sample, same run with rotated order (Apple M5 Pro, Chrome 155, 2026-11-10, measured while the machine had a load average of ~18, so only the ratios are usable; `results/m5-pro-m2.1-under-load.json`):
 
@@ -246,6 +247,7 @@ Every intermediate level is quantized exactly as stored, so a chain equals level
 
 - **rgba8:** values stay in integer 0–255 units in workgroup memory. Sums are exact and ties round to even. With `k/255` floats, float error turned ties into round-ups. A 1×128 tail drifted 3 steps by mip 5: half of all 1D texels are ties.
 - **float16 formats:** values are rounded to nearest even in the shader with integer math (`float16Wgsl`, `ds_round_f16`; mirrors core `toHalf` bit for bit), then stored as exact halves, so no device conversion rounds anything. `f16Rounding: 'device'` (Downsampler and Reducer options) uses `pack2x16float` / `unpack2x16float` instead: cheaper, but D3D12 truncates there (§ Findings, 2026-11-12).
+- **sRGB (rgba8unorm-srgb, bgra8unorm-srgb; `srgb8`, `src/core/srgb.ts`):** colour is linear f32 in workgroup memory, alpha in integer 0–255 units (ties to even, as rgba8unorm). Each level is quantized as stored, `decode(encode(v))` per colour channel: the code of v is the one whose rounding interval holds it, between the thresholds `t(k) = decode((k + ½)/255)`, i.e. `round(255 · decode⁻¹(v))` with the exact IEC 61966-2-1 curve, and its value is read back from the exact decode table (the f32 nearest each code's exact decode). The shader's `ds_srgb_code` is a `pow` estimate corrected by one step against the thresholds, stored as the smallest f32 above each (`srgbBounds`): for an f32 v, v > t(k) exactly when v ≥ bound(k), so the encoder is correctly rounded for its f32 input, bit for bit with core `srgbCode` (GPU-checked at every threshold ± 3 ulps, every table value, specials and 40000 random values). **Ties:** no f32 lies on a threshold (thresholds are not binary fractions; core test), so the rule is plain round-to-nearest of the f32 working value. Real-number ties exist only in the linear segment (codes ≤ 10), where an average of codes can end in exactly .5 (e.g. 0, 0, 0, 2); the f32 decode table puts the working value an ulp to one side, so they resolve deterministically, the same in the shader and in the oracle's float32 pairing, but not by a declared tie rule. NaN and negatives encode to 0, values above 1 to 255. Stores pack the codes; encoding a table value returns its code, so stored codes are what the next level reads.
 - **rgb9e5ufloat, rg11b10ufloat:** whole texels go through our encoder and back (`ds_pack9e5` / `ds_pack11_11_10` in WGSL, `quantizeTexel` in core; rules in §6.1); alpha reads 1. The rg11b10 storage path stores already-quantized values, so the GPU's own f32 → 11/10-bit conversion never rounds anything.
 
 ### Caching
@@ -325,6 +327,8 @@ downsampler.generate( texture );                         // encode + submit
 downsampler.encodePass( pass, texture, options );        // into a compute pass you own (one timestamp pair; storage path only)
 downsampler.prepare( texture );                          // what encode records: PreparedBatch[] (pipeline, bindGroup, groups, copies), for self-dispatch
 downsampler.release( texture );                          // drop its plans, destroy its buffers and scratch textures
+downsampler.scratchSize( texture, options );             // bytes a shared buffer-path scratch needs (0 on the storage path)
+downsampler.encode( encoder, texture, { scratch } );     // buffer path: write through a caller's buffer (STORAGE | COPY_SRC), shared across textures
 
 import { generateMipmaps, getDownsampler, requiredLimits, unsupportedReason } from 'downsampler/three';
 generateMipmaps( renderer, texture, { reduction, encoder, downsampler: { averageAccess: 'load' } } ); // false if it declines; no submit with `encoder`
@@ -404,7 +408,7 @@ shadingChange.encodePass( pass, {                        // or encode( encoder, 
 import { reducePyramid, levelSize } from 'downsampler';  // the CPU oracle and level sizes
 ```
 
-The destination must have `TEXTURE_BINDING` usage, plus `STORAGE_BINDING` (storage path) or `COPY_DST` (buffer path, §6.1), and a format from `formats`: `rgba8unorm`, `rgba16float`, `rgba8snorm`, `r32float`, `rg32float`, `rgba32float`, `rgb9e5ufloat` (buffer path only), plus `bgra8unorm` (storage needs `bgra8unorm-storage`), `rg11b10ufloat` (storage needs `texture-formats-tier1`; else the buffer path) and `r8unorm`, `rg8unorm`, `r8snorm`, `rg8snorm`, `r16float`, `rg16float` and the 16-bit normalized formats (need `texture-formats-tier1`). `unsupportedReason` names a missing feature or usage. Its dimension must be `2d`, with `textureBindingViewDimension` either `2d` or `2d-array`.
+The destination must have `TEXTURE_BINDING` usage, plus `STORAGE_BINDING` (storage path) or `COPY_DST` (buffer path, §6.1), and a format from `formats`: `rgba8unorm`, `rgba16float`, `rgba8snorm`, `r32float`, `rg32float`, `rgba32float`, `rgb9e5ufloat`, `rgba8unorm-srgb`, `bgra8unorm-srgb` (buffer path only), plus `bgra8unorm` (storage needs `bgra8unorm-storage`), `rg11b10ufloat` (storage needs `texture-formats-tier1`; else the buffer path) and `r8unorm`, `rg8unorm`, `r8snorm`, `rg8snorm`, `r16float`, `rg16float` and the 16-bit normalized formats (need `texture-formats-tier1`). `unsupportedReason` names a missing feature or usage. Its dimension must be `2d`, with `textureBindingViewDimension` either `2d` or `2d-array`.
 
 ```ts
 // GI formats (§6.1): rgb9e5ufloat is never a storage texture, so it takes the buffer path.
@@ -424,13 +428,16 @@ downsampler.prepare( texture, { rect } );   // batches carry regions (per level)
 import { planRegions, exactDependents, clampDependents } from 'downsampler'; // the region math (core)
 ```
 
+**Scratch (M2.3.5, 2026-11-13).** sRGB destinations take the buffer output path (§6.1 sRGB), so the planned `scratch: GPUTexture` became `scratch: GPUBuffer`: by default each texture's plan keeps its own buffer, sized for its largest batch (about a third of the base level), until `release( texture )`. Many textures (three.js) can share one: commands run in order, and each batch's copies are recorded before the next dispatch writes the buffer, also across chains in one encoder (GPU-tested: two chains through one buffer in one encoder, bit-identical). `scratchSize( texture, options )` is every written level in the buffer layout, which holds any batch; a smaller buffer is rejected with the size the chain needs, a buffer without STORAGE | COPY_SRC with the usage. Ignored on the storage path (so one option set can serve every texture); never destroyed by the library. Plans are cached per scratch buffer, as per source texture.
+
 ### Planned
 
-```ts
-downsampler.encode( encoder, destination, {
-	scratch: GPUTexture,                 // optional reusable scratch for sRGB destinations
-} );
-```
+**Transform hooks around the average (deferred, 2026-11-13, M2.3.5 agent).** A WGSL `forward`/`inverse` pair applied around `'average'` (premultiplied alpha, log-luminance): every average of a chain would become `inverse(mean(forward(x)))`, quantized as stored. The sRGB path has that structure with the hardware decode as `forward`, so it is the template. Not built, because it doesn't fit the kernels cleanly yet:
+- The sampler filters before any hook, so a transform forces `'load'` at every first output.
+- It touches every averaging site of the exact kernel (bilinear first output, in-tile 2×2, tail steps, box weights), and of the `'clamp'` kernel under `'spd'`, which doesn't round between levels, so it would apply once around a whole batch: different semantics, to be defined.
+- The oracle needs a JS twin of each WGSL pair, and in-tile levels lose bit-exact checks (the hook's f32 math against f64), unless hooks come with declared error bounds.
+- The two motivating uses have homes already: premultiplied alpha is an alpha-weighted mean, which `Reducer` computes with a `'weight'` channel (`'weighted'` colour); log-luminance is a `Reducer` or `ScalarReduction` `load` hook.
+A minimal version, if a tool needs it: `transform: { wgsl }` (`fn forward(v: vec4f) -> vec4f`, `fn inverse(v: vec4f) -> vec4f`), `'average'` under `'exact'` and `'box'` only (rejected under `'spd'` and for folds), loads only, its own oracle option (`ReferenceOptions.transform`) and mutation checks.
 
 ## 6. SPD feature parity
 
@@ -438,16 +445,16 @@ downsampler.encode( encoder, destination, {
 |---|---|---|
 | Up to 12 levels from ≤4096² | ✅ | any size, by chaining (2 dispatches up to 4096²) |
 | Single dispatch | ❌ by design | §2.2; a measurement-only atomic probe (`test/bench/atomic-spd.js`) lost to two dispatches at render sizes and 1024², tied at 4096² |
-| Custom reduction (`SpdReduce4`) | ✅ | average/min/max/minmax + custom WGSL `reduce(a, b)` fold (§4 Reductions). A weighted custom reduction (SPD's `SpdReduce4` used for averages) isn't offered under `'exact'`, where it has no defined odd-size meaning; tile kernels (`Reducer`, §14.1) add sums, weighted means and custom sums under `'zero-weight'` and `'clamp'`. Transforms around an average (premultiply, sRGB) are planned as load/store hooks with §6.1. |
+| Custom reduction (`SpdReduce4`) | ✅ | average/min/max/minmax + custom WGSL `reduce(a, b)` fold (§4 Reductions). A weighted custom reduction (SPD's `SpdReduce4` used for averages) isn't offered under `'exact'`, where it has no defined odd-size meaning; tile kernels (`Reducer`, §14.1) add sums, weighted means and custom sums under `'zero-weight'` and `'clamp'`. sRGB is built in (§6.1); other transforms around an average (premultiply, log) are deferred (§5 Planned). |
 | Load vs. linear-sampler source | ✅ | `textureLoad` path (§4 Source access). `textureGather` for single-channel Hi-Z is an M3 candidate: one gather replaces four loads. |
 | Separate source/destination | ✅ | `source: { texture, mipLevel }`, same size (copy) or half (§4 Separate source). Depth sources supported. |
 | Texture arrays | ✅ all layers, or a range | `layers: [ first, count ]` (M2.4); cube maps as 6 layers (2d-array view; not available in compatibility mode) |
 | Sub-rectangle (`rectInfo`) | ✅ tighter | `rect` (M2.4, §4 Partial updates): each level rewrites exactly the texels that depend on the rect, bit-identical to a full recompute, under `'exact'` and `'spd'`. SPD snaps to 64-texel tiles and recomputes levels below 64×64 whole (DIVERGES #15) |
-| Custom load/store (format conversion) | 5 destination formats; any float/depth source | see §6.1; load/store hooks (premultiply, sRGB) planned with M2.3 |
+| Custom load/store (format conversion) | the formats of §6.1, sRGB included; any float/depth source | see §6.1; `Reducer` and `ScalarReduction` take WGSL load/store hooks; `Downsampler` transform hooks deferred (§5 Planned) |
 | Global atomic counter, `globallycoherent` mip 6 | ❌ by design | No counter buffer to allocate, reset or alias; the dispatch boundary replaces it (§2.2) |
 | Mip count (`mips`, max 12) | ✅ no cap | **Off by one for SPD users:** in place, `mipLevelCount` includes the source level, so SPD `mips = N` is `mipLevelCount: N + 1` |
 | Levels written | ✅ | In place, as SPD: `baseMipLevel` is read and later levels written. With `source`, destination `baseMipLevel` is written at the source size (copy) or half; SPD always halves |
-| sRGB (sample sRGB view, write UNORM UAV) | planned | WebGPU forbids sRGB storage even through a view, so: scratch copy (§6.1) |
+| sRGB (sample sRGB view, write UNORM UAV) | ✅ differently | WebGPU forbids sRGB storage even through a view (and a UNORM view needs `viewFormats`), so we read the sRGB view, encode in the shader and write through the buffer path (§6.1 sRGB, DIVERGES #16). Loads snap to the exact decode; SPD trusts the hardware's |
 | Intermediate precision | differs by design | SPD keeps unrounded values in LDS between levels; we round each level as stored, so a chain equals level-by-level generation and 8-bit results won't match SPD bit for bit (§4 Quantization) |
 | LDS layout (one float4 array vs per channel) | ❌ | M3 candidate; measure first |
 | Packed fp16 math | ❌ | optional `shader-f16`; keep only if measurably faster |
@@ -470,9 +477,33 @@ Beyond SPD: sizes over 4096², render-pass-matching odd sizes, conservative min/
 | Packed | rgb10a2unorm | tier1 | per-channel scale `(1023, 1023, 1023, 3)` |
 | Packed float | rg11b10ufloat | tier1 for storage; the buffer path without it | ✅ (M2.3.6) `rg11b10ufloat`: unsigned floats, 5-bit exponent, 6/6/5-bit mantissas; round to nearest even, negatives and −Inf → 0, finite overflow → the largest finite value (65024 / 64512), +Inf and NaN kept. No WGSL pack builtin, so `ds_ufloat` encodes in the shader and `toUfloat` in core. Storage path with tier1, buffer path without it (or without STORAGE_BINDING usage); both quantize with our encoder, so they write identical bits |
 | Integer | r32uint, rg32uint, rgba32uint, rgba8uint, rgba16uint, r32sint, rgba8sint (core); r8/r16/rg8/rg16 uint/sint (tier1) | mixed | separate `u32`/`i32` kernel (`texture_2d<u32>`, `vec4u`). Folds only at first (min, max, bitwise custom: ID, visibility and occupancy pyramids); `'average'` would need a declared rounding rule |
-| sRGB | rgba8unorm-srgb, bgra8unorm-srgb | **never** (even with a non-sRGB view format) | reduce linear values, then write sRGB-encoded values to an rgba8unorm (or bgra8unorm, which needs `bgra8unorm-storage`) scratch and `copyTextureToTexture` each level (verified allowed: formats differing only in sRGB-ness). Needs load/store transform hooks; quantize-as-stored is `decode(round(encode(v)·255)/255)` |
+| sRGB | rgba8unorm-srgb, bgra8unorm-srgb | **never** (even with a non-sRGB view format) | ✅ (M2.3.5) read the sRGB view (linear), reduce in linear, encode in the shader with correct rounding, write through the **buffer output path**; quantize-as-stored is `decode(encode(v))` with the exact table (§4 Quantization, "sRGB" below) |
 | Shared exponent | rgb9e5ufloat (32-bit HDR, common for GI and irradiance) | **never** storage or renderable, so render-pass mipmaps can't produce it either | ✅ (M2.3.4) **buffer output path** (below): pack in the shader, `copyBufferToTexture` into the level. Filterable, so later batches sample it as usual |
 | Out of scope | BC/ETC2/ASTC (generate before compression); depth as destination (use r32float, §4 Separate source) | — | — |
+
+**sRGB** (built 2026-11-13, M2.3.5; `src/core/srgb.ts`, `srgbWgsl` in `src/webgpu/kernel.ts`, DIVERGES #16).
+- **Problem.** WebGPU has no sRGB storage textures, not even through a view (a texture with STORAGE_BINDING can't have an sRGB format, and WGSL has no sRGB texel format; probed, `results/probes/srgb-probe.mjs`). SPD samples the sRGB view and writes a UNORM alias; in WebGPU an alias view needs `viewFormats` at creation, which three.js doesn't set, and wouldn't help: it is the storage of the sRGB texture that's forbidden.
+- **What we do.** Each batch reads its source level through the sRGB view: the hardware decodes to linear, and the sampler filters in linear (probe: halfway between codes 0 and 255 samples 0.5001, not the encoded-space 0.214). Levels are reduced in linear f32, alpha in unorm8 units, and each is encoded to codes in the shader (correctly rounded, §4 Quantization) and written through the buffer path below: packed words (`ds_srgb_code` per colour channel, rgba or bgra byte order), then `copyBufferToTexture`, which may write sRGB formats (probed: bytes kept). Loads snap the hardware's decode to the exact table (§4 Source access).
+- **Path chosen by measurement and simplicity.** The alternative is the same kernel writing storage textures of the linear alias format (rgba8unorm, or bgra8unorm, which needs `bgra8unorm-storage`), then `copyTextureToTexture` into each sRGB level, which WebGPU allows between formats that differ only in sRGB-ness (probed). Both write the same bits (GPU-tested). `npm run bench -- --compare=srgb` (`test/bench/srgb.js`) times both with the library's plan, rgba8unorm-srgb, against `buffer` (paired per-round ratios, medians of 11 rounds × 16 repeats; Apple M5 Pro, Chrome, 2026-11-13; `results/srgb/m5-pro-compare-{1,2}.json`). **Loaded machine:** other agents' suites ran throughout (load average 400–660); run 1's absolute times were inflated 7–30× against run 2's, so only same-run ratios mean anything, and those are noisy:
+
+  | Size | `scratch` run 1 | `scratch` run 2 | `bufferLoad` run 2 | render passes run 2 | `buffer` ms run 2 [dispatches] |
+  |---|---:|---:|---:|---:|---:|
+  | 960×540 | 1.20 | 1.11 | 1.63 | 2.11 | 0.085 [4] |
+  | 1129×635 | 0.81 | 0.90 | 1.53 | 1.39 | 0.102 [5] |
+  | 1280×720 | 1.22 | 0.98 | 1.50 | 1.50 | 0.113 [3] |
+  | 1707×960 | 0.71 | 0.97 | 1.84 | 1.22 | 0.136 [4] |
+  | 1920×1080 | 0.85 | 1.01 | 1.76 | 1.06 | 0.164 [4] |
+  | 2560×1440 | 0.98 | 0.99 | 1.52 | 0.59 | 0.434 [3] |
+  | 1024² | 1.11 | 1.04 | 1.86 | 2.09 | 0.078 [2] |
+  | 4096² | 0.92 | 1.07 | 2.04 | 0.55 | 1.241 [2] |
+
+  - **Scratch texture vs buffer: a tie.** Medians 0.95 (run 1) and 1.00 (run 2), every run-2 cell within 0.90–1.11. Re-measure on an idle machine and on other vendors before revisiting.
+  - **Render passes** (three.js's path for these textures today) are slower up to 1080p (1.06–2.11×) and 1024², and faster at 2560×1440 and 4096² (0.55–0.59×), where the buffer path's extra write and copy of every level dominates (§6.1 Buffer output path, Cost). Large sRGB textures (4096² material maps) may be better served by render passes until the copies get cheaper; to measure on an idle machine and other vendors.
+  - **`averageAccess: 'load'`** costs 1.5–2.0× here: four loads per output texel, each snapped through the encoder and the table.
+  The buffer path won on simplicity: it existed, composes with compatibility mode (one view per dispatch; a multi-level scratch texture would need per-level textures there), `rect`, `layers` and separate sources, writes 6 levels per dispatch at the default storage texture limit, and needs no `bgra8unorm-storage`. The scratch variant stays a kernel option (`output: 'storage'` on an sRGB format writes `srgbScratchFormat( format )`) for tools that dispatch it themselves.
+- **Folds** (`'min'`, `'max'`, `'minmax'`, custom) fold the decoded values and store their codes. Decoding is strictly monotonic and `ds_srgb_code` inverts the table exactly, so they select stored codes: the same as folding the encoded bytes, with no extra decode (the view decodes anyway). Custom folds see linear colour and normalized alpha.
+- **Composes** with every odd-size policy, the tail kernel, `rect` and `layers`, separate sources (into or out of sRGB; HDR clamps to [0, 1]), compatibility mode (the buffer path skips it; compatibility mode has no bgra8unorm-srgb textures at all, so the suite reports that format skipped there) and a shared `scratch` buffer (§5). Rejected: `encodePass` (the buffer path's copies; use `encode`), and a texture without COPY_DST (`unsupportedReason` names it). `Reducer` takes sRGB sources and outputs (its tile kernel's buffer output encodes; GPU-tested).
+- **Cost:** that of the buffer path, plus the encoder: one `pow` and two table reads per colour channel per stored texel, and on `'load'` a re-encode and table read per loaded texel. `averageAccess: 'load'` measured 1.5–2.0× the default sample path (table above).
 
 **Buffer output path** (built 2026-11-11, M2.3.4). WebGPU allows `copyBufferToTexture` into formats that are neither storage nor renderable, so a kernel can write texels to a storage buffer and copy them into each level.
 - **Layout** (`outputBufferLayout` in core): each level of a batch, and each layer of a level, at its own offset of one buffer, with rows padded to 256 bytes and level offsets on 256 bytes. The kernel finds it in a 112-byte uniform (binding 9: first-output size, then per level its offset and row stride in u32 words and its rows per layer) and writes packed words to binding 10 with `ds_put( level, texel, layer, value )` (`bufferOutputWgsl`). That is a single binding, so this path isn't bound by `maxStorageTexturesPerShaderStage`: 6 levels per dispatch even at the default limit of 4 (tested on a default-limit device).
@@ -496,7 +527,7 @@ Beyond SPD: sizes over 4096², render-pass-matching odd sizes, conservative min/
   - rgb9e5ufloat, the only GPU route to its mips in WebGPU.
   - rg11b10ufloat without tier1 (SwiftShader has none).
   - Six levels per dispatch at the default storage texture limit, for any 32-bit-word format.
-  - An alternative to the sRGB scratch texture: `copyBufferToTexture` into rgba8unorm-srgb is allowed (not built).
+  - sRGB destinations (§6.1 sRGB, M2.3.5): `copyBufferToTexture` into rgba8unorm-srgb and bgra8unorm-srgb, chosen over a scratch texture.
   - A fallback for bgra8unorm without `bgra8unorm-storage` (works; untested without the feature).
 - **rgb9e5 packing** (`packRgb9e5` in core, `ds_pack9e5` in WGSL), per EXT_texture_shared_exponent (Vulkan's E5B9G9R9):
   - Clamp each channel to [0, 65408] (511/512 · 2¹⁶); NaN and negatives → 0, +Inf → 65408.
@@ -524,7 +555,7 @@ Optimisation: with `float32-filterable`, float32 formats may take the sample pat
 2. snorm8, unorm16, snorm16
 3. rgb10a2unorm
 4. buffer output path + rgb9e5ufloat ✅
-5. sRGB + transform hooks (the three.js PR needs this), choosing between scratch texture and buffer output by measurement
+5. sRGB ✅ (M2.3.5: buffer output, chosen over a scratch texture by measurement and simplicity); transform hooks deferred (§5 Planned)
 6. rg11b10ufloat ✅
 7. integers
 
@@ -571,7 +602,9 @@ Optimisation: with `float32-filterable`, float32 formats may take the sample pat
 
 - **Partial updates (`validate-region.js`, `--only=region`, part of `downsampler`):** sequences of updates on one texture, each changing the source inside a rect (and a layer range) with `writeTexture` of that rect alone, from the state the last update left. After each: (1) bit-identical to a full GPU recompute of the changed source, and every written level against the CPU oracle from the GPU's own previous level (`spdReference` per batch under `'spd'`); (2) outside each level's region and layer range, bit-identical to the previous chain; (3) on a poisoned chain, everything outside the regions still poisoned (no stray writes). Rects: both corners 1×1, the last column and row, an interior block, the whole level and seeded random ones. Modes: `'exact'`, the tail (default), 1 level per dispatch, 4 (where the limit is above 4), `'spd'`, the buffer path, the compatibility path forced, `encodePass`; rgba8unorm average (sample, load), max, minmax and the custom fold, rgba16float average and max, r32float min; 9 small shapes (1×1, odd, prime, 1D, 133×75, 255×257) plus 1129×635, and 1920×1080 and 1477×831 for the main policies. Layer ranges alone and with rects on 3- and 6-layer arrays and a 1-layer 2d-array, on the tail, exact, buffer and compatibility paths; separate sources (r32float → rg32float copy, depth32float → r32float, rgba16float → rgba8unorm half, and copy and half under `'spd'`) with source rects and layer ranges; rejections (rect size, bounds, integers, the level named; layer ranges), a rect valid for a larger source, encodePass on the buffer path, 1×1, and 20 updates in one encoder (more than the 16 cached) against one submit each and a full recompute. Core tests check the regions against brute-force propagation of the footprint over 10 shapes × 11 plans × 3 source relations × 9 rects, and conservativeness against the CPU oracles (exact average and max, `'spd'` at 1, 4 and 6 levels per dispatch). First chains come from a second Downsampler with the same settings, so an update never leans on state its own instance left (the compatibility path's scratch levels). Mutation checks (M5 Pro, `--only=region --quick`, 2026-11-13), 11 of 11 caught: the odd footprint not expanded (`⌊a/2⌋` at odd sizes), a region one texel short at the end, a `'clamp'` region one texel late, `'clamp'` regions chained per level (misses 3 → 1 → 1), the exact kernel ignoring the workgroup origin, the exact, tail and tile kernels storing outside the region (three mutations), the layer offset ignored, buffer copies ignoring the first layer, and compatibility updates reading their scratch levels instead of the destination. The last one survived until first chains came from another instance.
 
-New features add their own oracle first: each new format family and sRGB (rect, layer ranges and `'box'` have theirs).
+- **sRGB (M2.3.5; `--only=srgb`, part of `downsampler`):** rgba8unorm-srgb is a family of its own and runs every shape, bgra8unorm-srgb the subset, both on the buffer path at widths 1, 4, 5 and 6 and every variant (averages through the sampler and loads, folds, `'spd'`, the tail, `'box'`), against the core oracles with quantization `'srgb8'` (colour reduced in linear float32 and encoded, alpha as unorm8): two codes of tolerance at a batch's first output and a tail's odd steps, in-tile levels bit for bit against the float32 pairing. Separate sources: sRGB → sRGB (copy, half, rgba and bgra), rgba16float HDR → sRGB, sRGB → rgba16float. Partial updates: rgba8unorm-srgb average and max under `'exact'`, the tail, `'spd'` and `'box'`. `validate-srgb.js`: the WGSL encoder and decode table against core bit for bit (every threshold ± 3 ulps, every table value, specials, 40000 random values); the hardware's decode of every code reported and required to re-encode to its code; a black and white checkerboard reducing to code 188 (and alpha 128, a tie to even); load-path chains (`'exact'`, tail, `'box'`; 7 shapes, all codes and dark codes 0–24) code for code against the oracle, one code apart only where the exact value lies within 10⁻⁶ of a threshold; the compatibility path, `output: 'buffer'` and a shared scratch buffer (two chains in one encoder) bit-identical; bgra8unorm-srgb byte for byte with rgba8unorm-srgb; the kernel's storage output into an rgba8unorm scratch plus `copyTextureToTexture` bit-identical to the buffer path; API (encodePass, reasons without COPY_DST and with `output: 'storage'`, scratch size and usage). Core: the decode table, the encoder against the standard's encode formula (200000 values and every threshold), no f32 on any threshold (and each at least 64 f64 ulps from the f32 grid), the bounds, linear-light averages, alpha ties, the box, area, spd and copy oracles. Mutation checks (M5 Pro, `results/probes/mutate-srgb.mjs --quick`, 2026-11-13), 10 of 10 caught: no decode (codes averaged as UNORM, SPD's alias in WebGPU terms), in-tile averages in encoded space, loads not snapped to the exact decode (caught only by the near-exact chains: the two-code tolerance hides it), the encoder truncating, the encoder by `pow` alone without the threshold correction (in-tile exact checks, linear-segment values), gamma 2.2 instead of the sRGB curve, no intermediate quantization, alpha ties rounding up, alpha encoded as sRGB, and bgra8unorm-srgb packed in rgba byte order.
+
+New features add their own oracle first: each new format family (rect, layer ranges, `'box'` and sRGB have theirs).
 
 ## 8. Performance methodology
 
@@ -628,7 +661,7 @@ three.js does not take runtime dependencies for core features. The plan:
    - The renderer adds `STORAGE_BINDING` to eligible textures and requests the storage texture limit unless `requiredLimits` sets it.
    - It falls back to render passes for unsupported textures.
    - A prototype with these semantics passes three's integration tests in the `webgpu-spd-audit` branch.
-   - The first PR adds sRGB (most three.js color textures) and cube maps. Hi-Z follows separately.
+   - The first PR adds sRGB (most three.js color textures) and cube maps. Hi-Z follows separately. sRGB works in `downsampler/three` since M2.3.5: three's sRGB colour textures are `rgba8unorm-srgb` with COPY_DST, so they take the buffer path with no STORAGE_BINDING (which an sRGB texture can't have anyway). Many textures can share one `scratch` buffer (§5).
    - Keep this repo's GPU suite as the shared oracle, so the vendored copy can't drift.
 
 ## 11. Milestones
@@ -643,7 +676,7 @@ Build first, benchmark once coverage is broad (decided 2026-11-10). Live status 
    3. Proof on the upscaler's FSR 3.1 passes as bench fixtures, against an oracle, timed on M5 and by the owner on RTX 3060 / Intel UHD. Done on M5 (§14, M2T.3); RTX 3060 / Intel UHD pending.
    4. An SPD-style mode, built at least as a measured comparison that justifies, or not, its not being the primary method. Done (2026-11-11): `oddSizes: 'spd'` (opt-in, 'average' only), the exact tail kernel (opt-in) and an atomic single-dispatch probe (test-only), measured at render sizes; `'exact'` stays the default (§2.1, §2.2).
    Then: buffer output + rgb9e5ufloat and rg11b10ufloat (GI formats; done 2026-11-11, §6.1); layer range + rect (done 2026-11-13, M2.4, §4 Partial updates); `'box'` and a power-of-two destination from a separate source (done 2026-11-13, M2.5: §2.1, §4 Separate source); the tail kernel's default (on since 2026-11-13).
-   Deferred, three.js-driven: rgb10a2unorm, sRGB, integer formats.
+   Deferred, three.js-driven: rgb10a2unorm, integer formats. sRGB done (M2.3.5, 2026-11-13: §6.1 sRGB); transform hooks deferred (§5 Planned).
 3. **M3 (dial in: coverage and tuning):**
    - per-frame throughput benchmark alongside timestamps (§13)
    - device lab runs across vendors (§9)
