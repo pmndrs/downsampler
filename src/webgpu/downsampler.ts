@@ -17,7 +17,11 @@ export interface DownsamplerOptions {
 	 * created with a raised limit — see {@link requiredLimits}); on
 	 * the buffer path 6 at any storage texture limit. 5 and 6 levels also need
 	 * 256 invocations per workgroup (compatibility mode defaults to 128). Above
-	 * the storage limit only with output 'buffer'.
+	 * the storage limit only with output 'buffer'. Given, it sets both paths, so
+	 * below 6 storage textures `{ levelsPerDispatch: other.levelsPerDispatch }`
+	 * plans sRGB and the other buffer-path formats unlike `other` (whose
+	 * {@link Downsampler.bufferLevelsPerDispatch} is 6), and their chains differ
+	 * in the last bit where one stores a level the other keeps in the tile.
 	 */
 	levelsPerDispatch?: number;
 	/**

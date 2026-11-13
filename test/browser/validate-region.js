@@ -157,17 +157,26 @@ function checkOracle( batches, mips, sourceFloats, sourceSize, sourceFormat, wid
 }
 
 /**
- * A Downsampler with the same settings (so the same results) but its own caches: first chains
- * come from it, so a partial update never relies on state its own instance left behind (the
- * compatibility path's scratch levels, which a chain made elsewhere doesn't fill).
+ * The `levelsPerDispatch` option that gives a Downsampler `downsampler`'s levels per dispatch on
+ * both paths. Passing the option sets both; left out, the storage path takes the storage limit
+ * and the buffer path 6 (`kernelDefaults`). Below 6 storage textures (SwiftShader: 4) the two
+ * differ, and passing the storage value would also pin sRGB's buffer path to it: a different
+ * plan, so a first chain whose untouched texels a full recompute doesn't reproduce.
+ */
+export const levelsOption = downsampler => downsampler.levelsPerDispatch === downsampler.bufferLevelsPerDispatch ? { levelsPerDispatch: downsampler.levelsPerDispatch } : {};
+
+/**
+ * A Downsampler with the same settings (so the same plans and results) but its own caches: first
+ * chains come from it, so a partial update never relies on state its own instance left behind
+ * (the compatibility path's scratch levels, which a chain made elsewhere doesn't fill).
  */
 const twins = new WeakMap();
 function twin( device, downsampler ) {
 
 	if ( ! twins.has( downsampler ) ) {
 
-		const { levelsPerDispatch, output, averageAccess, compatibility, tail, f16Rounding, exactTile } = downsampler;
-		twins.set( downsampler, new Downsampler( device, { levelsPerDispatch, output, averageAccess, compatibility, tail, f16Rounding, exactTile } ) );
+		const { output, averageAccess, compatibility, tail, f16Rounding, exactTile } = downsampler;
+		twins.set( downsampler, new Downsampler( device, { ...levelsOption( downsampler ), output, averageAccess, compatibility, tail, f16Rounding, exactTile } ) );
 
 	}
 
@@ -202,6 +211,9 @@ async function inPlaceSequence( device, { downsampler, width, height, layers = 1
 
 	try {
 
+		// The first chain's untouched texels stand for the full recompute's only if both plan alike.
+		const shape = owner => owner.prepare( full, options ).map( ( { kernel, firstMipLevel, count, tile, output } ) => `${ kernel }:${ firstMipLevel }:${ count }:${ tile }:${ output }` ).join( ' ' );
+		if ( shape( twin( device, downsampler ) ) !== shape( downsampler ) ) throw new Error( `${ label }: the first chain's Downsampler plans ${ shape( twin( device, downsampler ) ) }, the one under test ${ shape( downsampler ) }` );
 		let data = makeData( width, height, layers, format, 'random', 1 );
 		upload( device, texture, data );
 		poison( device, texture );
@@ -315,7 +327,7 @@ export async function validateRegion( device, { quick, onProgress = () => {}, se
 			let downsampler = owner;
 			if ( variant.access === 'load' ) {
 
-				if ( ! loads.has( key ) ) loads.set( key, new Downsampler( device, { tail: owner.tail, levelsPerDispatch: owner.levelsPerDispatch, averageAccess: 'load', output: owner.output, compatibility: owner.compatibility } ) );
+				if ( ! loads.has( key ) ) loads.set( key, new Downsampler( device, { tail: owner.tail, ...levelsOption( owner ), averageAccess: 'load', output: owner.output, compatibility: owner.compatibility } ) );
 				downsampler = loads.get( key );
 
 			}
@@ -342,6 +354,42 @@ export async function validateRegion( device, { quick, onProgress = () => {}, se
 		} ) );
 
 	}
+
+	// SwiftShader's split on a real GPU: a device with WebGPU's default limits (4 storage textures,
+	// 256 invocations) runs the storage path at 4 levels per dispatch and sRGB's buffer path at 6,
+	// so each Downsampler's twin (above) must plan sRGB at 6 too. Devices at 4 run this above.
+	if ( storageLimit > 4 ) results.push( ...await select.run( 'region/default-limits/rgba8unorm-srgb/average', async () => {
+
+		const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance', ...( compat ? { featureLevel: 'compatibility' } : {} ) } );
+		const plain = await adapter.requestDevice();
+		const out = [];
+		try {
+
+			if ( plain.limits.maxStorageTexturesPerShaderStage !== 4 ) throw new Error( `region default limits: the device has ${ plain.limits.maxStorageTexturesPerShaderStage } storage textures, not WebGPU's default 4` );
+			for ( const [ mode, downsampler, options ] of [ [ 'tail', new Downsampler( plain ), {} ], [ 'exact', new Downsampler( plain, { tail: false } ), {} ], [ 'spd', new Downsampler( plain ), { oddSizes: 'spd' } ] ] ) {
+
+				if ( downsampler.levelsPerDispatch !== 4 || downsampler.bufferLevelsPerDispatch !== 6 ) throw new Error( `region default limits: ${ downsampler.levelsPerDispatch } storage and ${ downsampler.bufferLevelsPerDispatch } buffer levels per dispatch, not 4 and 6` );
+				for ( const [ width, height ] of quick ? quickShapes : smallShapes ) {
+
+					const updates = rectsFor( width, height, width * 7 + height, 9 ).map( rect => ( { rect } ) );
+					const label = `region default limits ${ mode } rgba8unorm-srgb average ${ width }x${ height }`;
+					const count = await inPlaceSequence( plain, { downsampler, width, height, format: 'rgba8unorm-srgb', options, updates, label } );
+					out.push( { region: `default limits ${ mode }`, format: 'rgba8unorm-srgb', reduction: 'average', width, height, updates: count } );
+					onProgress( `validated ${ label }` );
+
+				}
+
+			}
+
+		} finally {
+
+			plain.destroy();
+
+		}
+
+		return out;
+
+	} ) );
 
 	// Layer ranges, alone and with a rect, on both array view dimensions (and a 1-layer array).
 	for ( const { format, options, name } of [ { format: 'rgba8unorm', options: {}, name: 'average' }, { format: 'rgba16float', options: { reduction: 'max' }, name: 'max' } ] ) {

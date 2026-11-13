@@ -225,6 +225,15 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 	}
 
+	// Each group in its own validation error scope, so a GPU validation error names its group
+	// (the suite's own scope still catches errors from setup shared between groups).
+	select.enter = () => device.pushErrorScope( 'validation' );
+	select.leave = async id => {
+
+		const error = await device.popErrorScope();
+		return error ? new Error( `GPU validation error in ${ id }: ${ error.message }` ) : null;
+
+	};
 	// A group that throws outside check() (a direct assertion, a lost device) is recorded too.
 	if ( keepGoing ) select.onError = ( id, error ) => failures.push( { label: id, first: `${ id } threw: ${ error.message }`, thrown: true } );
 	const report = await suite( device, { onProgress, quick, only, select } );

@@ -112,7 +112,8 @@ export function digest( ids ) {
  * and the cases it returned (an array of results). Time between groups (shared setup:
  * textures, inputs, oracles) is charged to the group that follows it, so the recorded
  * durations add up to the run's wall time. With `onError( id, error )` set (--keep-going), a
- * group that throws is reported there and the run moves on to the next group.
+ * group that throws is reported there and the run moves on to the next group. `enter( id )` and
+ * `leave( id )`, when set, bracket each group that runs; `leave` resolves to an error or null.
  */
 export class Selection {
 
@@ -142,13 +143,26 @@ export class Selection {
 
 		try {
 
-			results = await fn();
-			return results;
+			// `enter( id )` and `leave( id )` (optional) bracket the group: an error `leave` returns
+			// (a GPU validation error scope's) fails the group like a throw.
+			this.enter?.( id );
+			let failure = null;
+			try {
 
-		} catch ( error ) {
+				results = await fn();
 
-			if ( ! this.onError ) throw error;
-			this.onError( id, error );
+			} catch ( error ) {
+
+				failure = error;
+
+			}
+
+			const left = this.leave ? await this.leave( id ) : null;
+			// A validation error first: it usually explains the failure that follows it.
+			if ( left !== null ) failure = failure === null ? left : new Error( `${ left.message }; then: ${ failure.message }` );
+			if ( failure === null ) return results;
+			if ( ! this.onError ) throw failure;
+			this.onError( id, failure );
 			return results;
 
 		} finally {
