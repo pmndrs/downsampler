@@ -10,6 +10,11 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Now
 
+- [ ] Formats: rgb10a2unorm (M2.3.3) + integer formats (M2.3.7) (agent, branch `formats-rgb10a2-int`)
+- [ ] sRGB destinations + transform hooks (M2.3.5) (agent, branch `srgb`)
+- [ ] API polish + ship prep: empty rect no-op, region buffers destroyed after submit, `maxResampleRatio` option, one source shape, package/CHANGELOG/release workflow, durations re-record (agent, branch `ship-prep`)
+- [ ] three.js in-tree compute mipmaps (SPEC §10.2), local three.js worktree `three.js-compute-mips`, branch `compute-mipmaps`; not pushed (agent)
+- [ ] Examples for rect/layers, odd sizes, power-of-two Hi-Z + recipes in the guide (agent, branch `examples-2`)
 - [x] Windows runs (owner + a Windows agent, RTX 3060 + Intel UHD), merged from `f16-rounding` (`a3b9517`): branch `windows-testing`, handoff in `docs/WINDOWS-HANDOFF.md`. Verification, cross-vendor timings, and native D3D12/Vulkan matches (FidelityFX SPD, D3D11 `GenerateMips`, nvpro) for the same sizes
   - [x] Correctness: RTX full + quick + compat quick, Intel quick, all groups run; failures traced to f16 truncation and sampler precision, both explained by probes ([results/windows/correctness.md](results/windows/correctness.md))
   - [x] Native harnesses built (`native/`): D3D12 AMD SPD (8 variants), D3D12 render, D3D11 `GenerateMips`, Vulkan nvpro + blit; level dumps at 1129×635 match our oracles ([native-semantics-rtx3060.json](results/windows/native-semantics-rtx3060.json))
@@ -23,7 +28,7 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
   - Handoff summary: [results/windows/README.md](results/windows/README.md); library changes are on branch `f16-rounding`
   - [x] `test/parallel.js`: the suite in capped parallel shards, one summary; full matrix 35+ → 17 min, quick 4.6 → 2 min (RTX 3060)
 - [ ] M3 runs: M5 Pro idle (throughput, throughput rAF, storage-usage, subgroups, f16; commands in test/bench/README.md), then RTX 3060 / Intel UHD via `--power=high|low`; decide the subgroup kernel on the `nosync` bound (≥ 5 % at render sizes) and fp16 on speed vs its precision and overflow cost
-- [ ] Windows round 2 (owner + Windows agent): `docs/WINDOWS-HANDOFF-2.md`. Verify the merged milestones on D3D12 before main (RTX full, Intel quick, compat quick, examples), confirm the tile/tail defaults, f16 rounding cost, M3 runs
+- [ ] Windows round 2 + M3 (owner + Windows agent, branch `windows-testing`): `docs/WINDOWS-HANDOFF-2.md`. Verify, set defaults by rule, M3 measurements, then build halo batches / cheaper exact kernel / subgroups / fp16 by the data. Verify the merged milestones on D3D12 before main (RTX full, Intel quick, compat quick, examples), confirm the tile/tail defaults, f16 rounding cost, M3 runs
 - [ ] CI: first GitHub run of the shards (`test/ci/README.md`): real shard times, Linux SwiftShader compat device, artifact collection. Then commit its `gpu-durations` artifact
 
 ## Next (SPEC §11)
