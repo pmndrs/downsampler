@@ -1,0 +1,58 @@
+:root {
+	color-scheme: light dark;
+	--fg: #1b1d21;
+	--muted: #5d636d;
+	--bg: #fbfbfa;
+	--panel: rgba( 127, 127, 127, 0.1 );
+	--line: rgba( 127, 127, 127, 0.3 );
+	--accent: #3b6fd8;
+	--pass: #1f7a3d;
+	--fail: #b3261e;
+	font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+@media ( prefers-color-scheme: dark ) {
+	:root {
+		--fg: #e6e7e9;
+		--muted: #a3a8b1;
+		--bg: #15171a;
+		--accent: #7aa2f7;
+		--pass: #6fd08c;
+		--fail: #ff8a80;
+	}
+}
+
+body { margin: 0 auto; padding: 16px; max-width: 980px; color: var( --fg ); background: var( --bg ); }
+h1 { font-size: 1.5rem; margin: 0.5rem 0; }
+h2 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
+a { color: var( --accent ); }
+p, li { max-width: 72ch; }
+code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; background: var( --panel ); padding: 0 0.25em; border-radius: 3px; }
+pre { font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; background: var( --panel ); padding: 12px; border-radius: 6px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+.muted { color: var( --muted ); font-size: 0.9em; }
+nav { font-size: 0.9em; margin-bottom: 0.5rem; }
+
+#readout { list-style: none; padding: 10px 12px; margin: 0; background: var( --panel ); border-radius: 6px; font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+#readout:empty::before { content: 'Running…'; color: var( --muted ); }
+#readout .pass { color: var( --pass ); }
+#readout .fail { color: var( --fail ); }
+
+.controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 8px 0; }
+.levels { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+button { font: inherit; padding: 4px 10px; border: 1px solid var( --line ); background: var( --panel ); color: inherit; border-radius: 4px; cursor: pointer; }
+button.selected { border-color: var( --accent ); outline: 1px solid var( --accent ); }
+select, input { font: inherit; }
+
+.view { display: flex; flex-wrap: wrap; gap: 12px; }
+.view figure { margin: 0; flex: 1 1 300px; min-width: 0; }
+.view figcaption { font-size: 0.85em; color: var( --muted ); }
+canvas.level { width: 100%; height: auto; max-height: 60vh; object-fit: contain; image-rendering: pixelated; background: repeating-conic-gradient( var( --panel ) 0 25%, transparent 0 50% ) 0 0 / 16px 16px; border: 1px solid var( --line ); }
+
+table { border-collapse: collapse; font-size: 13px; margin: 8px 0; display: block; overflow-x: auto; }
+th, td { padding: 3px 10px; text-align: right; border-bottom: 1px solid var( --line ); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+
+.cards { display: grid; grid-template-columns: repeat( auto-fill, minmax( 260px, 1fr ) ); gap: 12px; padding: 0; list-style: none; }
+.cards li { background: var( --panel ); border-radius: 8px; padding: 12px 14px; }
+.cards a { font-weight: 600; }
