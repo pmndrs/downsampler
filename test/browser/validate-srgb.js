@@ -233,7 +233,7 @@ async function validateNearExact( device, { quick, onProgress } ) {
 	];
 	const results = [];
 	let nearTies = 0, values = 0;
-	for ( const [ width, height, layers = 1 ] of shapes ) for ( const format of [ 'rgba8unorm-srgb', ...( width === 255 ? [ 'bgra8unorm-srgb' ] : [] ) ] ) {
+	for ( const [ width, height, layers = 1 ] of shapes ) for ( const format of [ 'rgba8unorm-srgb', ...( width === 255 && ! compatibility( device ) ? [ 'bgra8unorm-srgb' ] : [] ) ] ) {
 
 		const texture = createTexture( device, { width, height, layers, format } );
 		try {
@@ -357,8 +357,13 @@ async function validateApi( device ) {
 
 		// bgra8unorm-srgb holds the same bytes in another channel order, and every channel reduces alike:
 		// the same bytes in, the same bytes out.
-		const bgra = track( make( 'bgra8unorm-srgb' ) );
-		same( toBytes( await chain( downsampler, bgra, data2 ) ), toBytes( reference ), 'srgb bgra8unorm-srgb vs rgba8unorm-srgb bytes' );
+		// (Compatibility mode has no bgra8unorm-srgb textures.)
+		if ( ! compatibility( device ) ) {
+
+			const bgra = track( make( 'bgra8unorm-srgb' ) );
+			same( toBytes( await chain( downsampler, bgra, data2 ) ), toBytes( reference ), 'srgb bgra8unorm-srgb vs rgba8unorm-srgb bytes' );
+
+		}
 
 		// The kernel's storage output (codes into an rgba8unorm scratch, copied into the level) writes the buffer path's bits.
 		if ( ! compatibility( device ) ) {

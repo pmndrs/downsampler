@@ -266,6 +266,8 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 			const { quantization, channels, filterable, feature, coreStorage } = formats[ format ];
 			const packed = isPackedQuantization( quantization ), srgb = quantization === 'srgb8';
 			if ( only === 'srgb' && ! srgb ) continue;
+			// Compatibility mode has no bgra8unorm-srgb textures at all.
+			if ( format === 'bgra8unorm-srgb' && compatibility( device ) ) { skipped.push( 'bgra8unorm-srgb (no such texture in compatibility mode)' ); continue; }
 			if ( only?.startsWith( 'packed' ) && ( ! packed || only !== 'packed' ) ) continue;
 			const compatNoStorage = coreStorage === true && compatibility( device );
 			const storagePath = storageWritable( format, device.features ) && ! compatNoStorage;
@@ -589,6 +591,7 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 		if ( packedOnly && ! isPackedQuantization( formats[ format ].quantization ) ) continue;
 		if ( srgbOnly && ! [ format, sourceFormat ].some( f => f.endsWith( '-srgb' ) ) ) continue;
 		if ( formats[ format ].coreStorage && compatibility( device ) ) continue;
+		if ( [ format, sourceFormat ].includes( 'bgra8unorm-srgb' ) && compatibility( device ) ) continue;
 
 		const { quantization, channels } = formats[ format ];
 
