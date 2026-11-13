@@ -23,11 +23,11 @@ npm install downsampler
 ## Quick start
 
 ```js
-import { Downsampler } from 'downsampler/webgpu';
+import { Downsampler, requiredLimits } from 'downsampler/webgpu';
 
 const adapter = await navigator.gpu.requestAdapter();
 // Six levels per dispatch need six storage textures (the default limit is four).
-const device = await adapter.requestDevice( { requiredLimits: Downsampler.requiredLimits( adapter ) } );
+const device = await adapter.requestDevice( { requiredLimits: requiredLimits( adapter ) } );
 const downsampler = new Downsampler( device );
 
 // texture: any supported format, TEXTURE_BINDING | STORAGE_BINDING usage, level 0 filled.
@@ -55,7 +55,7 @@ downsampler.generate( hiZ /* rg32float */, { source: { texture: depth }, reducti
 
 **`ScalarReduction`** reduces a whole image to one `vec4f` per layer in two dispatches at any size, every texel counted once, with an optional `finish` hook that runs on the GPU (exposure, scene statistics).
 
-**`encode` vs `encodePass`.** `encode( encoder, … )` records its own compute passes. `encodePass( pass, … )` records into a compute pass you own, so it can share the pass and one pair of timestamp writes with your other dispatches. `prepare()` (and `Reducer.bindGroup()` / `workgroups()`) let a tool dispatch the kernels itself.
+**`encode` vs `encodePass`.** `encode( encoder, … )` records its own compute passes. `encodePass( pass, … )` records into a compute pass you own, so it can share the pass and one pair of timestamp writes with your other dispatches. `prepare()` returns what `encodePass` would record (pipelines, bind groups, workgroup counts) on all three classes, so a tool can dispatch the kernels itself. `release()` drops cached bind groups and destroys the buffers the library created for them.
 
 **Compatibility mode** (devices without `'core-features-and-limits'`) is handled: each batch writes scratch levels and a copy dispatch moves them in, with bit-identical results (`compatibility: 'auto'`).
 
@@ -68,12 +68,13 @@ downsampler.generate( hiZ /* rg32float */, { source: { texture: depth }, reducti
 ## three.js
 
 ```js
-import { generateMipmaps, requiredLimits } from 'downsampler/three';
+import { generateMipmaps, requiredLimits, unsupportedReason } from 'downsampler/three';
 
 const renderer = new WebGPURenderer( { requiredLimits: requiredLimits( adapter ) } );
 await renderer.init();
 // A StorageTexture with generateMipmaps = true and mipmapsAutoUpdate = false, level 0 written.
-if ( ! generateMipmaps( renderer, texture ) ) { /* not allocated or unsupported: use three's own path */ }
+if ( ! generateMipmaps( renderer, texture ) ) console.warn( unsupportedReason( renderer, texture ) ); // then use three's own path
+generateMipmaps( renderer, texture, { encoder, downsampler: { averageAccess: 'load' } } );        // into your encoder, not submitted
 ```
 
 Native support for every three.js texture is planned as an in-tree option ([SPEC §10](SPEC.md#10-threejs-integration)).

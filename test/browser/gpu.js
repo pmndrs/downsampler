@@ -1,6 +1,6 @@
 // Shared browser-side helpers for the GPU suite, benchmark and device lab.
 import { formats, fromHalf, integerDomains, isIntegerDomain, isPackedQuantization, isSupportedFormat, packTexel, storageWritable, toHalf, unpackTexel } from '/dist/index.js';
-import { Downsampler } from '/dist/webgpu/index.js';
+import { requiredLimits } from '/dist/webgpu/index.js';
 
 /**
  * `compat`: a compatibility-mode device (featureLevel 'compatibility', without 'core-features-and-limits').
@@ -19,7 +19,7 @@ export async function requestDevice( { compat = false, maxStorageTextures = fals
 	const optional = [ 'texture-formats-tier1', 'bgra8unorm-storage', ...features ].filter( feature => adapter.features.has( feature ) );
 	const device = await adapter.requestDevice( {
 		requiredFeatures: [ ...optional, ...( timestamps ? [ 'timestamp-query' ] : [] ) ],
-		requiredLimits: maxStorageTextures ? { maxStorageTexturesPerShaderStage: adapter.limits.maxStorageTexturesPerShaderStage } : Downsampler.requiredLimits( adapter )
+		requiredLimits: maxStorageTextures ? { maxStorageTexturesPerShaderStage: adapter.limits.maxStorageTexturesPerShaderStage } : requiredLimits( adapter )
 	} );
 	if ( compat && device.features.has( 'core-features-and-limits' ) ) throw new Error( 'compat: the browser gave a core device (it cannot enforce compatibility-mode validation).' );
 	const info = adapter.info || {};
@@ -328,5 +328,35 @@ export function median( values ) {
 
 	const sorted = values.slice().sort( ( a, b ) => a - b );
 	return sorted[ Math.floor( sorted.length / 2 ) ];
+
+}
+
+/**
+ * Records the buffers created on `device` from now on, and which of them are
+ * destroyed, by wrapping `createBuffer` (and each new buffer's `destroy`) until
+ * `restore()`. `settle()` waits for the queue and a task, so deferred
+ * destruction (cache evictions, after onSubmittedWorkDone) has happened.
+ */
+export function trackBuffers( device ) {
+
+	const created = [], destroyed = new Set();
+	const createBuffer = device.createBuffer;
+	device.createBuffer = descriptor => {
+
+		const buffer = createBuffer.call( device, descriptor );
+		const destroy = buffer.destroy;
+		buffer.destroy = () => { destroyed.add( buffer ); destroy.call( buffer ); };
+		created.push( buffer );
+		return buffer;
+
+	};
+
+	return {
+		created, destroyed,
+		/** Buffers created since tracking started, by label substring. */
+		labelled: text => created.filter( buffer => buffer.label.includes( text ) ),
+		settle: async () => { await device.queue.onSubmittedWorkDone(); await new Promise( resolve => setTimeout( resolve, 0 ) ); },
+		restore: () => { delete device.createBuffer; }
+	};
 
 }

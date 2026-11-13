@@ -3,13 +3,14 @@ import { outputBufferLayout, planBatches, tailTile, type Batch, type BatchKernel
 import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
 import { isCompatibilityTexture } from './compat.js';
 import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, type F16Rounding, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
+import { requiredLimits } from './limits.js';
 
 /** Options of `new Downsampler( device, options )`. Every option is validated by the constructor. See docs/guide.md. */
 export interface DownsamplerOptions {
 	/**
 	 * Output levels per dispatch. Defaults to the most the path allows: on the
 	 * storage path min(6, maxStorageTexturesPerShaderStage) (six needs a device
-	 * created with a raised limit — see {@link Downsampler.requiredLimits}); on
+	 * created with a raised limit — see {@link requiredLimits}); on
 	 * the buffer path 6 at any storage texture limit. 5 and 6 levels also need
 	 * 256 invocations per workgroup (compatibility mode defaults to 128). Above
 	 * the storage limit only with output 'buffer'.
@@ -212,8 +213,8 @@ export class Downsampler {
 	readonly bufferLevelsPerDispatch: number;
 	/** The `output` option: 'auto', 'storage' or 'buffer'. {@link Downsampler.outputPath} resolves it per texture. */
 	readonly output: 'auto' | OutputPath;
-	/** The `averageAccess` option; undefined means the default, 'sample'. */
-	readonly averageAccess: SourceAccess | undefined;
+	/** How 'average' reads filterable sources (resolved `averageAccess` option, default 'sample'). */
+	readonly averageAccess: SourceAccess;
 	/** The `compatibility` option. {@link Downsampler.usesCompatibility} resolves it per texture. */
 	readonly compatibility: boolean | 'auto';
 	/** Whether 'exact' chains finish in a tail kernel (resolved `tail` option). */
@@ -229,17 +230,13 @@ export class Downsampler {
 	private readonly sampler: GPUSampler;
 
 	/**
-	 * Limits to request when creating a device, so six levels fit in one
-	 * dispatch: storage textures, and on compatibility-mode adapters (default
-	 * 128) the 256 invocations of the 5- and 6-level kernels and of
-	 * `ScalarReduction` (whose combine workgroup is 256 wide).
+	 * Limits to request when creating a device: the standalone
+	 * {@link requiredLimits} (exported from `downsampler/webgpu`), which also
+	 * covers 5- and 6-level `Reducer`s and `ScalarReduction`.
 	 */
 	static requiredLimits( adapter: GPUAdapter ): Record<string, number> {
 
-		const limits: Record<string, number> = { maxStorageTexturesPerShaderStage: Math.max( 4, Math.min( 6, adapter.limits.maxStorageTexturesPerShaderStage ) ) };
-		if ( adapter.limits.maxComputeInvocationsPerWorkgroup >= 256 ) limits.maxComputeInvocationsPerWorkgroup = 256;
-		if ( adapter.limits.maxComputeWorkgroupSizeX >= 256 ) limits.maxComputeWorkgroupSizeX = 256;
-		return limits;
+		return requiredLimits( adapter );
 
 	}
 
@@ -257,7 +254,7 @@ export class Downsampler {
 		this.bufferLevelsPerDispatch = options.levelsPerDispatch ?? invocations;
 		this.output = output;
 		if ( options.averageAccess !== undefined && options.averageAccess !== 'sample' && options.averageAccess !== 'load' ) throw new Error( 'downsampler: averageAccess must be "sample" or "load".' );
-		this.averageAccess = options.averageAccess;
+		this.averageAccess = options.averageAccess ?? 'sample';
 		const compatibility = options.compatibility ?? 'auto';
 		if ( compatibility !== 'auto' && typeof compatibility !== 'boolean' ) throw new Error( 'downsampler: compatibility must be true, false or "auto".' );
 		this.compatibility = compatibility;
@@ -409,10 +406,14 @@ export class Downsampler {
 	}
 
 	/**
-	 * The dispatches `encode` will record, prepared and cached per destination.
-	 * With a separate source, only the plan for the most recent source texture is
-	 * kept per option set, so recreating a depth buffer on resize does not grow
-	 * the cache.
+	 * What `encode` records for a chain, for tools that dispatch it themselves
+	 * (and to inspect the plan, or compile its pipelines ahead of time): one
+	 * {@link PreparedBatch} per dispatch, in order, with its pipeline, group-0
+	 * bind group and workgroup counts, and on the buffer path the copies that
+	 * follow it. Validates like `encode` and throws with the reason. Cached per
+	 * destination and option set (see {@link Downsampler.release}); with a
+	 * separate source only the most recent source texture's plan is kept per
+	 * option set, so recreating a depth buffer on resize does not grow the cache.
 	 */
 	prepare( texture: GPUTexture, options: EncodeOptions = {} ): readonly PreparedBatch[] {
 
@@ -591,7 +592,7 @@ export class Downsampler {
 		const float32 = format.endsWith( '32float' ) && this.device.features.has( 'float32-filterable' );
 		const known = isSupportedFormat( format ) ? ( formats[ format ] as FormatInfo ).filterable : ! format.startsWith( 'depth' ) && ! format.endsWith( '32float' ) && ! /16[us]norm$/.test( format );
 		const filterable = known || float32;
-		return filterable ? this.averageAccess ?? 'sample' : 'load';
+		return filterable ? this.averageAccess : 'load';
 
 	}
 

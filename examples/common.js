@@ -2,7 +2,7 @@
 // the on-page readout. Nothing here is part of the library; it is plain
 // WebGPU and DOM code you would write yourself.
 import { formats, fromHalf } from '../dist/index.js';
-import { Downsampler } from '../dist/webgpu/index.js';
+import { requiredLimits } from '../dist/webgpu/index.js';
 
 /**
  * An adapter and a device with the limits the library can use: six storage
@@ -15,7 +15,7 @@ export async function initDevice() {
 	if ( ! navigator.gpu ) throw new Error( 'WebGPU is not available in this browser.' );
 	const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance' } );
 	if ( ! adapter ) throw new Error( 'No WebGPU adapter.' );
-	const device = await adapter.requestDevice( { requiredLimits: Downsampler.requiredLimits( adapter ) } );
+	const device = await adapter.requestDevice( { requiredLimits: requiredLimits( adapter ) } );
 	device.lost.then( info => { if ( info.reason !== 'destroyed' ) fail( new Error( `GPU device lost: ${ info.message }` ) ); } );
 	device.addEventListener( 'uncapturederror', event => fail( new Error( `WebGPU error: ${ event.error.message }` ) ) );
 	const info = adapter.info ?? {};

@@ -214,7 +214,7 @@ Tail tiles follow the first output, not the level count: SwiftShader took 30 s o
 ### Levels per dispatch
 
 - `min(6, maxStorageTexturesPerShaderStage)`. The default WebGPU limit is 4.
-- `Downsampler.requiredLimits(adapter)` gives apps the limits to request.
+- `requiredLimits( adapter )` (from `downsampler/webgpu`; also `Downsampler.requiredLimits`) gives apps the limits to request, for `Reducer` and `ScalarReduction` too.
 - Around 94 % of devices report at least 8 (web3dsurvey).
 - Storage texture views must cover exactly one mip level ([WebGPU spec](https://gpuweb.github.io/gpuweb/)), so each output level needs its own binding.
 
@@ -230,7 +230,8 @@ Every intermediate level is quantized exactly as stored, so a chain equals level
 
 - Pipelines are cached per `Downsampler` (per device) and per reduction; bind group layouts per format, view dimension, width and access.
 - Bind groups are cached per texture and options in a `WeakMap`.
-- `release(texture)` drops a texture's entries early.
+- `release(texture)` drops a texture's entries early and destroys the buffers and scratch textures they own.
+- **Buffer lifetime (all three classes, 2026-11-13).** A class destroys only buffers it created (size and layout uniforms, buffer-output buffers, scalar params and partials), never a caller's. `release` destroys them at once, so call it after submitting the last work that uses them. Entries a bounded cache evicts (a `Reducer`'s 16 bind groups, a `ScalarReduction`'s 4 plans per resource) are destroyed after `queue.onSubmittedWorkDone()`, not at once: an evicted entry can still be recorded in an encoder the caller hasn't submitted (more than 16 Reducer dispatches in one encoder), and destroying it then makes that submit fail ("used in submit while destroyed", GPU-tested). The promise resolves in a later task, after the usual encode-and-submit of a frame.
 
 ### Compatibility mode (2026-11-11, reflections D4100)
 
@@ -254,8 +255,8 @@ WebGPU compatibility mode is a device without `'core-features-and-limits'` (`req
 
 - **Input:** a source texture read with `textureLoad` (any float-sampleable 2D format at one mip level; depth through its depth aspect; single-channel formats splatted to `(v, v, v, v)` as in §4 Separate source), or a `load` hook alone with an explicit `size`, reading the tool's `@group(1)`. The hook form lets a tool reduce something computed from several of its own textures. A hook and a source texture together are rejected; a hook replaces the source read.
 - **Layers (decided):** each layer in `layers: [ first, count ]` is reduced separately, to its own result. Workgroup z selects the layer in both dispatches, so all layers still take two dispatches. Array slices and cube faces are independent images; a value across layers is a sum of results, or one hook that loops over layers.
-- **Ops:** per channel `'sum' | 'average' | 'min' | 'max' | 'weight' | 'weighted'` (§14.1). At most one `'weight'` channel; `'weighted'` needs one. Emitted: sums, averages (÷ texel count), weighted means (÷ Σ w, and 0 when Σ w = 0), Σ w, min, max. The weight passed on is Σ w with a weight channel, else the texel count. Custom `{ wgsl, kind }` reductions aren't offered yet.
-- **Output:** `finish( value: vec4f, weight: f32 )`, run once per layer by invocation 0 of the combine workgroup, with an optional third parameter `layer: u32` (an extension of §14.1 for multi-layer runs). Without `finish`, results go to `output: { buffer, offset }` as `struct { value: vec4f, weight: f32 }`, 32 bytes per layer, at a 256-byte-aligned offset.
+- **Ops** (`reduction`, as on `Downsampler` and `Reducer`): per channel `'sum' | 'average' | 'min' | 'max' | 'weight' | 'weighted'` (§14.1), plus payload folds; one op for every channel, or `'minmax'` (even channels min, odd max, the depth-range shorthand). At most one `'weight'` channel; `'weighted'` needs one. Emitted: sums, averages (÷ texel count), weighted means (÷ Σ w, and 0 when Σ w = 0), Σ w, min, max. The weight passed on is Σ w with a weight channel, else the texel count. Custom `{ wgsl, kind }` reductions aren't offered yet.
+- **Output:** `finish( value: vec4f, weight: f32 )`, run once per layer by invocation 0 of the combine workgroup, with an optional third parameter `layer: u32` (an extension of §14.1 for multi-layer runs). Without `finish`, results go to `output: { buffer, offset }` as `struct { value: vec4f, weight: f32 }`, 32 bytes per layer, at an offset aligned to the device's `minStorageBufferOffsetAlignment` (256 by default), as `partials.offset` is.
 - **Every texel counted once.** Pass 1 covers the image with `⌈w/64⌉ × ⌈h/64⌉` tiles. Off-image reads in partial tiles are clamped to the edge, then zeroed for sum-like channels; min and max see a duplicate in-image texel, which is harmless. No edge row or column is dropped (SPD), and nothing is limited to a top-left `2ⁿ` square (FSR 3 exposure covers 1024×1024 of 1080p, §14).
 - **Pass 1 (partials):** 16×16 invocations. Each reads 4×4 texels 16 apart, so adjacent invocations read adjacent texels, and combines them as a tree. The workgroup combines its 256 values in workgroup memory with a stride-halving tree (`slot[i] ∘= slot[i + s]`, s = 128 … 1) and writes one `vec4f` per tile and layer to a storage buffer the reduction owns.
 - **Pass 2 (combine):** one 256-invocation workgroup per layer. Invocation t folds partials t, t + 256, … in sequence, then the same tree. It normalises and calls `finish` or writes the output.
@@ -272,13 +273,13 @@ WebGPU compatibility mode is a device without `'core-features-and-limits'` (`req
 - **Precision.** Each term passes through at most D roundings: log₂16 in the invocation, 8 in the workgroup, ⌈N/256⌉ − 1 in the sequential fold over N partials, and 8 in the final tree. That gives D = 20 up to 1024² (N ≤ 256), 21 at 1920×1080 and 27 at 3840×2160. The standard bound for a summation tree (Higham §4.2) is |ŝ − s| ≤ γ_D·Σ|xᵢ|, with γ_D = D·u/(1 − D·u) and u = 2⁻²⁴. At 4K that is 1.6·10⁻⁶ of Σ|x|, so an average is good to 1.6·10⁻⁶ of the mean magnitude. A serial f32 sum over 1080p has a bound of n·u ≈ 0.12 and in practice misses it (core test). Averages add one rounding for the division; weighted means add one for the product, plus the error of Σ w. `scalarReference` documents the bound per op and returns it.
 - **Oracle (§7 style).** `scalarReference` combines in exactly the GPU's order with float32 rounding after every operation, and also returns the exact float64 result and the bound above. GPU tests require |GPU − exact| ≤ bound (plus a declared input error: 2⁻²¹ relative for unorm sources, and for the exposure hook's `log`, 2⁻²⁰ absolute plus 2⁻²¹ relative). Bit-for-bit pairing isn't required: FMA contraction of `w·v + …` and WGSL's 2.5-ulp division are allowed. On M5 Pro, 889 of 1044 float results matched the pairing bit for bit, and the worst error was 15 % of the bound. Integer-valued cases (procedural hooks returning counts, hash bits and coordinates below 2²⁴) and min/max must match exactly.
 - **Recording:** `encode( encoder, run )` (two passes), `encodePass( pass, run )`, and `prepare( run )` → pipelines, our `@group(0)` bind group, the tool's group 1 and both workgroup counts, for tools that dispatch it themselves. `kernel( { dimension, splat } )` returns the WGSL, layout and pipelines; `createScalarKernel` and `scalarLayoutEntries` are the pure generator. Generator identifiers start with `ds_`.
-- **Caching:** pipelines per source view dimension and splat. Per run shape, a plan holds a uniform buffer (size, first layer, partial count) and the partials buffer, cached per source texture, or else per output buffer or reduction, with at most 4 shapes per owner (resizes evict the oldest). `release( resource )` drops them.
+- **Caching:** pipelines per source view dimension and splat. Per run shape, a plan holds a uniform buffer (size, first layer, partial count) and the partials buffer, cached per source texture, or else per output buffer or reduction, with at most 4 shapes per owner (resizes evict the oldest, and its buffers are destroyed once the queue is done, § Caching). `release( resource )` drops one owner's plans and destroys their buffers; `release()` drops every plan.
 - **Combine-only runs (2026-11-11).** A run with `partials: { buffer, offset?, count }` records the combine dispatch alone, over `count` accumulations per layer that the tool wrote (one `vec4f` each, layer after layer). The usual source is a `Reducer`'s deepest level through its store hook, so "Reducer levels + a scalar of the same source" takes 2 dispatches with one read of the source (3 before).
   - **Partials are accumulations:** sum-like channels hold sums (a `'weighted'` channel Σ w·v, the `'weight'` channel Σ w), min/max channels the min/max. A Reducer emits these with `'sum'`, `'min'`, `'max'` channels; its `'average'` and `'weighted'` channels are normalised, so a tool feeding a scalar uses `'sum'` and forms w·v in its load hook.
   - **`texels`** is the texel count behind the partials: the divisor of `'average'` channels and the weight passed on without a `'weight'` channel. A run needs it in those cases.
   - **Group 0** of the combine-only pipeline has no source texture (`combineKernel()`). The tool's buffer is bound read-write at binding 1, so the run's group 1 must not bind it too (aliased writable bindings fail validation). In the FSR fixture the Reducer's group 1 holds the partials and the scalar's is FSR's own.
   - **Offset** must be a multiple of `minStorageBufferOffsetAlignment`. The WGSL is unchanged: the combine entry point of the same module.
-  - **Oracle:** `scalarCombineReference( partials, count, layers, reduce, { texels, partialDepth, magnitude } )` pairs in the combine pass's order; the bound uses depth `partialDepth` + ⌈N/256⌉ − 1 + 8 (a Reducer's level l adds 2l roundings).
+  - **Oracle:** `scalarCombineReference( partials, count, layers, reduction, { texels, partialDepth, magnitude } )` pairs in the combine pass's order; the bound uses depth `partialDepth` + ⌈N/256⌉ − 1 + 8 (a Reducer's level l adds 2l roundings).
 - **Shared tool plumbing (2026-11-11):** `src/webgpu/tool.ts` holds `ToolBindings`, hook validation (`checkHook`, `hookArity`), the tool's group-1 layout, the `[ group 0, group 1 ]` pipeline layout and the bind-group checks, for `Reducer` and `ScalarReduction` both. WGSL and layouts were unchanged by the move (5620 option sets compared byte for byte).
 
 ## 5. API
@@ -286,10 +287,11 @@ WebGPU compatibility mode is a device without `'core-features-and-limits'` (`req
 ### Implemented
 
 ```ts
-import { Downsampler } from 'downsampler/webgpu';
+import { Downsampler, requiredLimits } from 'downsampler/webgpu';
 
-const device = await adapter.requestDevice( { requiredLimits: Downsampler.requiredLimits( adapter ) } );
-const downsampler = new Downsampler( device );          // { levelsPerDispatch?, averageAccess?, output?: 'auto' | 'storage' | 'buffer' (§6.1), compatibility?: 'auto' | boolean (§4), tail? (§2.1) }
+const device = await adapter.requestDevice( { requiredLimits: requiredLimits( adapter ) } ); // also Downsampler.requiredLimits; covers Reducer and ScalarReduction
+const downsampler = new Downsampler( device );          // { levelsPerDispatch?, output?: 'auto' | 'storage' | 'buffer' (§6.1), averageAccess?: 'sample' | 'load', compatibility?: 'auto' | boolean (§4), tail? (§2.1), f16Rounding?: 'nearest' | 'device', exactTile?: 8 | 16 | 32 }
+                                                         // fields hold the resolved values: downsampler.averageAccess === 'sample', .tail, .exactTile, …
 downsampler.supports( texture );                         // boolean
 downsampler.unsupportedReason( texture );                // string | null
 downsampler.outputPath( texture );                       // 'storage' | 'buffer' | null (§6.1 Buffer output path)
@@ -299,10 +301,13 @@ downsampler.encode( encoder, texture, {
 } );
 downsampler.generate( texture );                         // encode + submit
 downsampler.encodePass( pass, texture, options );        // into a compute pass you own (one timestamp pair; storage path only)
-downsampler.prepare( texture );                          // planned dispatches (inspection/testing)
+downsampler.prepare( texture );                          // what encode records: PreparedBatch[] (pipeline, bindGroup, groups, copies), for self-dispatch
+downsampler.release( texture );                          // drop its plans, destroy its buffers and scratch textures
 
-import { generateMipmaps, requiredLimits } from 'downsampler/three';
-generateMipmaps( renderer, texture );                    // false if not allocated/supported
+import { generateMipmaps, getDownsampler, requiredLimits, unsupportedReason } from 'downsampler/three';
+generateMipmaps( renderer, texture, { reduction, encoder, downsampler: { averageAccess: 'load' } } ); // false if it declines; no submit with `encoder`
+unsupportedReason( renderer, texture, options );          // why it declines: not allocated, one level, or the Downsampler's reason
+getDownsampler( renderer, downsamplerOptions );          // shared per device and option set
 
 import { planBatches, reduceReference, footprint, spdReference, maxViolations } from 'downsampler'; // backend-neutral core
 ```
@@ -316,20 +321,21 @@ downsampler.sourceUnsupportedReason( destination, source, baseMipLevel ); // str
 ```ts
 // Scalar reductions (§4 Scalar reductions): one vec4f + weight per layer, 2 dispatches.
 import { ScalarReduction } from 'downsampler/webgpu';
-const range = new ScalarReduction( device, { reduce: [ 'min', 'max', 'min', 'max' ] } ); // or 'average', [ 'weighted', …, 'weight' ]
-range.encode( encoder, { texture: depth, output: { buffer, offset: 0 } } ); // { value: vec4f, weight: f32 } per layer
+const range = new ScalarReduction( device, { reduction: 'minmax' } ); // = [ 'min', 'max', 'min', 'max' ]; or 'average', [ 'weighted', …, 'weight' ]
+range.encode( encoder, { texture: depth, output: { buffer, offset: 0 } } ); // { value: vec4f, weight: f32 } per layer; offset aligned to minStorageBufferOffsetAlignment
 const exposure = new ScalarReduction( device, {
 	bindings: { wgsl: '@group(1) @binding(0) var colour: texture_2d<f32>; …', entries }, // the tool's group 1
 	load: 'fn load( texel: vec2i, layer: u32 ) -> vec4f { … log( max( luma, 6.1e-5 ) ) … }',
 	finish: 'fn finish( value: vec4f, weight: f32 ) { … temporal smoothing, store … }',
 } );
 exposure.encodePass( pass, { size: [ width, height ], bindGroup } ); // also { layers: [ first, count ], mipLevel }
-exposure.prepare( run );        // pipelines, group 0 bind group, workgroup counts (dispatch it yourself)
+exposure.prepare( run );        // what encodePass records: pipelines, group 0 and 1 bind groups, workgroup counts (dispatch it yourself)
+exposure.release( resource );   // drop a texture's or buffer's plans, destroy their params/partials (release(): all)
 exposure.kernel();              // { wgsl, layout, partials, combine }
 exposure.unsupportedReason( run );
 
 // Combine only: partials a tool wrote (e.g. a Reducer's level 6 via its store hook), one dispatch.
-const mean = new ScalarReduction( device, { reduce: [ 'weighted', 'weighted', 'max', 'weight' ], finish, bindings } );
+const mean = new ScalarReduction( device, { reduction: [ 'weighted', 'weighted', 'max', 'weight' ], finish, bindings } );
 reducer.encodePass( pass, dispatch );                                         // stores Σ terms per 64² tile
 mean.encodePass( pass, { partials: { buffer, count: tiles }, bindGroup } );   // also `texels` for 'average'
 mean.combineKernel();           // { wgsl, layout, combine } for self-dispatch
@@ -362,7 +368,9 @@ shadingChange.encodePass( pass, {                        // or encode( encoder, 
 	bindGroup: toolGroup1,                               // created from shadingChange.bindGroupLayouts[ 1 ]
 	outputs: [ 0, 1, 2 ].map( mipLevel => ( { texture: spdMips, mipLevel } ) ),
 } );
-// Self-dispatch: shadingChange.wgsl, .entryPoint, .layout, .pipeline, .bindGroup( dispatch ), .workgroups( w, h, layers ).
+// Self-dispatch: shadingChange.prepare( dispatch ) → { pipeline, bindGroup, toolBindGroup, workgroups, buffer?, copies? }
+// (what encodePass records), or .wgsl, .entryPoint, .layout, .pipeline, .bindGroup( dispatch ), .workgroups( w, h, layers ).
+// shadingChange.release( texture? ): drop cached bind groups, destroy the size uniforms / output buffers it created.
 // 8 channels (§14.1 Wide accumulators): reduction: [ 'sum', 'sum', 'sum', 'sum', 'max', … ] (or channels: 8);
 // hooks then use DsWide { lo: vec4f, hi: vec4f }: fn load( … ) -> DsWide, fn store( …, value: DsWide ).
 // Payload folds (§14.1): [ 'argmin', 'payload', 'payload', 'payload' ] = min depth + the normal of that texel;
@@ -853,8 +861,9 @@ Validation: at most one `'weight'` channel, and `'weighted'` needs one. Builtins
 **Recording:**
 - `encode( encoder, dispatch )` opens its own pass.
 - `encodePass( pass, dispatch )` records into a caller-owned pass.
-- For tools that dispatch the kernel themselves: `wgsl`, `entryPoint`, `layout` (the `GPUPipelineLayout`), `bindGroupLayouts`, `pipeline`, `bindGroup( dispatch )` (group 0) and `workgroups( width, height, layers )`.
-- Pipelines are cached per device by WGSL and layouts, so equal Reducers share one. Group-0 bind groups are cached per size and textures (the 16 most recent).
+- For tools that dispatch the kernel themselves: `prepare( dispatch )` (pipeline, group 0, the dispatch's group 1, workgroups, and with output `'buffer'` the copies), or the pieces: `wgsl`, `entryPoint`, `layout` (the `GPUPipelineLayout`), `bindGroupLayouts`, `pipeline`, `bindGroup( dispatch )` (group 0) and `workgroups( width, height, layers )`.
+- **`prepare` means the same on all three classes (2026-11-13):** what `encodePass` (or `encode`) would record, validated (it throws with the same reason) and cached, for a tool that dispatches it itself. `Downsampler.prepare( texture, options )` returns one `PreparedBatch` per dispatch, `Reducer.prepare( dispatch )` a `PreparedReducer`, `ScalarReduction.prepare( run )` a `PreparedScalar` (two pipelines).
+- Pipelines are cached per device by WGSL and layouts, so equal Reducers share one. Group-0 bind groups are cached per size and textures (the 16 most recent). `release( texture? )` drops entries (all, or those using a texture) and destroys the buffers they own (§4 Caching).
 
 **Verification** (§7): every emitted level of every kernel width (1, 4, 5, 6) is checked against `reducePyramid`, which computes each level straight from the source in f64. The matrix covers both edge policies; channel ops including weights with sky texels; a custom fold and a custom sum; texture and hook paths; 17 shapes (unit, odd, 1D, partial tiles, layers, `2d-array`, 1920×1080); and unemitted levels left poisoned. Two tool shapes (FSR shading change, denoiser weighted mean), the cross-level store state above (levels [ 2, 3 ], [ 1, 4 ], [ 2, 5 ], both edge policies, 4 shapes) and API checks run alongside. A core test checks the oracle against iterated 2×2 reductions of the padded image.
 

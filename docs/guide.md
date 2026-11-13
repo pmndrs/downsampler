@@ -13,16 +13,16 @@ Every public API, option and default, checked against the TypeScript source (`sr
 ## Setup
 
 ```js
-import { Downsampler, Reducer, ScalarReduction } from 'downsampler/webgpu';
+import { Downsampler, Reducer, ScalarReduction, requiredLimits } from 'downsampler/webgpu';
 
 const adapter = await navigator.gpu.requestAdapter();
 const device = await adapter.requestDevice( {
 	requiredFeatures: [ 'texture-formats-tier1' ].filter( feature => adapter.features.has( feature ) ), // optional: more formats
-	requiredLimits: Downsampler.requiredLimits( adapter ),
+	requiredLimits: requiredLimits( adapter ),
 } );
 ```
 
-`Downsampler.requiredLimits( adapter )` returns the limits worth requesting for all three classes:
+`requiredLimits( adapter )` (also `Downsampler.requiredLimits`, and re-exported by `downsampler/three`) returns the limits worth requesting for all three classes:
 
 | Limit | Requested | Why |
 |---|---|---|
@@ -30,7 +30,7 @@ const device = await adapter.requestDevice( {
 | `maxComputeInvocationsPerWorkgroup` | 256, where the adapter has it | 5- and 6-level kernels and `ScalarReduction` use 16 × 16 workgroups; compatibility mode defaults to 128 |
 | `maxComputeWorkgroupSizeX` | 256, where the adapter has it | `ScalarReduction`'s combine workgroup is 256 wide |
 
-Without these limits everything still works, with fewer levels per dispatch; only `ScalarReduction` and 5- or 6-level `Reducer`s require 256 invocations, and say so in their error.
+Without these limits everything still works, with fewer levels per dispatch; only `ScalarReduction` and 5- or 6-level `Reducer`s require 256 invocations, and say so in their error. Not included: a 6-level `Reducer` with 8 channels needs `maxComputeWorkgroupStorageSize: 32768`, which you request yourself.
 
 Generated WGSL identifiers start with `ds_`. Hook code should avoid that prefix, the entry point names (`main`, `partials`, `combine`) and the hook names.
 
@@ -73,7 +73,7 @@ Not yet: sRGB formats, `rgb10a2unorm`, integer formats (deferred, SPEC §11). De
 | `tail` | boolean | `true` <!-- defaults: tail/exactTile --> | `'exact'` chains: once a level fits one workgroup (32 × 32; 8 × 8 below 256 invocations), finish the chain in one dispatch instead of a batch per odd size. Same rule; tail levels use shader weights (within one rgba8 step of the sampler's). |
 | `exactTile` | 8, 16, 32 | 16 on Apple GPUs, 32 on other hardware with 256 invocations per workgroup, 8 on software adapters and in compatibility mode <!-- defaults: tail/exactTile --> | Smallest first-output tile of an `'exact'` batch. Same results; a speed knob measured per vendor. 16 and 32 need 256 invocations. |
 
-The constructor validates every option and throws on an unknown value. The chosen values are readable as fields (`downsampler.tail`, `.exactTile`, `.levelsPerDispatch`, `.bufferLevelsPerDispatch`, …).
+The constructor validates every option and throws on an unknown value. The resolved values, defaults filled in, are readable as fields (`downsampler.averageAccess` is `'sample'` by default; `.tail`, `.exactTile`, `.levelsPerDispatch`, `.bufferLevelsPerDispatch`, …).
 
 ### Encode options (`EncodeOptions`)
 
@@ -130,7 +130,7 @@ downsampler.encode( encoder, hiZ, { source: { texture: depth }, reduction: 'minm
 | `generate( texture, options? )` | Creates an encoder, encodes, submits. |
 | `encode( encoder, texture, options? )` | One compute pass per batch, plus the buffer path's copies after each. |
 | `encodePass( pass, texture, options? )` | One dispatch per batch into your compute pass. Dispatches are separate usage scopes, so each batch sees the previous one's writes. Throws on the buffer path (a compute pass can't record copies). |
-| `prepare( texture, options? )` | The batches `encode` records: `PreparedBatch[]` with `kernel` (`'exact'`, `'tail'` or `'clamp'`), `sourceMipLevel` (`null` for the separate source), `firstMipLevel`, `count`, `outputWidth`/`outputHeight`, `groupsX`/`groupsY`, `pipeline`, `bindGroup`, `output`, and on the buffer path `buffer` and `copies`. Dispatch them yourself with `dispatchWorkgroups( groupsX, groupsY, layers )`. |
+| `prepare( texture, options? )` | What `encode` records, for dispatching it yourself (or inspecting the plan): `PreparedBatch[]` with `kernel` (`'exact'`, `'tail'` or `'clamp'`), `sourceMipLevel` (`null` for the separate source), `firstMipLevel`, `count`, `outputWidth`/`outputHeight`, `groupsX`/`groupsY`, `pipeline`, `bindGroup`, `output`, and on the buffer path `buffer` and `copies`. Dispatch them yourself with `dispatchWorkgroups( groupsX, groupsY, layers )`. Validates and throws like `encode`. |
 | `release( texture )` | Drops the texture's cached bind groups and destroys its buffer-path buffers and compatibility scratch textures. Call it after the last submitted use. |
 
 Pipelines are cached per `Downsampler` and compiled synchronously on first use of a format, reduction and batch shape; `prepare()` ahead of time to move that cost.
@@ -229,9 +229,11 @@ Custom reductions: `kind: 'fold'` (default) must be idempotent; `kind: 'sum'` is
 | `encode( encoder, dispatch )` | Its own compute pass, then the buffer-output copies. |
 | `encodePass( pass, dispatch )` | Into your compute pass. With `output: 'buffer'`, call `encodeCopies( encoder, dispatch )` after the pass ends. |
 | `encodeCopies( encoder, dispatch )` | Buffer output only: copy each emitted level into its texture. Does nothing on the storage path. |
-| `bindGroup( dispatch )` | Group 0 for a dispatch (cached per size and textures, the 16 most recent). |
+| `prepare( dispatch )` | What `encodePass` records, for dispatching it yourself: `{ pipeline, bindGroup, toolBindGroup, workgroups }`, plus `buffer` and `copies` with `output: 'buffer'` (record those after the pass). Validates and throws like `encode`. |
+| `bindGroup( dispatch )` | Group 0 for a dispatch (cached per size and textures, the 16 most recent); `prepare( dispatch ).bindGroup`. |
 | `workgroups( width, height, layers? )` | `[ x, y, layers ]` for `dispatchWorkgroups`. |
 | `levelSize( level, width, height )` | Size of an emitted level under this Reducer's edges. |
+| `release( texture? )` | Drops cached bind groups (all, or those using `texture`) and destroys the buffers the Reducer created for them: size uniforms and buffer-output buffers. Call it after the last submitted use. Entries evicted from the 16-entry cache are destroyed once the queue has finished the work submitted so far. Your textures and buffers are never destroyed. |
 | `wgsl`, `entryPoint`, `pipeline`, `layout`, `bindGroupLayouts` | The kernel, its entry point (`'main'`), compiled pipeline, pipeline layout and `[ group 0, group 1 ]` layouts. |
 | `levels`, `edges`, `channels`, `output`, `label` | The resolved options. |
 
@@ -242,11 +244,11 @@ Errors are thrown with a reason: a missing hook or binding, an output that is to
 Reduces an image to one `vec4f` and a weight per layer in two dispatches at any size: 16 × 16 workgroups each reduce a 64 × 64 tile to a partial, then one 256-invocation workgroup per layer combines them. Every texel counts once. Needs 256 invocations per workgroup ([Setup](#setup)).
 
 ```js
-const range = new ScalarReduction( device, { reduce: [ 'min', 'max', 'min', 'max' ] } );
+const range = new ScalarReduction( device, { reduction: 'minmax' } );        // min, max, min, max
 range.encode( encoder, { texture: depth, output: { buffer, offset: 0 } } );   // { value: vec4f, weight: f32 } per layer
 
 const metering = new ScalarReduction( device, {
-	reduce: [ 'average', 'max', 'min', 'average' ],
+	reduction: [ 'average', 'max', 'min', 'average' ],
 	bindings: { wgsl, entries },                                           // your @group(1)
 	load: 'fn load( texel: vec2i, layer: u32 ) -> vec4f { … }',
 	finish: 'fn finish( value: vec4f, weight: f32 ) { … store an exposure … }',
@@ -258,7 +260,7 @@ metering.encodePass( pass, { size: [ width, height ], bindGroup } );
 
 | Option | Default | What it does |
 |---|---|---|
-| `reduce` | `'average'` | One op for every channel, or one per channel: `'sum'`, `'average'`, `'min'`, `'max'`, `'weight'`, `'weighted'`, `'argmin'`, `'argmax'`, `'payload'` (as for the Reducer; there is no `'minmax'` shorthand here). |
+| `reduction` | `'average'` | One op for every channel, `'minmax'` (even channels min, odd max), or one op per channel: `'sum'`, `'average'`, `'min'`, `'max'`, `'weight'`, `'weighted'`, `'argmin'`, `'argmax'`, `'payload'` (as for the Reducer). |
 | `load` | none: read `run.texture` | WGSL `fn load( texel: vec2i, layer: u32 ) -> vec4f` for in-image texels, reading your `@group(1)`. |
 | `finish` | none: write `run.output` | WGSL `fn finish( value: vec4f, weight: f32 )`, optionally with a third `layer: u32`, run once per layer by one invocation. `value` has averages and weighted means divided; `weight` is Σ w with a weight channel, else the texel count. |
 | `bindings` | none | `{ wgsl, entries }` of your `@group(1)`. |
@@ -274,8 +276,8 @@ metering.encodePass( pass, { size: [ width, height ], bindGroup } );
 | `size` | `[ width, height ]`, required with a load hook. |
 | `layers` | `[ first, count ]`, each reduced to its own result. Default: all of the texture's layers, or `[ 0, 1 ]` with a load hook. |
 | `bindGroup` | Your group 1, required with `bindings`. |
-| `output` | `{ buffer, offset = 0 }` without a finish hook. The buffer needs `STORAGE` usage; `offset` a multiple of 256; 32 bytes per layer (`{ value: vec4f, weight: f32 }`), 48 with 8 channels (`resultBytes`). |
-| `partials` | Combine only: `{ buffer, offset = 0, count }`, `count` accumulations per layer that your own dispatch wrote (one `vec4f` each), e.g. a Reducer's deepest level through its store hook. Records the combine dispatch alone. Sum-like channels must hold sums. Your group 1 must not bind this buffer too. |
+| `output` | `{ buffer, offset = 0 }` without a finish hook. The buffer needs `STORAGE` usage; `offset` a multiple of the device's `minStorageBufferOffsetAlignment` (256 unless you requested less); 32 bytes per layer (`{ value: vec4f, weight: f32 }`), 48 with 8 channels (`resultBytes`). |
+| `partials` | Combine only: `{ buffer, offset = 0, count }` (`offset` aligned as for `output`), `count` accumulations per layer that your own dispatch wrote (one `vec4f` each), e.g. a Reducer's deepest level through its store hook. Records the combine dispatch alone. Sum-like channels must hold sums. Your group 1 must not bind this buffer too. |
 | `texels` | Combine only: the texel count behind the partials, required for `'average'` channels or without a `'weight'` channel. |
 
 `unsupportedReason( run )` explains why a run can't be recorded; `encode`/`encodePass`/`prepare` throw with it.
@@ -286,11 +288,11 @@ metering.encodePass( pass, { size: [ width, height ], bindGroup } );
 |---|---|
 | `encode( encoder, run )` | Each dispatch in its own compute pass. |
 | `encodePass( pass, run )` | Both dispatches (or the combine alone) into your pass. |
-| `prepare( run )` | `{ partials, combine, bindGroup, toolBindGroup, workgroups, combineWorkgroups }` for dispatching yourself; `partials` is `null` for a combine-only run. |
+| `prepare( run )` | What `encodePass` records, for dispatching it yourself: `{ partials, combine, bindGroup, toolBindGroup, workgroups, combineWorkgroups }`; `partials` is `null` for a combine-only run. Validates and throws like `encode`. |
 | `kernel( { dimension, splat } )` | `{ wgsl, layout, partials, combine }` for a source shape. |
 | `combineKernel()` | `{ wgsl, layout, combine }` for combine-only runs. |
 | `workgroups( width, height, layers? )`, `partialsBytes( width, height, layers? )` | Sizes of the partials dispatch and buffer. |
-| `release( resource )` | Drop the cached plans of a source texture, partials buffer or output buffer. |
+| `release( resource? )` | Drops the cached plans of a source texture, partials buffer or output buffer (without one: every plan) and destroys the params and partials buffers the reduction created for them, never yours. Call it after the last submitted use. Plans are kept for 4 run shapes per resource; older ones are destroyed once the queue has finished the work submitted so far. |
 | `ops`, `block`, `partialBytes`, `resultBytes`, `combinesOnly` | The resolved options. |
 
 `createScalarKernel( options )` and `scalarLayoutEntries( … )` are the pure WGSL generator and its layout, for vendoring.
@@ -304,7 +306,7 @@ A Reducer whose deepest level is 6 emits one texel per 64 × 64 tile. Its store 
 `downsampler/three` works with `WebGPURenderer` on the WebGPU backend. `three` is an optional peer and is typed structurally, so the adapter imports nothing from it.
 
 ```js
-import { generateMipmaps, getDownsampler, getGPUTexture, requiredLimits } from 'downsampler/three';
+import { generateMipmaps, getDownsampler, getGPUTexture, requiredLimits, unsupportedReason } from 'downsampler/three';
 
 const renderer = new THREE.WebGPURenderer( { requiredLimits: requiredLimits( await navigator.gpu.requestAdapter() ) } );
 await renderer.init();
@@ -315,15 +317,19 @@ texture.mipmapsAutoUpdate = false;                // stop three regenerating it 
 texture.minFilter = THREE.LinearMipmapLinearFilter;
 renderer.initTexture( texture );                  // or render/compute into it first
 // … write level 0 …
-if ( ! generateMipmaps( renderer, texture, { reduction: 'max' } ) ) { /* fall back */ }
+if ( ! generateMipmaps( renderer, texture, { reduction: 'max' } ) ) console.warn( unsupportedReason( renderer, texture ) ); // then fall back
+
+// Into your own encoder (not submitted), with a Downsampler of other options:
+generateMipmaps( renderer, texture, { encoder, downsampler: { averageAccess: 'load', f16Rounding: 'device' } } );
 ```
 
 | Export | What it does |
 |---|---|
-| `generateMipmaps( renderer, texture, options? )` | Generates and submits the chain with the renderer's shared `Downsampler`; `options` are `EncodeOptions`. Returns `false`, doing nothing, if the texture isn't allocated, has one level, or isn't supported. |
-| `getDownsampler( renderer )` | The shared `Downsampler` of the renderer's device (default options). Use it for `unsupportedReason`, `encode` into your own encoder, or Hi-Z with a separate source. |
+| `generateMipmaps( renderer, texture, options? )` | Generates the chain with a shared `Downsampler`. `options` are `EncodeOptions` plus `encoder` (record into it and don't submit; default: submit at once) and `downsampler` (`DownsamplerOptions` of the shared instance, e.g. `averageAccess`, `f16Rounding`, `output`, `tail`). Returns `false`, doing nothing, if the texture isn't allocated, has one level (in place), isn't supported, or can't take `options.source`. |
+| `unsupportedReason( renderer, texture, options? )` | Why `generateMipmaps` would return `false` with these options, or `null`. |
+| `getDownsampler( renderer, options? )` | The shared `Downsampler` of the renderer's device for an option set (one per distinct set, any key order). Use it for `encode`, `prepare`, `release`, or Hi-Z with a separate source. |
 | `getGPUTexture( renderer, texture )` | The `GPUTexture` behind a three.js texture, or `undefined`. |
-| `requiredLimits( adapter )` | `Downsampler.requiredLimits`, for `new WebGPURenderer( { requiredLimits } )`. |
+| `requiredLimits( adapter )` | The same function as in `downsampler/webgpu`, for `new WebGPURenderer( { requiredLimits } )`. |
 | `Downsampler` | Re-exported. |
 
 The texture must have `STORAGE_BINDING` usage (in current three.js a `StorageTexture` or `StorageArrayTexture`), or `COPY_DST` for formats that take the buffer path. Regular textures don't get storage usage from three today; native support for them is planned as an in-tree three.js option (SPEC §10). See [examples/three.html](../examples/three.html).
