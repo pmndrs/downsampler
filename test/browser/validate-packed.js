@@ -230,8 +230,15 @@ async function validateBufferPath( device, { quick } ) {
 
 	const results = [];
 
-	// The buffer and storage paths write identical bits (same kernel arithmetic).
-	const storage = new Downsampler( device, { output: 'storage' } ), buffer = new Downsampler( device, { output: 'buffer' } );
+	// The buffer and storage paths write identical bits for the same plan (same kernel
+	// arithmetic). Their default plans differ below 6 storage textures (SwiftShader: 4):
+	// the buffer path then batches 6 levels and the storage path 4, so a level can be a
+	// batch's sampled first output on one path and in-tile (or a tail step) on the other,
+	// which the oracle allows to differ by a step (SPEC §7). So both take the storage
+	// path's levels per dispatch; the buffer path's own 6-level batches at the default
+	// limit are checked against the oracle on the plain device below.
+	const storage = new Downsampler( device, { output: 'storage' } );
+	const buffer = new Downsampler( device, { output: 'buffer', levelsPerDispatch: storage.levelsPerDispatch } );
 	for ( const format of [ 'rgba16float', 'rg11b10ufloat', 'rgba8unorm', 'rgba32float' ] ) {
 
 		if ( storage.unsupportedReason( createTexture( device, { width: 1, height: 1, format } ) ) !== null ) continue;
@@ -244,6 +251,9 @@ async function validateBufferPath( device, { quick } ) {
 			storage.generate( a, { reduction } );
 			buffer.generate( b, { reduction } );
 			if ( storage.outputPath( a ) !== 'storage' || buffer.outputPath( b ) !== 'buffer' ) throw new Error( `${ format }: unexpected output paths` );
+			// (Compatibility mode's storage path adds copy dispatches, which reduce nothing.)
+			const plan = ds => ds.prepare( ds === storage ? a : b, { reduction } ).filter( batch => ! batch.copy ).map( batch => `${ batch.kernel } ${ batch.firstMipLevel }+${ batch.count }` ).join();
+			if ( plan( storage ) !== plan( buffer ) ) throw new Error( `${ format } ${ reduction }: the paths plan different batches (${ plan( storage ) } / ${ plan( buffer ) })` );
 			const [ ma, mb ] = [ await readMips( device, a, 1 ), await readMips( device, b, 1 ) ];
 			ma.forEach( ( level, l ) => { if ( level.some( ( value, i ) => ! Object.is( value, mb[ l ][ i ] ) ) ) throw new Error( `${ format } ${ reduction }: buffer path level ${ l + 1 } differs from storage path` ); } );
 			a.destroy(); b.destroy();

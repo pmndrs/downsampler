@@ -30,7 +30,6 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 - [ ] Possible three.js issue (outside our PR): in compatibility mode its render-pass mips of a 33² rgba8 cube differ by up to 6 steps from the same faces as a 2d-array (`main_cube` half-texel at odd sizes?); not investigated
 - [ ] Re-record `test/ci/durations.json` after the formats/sRGB/vendoring merges (834 SwiftShader groups; 412 recorded at `662d6bc`), or take CI's `gpu-durations` artifact
-- [ ] `packed/buffer-path` fails on SwiftShader (rgba8unorm average, level 6, storage vs buffer path; already at `8f266aa`): agent on branch `fix-swiftshader-buffer`
 - [ ] Test hardening from the review: oracle `weights` default `'shader'` (fail closed; callers that sample opt into `'sampler'`); tile-equivalence at 16/32 on the buffer path, compat, `baseMipLevel` sub-range, separate source and tail; an f16 tie check through in-tile combine, tail and `'spd'` batches; a same-size copy next to Inf/NaN
 - [ ] Halo batches for `'exact'` and `'box'` together (SPEC §13 item 3): the remaining lever at render sizes, bounded by `'spd'`; own oracle + GPU cases first
 - [ ] Timings for `'box'` / `tailBox` (`--compare=spd`) and partial updates
@@ -48,6 +47,7 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] SwiftShader `packed/buffer-path` fixed (test, not library; branch `fix-swiftshader-buffer`): below 6 storage textures the buffer path's default plan (6 levels per dispatch) differs from the storage path's (4), and since the tail default (`198728a`; `5f97c86` passes) 67×45's level 6 is a tail step on one and a sampled first output on the other, which may differ by a step. Both now use the storage path's `levelsPerDispatch` and the test checks their batches match; with `tail: false` on both the old test passed too, so the paths are bit-identical on the same plan
 - [x] M3 on the M5 Pro (idle-ish, `results/m3/`): timestamps agree with throughput (80/83 pairs, τ 0.81); `STORAGE_BINDING` costs nothing when sampling (0.999–1.006); subgroup bound 1.7 % (rgba8) / 5.5 % (rgba16f) at render sizes → no subgroup kernel for Apple; fp16 arithmetic ~2 % with precision loss → not built; f16 rounding ~3 % (rgba16f); `'box'` 1.23–1.28× of `'exact'` (box tail up to 2.6×); tail 0.90 / 1.00; `'spd'` 0.60 / 0.79
 - [ ] Follow-up: the `'box'` tail kernel is slow (up to 2.6× of `'exact'`): measure on Windows; consider `tail: false` by default under `'box'`
 - [x] Ship prep for 0.1.0 (`b554dcd`, `494dfd9`, merges `23bad62` / `a48d22b` / `fb04a0e`, merged): one source shape (`source: GPUTexture | TextureLevel` everywhere, shared checks in `src/webgpu/source.ts`, ScalarRun `width`/`height`, `layers` always `[ first, count ]`, Reducer `layerCount`; old keys rejected); empty rect a no-op; evicted/replaced region uniforms destroyed after `onSubmittedWorkDone`; `maxResampleRatio` option (validation only, free); `f16Rounding: 'device'` documented (D3D12 truncates; on the M5 `pack2x16float` rounds, only `textureStore` truncates); `ScalarReduction.bindGroupLayouts`; package.json 0.1.0 (exports incl. `./mipmap`, `files`, `prepack`), CHANGELOG, manual `release.yml` with provenance (dry run by default). npm `downsampler` still free (404). Tarball 135.1 kB; gzip per entry: core 28.8 KiB, webgpu 70.3, three 56.0, mipmap 6.3. Consumer tsc clean (bundler, node16, node10; needs `@webgpu/types`)
@@ -173,6 +173,7 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 | 2026-11-13 | merge of both | Apple M5 Pro, Chrome 148 | quick / core / examples | ✅ 10797 cases / ✅ 81 / ✅ 10 |
 | 2026-11-13 | `5b137a3` | Apple M5 Pro, Chrome 148, loaded | quick `--only=downsampler` + core | ✅ 7885 cases, 570 groups; 73 core |
 | 2026-11-13 | `198728a` | Apple M5 Pro, Chrome 148 | full GPU matrix, `test/parallel.js` (12 shards × 4) | ✅ 18367 cases, 53600 pattern runs, 1674/1674 groups, 0 failures, 11 min 50 s |
+| 2026-11-13 | `689b252` | SwiftShader / Apple M5 Pro, Chrome 148 | `--only=packed --quick` / shard 12/14 quick (holds `packed/buffer-path`) / `--only=packed-api --quick` on the M5 Pro / core | ✅ 443 cases / ✅ 765 cases, 64 groups / ✅ 15 / ✅ 119 (branch `fix-swiftshader-buffer`; `f5e80c0` and `198728a` ❌ rgba8unorm level 6, `5f97c86` ✅) |
 
 ## Notes
 
