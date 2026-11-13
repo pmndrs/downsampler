@@ -244,8 +244,10 @@ function packedWords( format: SupportedFormat, normalized = false ): string[] {
  * - `ds_round_f16(v: vec4f) -> vec4f`: each channel rounded to a half, as f32
  * 'nearest' mirrors core `toHalf` bit for bit (NaN → 0x7e00, ≥ 65520 → infinity, subnormals
  * rounded): `ds_pack_f16` with integer math on the float's bits; `ds_round_f16`, every level's
- * hot path, with one f32 add and subtract of 2^(exponent + 13) (2^−1 below the half normal
- * range), which leaves 11 significant bits rounded by the adder, correctly rounded per WGSL.
+ * hot path, branch-free: in the half normal range, round the f32 bits to 10 mantissa bits with
+ * integer math (a carry into the exponent is correct); below it, `round( x · 2^24 ) · 2^−24`.
+ * Not the shorter `( x + c ) − c` with c = 2^(exponent + 13): Metal compiles WGSL with fast
+ * math, which folds that to x, so nothing was rounded on Apple GPUs (2026-11-13).
  * 'device' uses `pack2x16float`.
  */
 export function float16Wgsl( rounding: F16Rounding = 'nearest' ): string {
@@ -278,8 +280,9 @@ fn ds_pack_f16(v: vec2f) -> u32 { return ds_half_bits(v.x) | (ds_half_bits(v.y) 
 fn ds_round_f16(v: vec4f) -> vec4f {
 	let bits = bitcast<vec4u>(v);
 	let a = bits & vec4u(0x7fffffffu);
-	let c = bitcast<vec4f>(max(a & vec4u(0x7f800000u), vec4u(0x38800000u)) + vec4u(0x06800000u));
-	let r = bitcast<vec4u>((bitcast<vec4f>(a) + c) - c);
+	let normal = (a + vec4u(0xfffu) + ((a >> vec4u(13u)) & vec4u(1u))) & vec4u(0xffffe000u);
+	let subnormal = bitcast<vec4u>(round(bitcast<vec4f>(a) * 16777216.0) * (1.0 / 16777216.0));
+	let r = select(subnormal, normal, a >= vec4u(0x38800000u));
 	let q = select(select(r, vec4u(0x7f800000u), a >= vec4u(0x477ff000u)), vec4u(0x7fc00000u), a > vec4u(0x7f800000u));
 	return bitcast<vec4f>(q | (bits & vec4u(0x80000000u)));
 }
