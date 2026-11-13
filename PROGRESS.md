@@ -24,7 +24,8 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
   - [x] `test/parallel.js`: the suite in capped parallel shards, one summary; full matrix 35+ → 17 min, quick 4.6 → 2 min (RTX 3060)
 - [ ] M3 runs: M5 Pro idle (throughput, throughput rAF, storage-usage, subgroups, f16; commands in test/bench/README.md), then RTX 3060 / Intel UHD via `--power=high|low`; decide the subgroup kernel on the `nosync` bound (≥ 5 % at render sizes) and fp16 on speed vs its precision and overflow cost
 - [ ] Windows round 2 + M3 (owner + Windows agent, branch `windows-testing`): `docs/WINDOWS-HANDOFF-2.md`. Verify, set defaults by rule, M3 measurements, then build halo batches / cheaper exact kernel / subgroups / fp16 by the data. Verify the merged milestones on D3D12 before main (RTX full, Intel quick, compat quick, examples), confirm the tile/tail defaults, f16 rounding cost, M3 runs
-- [ ] CI: first GitHub run of the shards (`test/ci/README.md`): real shard times, Linux SwiftShader compat device, artifact collection. Then commit its `gpu-durations` artifact
+- [ ] CI first run (workflow_dispatch on `m2-reductions`, run 43431966606): ❌ on SwiftShader only: region × sRGB rect ≠ full recompute by one step at level 5 (65×129; shards 2, 3, 6, 10, 13 + compat 10) and a 5-storage-texture pipeline at the limit of 4 (shard 14). Agent on branch `fix-ci-swiftshader`, iterating with CI.
+- [ ] (was) CI: first GitHub run of the shards (`test/ci/README.md`): real shard times, Linux SwiftShader compat device, artifact collection. Then commit its `gpu-durations` artifact
 
 ## Next (SPEC §11)
 
