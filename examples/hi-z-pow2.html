@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Power-of-two Hi-Z</title>
+		<link rel="icon" href="data:,">
+		<link rel="stylesheet" href="style.css">
+		<style>
+			.view figure { flex-basis: 220px; }
+		</style>
+	</head>
+	<body>
+		<nav><a href="./">Examples</a> · <a href="../docs/guide.md#separate-source-hi-z-from-depth">Guide</a></nav>
+		<h1>Power-of-two Hi-Z from a render-size depth buffer</h1>
+		<p>
+			Many renderers keep the Hi-Z pyramid at a power of two (niagara uses the previous power of two of the screen size), so
+			every level after the first halves cleanly and a texel's UV maps to a whole number of texels at every level. The first
+			level is then a resample: 1920 → 1024 is 1.875 source texels per Hi-Z texel, and a texel's area can touch three source
+			texels per axis. With <code>source.resample: 'area'</code>, Hi-Z texel <code>x</code> folds every depth texel that
+			<code>[x·W/n, (x+1)·W/n)</code> overlaps, so <code>min</code> and <code>max</code> stay conservative at every level.
+			A 2048 × 1024 pyramid takes 2 dispatches for 12 levels.
+		</p>
+		<p>
+			For comparison, the readout builds the pyramid niagara does: one 2×2 tap at each texel centre for the first level (what a
+			min/max reduction sampler returns; WebGPU has none, so a small shader takes the four loads), then exact 2×2 levels. It
+			misses depth texels wherever a texel's area spans three, which can cull visible objects. The readout counts those misses
+			against every depth texel, and the right-hand view marks them: in red where the miss is larger than 0.01 in depth (object
+			edges, where culling goes wrong), in orange where it is smaller (sloped surfaces).
+		</p>
+		<pre><code>const hiZ = device.createTexture( { format: 'rg32float', size: [ 1024, 512 ], mipLevelCount: 11,
+	usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING } );
+downsampler.encode( encoder, hiZ, { source: { texture: depth, resample: 'area' }, reduction: 'minmax' } );  // r = min, g = max</code></pre>
+		<p class="muted" id="adapter"></p>
+
+		<h2>Readout</h2>
+		<ul id="readout"></ul>
+
+		<h2>Options</h2>
+		<div class="controls">
+			<label>Depth <select id="size">
+				<option value="1920x1080" selected>1920 × 1080</option>
+				<option value="1280x720">1280 × 720</option>
+				<option value="1129x635">1129 × 635</option>
+			</select></label>
+			<label>Hi-Z <select id="hiz">
+				<option value="1024x512" selected>1024 × 512</option>
+				<option value="2048x1024">2048 × 1024</option>
+				<option value="1024x1024">1024 × 1024 (previous power of two per axis)</option>
+				<option value="512x256">512 × 256</option>
+			</select></label>
+		</div>
+
+		<h2>Levels</h2>
+		<div class="levels" id="levels"></div>
+		<div class="view">
+			<figure><canvas class="level" id="min"></canvas><figcaption>min (nearest), brighter is nearer</figcaption></figure>
+			<figure><canvas class="level" id="max"></canvas><figcaption>max (farthest)</figcaption></figure>
+			<figure><canvas class="level" id="naive"></canvas><figcaption id="naiveCaption">2×2-tap max, misses in red</figcaption></figure>
+		</div>
+		<p class="muted" id="caption"></p>
+
+		<script type="module">
+			import { areaReference, maxViolations, reduceReference } from '../dist/index.js';
+			import { Downsampler } from '../dist/webgpu/index.js';
+			import { drawLevelScaled, fail, initDevice, levelButtons, mipLevels, readLevels, report, setText } from './common.js';
+
+			const { device } = await initDevice();
+			const downsampler = new Downsampler( device );
+			const params = new URLSearchParams( location.search );
+			for ( const id of [ 'size', 'hiz' ] ) if ( params.has( id ) ) document.getElementById( id ).value = params.get( id );
+
+			// Sloped rectangles, as in hi-z.html, rasterized into a depth buffer.
+			const count = 48;
+			const rects = new Float32Array( count * 8 );
+			let seed = 7;
+			const random = () => ( seed = ( seed * 1664525 + 1013904223 ) >>> 0 ) / 2 ** 32;
+			for ( let i = 0; i < count; i ++ ) {
+
+				const x = random() * 2 - 1.1, y = random() * 2 - 1.1, w = 0.02 + random() * 0.4, h = 0.02 + random() * 0.4;
+				const near = 0.25 + random() * 0.6;
+				rects.set( [ x, y, x + w, y + h, near, near + ( random() - 0.5 ) * 0.2, 0, 0 ], i * 8 );
+
+			}
+
+			const rectBuffer = device.createBuffer( { size: rects.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+			device.queue.writeBuffer( rectBuffer, 0, rects );
+			const sceneModule = device.createShaderModule( { code: /* wgsl */ `
+				struct Rect { bounds: vec4f, depth: vec4f }
+				@group(0) @binding(0) var<uniform> rects: array<Rect, ${ count }>;
+				@vertex fn vs(@builtin(vertex_index) v: u32, @builtin(instance_index) i: u32) -> @builtin(position) vec4f {
+					var corners = array<vec2f, 6>(vec2f(0, 0), vec2f(1, 0), vec2f(0, 1), vec2f(1, 0), vec2f(1, 1), vec2f(0, 1));
+					let r = rects[i];
+					let t = corners[v];
+					return vec4f(mix(r.bounds.xy, r.bounds.zw, t), mix(r.depth.x, r.depth.y, t.x), 1.0);
+				}
+			` } );
+			const scene = device.createRenderPipeline( {
+				layout: 'auto', vertex: { module: sceneModule, entryPoint: 'vs' }, primitive: { topology: 'triangle-list' },
+				depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'less' }
+			} );
+			const sceneGroup = device.createBindGroup( { layout: scene.getBindGroupLayout( 0 ), entries: [ { binding: 0, resource: { buffer: rectBuffer } } ] } );
+
+			// The comparison's first level: one 2×2 tap at each texel centre (a reduction sampler's footprint).
+			const tap = device.createComputePipeline( { layout: 'auto', compute: { entryPoint: 'main', module: device.createShaderModule( { code: /* wgsl */ `
+				@group(0) @binding(0) var depth: texture_depth_2d;
+				@group(0) @binding(1) var level0: texture_storage_2d<r32float, write>;
+				@compute @workgroup_size(8, 8) fn main(@builtin(global_invocation_id) id: vec3u) {
+					let size = textureDimensions(level0);
+					if (any(id.xy >= size)) { return; }
+					let source = vec2f(textureDimensions(depth));
+					let p = floor((vec2f(id.xy) + 0.5) * source / vec2f(size) - 0.5);
+					let lo = vec2i(clamp(p, vec2f(0.0), source - 1.0));
+					let hi = vec2i(clamp(p + 1.0, vec2f(0.0), source - 1.0));
+					let d = max(max(textureLoad(depth, lo, 0), textureLoad(depth, vec2i(hi.x, lo.y), 0)), max(textureLoad(depth, vec2i(lo.x, hi.y), 0), textureLoad(depth, hi, 0)));
+					textureStore(level0, id.xy, vec4f(d, 0.0, 0.0, 1.0));
+				}
+			` } ) } } );
+
+			let resources = [];
+
+			async function run() {
+
+				resources.forEach( texture => { downsampler.release( texture ); texture.destroy(); } );
+				const [ width, height ] = document.getElementById( 'size' ).value.split( 'x' ).map( Number );
+				const [ hiWidth, hiHeight ] = document.getElementById( 'hiz' ).value.split( 'x' ).map( Number );
+				const levelCount = mipLevels( hiWidth, hiHeight );
+
+				const depth = device.createTexture( { label: 'example depth', format: 'depth32float', size: [ width, height ], usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC } );
+				const hiZ = device.createTexture( {
+					label: 'example power-of-two hi-z', format: 'rg32float', size: [ hiWidth, hiHeight ], mipLevelCount: levelCount,
+					// COPY_DST too: in compatibility mode rg32float has no storage, and the library takes the buffer path.
+					usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC
+				} );
+				const naive = device.createTexture( {
+					label: '2x2-tap max pyramid', format: 'r32float', size: [ hiWidth, hiHeight ], mipLevelCount: levelCount,
+					usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC
+				} );
+				resources = [ depth, hiZ, naive ];
+				const options = { source: { texture: depth, resample: 'area' }, reduction: 'minmax' };
+
+				const encoder = device.createCommandEncoder();
+				const render = encoder.beginRenderPass( { colorAttachments: [], depthStencilAttachment: { view: depth.createView(), depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' } } );
+				render.setPipeline( scene );
+				render.setBindGroup( 0, sceneGroup );
+				render.draw( 6, count );
+				render.end();
+
+				// The library: every Hi-Z level from the depth buffer, resampled at level 0.
+				downsampler.encode( encoder, hiZ, options );
+
+				// The comparison: 2×2 taps into level 0, then exact 2×2 max levels in place.
+				const pass = encoder.beginComputePass();
+				pass.setPipeline( tap );
+				pass.setBindGroup( 0, device.createBindGroup( { layout: tap.getBindGroupLayout( 0 ), entries: [ { binding: 0, resource: depth.createView() }, { binding: 1, resource: naive.createView( { baseMipLevel: 0, mipLevelCount: 1 } ) } ] } ) );
+				pass.dispatchWorkgroups( Math.ceil( hiWidth / 8 ), Math.ceil( hiHeight / 8 ) );
+				pass.end();
+				downsampler.encode( encoder, naive, { reduction: 'max' } );
+				device.queue.submit( [ encoder.finish() ] );
+
+				// Checks.
+				const [ base ] = await readLevels( device, depth );
+				const levels = await readLevels( device, hiZ );
+				const naiveLevels = await readLevels( device, naive );
+				const checks = [];
+				const batches = downsampler.prepare( hiZ, options );
+				checks.push( { name: `${ width } × ${ height } depth → ${ hiWidth } × ${ hiHeight } Hi-Z: ${ levelCount } levels in ${ batches.length } dispatch${ batches.length === 1 ? '' : 'es' }`, ok: true } );
+
+				// Level 0 against the CPU area reference (single-channel depth reads as (d, d, d, d)).
+				const splat = Float32Array.from( base.values, ( v, i ) => base.values[ i - i % 4 ] );
+				const first = areaReference( splat, width, height, 1, 'float32', 'minmax', hiWidth, hiHeight );
+				let firstDiffers = 0;
+				for ( let i = 0; i < first.values.length; i += 4 ) if ( levels[ 0 ].values[ i ] !== first.values[ i ] || levels[ 0 ].values[ i + 1 ] !== first.values[ i + 1 ] ) firstDiffers ++;
+				checks.push( { name: 'level 0 matches the CPU area reference exactly (areaReference, minmax)', ok: firstDiffers === 0, detail: firstDiffers ? `${ firstDiffers } texels differ` : '' } );
+
+				let foldDiffers = 0;
+				for ( let level = 1; level < levelCount; level ++ ) {
+
+					const previous = levels[ level - 1 ];
+					const reference = reduceReference( previous.values, previous.width, previous.height, 1, 'float32', 'minmax' );
+					for ( let i = 0; i < reference.values.length; i += 4 ) if ( levels[ level ].values[ i ] !== reference.values[ i ] || levels[ level ].values[ i + 1 ] !== reference.values[ i + 1 ] ) foldDiffers ++;
+
+				}
+
+				checks.push( { name: `levels 1–${ levelCount - 1 } match the CPU reference exactly (power-of-two halving)`, ok: foldDiffers === 0, detail: foldDiffers ? `${ foldDiffers } texels differ` : '' } );
+
+				// Independent of the library's planning: every texel bounds every depth texel its normalized area touches.
+				const channel = ( { values }, c, sign = 1 ) => Float32Array.from( values, ( v, i ) => i % 4 === 0 ? sign * values[ i + c ] : 0 );
+				const depthMax = channel( base, 0 ), depthMin = channel( base, 0, - 1 );
+				let maxMisses = 0, minMisses = 0;
+				for ( const level of levels ) {
+
+					maxMisses += maxViolations( depthMax, width, height, channel( level, 1 ), level.width, level.height );
+					minMisses += maxViolations( depthMin, width, height, channel( level, 0, - 1 ), level.width, level.height );
+
+				}
+
+				checks.push( { name: `max is conservative at every level, 0–${ levelCount - 1 } (checked against every depth texel)`, ok: maxMisses === 0, detail: `${ maxMisses } violations` } );
+				checks.push( { name: 'min is conservative at every level', ok: minMisses === 0, detail: `${ minMisses } violations` } );
+
+				// How far each 2×2-tap texel falls below the farthest depth texel in its area (0: conservative).
+				const deficits = level => {
+
+					const { width: w, height: h, values } = naiveLevels[ level ];
+					const deficit = new Float32Array( w * h );
+					for ( let y = 0; y < h; y ++ ) for ( let x = 0; x < w; x ++ ) {
+
+						const x0 = Math.floor( x * width / w ), x1 = Math.ceil( ( x + 1 ) * width / w ) - 1;
+						const y0 = Math.floor( y * height / h ), y1 = Math.ceil( ( y + 1 ) * height / h ) - 1;
+						let farthest = - Infinity;
+						for ( let sy = y0; sy <= y1; sy ++ ) for ( let sx = x0; sx <= x1; sx ++ ) farthest = Math.max( farthest, base.values[ ( sy * width + sx ) * 4 ] );
+						deficit[ y * w + x ] = Math.max( 0, farthest - values[ ( y * w + x ) * 4 ] );
+
+					}
+
+					return deficit;
+
+				};
+				const naiveDeficits = naiveLevels.map( ( _, level ) => deficits( level ) );
+				const naiveMisses = naiveLevels.map( level => maxViolations( depthMax, width, height, level.values, level.width, level.height ) );
+				const total = naiveMisses.reduce( ( a, b ) => a + b, 0 );
+				const large = naiveDeficits.reduce( ( sum, deficit ) => sum + deficit.filter( d => d > 0.01 ).length, 0 );
+				checks.push( { name: 'for comparison, a 2×2-tap max pyramid (not a valid Hi-Z)', ok: true, detail: `${ total } non-conservative texels (${ naiveMisses.join( ', ' ) } per level); ${ large } of them by more than 0.01 in depth, at object edges` } );
+				report( checks );
+
+				// Viewer: nearer is brighter; the 2×2-tap pyramid's misses in red.
+				const shade = c => ( values, i ) => { const g = ( 1 - values[ i + c ] ) / 0.75; return [ g, g, g ]; };
+				levelButtons( document.getElementById( 'levels' ), levelCount, level => {
+
+					drawLevelScaled( document.getElementById( 'min' ), levels[ level ], shade( 0 ), 256 );
+					drawLevelScaled( document.getElementById( 'max' ), levels[ level ], shade( 1 ), 256 );
+					const deficit = naiveDeficits[ level ];
+					drawLevelScaled( document.getElementById( 'naive' ), naiveLevels[ level ], ( values, i ) => deficit[ i / 4 ] > 0.01 ? [ 1, 0.1, 0.1 ] : deficit[ i / 4 ] > 0 ? [ 0.75, 0.45, 0.1 ] : shade( 0 )( values, i ), 256 );
+					setText( 'naiveCaption', `2×2-tap max: ${ naiveMisses[ level ] } misses (red: by more than 0.01 in depth, orange: less, on sloped surfaces)` );
+					setText( 'caption', `Level ${ level }: ${ levels[ level ].width } × ${ levels[ level ].height } (scaled, nearest neighbour)` );
+
+				}, 0 );
+
+			}
+
+			for ( const id of [ 'size', 'hiz' ] ) document.getElementById( id ).addEventListener( 'change', () => run().catch( fail ) );
+			await run().catch( fail );
+		</script>
+	</body>
+</html>

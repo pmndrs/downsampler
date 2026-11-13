@@ -32,11 +32,11 @@ export const mipSize = ( size, level ) => Math.max( 1, size >> level );
 export const mipLevels = ( width, height ) => Math.floor( Math.log2( Math.max( width, height ) ) ) + 1;
 
 /**
- * Read levels `from` … `to − 1` of a 2D texture (layer 0) back as RGBA floats,
+ * Read levels `from` … `to − 1` of one layer of a 2D texture back as RGBA floats,
  * the way a shader's textureLoad sees them (missing channels read 0, 0, 1).
  * Formats: rgba8unorm, rgba16float, r32float, rg32float, rgba32float, depth32float.
  */
-export async function readLevels( device, texture, from = 0, to = texture.mipLevelCount ) {
+export async function readLevels( device, texture, from = 0, to = texture.mipLevelCount, layer = 0 ) {
 
 	const format = texture.format;
 	const bytes = format === 'depth32float' ? 4 : formats[ format ].bytesPerTexel;
@@ -56,7 +56,7 @@ export async function readLevels( device, texture, from = 0, to = texture.mipLev
 	for ( const { level, width, height, bytesPerRow, offset } of levels ) {
 
 		const aspect = format === 'depth32float' ? 'depth-only' : 'all';
-		encoder.copyTextureToBuffer( { texture, mipLevel: level, aspect }, { buffer, offset, bytesPerRow, rowsPerImage: height }, [ width, height, 1 ] );
+		encoder.copyTextureToBuffer( { texture, mipLevel: level, origin: [ 0, 0, layer ], aspect }, { buffer, offset, bytesPerRow, rowsPerImage: height }, [ width, height, 1 ] );
 
 	}
 
@@ -122,6 +122,35 @@ export function drawLevel( canvas, { width, height, values }, toColour = ( v, i 
 	}
 
 	context.putImageData( image, 0, 0 );
+
+}
+
+/**
+ * Like `drawLevel`, scaled up by a whole factor so the canvas is at least
+ * `minSize` texels on its longer side (nearest neighbour). Returns the factor,
+ * for drawing outlines over texels: texel x spans canvas pixels x·scale … (x + 1)·scale.
+ */
+export function drawLevelScaled( canvas, level, toColour, minSize = 512 ) {
+
+	const scale = Math.max( 1, Math.floor( minSize / Math.max( level.width, level.height ) ) );
+	const texels = document.createElement( 'canvas' );
+	drawLevel( texels, level, toColour );
+	canvas.width = level.width * scale;
+	canvas.height = level.height * scale;
+	const context = canvas.getContext( '2d' );
+	context.imageSmoothingEnabled = false;
+	context.drawImage( texels, 0, 0, canvas.width, canvas.height );
+	return scale;
+
+}
+
+/** Outline texel rectangles `{ x, y, width, height }` on a canvas drawn at `scale`. */
+export function outlineRects( canvas, rects, scale, colour = '#ff2d55' ) {
+
+	const context = canvas.getContext( '2d' );
+	context.strokeStyle = colour;
+	context.lineWidth = Math.max( 1, Math.min( 3, canvas.width / 400 ) );
+	for ( const { x, y, width, height } of rects ) context.strokeRect( x * scale + 0.5, y * scale + 0.5, width * scale - 1, height * scale - 1 );
 
 }
 

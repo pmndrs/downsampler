@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Odd sizes</title>
+		<link rel="icon" href="data:,">
+		<link rel="stylesheet" href="style.css">
+		<style>
+			.view figure { flex-basis: 200px; }
+			td.best { font-weight: 600; color: var( --pass ); }
+			.swatch { display: inline-block; width: 1em; height: 1em; vertical-align: -0.15em; border: 1px solid var( --line ); margin-right: 0.4em; }
+		</style>
+	</head>
+	<body>
+		<nav><a href="./">Examples</a> · <a href="../docs/guide.md#odd-sizes">Guide</a></nav>
+		<h1>Odd sizes: <code>'exact'</code>, <code>'spd'</code> and <code>'box'</code></h1>
+		<p>
+			A 2:1 reduction is exact only when a size halves cleanly. The same <code>rgba8unorm</code> image goes through the three
+			<code>oddSizes</code> policies, next to the <b>area-weighted ideal</b>: each texel of level <i>l</i> is the exact mean of
+			the base texels under its normalized area, <code>[x·W/n, (x+1)·W/n)</code> per axis (computed here on the CPU in f64,
+			straight from level 0). The table gives each policy's error against it.
+		</p>
+		<ul>
+			<li><code>'exact'</code> (default) reproduces render-pass and WebGL mipmaps: bilinear at normalized coordinates. At 3 → 1 it takes only the centre texel, so a 31×31 image can reduce to an unrepresentative 1×1.</li>
+			<li><code>'spd'</code> is AMD SPD's: clamped loads with the last odd row or column dropped (watch the bright line on the last row and column disappear), and footprints that drift towards the far edge.</li>
+			<li><code>'box'</code> is nvpro_pyramid's area weighting: along an odd size 2n+1, taps <code>2x … 2x+2</code> with weights <code>(n−x, n, x+1)/(2n+1)</code>. Every level keeps the base level's mean, so its 1×1 is the image's mean.</li>
+		</ul>
+		<pre><code>downsampler.encode( encoder, texture );                      // 'exact': render-pass mipmaps
+downsampler.encode( encoder, texture, { oddSizes: 'spd' } ); // SPD: fewest dispatches, drops odd edges
+downsampler.encode( encoder, texture, { oddSizes: 'box' } ); // area-weighted: GI, irradiance, roughness, UI</code></pre>
+		<p class="muted" id="adapter"></p>
+
+		<h2>Readout</h2>
+		<ul id="readout"></ul>
+
+		<h2>Levels</h2>
+		<div class="controls">
+			<label>Size <select id="size">
+				<option value="31x31">31 × 31</option>
+				<option value="1129x635" selected>1129 × 635</option>
+				<option value="1477x831">1477 × 831</option>
+			</select></label>
+			<label><input type="checkbox" id="error"> show the error against the ideal (×16)</label>
+		</div>
+		<div class="levels" id="levels"></div>
+		<div class="view" id="view"></div>
+		<p class="muted" id="caption"></p>
+
+		<h2>Error against the ideal</h2>
+		<p class="muted">Mean and largest |policy − ideal| over r, g and b, in 8-bit steps (1/255). Lowest mean per level in green.</p>
+		<table id="errors"></table>
+
+		<script type="module">
+			import { areaOverlap, areaSpan, boxReference, tolerance } from '../dist/index.js';
+			import { Downsampler } from '../dist/webgpu/index.js';
+			import { compare, drawLevelScaled, fail, initDevice, levelButtons, makeImage, mipLevels, readLevels, report, setText, unormFloats } from './common.js';
+
+			const { device } = await initDevice();
+			const downsampler = new Downsampler( device );
+			const policies = [ 'exact', 'spd', 'box' ];
+			const params = new URLSearchParams( location.search );
+			if ( params.has( 'size' ) ) document.getElementById( 'size' ).value = params.get( 'size' );
+
+			// The ideal: per axis, output texel x of n covers [x·S/n, (x+1)·S/n) of S source texels, and
+			// each source texel weighs its overlap (areaOverlap, in units of 1/n texel, over S). Separable.
+			function resample( values, width, height, outWidth, outHeight ) {
+
+				const axis = ( input, lines, size, outSize, stride, step ) => {
+
+					const output = new Float64Array( outSize * lines * 4 );
+					for ( let x = 0; x < outSize; x ++ ) {
+
+						const [ first, last ] = areaSpan( x, size, outSize );
+						for ( let t = first; t <= last; t ++ ) {
+
+							const weight = areaOverlap( t, x, size, outSize ) / size;
+							for ( let line = 0; line < lines; line ++ ) for ( let c = 0; c < 4; c ++ ) output[ ( x * stride.out + line * step.out ) * 4 + c ] += weight * input[ ( t * stride.in + line * step.in ) * 4 + c ];
+
+						}
+
+					}
+
+					return output;
+
+				};
+				// Rows first (width → outWidth, layout row-major outWidth wide), then columns.
+				const rows = axis( values, height, width, outWidth, { in: 1, out: 1 }, { in: width, out: outWidth } );
+				return axis( rows, outWidth, height, outHeight, { in: outWidth, out: outWidth }, { in: 1, out: 1 } );
+
+			}
+
+			let textures = [];
+
+			async function run() {
+
+				const [ width, height ] = document.getElementById( 'size' ).value.split( 'x' ).map( Number );
+				const count = mipLevels( width, height );
+				const data = makeImage( width, height );
+				const base = unormFloats( data );
+
+				textures.forEach( texture => texture.destroy() );
+				textures = policies.map( oddSizes => {
+
+					const texture = device.createTexture( {
+						label: `odd sizes ${ oddSizes }`, format: 'rgba8unorm', size: [ width, height ], mipLevelCount: count,
+						usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC
+					} );
+					device.queue.writeTexture( { texture }, data, { bytesPerRow: width * 4 }, [ width, height ] );
+					return texture;
+
+				} );
+				const encoder = device.createCommandEncoder();
+				policies.forEach( ( oddSizes, i ) => downsampler.encode( encoder, textures[ i ], { oddSizes } ) );
+				device.queue.submit( [ encoder.finish() ] );
+
+				const levels = Object.fromEntries( await Promise.all( policies.map( async ( policy, i ) => [ policy, await readLevels( device, textures[ i ] ) ] ) ) );
+				const ideal = levels.box.map( ( { width: w, height: h }, l ) => ( { width: w, height: h, values: l === 0 ? base : resample( base, width, height, w, h ) } ) );
+
+				// Errors per level: mean and max over rgb, in 8-bit steps.
+				const errors = policies.map( policy => levels[ policy ].map( ( level, l ) => {
+
+					let sum = 0, max = 0;
+					for ( let i = 0; i < level.values.length; i ++ ) if ( i % 4 < 3 ) {
+
+						const error = Math.abs( level.values[ i ] - ideal[ l ].values[ i ] ) * 255;
+						sum += error; max = Math.max( max, error );
+
+					}
+
+					return { mean: sum / ( level.width * level.height * 3 ), max };
+
+				} ) );
+				const table = document.getElementById( 'errors' );
+				table.innerHTML = `<tr><th>Level</th><th>Size</th>${ policies.map( p => `<th>'${ p }' mean</th><th>max</th>` ).join( '' ) }</tr>` + ideal.slice( 1 ).map( ( { width: w, height: h }, i ) => {
+
+					const l = i + 1, best = Math.min( ...errors.map( e => e[ l ].mean ) );
+					return `<tr><td>${ l }</td><td>${ w } × ${ h }</td>${ errors.map( e => `<td class="${ e[ l ].mean === best ? 'best' : '' }">${ e[ l ].mean.toFixed( 2 ) }</td><td>${ e[ l ].max.toFixed( 1 ) }</td>` ).join( '' ) }</tr>`;
+
+				} ).join( '' );
+
+				// Checks. 1: every 'box' level against the CPU reference from the GPU's previous level.
+				const checks = [];
+				const batches = downsampler.prepare( textures[ 2 ], { oddSizes: 'box' } );
+				const firsts = new Set( batches.map( batch => batch.firstMipLevel ) );
+				let worst = 0, failing = 0;
+				for ( let l = 1; l < count; l ++ ) {
+
+					const previous = levels.box[ l - 1 ];
+					// A batch's first level may be sampled (even sizes, where the sampler's 1/2 weights are exact anyway).
+					const reference = boxReference( previous.values, previous.width, previous.height, 1, 'unorm8', 'average', { weights: firsts.has( l ) ? 'sampler' : 'shader' } );
+					const result = compare( levels.box[ l ].values, reference.values, ( expected, j ) => tolerance( expected, 'unorm8', reference.filterTolerance[ j ] ) );
+					worst = Math.max( worst, result.maxError ); failing += result.failing;
+
+				}
+
+				checks.push( { name: `'box' levels 1–${ count - 1 } of ${ width } × ${ height } match the CPU area-weighted reference (boxReference)`, ok: failing === 0, detail: `max error ${ ( worst * 255 ).toFixed( 2 ) } / 255 in ${ batches.length } dispatch${ batches.length === 1 ? '' : 'es' }${ failing ? `, ${ failing } values outside the tolerance` : '' }` } );
+
+				// 2: the 1×1 is the image's mean, to the rounding of each stored level (half a step each).
+				const mean = [ 0, 1, 2 ].map( c => base.reduce( ( sum, v, i ) => i % 4 === c ? sum + v : sum, 0 ) / ( width * height ) );
+				const off = policy => Math.max( ...mean.map( ( m, c ) => Math.abs( levels[ policy ][ count - 1 ].values[ c ] - m ) * 255 ) );
+				const limit = ( count - 1 ) * 0.5 + 0.01;
+				checks.push( { name: `'box' 1×1 is the mean of all ${ width * height } texels`, ok: off( 'box' ) <= limit, detail: `off by ${ off( 'box' ).toFixed( 2 ) } / 255 (limit ${ limit.toFixed( 2 ) }); 'exact' ${ off( 'exact' ).toFixed( 2 ) }, 'spd' ${ off( 'spd' ).toFixed( 2 ) }` } );
+
+				// 3: over every level, 'box' is closest to the ideal (texel-weighted mean error).
+				const overall = errors.map( e => {
+
+					let sum = 0, texels = 0;
+					for ( let l = 1; l < count; l ++ ) { const n = ideal[ l ].width * ideal[ l ].height; sum += e[ l ].mean * n; texels += n; }
+					return sum / texels;
+
+				} );
+				checks.push( { name: `'box' is closest to the area-weighted ideal`, ok: overall[ 2 ] < overall[ 0 ] && overall[ 2 ] < overall[ 1 ], detail: `mean error ${ policies.map( ( p, i ) => `'${ p }' ${ overall[ i ].toFixed( 3 ) }` ).join( ', ' ) } (8-bit steps, levels ≥ 1)` } );
+				report( checks );
+
+				// Viewer: the ideal and the three policies at one level, or their error against the ideal.
+				const view = document.getElementById( 'view' );
+				const names = [ 'ideal', ...policies.map( p => `'${ p }'` ) ];
+				view.replaceChildren( ...names.map( name => {
+
+					const figure = document.createElement( 'figure' );
+					figure.innerHTML = `<canvas class="level"></canvas><figcaption>${ name }</figcaption>`;
+					return figure;
+
+				} ) );
+				const errorBox = document.getElementById( 'error' );
+				const draw = level => {
+
+					const shown = [ ideal[ level ], ...policies.map( p => levels[ p ][ level ] ) ];
+					shown.forEach( ( values, i ) => {
+
+						const figure = view.children[ i ];
+						const difference = { ...values, values: Float32Array.from( values.values, ( v, j ) => j % 4 === 3 ? 1 : Math.abs( v - ideal[ level ].values[ j ] ) * 16 ) };
+						drawLevelScaled( figure.querySelector( 'canvas' ), errorBox.checked ? difference : values, undefined, 256 );
+						const rgb = Array.from( values.values.slice( 0, 3 ), v => Math.round( v * 255 ) );
+						figure.querySelector( 'figcaption' ).innerHTML = names[ i ] + ( values.width * values.height === 1 ? `<br><span class="swatch" style="background: rgb( ${ rgb.join( ', ' ) } )"></span>rgb ${ Array.from( values.values.slice( 0, 3 ), v => ( v * 255 ).toFixed( 1 ) ).join( ', ' ) }` : i ? ` · mean error ${ errors[ i - 1 ][ level ].mean.toFixed( 2 ) } / 255` : '' );
+
+					} );
+					setText( 'caption', `Level ${ level }: ${ ideal[ level ].width } × ${ ideal[ level ].height } (scaled, nearest neighbour)` );
+
+				};
+				let current = count - 1;
+				errorBox.onchange = () => draw( current );
+				levelButtons( document.getElementById( 'levels' ), count, level => draw( current = level ), count - 1 );
+
+			}
+
+			document.getElementById( 'size' ).addEventListener( 'change', () => run().catch( fail ) );
+			await run().catch( fail );
+		</script>
+	</body>
+</html>
