@@ -12,7 +12,7 @@ Each entry says what they do, what we do, why, what it would take to converge, a
 
 Effort: **S** is under a day, **M** a few days including oracle and GPU cases, **L** a week or more.
 
-Last updated: 2026-11-13 (Windows: RTX 3060 Laptop and Intel UHD, native D3D12/Vulkan baselines; entries 1, 5, 17, 18, 22; results/windows/README.md)
+Last updated: 2026-11-13 (M2.5: `oddSizes: 'box'` and resampled sources, entries 3 and 23. Before that, Windows: RTX 3060 Laptop and Intel UHD, native D3D12/Vulkan baselines; entries 1, 5, 17, 18, 22; results/windows/README.md)
 
 ## Summary
 
@@ -20,7 +20,7 @@ Last updated: 2026-11-13 (Windows: RTX 3060 Laptop and Intel UHD, native D3D12/V
 |---|---|---|---|---|---|---|
 | 1 | No single dispatch / atomic handoff | SPD, webgpu-spd | Keep | S (probe exists) | Converging risks missing mips | Measured: 2 dispatches beat the atomic probe, 1.1–2.2× at render sizes up to 1440p; tie at 4096² |
 | 2 | Batch ends at every odd size | SPD, nvpro | Tail kernel built (opt-in); halo batches candidate | — / M–L | None | Measured: tail 0.83–1.07×; `'spd'` structure 0.47–0.73× |
-| 3 | Odd sizes match render passes, not area-weighted or dropped | SPD, nvpro | Keep default; `'spd'` opt-in; `'box'` planned | Done for SPD / M for `'box'` | `'spd'`: drifting footprints, non-conservative Hi-Z | `'spd'` 1.4–2.1× faster at render sizes (rgba8) |
+| 3 | Odd sizes match render passes, not area-weighted or dropped | SPD, nvpro | Keep default; `'spd'` and `'box'` opt-ins | Done for both (M2T.4, M2.5) | `'spd'`: drifting footprints, non-conservative Hi-Z | `'spd'` 1.4–2.1× faster at render sizes (rgba8); `'box'` same dispatches as `'exact'`, not timed |
 | 4 | Conservative min/max footprint at odd edges | SPD | Keep | S (but wrong) | SPD's Hi-Z can false-cull | One extra load per odd edge texel |
 | 5 | Clamp at edges, no zero reads | SPD | Keep | S | Ours: no dark or zero borders | ~None |
 | 6 | Clamp only, no wrap edges | gpuweb#5253 | Candidate | S–M | Seams on tiling textures at odd sizes | ~None |
@@ -40,6 +40,7 @@ Last updated: 2026-11-13 (Windows: RTX 3060 Laptop and Intel UHD, native D3D12/V
 | 20 | API conventions: mip count, levels written, no counter buffer | SPD | Keep | S (docs) | — | — |
 | 21 | No size or level cap | SPD | Keep | — | — | — |
 | 22 | webgpu-spd 3.0.0, measured side by side ([results](results/compare/webgpu-spd.md)) | webgpu-spd | Keep | — | Its default handoff gave stale levels 7+ in up to 77 % of frames; Hi-Z up to 52 % non-conservative | Measured: our `'spd'` 1.2–2.1× faster (M5), 1.6× / 3.5× faster than its default (RTX / Intel, rgba8); no stale frames on Windows |
+| 23 | Power-of-two Hi-Z from a render-size source: area folds, not one 2×2 tap | niagara; SPD (FFX SSSR), Capsaicin | Keep | — | Ours conservative at any ratio; a 2×2 tap misses a texel at 1920 → 1024 | Up to ⌈S/n⌉ + 1 loads per axis; not timed |
 
 ## Dispatch structure
 
@@ -88,17 +89,18 @@ Last updated: 2026-11-13 (Windows: RTX 3060 Laptop and Intel UHD, native D3D12/V
   - nvpro weights by area, `(n−x, n, x+1)/(2n+1)` for size `2n+1`, so 3→1 averages all three texels.
 - **We:** `'exact'` by default: normalized-coordinate bilinear, identical to render-pass and WebGL mipmaps.
   - **`oddSizes: 'spd'` (M2T.4, opt-in):** SPD's semantics, built from the `Reducer`'s `'clamp'` tile kernel. It has its own oracle (`spdReference`) and runs in the full GPU matrix.
-  - **`'box'`** (nvpro's weights) is a planned opt-in.
+  - **`oddSizes: 'box'` (M2.5, opt-in, 2026-11-13):** nvpro's weights, checked against `nvpro_pyramid.glsl`. Its own oracle (`areaReference`, `boxReference`) and GPU cases (main matrix, render sizes, 31×31, strips, layers). Folds under it are the `'exact'` folds.
+  - **Still different from nvpro in structure:** nvpro carries 2 levels per dispatch through odd sizes with a halo; `'box'` ends a batch at an odd size like `'exact'`, and the tail kernel (default on) carries the small levels (entry 2).
 - **Why:** three.js and other engines can switch to us without any visual change, and Hi-Z stays conservative.
-- **Effort to converge:** done for SPD, as an opt-in. M for nvpro, planned as `'box'` in M2.5 with its own oracle.
+- **Effort to converge:** done for SPD and nvpro, as opt-ins. Converging the default would break render-pass parity.
 - **Quality (measured, `results/spd/m5-pro-quality.json`; SPEC §2.1):**
   - `'exact'` shares the render-pass flaw: a 31×31 texture can reduce to an unrepresentative 1×1. `'box'` is area-correct; recommend it for GI, irradiance and roughness chains.
   - **`'spd'` against `'exact'`:** the two agree to one 8-bit step until the first odd size, then differ. On the scene image the largest difference is 0.24–0.64 (rgba8) over the render sizes, with texel-weighted means of 0.0004–0.010.
   - **Drift:** when level 0 or 1 is odd (1129×635, 1477×831, 1707×960), `'spd'`'s footprints drift by up to a texel towards the far edge, and every level is off.
   - **Against the area-weighted ideal** (scene, levels ≥ 4), `'exact'` is 1.3–7× closer than `'spd'`. On uniform noise `'spd'` is closer, because a box averages away more noise than a 2-tap bilinear.
   - **Hi-Z:** `'spd'` max leaves 0.01–15 % of texels below a base texel in their footprint (scene), up to 52 % on noise. `'exact'` and the tail have none.
-- **Performance (measured, M5 Pro, loaded):** `'spd'` is 1.4–2.1× faster than `'exact'` at render sizes up to 1440p in rgba8, 1.2–1.6× in rgba16f up to 1080p, within 3–9 % at 4K and at powers of two from 2048². `'box'` would share the folds' dispatch structure and footprint: a few ALU ops at most (estimate).
-- **Verdict:** keep `'exact'` as the default. `'spd'` stays a public opt-in for `'average'` only; folds under it are rejected, with an error pointing to `'exact'` or a `Reducer` with `'zero-weight'` edges (coordinator, 2026-11-11; the owner can overrule). It works on the buffer output path and in compatibility mode (SPEC §2.1).
+- **Performance (measured, M5 Pro, loaded):** `'spd'` is 1.4–2.1× faster than `'exact'` at render sizes up to 1440p in rgba8, 1.2–1.6× in rgba16f up to 1080p, within 3–9 % at 4K and at powers of two from 2048². `'box'` has `'exact'`'s dispatches; its odd-level batches load up to 9 texels per output instead of one sampler fetch. Not timed yet (`--compare=spd` has `box` and `tailBox`).
+- **Verdict:** keep `'exact'` as the default; `'box'` is the opt-in for quality (GI, irradiance, roughness, UI). `'spd'` stays a public opt-in for `'average'` only; folds under it are rejected, with an error pointing to `'exact'` or a `Reducer` with `'zero-weight'` edges (coordinator, 2026-11-11; the owner can overrule). It works on the buffer output path and in compatibility mode (SPEC §2.1).
 
 ### 4. Conservative min/max footprint at odd edges
 - **They:** SPD's min/max skip the last row or column at odd sizes.
@@ -201,6 +203,16 @@ Last updated: 2026-11-13 (Windows: RTX 3060 Laptop and Intel UHD, native D3D12/V
 - **We:** don't have it yet; it is planned for M2.4.
 - **Effort:** M. Matching SPD's snapping is simplest. A tighter rect saves more work but needs per-level rounding rules.
 - **Verdict:** planned. Decide the snapping in M2.4.
+
+### 23. Power-of-two Hi-Z from a render-size source
+- **They:**
+  - SPD-based setups keep Hi-Z level 0 at the depth buffer's size: FidelityFX SSSR (SDK 1.1.4, `ffx_sssr_depth_downsample.h`) copies depth and runs SPD's min, which drops odd rows and columns (entry 4). Capsaicin's HZB (`visibility_buffer.cpp`, `914b915`) copies depth, then `GPUMip` DepthMin: `2x … 2x+2` at odd sizes, SPD once a level is a power of two.
+  - zeux's niagara (`567ebe3`) uses a power-of-two pyramid, `previousPow2` of the swapchain size, filled by one min-reduction-sampler tap per texel centre. Its comment calls that conservative because each reduction is "at most by 2x2". At 1920 → 1024 a texel's area spans up to 3 source texels, so the 2×2 tap misses one.
+- **We:** `source: { texture, resample: 'area' }` (M2.5): any destination size, up or down to 8× per axis. Averages are area-weighted; folds combine every source texel the destination texel overlaps, so the pyramid is conservative at every level (GPU-checked against every source texel). A 2048×1024 pyramid takes 2 dispatches for 12 levels.
+- **Why:** Hi-Z must not false-cull, and WebGPU has no reduction sampler, so the fold is ours anyway.
+- **Quality:** a core test counts over 100 non-conservative texels on one 1920-texel row for the 2×2 tap; ours has none.
+- **Performance:** the first batch loads the overlap (3×3 texels at 1920×1080 → 1024×512, 4×4 at 1129×635 → 512×256) instead of a sampler fetch. Not timed.
+- **Verdict:** keep.
 
 ### 16. sRGB through a scratch copy or buffer
 - **They:** SPD samples an sRGB view and writes a UNORM alias of the same texture.

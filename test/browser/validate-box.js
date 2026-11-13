@@ -83,12 +83,16 @@ async function validateBoxShapes( device, { quick, onProgress, select } ) {
 			const texture = createTexture( device, { width, height, layers, format, dimension } );
 			try {
 
-				for ( const pattern of quick ? [ 'random' ] : [ 'random', 'edge', 'tiles' ] ) {
+				// Render sizes: the widest kernel only (its oracles dominate the suite's time); 'box'
+				// kernels are the same at every width, and the main matrix runs every width at 1920×1080.
+				const big = width * height > 65536;
+				for ( const pattern of quick ? [ 'random' ] : big ? [ 'random', 'edge' ] : [ 'random', 'edge', 'tiles' ] ) {
 
 					const data = makeData( width, height, layers, format, pattern, 3 );
 					const input = toFloats( data, format );
 					for ( const [ downsampler, reduction, kind, levels ] of runs ) {
 
+						if ( big && levels !== widths[ widths.length - 1 ] ) continue;
 						const options = { oddSizes: 'box', reduction };
 						upload( device, texture, data );
 						poison( device, texture );
@@ -184,6 +188,8 @@ async function validateResample( device, { quick, onProgress, select } ) {
 
 							for ( const [ downsampler, mode, levels, tail ] of modes ) for ( const reduction of reductions ) {
 
+								// Render-size sources: the widest kernel only (the first batch is the same at every width).
+								if ( width * height > 65536 && levels !== widths[ widths.length - 1 ] ) continue;
 								if ( mode === 'spd' && reduction !== 'average' ) continue;
 								const options = { source: { texture: source.texture, resample: 'area' }, reduction, oddSizes: mode };
 								if ( tail && ! downsampler.prepare( destination, options ).some( batch => batch.kernel === 'tail' ) ) continue;

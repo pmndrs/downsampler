@@ -1,6 +1,6 @@
 # downsampler — core specification
 
-Status: milestone 2 in progress, refocused on our tools (M2T, §11). M2.1 (reductions, load path), M2.2 (separate source, float32 formats), format steps 1–2 and the GI formats (buffer output path, rgb9e5ufloat, rg11b10ufloat) are done. This document is the source of truth for scope, design decisions, correctness requirements and the remaining plan. Update it when a decision changes.
+Status: milestone 2 in progress, refocused on our tools (M2T, §11). M2.1 (reductions, load path), M2.2 (separate source, float32 formats), format steps 1–2, the GI formats (buffer output path, rgb9e5ufloat, rg11b10ufloat) and M2.5 (`oddSizes: 'box'`, resampled separate sources) are done. This document is the source of truth for scope, design decisions, correctness requirements and the remaining plan. Update it when a decision changes.
 
 ## 1. Purpose
 
@@ -12,7 +12,7 @@ Feature target: parity with AMD FidelityFX SPD, implemented independently in WGS
 
 ## 2. Two decisions to know up front
 
-### 2.1 Odd sizes: `'exact'` (default), `'spd'` (opt-in, measured), `'box'` (planned)
+### 2.1 Odd sizes: `'exact'` (default), `'spd'` (opt-in, measured), `'box'` (opt-in)
 
 A 2:1 reduction is only exact when a dimension halves cleanly. For odd, non-unit sizes (decided 2026-11-10; `'spd'` built and measured 2026-11-11, M2T.4):
 
@@ -20,10 +20,14 @@ A 2:1 reduction is only exact when a dimension halves cleanly. For odd, non-unit
   - Results match render-pass and WebGL mipmaps (the CPU reference in §7), so engines can switch without visual change.
   - Min/max use the conservative `2x … 2x+2` footprint, so Hi-Z is correct.
   - Cost: more dispatches at render sizes, 5–9 instead of 2 (1920×1080: 7). The exact tail kernel (`new Downsampler( device, { tail: true } )`, opt-in, M2T.4) cuts that to 3–6 with the same rule, but recovers little time (measurements below).
-- **`'box'` (planned, opt-in).** Area-weighted odd sizes, as in nvpro_pyramid: per axis, 3 taps with weights `(n−x, n, x+1)/(2n+1)` for size `2n+1`. Every source texel contributes in proportion to its overlap, which fixes the unrepresentative 1×1 of render-pass mipmaps on sizes like 31×31.
-  - Same dispatch structure and footprint as the folds, so no extra cost.
+- **`'box'` (implemented 2026-11-13, M2.5, opt-in).** Area-weighted odd sizes, as in nvpro_pyramid. Output texel x of n covers `[x·S/n, (x+1)·S/n)` of its source level, and each source texel weighs its overlap (`areaReference` in core, `src/core/box.ts`). Per axis that is 1 tap at size 1, 2 taps of 1/2 at even sizes, and at an odd size `2n+1` 3 taps `2x … 2x+2` with weights `(n−x, n, x+1)/(2n+1)`. Every source texel contributes in proportion to its overlap, so every level keeps the base level's mean, and a 31×31 texture's 1×1 is its true mean (`greggman`'s case, gpuweb#5253; core and GPU tests).
+  - **Formula checked** against nvpro's source (`nvpro_pyramid.glsl`, `reduceStoreSample_`: `w0 = (n − x)/(2n+1)`, `w1 = n/(2n+1)`, `w2 = 1 − w0 − w1`) and [docs/strategy.md](https://nvpro-samples.github.io/vk_compute_mipmaps/docs/strategy.md.html) ("Kernel Background": 1, 2 or 3 taps per axis, "energy conserving", from NVIDIA's 2005 *Non-Power-of-Two Mipmap Creation* report). Capsaicin's `gpu_mip.comp` (`914b915`) uses the same odd weights.
+  - **Batches: those of `'exact'`** (decided 2026-11-13, M2.5 agent). An odd step reads `2x … 2x+2`, so a tile of the previous level lacks one texel at its far edge. Carrying it inside a batch needs a halo that grows 1, 3, 7 … texels per further odd step: nvpro's general pipeline stops at 2 levels for that reason, and found 3+ "not promising". That halo batch is the same lever `'exact'` has (§13 Consequences 3), so it should be built once, for both, and measured. Until then `'box'` ends a batch at an odd size, and the tail kernel (now the default) carries odd steps once a level fits one workgroup, with no halo. Dispatches equal `'exact'`'s: 960×540 7 (tail 4), 1129×635 6 (5), 1477×831 9 (6), 1920×1080 7 (4), powers of two unchanged (core test).
+  - **Kernels.** A batch whose source level is odd in a non-unit dimension, and every tail batch, uses the box kernel (`KernelOptions.box`; a resampled source's batch uses `area`, the first output alone): loads, with the weights in the shader (`ds_area_weight`; integer overlaps, exact 1/2 and 1 at halving and same-size axes, because GPU division isn't correctly rounded). Batches that read an even level are the `'exact'` kernels unchanged (an even step is the same 2×2 box), so they still sample by default, and `'box'` at a power of two is `'exact'` bit for bit (GPU-tested). In-tile levels are exact 2×2 steps as before; the tail's odd steps are area-weighted. The extra cost is in the odd-level batches only: up to 9 loads per texel instead of the sampler's one fetch. Not timed (coordinator); `--compare=spd` has `box` and `tailBox` strategies.
+  - **Rounding** follows §4 Quantization: each level is quantized as stored, normalized formats in integer units with ties to even, float16 through `ds_round_f16` (`f16Rounding`), packed formats through their encoders. The oracle rounds normalized averages from the exact rational value (Σ overlaps · units / S²); GPU float weights may land a hair off an exact tie, so as for `'exact'`, a batch's first output and a tail's odd steps get the declared tolerance, and every other level must match bit for bit.
+  - **Folds** (`'min'`, `'max'`, `'minmax'`, custom): accepted, and identical to `'exact'` (decided 2026-11-13, coordinator; owner can overrule, §12). Their `'exact'` footprint is already every texel the area overlaps.
+  - **Composes** with the tail kernel, both output paths and compatibility mode: bit-identical to `encode` through `encodePass`, the buffer path and the compatibility path (GPU-tested, rgba16float 133×75).
   - Recommended for quality-sensitive content: GI, irradiance and roughness chains, UI.
-  - Needs its own oracle.
 - **`'spd'` (implemented 2026-11-11, opt-in; replaces the dropped `'fast'`).** AMD SPD's semantics. Each batch is the `Reducer`'s `'clamp'` tile kernel emitting every level: clamped loads, `⌊n/2⌋` sizes, the last odd row or column dropped, and no rounding between the levels of a batch. The next batch reads the last stored level. Any size takes `⌈levels / levelsPerDispatch⌉` dispatches: 2 up to 4096² at 6 levels per dispatch, 3 at the default limit of 4. For filterable formats, averages take one bilinear sample at the 2×2 corner, as SPD does. A same-size separate source is copied by a 1-level `'exact'` batch first. Oracle: `spdReference` (core), checked per batch from the GPU's own source level.
   - **`'average'` only (decided 2026-11-11, coordinator; owner can overrule).** Min/max under SPD's semantics are not a conservative Hi-Z: a dropped row or column belongs to no texel, so a max pyramid misses it. `Downsampler` therefore rejects `'min'`, `'max'`, `'minmax'` and custom folds under `'spd'`, and the error points to `'exact'` or to a `Reducer` with `'zero-weight'` edges. The measurements below include max chains timed before that decision.
   - **Composes with the buffer output path and with compatibility mode.** On the buffer path the `'clamp'` tile kernel writes packed texels (`bufferOutputWgsl`, normalized), and the same layout uniform and copies follow each batch. In compatibility mode the batches write scratch levels and the per-level copy dispatches move them, as for `'exact'`. Both are tested: bit-identical to the storage path (rgba16float, where both round with `pack2x16float`) and to the direct path, plus the oracle on the buffer path's subset shapes.
@@ -155,9 +159,9 @@ Rules:
 
 A batch reads one source level and writes up to `levelsPerDispatch` consecutive levels.
 
-- **First output:** a hardware bilinear sample at each texel centre, using normalized coordinates. That is an exact 2×2 box for even sizes. For odd sizes it reproduces render-pass and WebGL mipmaps, which is **not** area-correct: 3→1 takes only the centre texel, so a 31×31 texture can reduce to an unrepresentative 1×1 (`greggman`'s example in gpuweb#5253). Area-weighted odd sizes are a candidate opt-in (§13).
+- **First output:** a hardware bilinear sample at each texel centre, using normalized coordinates. That is an exact 2×2 box for even sizes. For odd sizes it reproduces render-pass and WebGL mipmaps, which is **not** area-correct: 3→1 takes only the centre texel, so a 31×31 texture can reduce to an unrepresentative 1×1 (`greggman`'s example in gpuweb#5253). `oddSizes: 'box'` (§2.1) area-weights odd sizes instead, and a resampled separate source (below) area-weights any ratio.
 - **Later levels in the batch:** exact 2:1 reductions in workgroup memory, with clamped reads for unit dimensions and partial tiles.
-- **Batch boundaries:** a batch ends at `levelsPerDispatch`, or where the next reduction is inexact under `'exact'`. With `tail: true`, a first output of at most 32×32 (8×8 below 256 invocations per workgroup) starts a tail batch that finishes the chain (up to `levelsPerDispatch` levels) in one workgroup by the same rule. Under `'spd'`, batches end only at `levelsPerDispatch` (§2.1).
+- **Batch boundaries:** a batch ends at `levelsPerDispatch`, or where the next reduction is inexact under `'exact'` (and `'box'`, which plans the same batches). With `tail: true`, a first output of at most 32×32 (8×8 below 256 invocations per workgroup) starts a tail batch that finishes the chain (up to `levelsPerDispatch` levels) in one workgroup by the same rule. Under `'spd'`, batches end only at `levelsPerDispatch` (§2.1).
 - **Layers:** workgroup z selects the array layer, so all layers go in one dispatch.
 
 ### Reductions
@@ -173,7 +177,12 @@ A batch reads one source level and writes up to `levelsPerDispatch` consecutive 
 ### Separate source
 
 - **Use:** a destination that can't be its own source, mainly a depth buffer feeding a Hi-Z pyramid (depth formats can't be storage textures), or a format conversion.
-- **Size rule:** destination level `baseMipLevel` must be the same size as the source level (a converting copy) or half of it (one reduction step). Every destination level in range is written, including `baseMipLevel`. `mipLevelCount` counts destination levels in both modes.
+- **Size rule:** destination level `baseMipLevel` must be the same size as the source level (a converting copy) or half of it (one reduction step), or any size with `source.resample: 'area'` (below). Every destination level in range is written, including `baseMipLevel`. `mipLevelCount` counts destination levels in all modes.
+- **Resampled source (`resample: 'area'`, M2.5, 2026-11-13):** for a destination whose first level is another size, mainly a power-of-two Hi-Z (1024×512 or 2048×1024 from 1920×1080) whose later levels halve cleanly.
+  - **Semantics of the first step.** Destination texel x of n covers `[x·S/n, (x+1)·S/n)` of the source per axis, at any ratio up or down. `'average'` weights each source texel by its overlap (the `'box'` weights, of which nvpro's are the 2:1 case). Folds combine every source texel with a positive overlap, so min/max stay conservative: every source texel a Hi-Z texel's normalized area touches is in its fold, at every level (GPU-checked with `maxViolations` against the source, 1920×1080 → 1024×512 and → 2048×1024, 1129×635 → 512×256, strips, layers). The kernel is the box kernel (`ds_area_first` … `ds_area_last`, ⌈S/n⌉ + 1 taps per axis at most), so it costs loads, not a sampler fetch.
+  - **Later levels** follow `oddSizes`. With a power-of-two destination they halve exactly, so a 12-level 2048×1024 Hi-Z takes 2 dispatches at 6 levels per dispatch (the first batch reads the source and writes 6 levels). Under `'spd'` the resampled level is its own 1-level batch, as a copy is.
+  - **Validation:** without `resample`, another size is rejected, and the reason names the option; unknown values are rejected; so are sources more than 8× larger than the destination along an axis (`maxResampleRatio`; at most 9 taps per axis). `resample: 'area'` with a same-size source is a copy.
+  - **Others.** Capsaicin's HZB (`914b915`, `visibility_buffer.cpp`) copies depth into a render-size level 0, then `GPUMip` DepthMin (`2x … 2x+2` at odd sizes, SPD once a level is a power of two). FidelityFX SSSR (SDK 1.1.4, `ffx_sssr_depth_downsample.h`) also keeps level 0 at the depth's size and runs SPD's min, which drops odd rows and columns. The power-of-two layout is zeux's niagara (`567ebe3`, `niagara.cpp`): `previousPow2` of the swapchain size, filled by one 2×2 min-reduction-sampler tap at each texel centre. Its comment says this keeps every reduction "at most by 2x2", so conservative; at 1920 → 1024 a texel's area spans up to 3 source texels, and the 2×2 tap misses one (a core test counts over 100 such texels on a 1920-texel row). WebGPU has no reduction sampler anyway, so we fold the overlap.
 - **Planning:** the first batch reads the source and every later batch reads the destination (`Batch.sourceMipLevel === null` marks the source batch). The copy is a runtime branch on equal sizes, uniform across the dispatch, so it needs no pipeline variant.
 - **Source formats:** anything float-sampleable, including depth (through the depth aspect, bound as `unfilterable-float`). Depth and 32-bit float sources always load.
 - **Splat:** single-channel sources (depth, `r*`) are read as `(v, v, v, v)`, so `'minmax'` of depth gives `(d, d)` with no special case.
@@ -183,7 +192,7 @@ A batch reads one source level and writes up to `levelsPerDispatch` consecutive 
 ### Source access
 
 - **`'sample'`:** one `textureSampleLevel`. `'average'` only, filterable formats only.
-- **`'load'`:** `textureLoad` of the footprint, bound as `unfilterable-float`. Required for folds, depth, and float32 formats without `float32-filterable`. For `'average'` it computes the bilinear weights in the shader, without the sampler's fixed-point weight rounding.
+- **`'load'`:** `textureLoad` of the footprint, bound as `unfilterable-float`. Required for folds, depth, float32 formats without `float32-filterable`, and the box kernel (`'box'` batches that read an odd level, tails under `'box'`, a resampled source). For `'average'` it computes the bilinear weights in the shader, without the sampler's fixed-point weight rounding.
   - **Integer weights:** the position `(x + 0.5)·S/n − 0.5` is computed as `((2x+1)·S − n) / 2n`, giving an exact base texel and a weight of `remainder / 2n`. GPU float division isn't correctly rounded (WGSL allows 2.5 ulp). A float version computed 2.9999998 for an exact 3.0, so `floor` picked the wrong pair.
   - **unorm8:** texels are rounded back to exact integers on load, so even-size averages are exact.
 - Bind group layouts are explicit, not `'auto'`, so layouts can be shared across reductions and the load path can declare `unfilterable-float`.
@@ -294,7 +303,7 @@ downsampler.supports( texture );                         // boolean
 downsampler.unsupportedReason( texture );                // string | null
 downsampler.outputPath( texture );                       // 'storage' | 'buffer' | null (§6.1 Buffer output path)
 downsampler.encode( encoder, texture, {
-	baseMipLevel, mipLevelCount, oddSizes: 'exact' | 'spd',   // 'spd': SPD semantics, ⌈levels/6⌉ dispatches (§2.1)
+	baseMipLevel, mipLevelCount, oddSizes: 'exact' | 'box' | 'spd', // 'box': area-weighted odd sizes; 'spd': SPD semantics, ⌈levels/6⌉ dispatches (§2.1)
 	reduction: 'average' | 'min' | 'max' | 'minmax' | { wgsl: 'fn reduce(a: vec4f, b: vec4f) -> vec4f { … }' },
 } );
 downsampler.generate( texture );                         // encode + submit
@@ -304,13 +313,15 @@ downsampler.prepare( texture );                          // planned dispatches (
 import { generateMipmaps, requiredLimits } from 'downsampler/three';
 generateMipmaps( renderer, texture );                    // false if not allocated/supported
 
-import { planBatches, reduceReference, footprint, spdReference, maxViolations } from 'downsampler'; // backend-neutral core
+import { planBatches, reduceReference, footprint, spdReference, maxViolations, boxReference, areaReference } from 'downsampler'; // backend-neutral core
 ```
 
 ```ts
 // Separate source: depth → Hi-Z. Level 0 the same size (copy) or half (reduce).
 downsampler.encode( encoder, hiZ /* rg32float */, { source: { texture: depthTexture, mipLevel: 0 }, reduction: 'minmax' } );
 downsampler.sourceUnsupportedReason( destination, source, baseMipLevel ); // string | null
+// Any destination size by area (§4 Separate source): a power-of-two Hi-Z, 2 dispatches for 12 levels.
+downsampler.encode( encoder, hiZ /* 2048×1024 r32float */, { source: { texture: depth1080p, resample: 'area' }, reduction: 'min' } );
 ```
 
 ```ts
@@ -388,7 +399,6 @@ reducer.encodePass( pass, dispatch ); pass.end(); reducer.encodeCopies( encoder,
 downsampler.encode( encoder, destination, {
 	layers: [ first, count ],
 	rect: { x, y, width, height },      // SPD rectInfo
-	oddSizes: 'exact' | 'spd' | 'box',
 	scratch: GPUTexture,                 // optional reusable scratch for sRGB destinations
 } );
 ```
@@ -413,7 +423,7 @@ downsampler.encode( encoder, destination, {
 | LDS layout (one float4 array vs per channel) | ❌ | M3 candidate; measure first |
 | Packed fp16 math | ❌ | optional `shader-f16`; keep only if measurably faster |
 | Wave/subgroup ops | ❌ | optional `subgroups` (Chrome, Safari 27.3; workgroup-memory fallback for Firefox). WGSL defines no quad↔`local_invocation_index` mapping in compute, so derive positions from `subgroup_id`/`subgroup_invocation_id` and use `subgroupShuffleXor`. Upper-bound test first (§13 Subgroups); current kernels are near bandwidth-bound at ≥2048². |
-| Odd sizes | ✅ `'exact'`, `'spd'` | SPD drops the last row/column; `'exact'` (default) matches render passes. `oddSizes: 'spd'` reproduces SPD's semantics in ⌈levels/6⌉ dispatches (M2T.4, §2.1). Area-weighted `'box'` planned |
+| Odd sizes | ✅ `'exact'`, `'spd'`, `'box'` | SPD drops the last row/column; `'exact'` (default) matches render passes. `oddSizes: 'spd'` reproduces SPD's semantics in ⌈levels/6⌉ dispatches (M2T.4, §2.1). `'box'`: nvpro's area weights (M2.5) |
 
 Beyond SPD: sizes over 4096², render-pass-matching odd sizes, conservative min/max at odd edges (SPD drops the last row/column, and unclamped loads read zeros past the edge), and automatic fallback to the 4-storage-texture limit.
 
@@ -528,7 +538,9 @@ Optimisation: with `float32-filterable`, float32 formats may take the sample pat
 
 - **Packed float formats and the buffer path (§6.1):** rgb9e5ufloat and rg11b10ufloat are families of their own and run every shape: rgb9e5 on the buffer path, rg11b10 on the storage path with tier1 and on the buffer path (subset shapes; every shape without tier1). The buffer path runs widths 1, 4, 5 and 6 on any device, and the subset shapes for each family's 4-channel format plus bgra8unorm, rg16float, r32float and rg32float (not with `--quick`, where only the packed formats take the buffer path, on the subset shapes at widths 1, 4 and 6, and the extra checks below use smaller shapes: the packed encoders are slow on SwiftShader, and quick runs with the full additions hit the runner's 30-minute protocol timeout before CI split the suite). In the `--only` partition, the matrix, codec and Downsampler buffer-path checks run in `downsampler`, the Reducer buffer-output and float16-rounding checks in `reducer`. In compatibility mode rg32float has no storage, so it runs the buffer path's subset instead. Fixtures pack r, g, b with the core encoder: HDR values in [−4, 12) mixed with channels spread over 2⁻¹⁴ … 2¹⁰, so texels mix small and large channels. Tolerance on a batch's first output: two steps of the stored value (rgb9e5: of the texel's shared exponent). In-tile levels are exact, against `reduceReference( …, { pairing: 'float32' } )`, which sums the 2×2 block in float32 in the kernel's order (packed sums aren't always exact in f32). Plus: the WGSL codecs against core bit for bit (every 11- and 10-bit code decoded; every rounding midpoint and its neighbouring floats, specials and 20000 random values encoded; rgb9e5 decoded for every exponent × mantissa and encoded at bump, tie, power-of-two and clamp boundaries plus 30000 random texels); buffer path bit-identical to storage path (rgba16float, rg11b10ufloat, rgba8unorm, rgba32float; average and max); a default-limit device without features (6-level batches, rg11b10 falls back to the buffer path); separate sources into both formats; `Reducer` buffer outputs against `reducePyramid` and bit-identical to its storage outputs (rgba32float; rg11b10ufloat), `encodePass` + `encodeCopies` equal to `encode`; API reasons. Core tests: decode → encode identity for every 11-/10-bit code, value identity for every rgb9e5 (exponent, mantissa, mantissa) and 300000 random codes, every 11-/10-bit rounding boundary, and random values against independent oracles (nearest-value search; a log2-free restatement of the extension).
 
-New features add their own oracle first: each new format family, sRGB, rect, layer range, and `'box'`.
+- **`'box'` and resampled sources (M2.5, `validate-box.js`; `--only=box` runs them alone):** the main matrix runs `'box'` average (sample, load), max and the tail on the box formats (each family's 4-channel format, rgb9e5ufloat, rg11b10ufloat, r32float), each level against `boxReference` from the GPU's previous level, normalized in-tile levels bit for bit. Separate sources add `'box'` and tail `'box'` modes, folds included. Render sizes (960×540, 1129×635, 1477×831, 1920×1080), 31×31 (the 1×1 must be the mean of every texel), 1×300, 300×1 and layers (33×17×3, 31×31×6 2d-array) in rgba8unorm, rgba16float and r32float. Resampled sources: 7 source → destination pairs (depth32float, depth16unorm, r32float, rgba8unorm, rgba16float into r32float, rg32float, rgba8unorm, rgba16float, rg11b10ufloat) × 16 size pairs (1920×1080 → 1024×512 and → 2048×1024, 1129×635 → 512×256 and → 1024×512, 960×540 → 512×256, 1477×831 → 1024×512, 31×31 → 16² and → 32², strips, layers, a ratio of 8, a same-size and a half step) × `'exact'`, `'box'`, `'spd'` and both tails (render-size shapes at the widest kernel only); level 0 against `areaReference` from the source, later levels against each mode's oracle, and float32 folds conservative against every source texel at every level. API: `'box'` plans `'exact'`'s batches, equals it at powers of two and for folds, and is bit-identical through `encodePass`, the buffer path and the compatibility path; resample rejections, 2 dispatches for a 1024×512 Hi-Z, a resized source, a same-size copy. Core: nvpro's weights for n ≤ 64, overlaps at 10 ratios, the 31×31 mean, the mean at every level of render-size chains, exact ties, delegation to the 2×2 box, conservative area folds (and a non-conservative 2×2 tap), plans.
+
+New features add their own oracle first: each new format family, sRGB, rect and layer range.
 
 ## 8. Performance methodology
 
@@ -590,7 +602,7 @@ Build first, benchmark once coverage is broad (decided 2026-11-10). Live status 
    2. Reduce-to-scalar in 2 dispatches with an epilogue hook.
    3. Proof on the upscaler's FSR 3.1 passes as bench fixtures, against an oracle, timed on M5 and by the owner on RTX 3060 / Intel UHD. Done on M5 (§14, M2T.3); RTX 3060 / Intel UHD pending.
    4. An SPD-style mode, built at least as a measured comparison that justifies, or not, its not being the primary method. Done (2026-11-11): `oddSizes: 'spd'` (opt-in, 'average' only), the exact tail kernel (opt-in) and an atomic single-dispatch probe (test-only), measured at render sizes; `'exact'` stays the default (§2.1, §2.2).
-   Then: buffer output + rgb9e5ufloat and rg11b10ufloat (GI formats; done 2026-11-11, §6.1); layer range + rect; `'box'`, power-of-two destination from a separate source, and the tail kernel's default (idle re-measure, §2.1).
+   Then: buffer output + rgb9e5ufloat and rg11b10ufloat (GI formats; done 2026-11-11, §6.1); layer range + rect; `'box'` and a power-of-two destination from a separate source (M2.5, done 2026-11-13: §2.1, §4 Separate source), and the tail kernel's default (on since 2026-11-13).
    Deferred, three.js-driven: rgb10a2unorm, sRGB, integer formats.
 3. **M3 (dial in: coverage and tuning):**
    - per-frame throughput benchmark alongside timestamps (§13)
@@ -607,7 +619,8 @@ Build first, benchmark once coverage is broad (decided 2026-11-10). Live status 
 - Publish as bare `downsampler` or `@pmndrs/downsampler`? (`package.json` currently uses `downsampler`.)
 - ~~Buffer output path (§6.1): should `output: 'auto'` take the buffer path for textures without STORAGE_BINDING?~~ Decided (owner, 2026-11-12): no. `'auto'` takes it only for formats the device can't store; a missing STORAGE_BINDING usage is an error, and the buffer path for storable formats is opt-in (`output: 'buffer'`). ~~Should `Reducer` round rgba16float outputs before the store?~~ Yes: it quantizes with `pack2x16float` first, like `Downsampler`.
 - Cube maps in compatibility mode: they can't be viewed as 2d-array, so either per-face views or the render fallback. (2026-11-11: per-face views don't help either; compatibility mode binds whole textures only, and a `'cube'` texture has no storage view. A 6-layer `'2d-array'` texture works, which is what reflections bakes into, then copies to a cube; §4 Compatibility mode.)
-- `'box'` for `'minmax'` and other folds is meaningless (they already use the full footprint). Should `'box'` simply be ignored there, or rejected?
+- ~~`'box'` for `'minmax'` and other folds is meaningless (they already use the full footprint). Should `'box'` simply be ignored there, or rejected?~~ Decided (coordinator, 2026-11-13; owner can overrule): accepted, and identical to `'exact'`. A pipeline can then set `oddSizes: 'box'` once for its average and Hi-Z chains.
+- `source.resample: 'area'` is an explicit opt-in, so a destination of the wrong size (say, stale after a resize) still fails loudly. Should a power-of-two destination take it without the option? And is 8× per axis (`maxResampleRatio`) the right cap?
 
 ## 13. Research (2026-11-10)
 
@@ -676,7 +689,7 @@ The rows are folded into §6. Differences SPD users must be told about: mip coun
    - If compute loses on a vendor, adapters must choose the path per device.
 2. **Exact tail kernel** (built and measured, M2T.4; opt-in `tail: true`). Once a first output fits one 32×32 workgroup, that workgroup reduces every remaining level through any parity with exact `'exact'` weights (no halo needed). 1920×1080 drops from 7 dispatches to 4, and render sizes from 5–9 to 3–6. The time saved is small, 0.83–1.07× on a loaded M5 Pro, because the trailing dispatches it removes are cheap (§2.1).
 3. **Halo batches under `'exact'`** (candidate). Our odd bilinear taps also fall in 2x … 2x+2, so nvpro's halo structure carries one odd step per dispatch without changing results. This is now the lever for the large-level breaks that the tail can't reach. Its upside is bounded by `'spd'`: 0.47–0.73× of `'exact'` at render sizes in rgba8 on the M5 Pro.
-4. **Area-weighted odd sizes** (candidate opt-in, e.g. `oddSizes: 'box'`). This is the quality fix for the 31×31 case, and a defined meaning for weighted reductions at odd sizes. It needs its own oracle.
+4. **Area-weighted odd sizes** (`oddSizes: 'box'`, done 2026-11-13, §2.1). The quality fix for the 31×31 case, with its own oracle (`areaReference`). A defined meaning for weighted reductions at odd sizes (`Reducer` edges `'box'`) is not built.
 5. **Engagement:** one data-backed comment in #5253 (method, named devices, device-lab link), and a comment on webgpu-spd#7 citing the memory model. Both only after the cross-vendor data exists.
 
 ## 14. Tools survey (2026-11-11)
@@ -736,7 +749,7 @@ pmndrs/upscaler replaced both passes because no downsampler existed:
 | ssgiDev | depth min pyramid, 5 levels, one dispatch per level brute force; optional max pyramid; light pyramid (average rgba16f); G-buffer downsample (min depth, normal of the min texel, mean light) | Hi-Z, chain, fold with payload | hand-written |
 | Denoiser | OIDN auto-exposure: log-mean luma → scalar (f32 buffer); FFX reflections 8×8 luma-weighted radiance mean fused into reproject; ReBLUR-style history-fix mips 1–3 in one LDS dispatch, sum ÷ non-sky count, off-image weight 0, ceil sizes, atlas layout | scalar, fused block stats | hand-written |
 | webgpu-ddgi | material store: alpha-weighted 2×2 average, 9 levels of 256² layers, sRGB via buffer + `copyBufferToTexture`; sky SH 19 sums → scalar (subgroups); radiance cache: r32uint "first valid of 2×2" probe mask (~8 levels), hash-grid tile sums `(rgb·n, n)` 4 levels | chain, scalar, uint fold, block stats | hand-written, one dispatch per level |
-| Capsaicin (reference) | `GPUMip`: area-weighted odd sizes (nvpro weights), depth min/max `2x…2x+2`, sRGB re-encode, then SPD once the size is a power of two; HZB with a min-reduction sampler (WebGPU has none); `GPUReduce` 1D sum/min/max/product | chain, Hi-Z, scalar | D3D12 |
+| Capsaicin (reference) | `GPUMip`: area-weighted odd sizes (nvpro weights), depth min/max `2x…2x+2`, sRGB re-encode, then SPD once the size is a power of two; HZB with a min-reduction sampler (WebGPU has none); `GPUReduce` 1D sum/min/max/product. (Checked at `914b915`, 2026-11-13: `gpu_mip.comp` applies `(n−x)/S` and `n/S` at even sizes too, which sum to less than 1 for x > 0, so its non-power-of-two even levels look darkened towards the far edge. Ours use 1/2, 1/2 there.) | chain, Hi-Z, scalar | D3D12 |
 
 ### Shapes that recur, and what the generator must cover
 
@@ -827,7 +840,7 @@ Validation: at most one `'weight'` channel, and `'weighted'` needs one. Builtins
 
 **Edges:** `edges` takes one of these values. Output texel x of level l covers the source block `[x·2^l, (x+1)·2^l)` on each axis.
 - `'exact'`: the current behaviour, `Downsampler` only. A Reducer rejects it, because it ends a batch at every odd size.
-- `'box'` (area weights, §2.1): not implemented, and not blocked. `edges` is a string union that `createKernel` dispatches on; `'box'` would add its own taps and oracle.
+- `'box'` (area weights): built for `Downsampler` (`oddSizes: 'box'`, §2.1), not as a `Reducer` edge policy. `edges` is a string union that `createKernel` dispatches on; a tile `'box'` would need the halo of §2.1 for odd sizes inside a tile, and sums over fractional overlaps (`areaReference` is the oracle).
 - `'zero-weight'` (the Reducer's default): out-of-bounds texels contribute nothing; sizes are `⌈n/2^l⌉`; averages divide by the in-bounds count. Every source texel is counted exactly once per level. min/max of it is a conservative Hi-Z with ⌈n/2⌉ sizes.
 - `'clamp'`: SPD/FSR-compatible. Source coordinates are clamped to the edge; sizes are `⌊n/2^l⌋`, at least 1, dropping the last odd row or column. Blocks that reach past the image (unit dimensions, deep levels of small images) count the edge texel more than once, exactly as SPD's clamped loads do inside a 64×64 tile. Used for parity fixtures.
   - AMD still writes its 1×1 `FrameInfo` from texel (0,0) of a level that is 0 texels tall at ⌊n/2^l⌋ (1280×720, level 10). Parity there needs the scalar's `finish`, not `store`. M2T.3 does this with a `ScalarReduction` over the top-left `2^(mips−6)` square of the stored mip 6, reading 0 past it (§14).
