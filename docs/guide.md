@@ -506,11 +506,12 @@ The texture must have `STORAGE_BINDING` usage (in current three.js a `StorageTex
 | `boxReference(…)`, `boxChainReference(…)`, `areaReference( values, width, height, layers, quantization, reduction, outWidth, outHeight, options? )` | `oddSizes: 'box'` steps and chains, and an area step to any size (a resampled source). `areaSpan`, `areaOverlap`: the taps and their integer weights. |
 | `reducePyramid( values, width, height, layers, { reduction, levels, edges, channels } )` | The `Reducer` oracle (f64, with each value's term magnitude); `pyramidTolerance( magnitude )`. |
 | `scalarReference(…)`, `scalarCombineReference(…)` | `ScalarReduction` oracles: the GPU's pairing in f32, the exact f64 result and an error bound per channel. |
+| `intReference( values, width, height, layers, quantization, reduction, { weights, width, height, source } )`, `roundedMean` | Integer-format steps, exact: `weights: 'bilinear'` (`'exact'`) or `'area'` (`'box'`, a resampled source). |
 | `maxViolations( base, width, height, level, w, h )` | Counts max-pyramid texels below some base texel in their area: 0 for a conservative Hi-Z. |
 | `planBatches( width, height, options )`, `mipSize`, `mipLevelCountFor`, `levelSize`, `footprint` | Planning and sizes. |
 | `formats`, `quantize`, `toHalf`, `fromHalf`, `packRgb9e5`, … | Format table and encoders. |
 
-The WGSL generators are exported from `downsampler/webgpu` for vendoring: `createKernel`, `kernelLayoutEntries`, `float16Wgsl`, `packedFloatWgsl`, `bufferOutputWgsl`, `createScalarKernel`.
+The WGSL generators are exported from `downsampler/webgpu` for vendoring: `createKernel`, `kernelLayoutEntries`, `float16Wgsl`, `packedFloatWgsl`, `bufferOutputWgsl`, `createIntKernel`, `intMeanWgsl`, `createScalarKernel`.
 
 ## Coming next
 
