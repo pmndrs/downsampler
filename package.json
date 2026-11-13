@@ -14,13 +14,15 @@
   "exports": {
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
     "./webgpu": { "types": "./dist/webgpu/index.d.ts", "default": "./dist/webgpu/index.js" },
-    "./three": { "types": "./dist/three/index.d.ts", "default": "./dist/three/index.js" }
+    "./three": { "types": "./dist/three/index.d.ts", "default": "./dist/three/index.js" },
+    "./mipmap": { "types": "./dist/mipmap.d.ts", "default": "./dist/mipmap.js" }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && npm run test:core && npm run test:gpu",
     "test:core": "node --test test/core/*.test.js",
+    "golden:update": "npm run build && node test/core/golden.test.js --update",
     "test:gpu": "node test/run.js",
     "bench": "npm run build && node test/run.js --bench",
     "lab": "npm run build && node test/serve.js",

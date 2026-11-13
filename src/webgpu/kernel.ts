@@ -105,6 +105,13 @@ export interface KernelOptions {
 	/** float16 output formats: how values are rounded before the store ({@link F16Rounding}). Default 'nearest'. */
 	f16Rounding?: F16Rounding;
 	/**
+	 * 'exact' kernels writing float16 storage textures: whether the WGSL also defines
+	 * `ds_half_bits` and `ds_pack_f16`, which only the buffer output path calls. Default
+	 * true (the output of earlier versions, byte for byte); false defines `ds_round_f16`
+	 * alone, as `downsampler/mipmap` does. Ignored on the buffer path, which needs them.
+	 */
+	f16Pack?: boolean;
+	/**
 	 * Tile kernels: accumulator channels per texel, 4 (a `vec4f`, default) or 8
 	 * (`DsWide { lo: vec4f, hi: vec4f }`, which the load and store hooks and a
 	 * custom reduce then take instead). Eight channels need both hooks.
@@ -381,13 +388,26 @@ function packedWords( format: SupportedFormat, normalized = false ): string[] {
  * Not the shorter `( x + c ) − c` with c = 2^(exponent + 13): Metal compiles WGSL with fast
  * math, which folds that to x, so nothing was rounded on Apple GPUs (2026-11-13).
  * 'device' uses `pack2x16float`.
+ * With `pack` false, only `ds_round_f16` (the storage path of exact kernels calls nothing
+ * else; `ds_pack_f16` serves the buffer output path): {@link KernelOptions.f16Pack}.
  */
-export function float16Wgsl( rounding: F16Rounding = 'nearest' ): string {
+export function float16Wgsl( rounding: F16Rounding = 'nearest', pack = true ): string {
 
 	if ( rounding !== 'nearest' && rounding !== 'device' ) throw new Error( `downsampler: f16Rounding must be 'nearest' or 'device', got ${ JSON.stringify( rounding ) }.` );
-	if ( rounding === 'device' ) return `fn ds_pack_f16(v: vec2f) -> u32 { return pack2x16float(v); }
-fn ds_round_f16(v: vec4f) -> vec4f { return vec4f(unpack2x16float(pack2x16float(v.xy)), unpack2x16float(pack2x16float(v.zw))); }
+	const round = rounding === 'device' ? `fn ds_round_f16(v: vec4f) -> vec4f { return vec4f(unpack2x16float(pack2x16float(v.xy)), unpack2x16float(pack2x16float(v.zw))); }
+` : `fn ds_round_f16(v: vec4f) -> vec4f {
+	let bits = bitcast<vec4u>(v);
+	let a = bits & vec4u(0x7fffffffu);
+	let normal = (a + vec4u(0xfffu) + ((a >> vec4u(13u)) & vec4u(1u))) & vec4u(0xffffe000u);
+	let subnormal = bitcast<vec4u>(round(bitcast<vec4f>(a) * 16777216.0) * (1.0 / 16777216.0));
+	let r = select(subnormal, normal, a >= vec4u(0x38800000u));
+	let q = select(select(r, vec4u(0x7f800000u), a >= vec4u(0x477ff000u)), vec4u(0x7fc00000u), a > vec4u(0x7f800000u));
+	return bitcast<vec4f>(q | (bits & vec4u(0x80000000u)));
+}
 `;
+	if ( ! pack ) return round;
+	if ( rounding === 'device' ) return `fn ds_pack_f16(v: vec2f) -> u32 { return pack2x16float(v); }
+` + round;
 	return `fn ds_half_bits(x: f32) -> u32 {
 	let b = bitcast<u32>(x);
 	let sign = (b >> 16u) & 0x8000u;
@@ -409,16 +429,7 @@ fn ds_round_f16(v: vec4f) -> vec4f { return vec4f(unpack2x16float(pack2x16float(
 	return sign | q;
 }
 fn ds_pack_f16(v: vec2f) -> u32 { return ds_half_bits(v.x) | (ds_half_bits(v.y) << 16u); }
-fn ds_round_f16(v: vec4f) -> vec4f {
-	let bits = bitcast<vec4u>(v);
-	let a = bits & vec4u(0x7fffffffu);
-	let normal = (a + vec4u(0xfffu) + ((a >> vec4u(13u)) & vec4u(1u))) & vec4u(0xffffe000u);
-	let subnormal = bitcast<vec4u>(round(bitcast<vec4f>(a) * 16777216.0) * (1.0 / 16777216.0));
-	let r = select(subnormal, normal, a >= vec4u(0x38800000u));
-	let q = select(select(r, vec4u(0x7f800000u), a >= vec4u(0x477ff000u)), vec4u(0x7fc00000u), a > vec4u(0x7f800000u));
-	return bitcast<vec4f>(q | (bits & vec4u(0x80000000u)));
-}
-`;
+` + round;
 
 }
 
@@ -580,7 +591,7 @@ export function createKernel( options: KernelOptions ): string {
  * tile by the 'exact' rule at any parity (shader bilinear weights for 'average',
  * the `2x … 2x+2` footprint for folds), each quantized as stored.
  */
-function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage', tail = false, box = false, area = box, tile: tileOption, f16Rounding = 'nearest', region = false }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
+function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage', tail = false, box = false, area = box, tile: tileOption, f16Rounding = 'nearest', f16Pack = true, region = false }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
 
 	reductionKey( reduction );
 	const average = reduction === 'average';
@@ -612,7 +623,7 @@ var<workgroup> tile: array<vec4f, ${ tile * tile }>;
 	const buffer = output === 'buffer';
 	if ( output !== 'storage' && ! buffer ) throw new Error( `downsampler: unknown output path ${ JSON.stringify( output ) }; expected 'storage' or 'buffer'.` );
 	if ( ! buffer && ! srgb && ( formats[ format ] as FormatInfo ).storage === false ) throw new Error( `downsampler: ${ format } can't be a storage texture; use output 'buffer'.` );
-	if ( quantization === 'float16' ) code += float16Wgsl( f16Rounding );
+	if ( quantization === 'float16' ) code += float16Wgsl( f16Rounding, f16Pack || buffer );
 	if ( srgb || srgbSource ) code += srgbWgsl();
 	if ( buffer ) code += bufferOutputWgsl( format, false, false );
 	else for ( let i = 0; i < count; i ++ ) code += `@group(0) @binding(${ i + 2 }) var mip${ i }: texture_storage_2d${ suffix }<${ srgbScratchFormat( format ) }, write>;\n`;
