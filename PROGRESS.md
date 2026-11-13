@@ -24,7 +24,7 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
   - [x] `test/parallel.js`: the suite in capped parallel shards, one summary; full matrix 35+ → 17 min, quick 4.6 → 2 min (RTX 3060)
 - [ ] M2.4 layer range + rect (agent, branch `m2.4-layers-rect`)
 - [ ] M2.5 `oddSizes: 'box'` + power-of-two destination from a separate source (agent, branch `m2.5-box-pow2`)
-- [ ] M3 measurement modes: throughput, `STORAGE_BINDING` cost, subgroup and fp16 upper bounds (agent, branch `m3-measure`); timed runs by the coordinator, idle, then Windows
+- [ ] M3 runs: M5 Pro idle (throughput, throughput rAF, storage-usage, subgroups, f16; commands in test/bench/README.md), then RTX 3060 / Intel UHD via `--power=high|low`; decide the subgroup kernel on the `nosync` bound (≥ 5 % at render sizes) and fp16 on speed vs its precision and overflow cost
 - [ ] Windows pass before merge to main for `5f97c86` (f16 rounding rewrite), `198728a` (defaults) and M2.4/M2.5: RTX full + Intel quick via `test/parallel.js`
 - [ ] CI: first GitHub run of the shards (`test/ci/README.md`): real shard times, Linux SwiftShader compat device, artifact collection. Then commit its `gpu-durations` artifact
 
@@ -49,6 +49,7 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] M3 measurement modes (`5b137a3`, merged): `--compare=throughput` (greggman work-per-frame, works without timestamp-query, order check against timestamps), `--compare=storage-usage`, `--compare=subgroups` (upper bound: `nosync` / `slot` / `shuffle`), `--compare=f16` (`f16` / `f16safe` with precision cost), `--strategies` for every mode; test/bench/README.md, SPEC §8. Bench `exact*` strategies pinned to `tail: false`
 - [x] M4: README front door, docs/guide.md (every option and default), docs/spd-users.md, examples/ (mip chain, Hi-Z from depth, Reducer block stats, ScalarReduction exposure, three.js r187) with on-page oracle readouts, `npm run examples` / `test:examples`, JSDoc pass (`f18c236`, `be2afe7`, `0c31357`, merged); M5 Pro: 10/10 example pages pass. Guide sections for M2.4/M2.5 are placeholders until those merge
 - [x] M5 Pro render compare + tile sweep (3 idle runs each, `results/render/m5-pro-render-*.json`): `exactTile` 32 is 1.04–1.28× slower than 8 at render sizes on Apple, 16 ties 8 → default 16 on Apple, 32 on other hardware; tail with 16 tiles 0.81–1.02× of exact (`261e354`, `198728a`)
 - [x] f16 rounding fixed on Apple: `(x + c) − c` folded by Metal fast math, outputs truncated; branch-free integer rounding (`5f97c86`)
@@ -141,6 +142,7 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 | 2026-11-12 | `b6aca67` + harness fixes | RTX 3060 Laptop, D3D12 | quick / compat quick, parallel | ❌ 10444 cases, 2 min, 189 failures / ❌ 10355 cases, 2 min, 187 (same causes) |
 | 2026-11-12 | `b6aca67` + harness fixes | Intel UHD, D3D12, driver 31.0.101.5333 | quick, parallel (12 × 4) | ❌ 10437 cases, 2.4 min, 629 failures (f16 truncation + Intel-only deviations) |
 | 2026-11-13 | `198728a` | Apple M5 Pro, Chrome 148 | quick (unsharded) | ✅ 10477 cases, 731 groups, 40 s (before `5f97c86`: ❌ f16 truncation, separate-source rgba16float) |
+| 2026-11-13 | `5b137a3` | Apple M5 Pro, Chrome 148, loaded | quick `--only=downsampler` + core | ✅ 7885 cases, 570 groups; 73 core |
 | 2026-11-13 | `198728a` | Apple M5 Pro, Chrome 148 | full GPU matrix, `test/parallel.js` (12 shards × 4) | ✅ 18367 cases, 53600 pattern runs, 1674/1674 groups, 0 failures, 11 min 50 s |
 
 ## Notes
