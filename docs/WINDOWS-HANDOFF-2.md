@@ -68,7 +68,8 @@ Commands are in `test/bench/README.md` (add `--power=high` / `--power=low`):
 2. **A cheaper exact kernel**: at 1024², where both take 2 dispatches, `'spd'` was 0.81× of `'exact'` on the M5 (integer tie rounding, odd-footprint branches). Profile and trim; same bits.
 3. **Subgroup kernel** only if step 3's `nosync` bound is ≥ 5 % on the RTX. It needs the workgroup-memory fallback (Firefox and devices without subgroups) and a per-device choice (Intel was 2× slower with subgroups in round 1).
 4. **fp16 arithmetic** (`shader-f16`) only if `--compare=f16` shows ≥ 5 % with `f16safe` precision acceptable; opt-in, never default.
-5. **Leftover round-1 jobs:** `sh results/windows/run-benches.sh rtx3060-bench`, then `-tools`, then the `intel-uhd-…` jobs.
+5. **sRGB vs render passes** (new, merged after this brief was written): `npm run bench -- --compare=srgb --skip-validation --power=high|low`, plus `--compare=render` on an sRGB texture if the mode allows it. On the M5 (loaded) render passes were 0.55–0.79× our time from 1080p up, because our sRGB path writes every level through a buffer and copies it. Report where each wins per GPU; it decides whether three.js should use compute for sRGB textures.
+6. **Leftover round-1 jobs:** `sh results/windows/run-benches.sh rtx3060-bench`, then `-tools`, then the `intel-uhd-…` jobs.
 
 ## Report
 
