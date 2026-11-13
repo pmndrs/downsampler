@@ -97,7 +97,7 @@ async function lumaPyramidClamp( device, { scene, tools } ) {
 	const window = 2 ** ( tool.mips - 6 );
 	const pyramid = await reducer( device, 'generator luma pyramid (clamp)', { reduction: 'average', levels: [ 1, 6 ], edges: 'clamp', bindings: group1, load, store } );
 	const exposure = await scalar( device, 'generator luma window', {
-		reduce: 'average', bindings: group1,
+		reduction: 'average', bindings: group1,
 		load: 'fn load(texel: vec2i, layer: u32) -> vec4f { return spdLoad(texel); }',
 		finish: 'fn finish(value: vec4f, weight: f32) { updateFrameInfo(value); }'
 	} );
@@ -115,7 +115,7 @@ async function lumaPyramid( device, { scene, tools } ) {
 	const { bindings, load, store, finish } = tool.parts;
 	const group1 = { wgsl: bindings, entries: tool.entries };
 	const depth = await reducer( device, 'generator depth mip 1', { reduction: 'average', levels: [ 1 ], edges: 'zero-weight', bindings: group1, load, store } );
-	const exposure = await scalar( device, 'generator luma scalar', { reduce: 'average', bindings: group1, load, finish } );
+	const exposure = await scalar( device, 'generator luma scalar', { reduction: 'average', bindings: group1, load, finish } );
 	const dispatch = { width: scene.width, height: scene.height, bindGroup: tool.group };
 	const run = { size: [ scene.width, scene.height ], bindGroup: tool.group };
 	const encodePass = pass => { depth.encodePass( pass, dispatch ); exposure.encodePass( pass, run ); };
@@ -160,7 +160,7 @@ ${ fsrFinish }`;
 
 		// The scalar's group 1 is FSR's own (FrameInfo for finish): the partials are bound by the scalar, so they must not be in it too.
 		exposure = await scalar( device, `${ name } combine`, {
-			reduce: [ 'weighted', 'weighted', 'max', 'weight' ], bindings: { wgsl: `${ bindings }\n${ fsrFinish }`, entries: tool.entries },
+			reduction: [ 'weighted', 'weighted', 'max', 'weight' ], bindings: { wgsl: `${ bindings }\n${ fsrFinish }`, entries: tool.entries },
 			finish: 'fn finish(value: vec4f, weight: f32) { fsrFinish(vec4f(value.xy, 0.0, 0.0), weight); }'
 		} );
 		run = { partials: { buffer: partials, count: grid[ 0 ] * grid[ 1 ] }, bindGroup: tool.group };
@@ -168,7 +168,7 @@ ${ fsrFinish }`;
 	} else {
 
 		exposure = await scalar( device, `${ name } partials`, {
-			reduce: 'sum', bindings: { wgsl, entries },
+			reduction: 'sum', bindings: { wgsl, entries },
 			load: 'fn load(texel: vec2i, layer: u32) -> vec4f { return lumaPartials[u32(texel.y) * lumaGrid.x + u32(texel.x)]; }',
 			finish: 'fn finish(value: vec4f, weight: f32) { fsrFinish(vec4f(value.xy / value.w, 0.0, 0.0), value.w); }'
 		} );
@@ -229,7 +229,7 @@ async function upscalerExposure( device, { scene, tools }, { taps } ) {
 		? 'fn load(texel: vec2i, layer: u32) -> vec4f {\n\tlet uv = (vec2f(texel) + 0.5) / f32(EXPOSURE_TAPS);\n\treturn vec4f(log2(max(luma(textureSampleLevel(inputColor, linearSampler, uv, 0.0).rgb), 1.0e-4)), 0.0, 0.0, 0.0);\n}'
 		: 'fn load(texel: vec2i, layer: u32) -> vec4f {\n\treturn vec4f(log2(max(luma(textureLoad(inputColor, texel, 0).rgb), 1.0e-4)), 0.0, 0.0, 0.0);\n}';
 	const exposure = await scalar( device, `generator upscaler exposure${ taps ? ' (taps)' : '' }`, {
-		reduce: [ 'average', 'sum', 'sum', 'sum' ], bindings: { wgsl: exposureBindings, entries: exposureEntries }, load, finish: exposureFinish, ...( taps ? { block: 2 } : {} )
+		reduction: [ 'average', 'sum', 'sum', 'sum' ], bindings: { wgsl: exposureBindings, entries: exposureEntries }, load, finish: exposureFinish, ...( taps ? { block: 2 } : {} )
 	} );
 	const run = { size: taps ? [ 32, 32 ] : [ scene.width, scene.height ], bindGroup: group };
 	return {

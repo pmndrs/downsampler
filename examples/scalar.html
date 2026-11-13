@@ -25,7 +25,7 @@
 			(drawn on the CPU here with the GPU's exposure) stays about the same.
 		</p>
 		<pre><code>const metering = new ScalarReduction( device, {
-	reduce: [ 'average', 'max', 'min', 'average' ],
+	reduction: [ 'average', 'max', 'min', 'average' ],
 	bindings: { wgsl: '@group(1) @binding(0) var hdr: texture_2d&lt;f32&gt;; @group(1) @binding(1) var&lt;storage, read_write&gt; result: array&lt;vec4f, 2&gt;;', entries },
 	load: 'fn load( texel: vec2i, layer: u32 ) -&gt; vec4f { let l = max( luma( texel ), 1e-4 ); return vec4f( log( l ), l, l, l ); }',
 	finish: 'fn finish( value: vec4f, weight: f32 ) { result[ 0 ] = value; result[ 1 ] = vec4f( exp( value.x ), 0.18 / exp( value.x ), weight, 0.0 ); }',
@@ -83,7 +83,7 @@ new ScalarReduction( device ).encode( encoder, { texture: hdr, output: { buffer 
 
 				const reduce = [ 'average', 'max', 'min', 'average' ];
 				const metering = new ScalarReduction( device, {
-					reduce,
+					reduction: reduce,
 					bindings: {
 						wgsl: /* wgsl */ `@group(1) @binding(0) var hdr: texture_2d<f32>;
 							@group(1) @binding(1) var<storage, read_write> result: array<vec4f, 2>;

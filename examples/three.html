@@ -18,7 +18,9 @@
 			<code>generateMipmaps( renderer, texture )</code> generates a three.js texture's mip chain with compute shaders. The
 			texture must already be allocated on the GPU with storage usage, which in current three.js means a
 			<code>StorageTexture</code>. It returns <code>false</code> and does nothing when it can't, so you can fall back to
-			three's own path. Set <code>mipmapsAutoUpdate = false</code> so three doesn't regenerate them with render passes after
+			three's own path; <code>unsupportedReason( renderer, texture )</code> says why. Pass <code>{ encoder }</code> to record
+			into your own command encoder, and <code>{ downsampler: { averageAccess: 'load' } }</code> to pick the shared
+			Downsampler's options. Set <code>mipmapsAutoUpdate = false</code> so three doesn't regenerate them with render passes after
 			a compute write.
 		</p>
 		<p>
@@ -27,7 +29,7 @@
 			The default odd-size policy matches render passes, so they should look the same. The readout checks our levels
 			against the library's CPU reference and reports how far three's levels are from ours.
 		</p>
-		<pre><code>import { generateMipmaps, requiredLimits } from 'downsampler/three';
+		<pre><code>import { generateMipmaps, requiredLimits, unsupportedReason } from 'downsampler/three';
 
 const renderer = new THREE.WebGPURenderer( { requiredLimits: requiredLimits( await navigator.gpu.requestAdapter() ) } );
 await renderer.init();
@@ -36,7 +38,7 @@ texture.generateMipmaps = true;           // allocate the full chain
 texture.mipmapsAutoUpdate = false;        // we write the mips
 texture.minFilter = THREE.LinearMipmapLinearFilter;
 // … write level 0 (a compute pass, or writeTexture on its GPUTexture) …
-if ( ! generateMipmaps( renderer, texture ) ) { /* not allocated or unsupported: use three's own path */ }</code></pre>
+if ( ! generateMipmaps( renderer, texture ) ) console.warn( unsupportedReason( renderer, texture ) ); // then use three's own path</code></pre>
 		<p class="muted" id="adapter"></p>
 
 		<h2>Readout</h2>
@@ -49,7 +51,7 @@ if ( ! generateMipmaps( renderer, texture ) ) { /* not allocated or unsupported:
 		<script type="module">
 			import * as THREE from 'three';
 			import { reduceReference, tolerance } from '../dist/index.js';
-			import { generateMipmaps, getDownsampler, getGPUTexture, requiredLimits } from '../dist/three/index.js';
+			import { generateMipmaps, getDownsampler, getGPUTexture, requiredLimits, unsupportedReason } from '../dist/three/index.js';
 			import { compare, fail, makeImage, readLevels, report, setText } from './common.js';
 
 			try {
@@ -91,7 +93,10 @@ if ( ! generateMipmaps( renderer, texture ) ) { /* not allocated or unsupported:
 				renderer.initTexture( storage );
 				const gpuTexture = getGPUTexture( renderer, storage );
 				device.queue.writeTexture( { texture: gpuTexture }, pixels, { bytesPerRow: size * 4 }, [ size, size ] );
-				const generated = generateMipmaps( renderer, storage );
+				const declined = unsupportedReason( renderer, storage );
+				const encoder = device.createCommandEncoder();
+				const generated = generateMipmaps( renderer, storage, { encoder } ); // recorded, not submitted
+				device.queue.submit( [ encoder.finish() ] );
 
 				const scene = new THREE.Scene();
 				scene.background = new THREE.Color( 0x202428 );
@@ -118,7 +123,7 @@ if ( ! generateMipmaps( renderer, texture ) ) { /* not allocated or unsupported:
 				} );
 
 				// Checks.
-				const checks = [ { name: 'generateMipmaps( renderer, storageTexture ) returned true', ok: generated, detail: generated ? `${ gpuTexture.format }, ${ gpuTexture.mipLevelCount } levels, ${ getDownsampler( renderer ).prepare( gpuTexture ).length } dispatches` : getDownsampler( renderer ).unsupportedReason( gpuTexture ) ?? 'not allocated' } ];
+				const checks = [ { name: 'generateMipmaps( renderer, storageTexture ) returned true', ok: generated, detail: generated ? `${ gpuTexture.format }, ${ gpuTexture.mipLevelCount } levels, ${ getDownsampler( renderer ).prepare( gpuTexture ).length } dispatches` : declined } ];
 				const ours = await readLevels( device, gpuTexture );
 				const theirs = await readLevels( device, getGPUTexture( renderer, reference ) );
 				let failing = 0, maxError = 0, maxDifference = 0;
