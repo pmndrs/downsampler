@@ -24,13 +24,10 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
   - [x] `test/parallel.js`: the suite in capped parallel shards, one summary; full matrix 35+ → 17 min, quick 4.6 → 2 min (RTX 3060)
 - [ ] M3 runs: M5 Pro idle (throughput, throughput rAF, storage-usage, subgroups, f16; commands in test/bench/README.md), then RTX 3060 / Intel UHD via `--power=high|low`; decide the subgroup kernel on the `nosync` bound (≥ 5 % at render sizes) and fp16 on speed vs its precision and overflow cost
 - [ ] Windows round 2 + M3 (owner + Windows agent, branch `windows-testing`): `docs/WINDOWS-HANDOFF-2.md`. Verify, set defaults by rule, M3 measurements, then build halo batches / cheaper exact kernel / subgroups / fp16 by the data. Verify the merged milestones on D3D12 before main (RTX full, Intel quick, compat quick, examples), confirm the tile/tail defaults, f16 rounding cost, M3 runs
-- [ ] CI first run (workflow_dispatch on `m2-reductions`, run 43431966606): ❌ on SwiftShader only: region × sRGB rect ≠ full recompute by one step at level 5 (65×129; shards 2, 3, 6, 10, 13 + compat 10) and a 5-storage-texture pipeline at the limit of 4 (shard 14). Agent on branch `fix-ci-swiftshader`, iterating with CI.
-- [ ] (was) CI: first GitHub run of the shards (`test/ci/README.md`): real shard times, Linux SwiftShader compat device, artifact collection. Then commit its `gpu-durations` artifact
 
 ## Next (SPEC §11)
 
 - [ ] Possible three.js issue (outside our PR): in compatibility mode its render-pass mips of a 33² rgba8 cube differ by up to 6 steps from the same faces as a 2d-array (`main_cube` half-texel at odd sizes?); not investigated
-- [ ] Re-record `test/ci/durations.json` after the formats/sRGB/vendoring merges (834 SwiftShader groups; 412 recorded at `662d6bc`), or take CI's `gpu-durations` artifact
 - [ ] Test hardening from the review: oracle `weights` default `'shader'` (fail closed; callers that sample opt into `'sampler'`); tile-equivalence at 16/32 on the buffer path, compat, `baseMipLevel` sub-range, separate source and tail; an f16 tie check through in-tile combine, tail and `'spd'` batches; a same-size copy next to Inf/NaN
 - [ ] Halo batches for `'exact'` and `'box'` together (SPEC §13 item 3): the remaining lever at render sizes, bounded by `'spd'`; own oracle + GPU cases first
 - [ ] Timings for `'box'` / `tailBox` (`--compare=spd`) and partial updates
@@ -48,6 +45,7 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] CI green on GitHub (run 43437707211: layout, core, gpu 14/14, gpu-compat 14/14) after test fixes (`476b71c`): region twin planned sRGB's buffer path at 4 levels while the tested Downsampler ran 6 (+ `region/default-limits` group reproducing it on the M5 Pro); `srgb/api` scratch prototype bound 6 storage textures; compat sRGB alpha decode 1 ulp tolerance; per-group GPU error scopes. No library bugs. First run (43431966606) had failed on these. `test/ci/durations.json` replaced by the green run's `gpu-durations` (835 groups, runner times)
 - [x] SwiftShader `packed/buffer-path` fixed (test, not library; branch `fix-swiftshader-buffer`): below 6 storage textures the buffer path's default plan (6 levels per dispatch) differs from the storage path's (4), and since the tail default (`198728a`; `5f97c86` passes) 67×45's level 6 is a tail step on one and a sampled first output on the other, which may differ by a step. Both now use the storage path's `levelsPerDispatch` and the test checks their batches match; with `tail: false` on both the old test passed too, so the paths are bit-identical on the same plan
 - [x] M3 on the M5 Pro (idle-ish, `results/m3/`): timestamps agree with throughput (80/83 pairs, τ 0.81); `STORAGE_BINDING` costs nothing when sampling (0.999–1.006); subgroup bound 1.7 % (rgba8) / 5.5 % (rgba16f) at render sizes → no subgroup kernel for Apple; fp16 arithmetic ~2 % with precision loss → not built; f16 rounding ~3 % (rgba16f); `'box'` 1.23–1.28× of `'exact'` (box tail up to 2.6×); tail 0.90 / 1.00; `'spd'` 0.60 / 0.79
 - [ ] Follow-up: the `'box'` tail kernel is slow (up to 2.6× of `'exact'`): measure on Windows; consider `tail: false` by default under `'box'`
