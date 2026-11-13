@@ -362,6 +362,8 @@ export class ScalarReduction {
 
 	constructor( device: GPUDevice, options: ScalarReductionOptions = {} ) {
 
+		// Renamed before 1.0: catch the old key instead of silently averaging.
+		if ( 'reduce' in options ) throw new Error( 'downsampler: ScalarReduction takes `reduction`, not `reduce`.' );
 		this.device = device;
 		this.options = { ...options };
 		this.ops = scalarOps( options.reduction, options.channels );

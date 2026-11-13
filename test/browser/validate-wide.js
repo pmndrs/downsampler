@@ -291,6 +291,7 @@ function validateWideOptions( device ) {
 	if ( device.limits.maxComputeWorkgroupStorageSize < 32768 ) expectThrow( () => new Reducer( device, { reduction: wideOps, levels: [ 6 ], load: wideLoad, store: wideStore, bindings } ), 'maxComputeWorkgroupStorageSize', 'wide six levels' );
 	expectThrow( () => new ScalarReduction( device, { reduction: 'sum', channels: 5 } ), 'channels must be 4 or 8', 'scalar five channels' );
 	expectThrow( () => new ScalarReduction( device, { reduction: scalarWideOps } ).kernel(), 'combineKernel', 'wide scalar kernel() without a load hook' );
+	expectThrow( () => new ScalarReduction( device, { reduce: 'max' } ), 'not `reduce`', 'scalar old reduce key' );
 	return [ { option: 'wide validation' } ];
 
 }
