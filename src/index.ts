@@ -9,6 +9,7 @@ export type { ReferenceLevel, ReferenceOptions, ToleranceTexel } from './core/re
 export { checkChannels, footprint, foldChannel, isBuiltinReduction, isChannelOps, needsTileEdges, payloadGroups, payloadWins, reductionKey, resolveReduction } from './core/reduction.js';
 export type { BuiltinReduction, ChannelOp, ChannelOps, Channels, CustomReduction, PayloadGroup, EdgePolicy, PyramidReferenceReduction, Reduction, ReferenceReduction, ResolvedReduction, TileEdgePolicy } from './core/reduction.js';
 export { maxViolations, spdChainReference, spdReference } from './core/spd.js';
+export { areaOverlap, areaReference, areaSpan, boxChainReference, boxReference } from './core/box.js';
 export { checkLevels, levelSize, maxTileLevels, pyramidTolerance, reducePyramid, tileDispatch } from './core/pyramid.js';
 export type { PyramidLevel, PyramidReferenceOptions, TileDispatch } from './core/pyramid.js';
 export { isSumOp, scalarBlock, scalarCombineDepth, scalarCombineReference, scalarDepth, scalarInvocations, scalarOps, scalarReference, scalarSide, scalarWeightChannel, scalarWorkgroups } from './core/scalar.js';

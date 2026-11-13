@@ -130,8 +130,8 @@ export type Reduction = BuiltinReduction | 'sum' | CustomReduction | ChannelOps;
  *   ⌈n/2⌉; averages divide by the in-bounds count. Every texel counts once.
  * - 'clamp': SPD/FSR-compatible. Source coordinates are clamped to the edge;
  *   level sizes are ⌊n/2⌋ (at least 1), dropping the last odd row or column.
- * Both tile policies keep every level of a dispatch in one tile. 'box' (area
- * weights) is planned.
+ * Both tile policies keep every level of a dispatch in one tile. Area weights
+ * are `Downsampler`'s `oddSizes: 'box'` (core `areaReference`), not a tile policy.
  */
 export type EdgePolicy = 'exact' | 'zero-weight' | 'clamp';
 

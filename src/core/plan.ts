@@ -12,6 +12,10 @@
  * chain in that workgroup with the same per-level 'exact' rule, odd sizes
  * included.
  *
+ * 'box' plans exactly as 'exact': its odd steps read the three taps 2x … 2x+2
+ * that the 'exact' folds read, which a tile of the previous level doesn't hold
+ * at its far edge without a halo, so an odd size ends the batch the same way.
+ *
  * Under 'spd', every batch is a 'clamp' tile reduction (SPD semantics): clamped
  * loads, ⌊n/2⌋ sizes, the last odd row or column dropped, so batches never end
  * at odd sizes and a chain takes ⌈levels / levelsPerDispatch⌉ dispatches.
@@ -24,9 +28,12 @@
  *   levels in one tile with clamped loads and ⌊n/2⌋ sizes, dropping the last
  *   odd row or column; the next batch reads the last stored level. Lower
  *   quality at odd sizes, and min/max are NOT conservative (not a valid Hi-Z).
- * 'box' (area-weighted odd sizes) is planned.
+ * - 'box': area-weighted odd sizes (nvpro_pyramid's weights, `areaReference` in
+ *   core). Each source texel contributes in proportion to its overlap; for an
+ *   odd size 2n+1, three taps weighted (n − x, n, x + 1) / (2n + 1). Same
+ *   batches as 'exact'. Folds are the same as under 'exact'.
  */
-export type OddSizePolicy = 'exact' | 'spd';
+export type OddSizePolicy = 'exact' | 'spd' | 'box';
 
 /**
  * Kernel family of a batch:
@@ -61,12 +68,13 @@ export interface PlanOptions {
 	fromSource?: boolean;
 	/**
 	 * With `fromSource`: the source level is the size of the first destination
-	 * level (a converting copy). Under 'spd' the copy is its own 1-level 'exact'
-	 * batch; under 'exact' the kernel detects it at run time.
+	 * level (a converting copy), or is resampled into it (`resample: 'area'`).
+	 * Under 'spd' that step is its own 1-level 'exact' batch; under 'exact' and
+	 * 'box' the kernel handles it at run time.
 	 */
 	copySource?: boolean;
 	/**
-	 * 'exact' only: finish the chain in one workgroup ('tail' batch) once a first
+	 * 'exact' and 'box' only: finish the chain in one workgroup ('tail' batch) once a first
 	 * output fits 32×32 and the regular plan would need more batches for the
 	 * remaining levels. Default false.
 	 */
@@ -130,9 +138,9 @@ export function planBatches( width: number, height: number, options: PlanOptions
 
 	const { baseMipLevel = 0, mipLevelCount, levelsPerDispatch, oddSizes = 'exact', fromSource = false, copySource = false, tail = false, tailMaxTile = tailTile, exactMinTile = 8 } = options;
 	if ( exactMinTile !== 8 && exactMinTile !== 16 && exactMinTile !== 32 ) throw new Error( 'downsampler: exactMinTile must be 8, 16 or 32.' );
-	if ( oddSizes !== 'exact' && oddSizes !== 'spd' ) throw new Error( `downsampler: odd size policy "${ oddSizes }" is not implemented.` );
+	if ( oddSizes !== 'exact' && oddSizes !== 'spd' && oddSizes !== 'box' ) throw new Error( `downsampler: odd size policy "${ oddSizes }" is not implemented.` );
 	if ( ! Number.isInteger( levelsPerDispatch ) || levelsPerDispatch < 1 || levelsPerDispatch > 6 ) throw new Error( 'downsampler: levelsPerDispatch must be an integer from 1 to 6.' );
-	if ( oddSizes === 'spd' && tail ) throw new Error( 'downsampler: the tail kernel is an \'exact\' plan; \'spd\' chains never end a batch at odd sizes.' );
+	if ( oddSizes === 'spd' && tail ) throw new Error( 'downsampler: the tail kernel is an \'exact\' or \'box\' plan; \'spd\' chains never end a batch at odd sizes.' );
 
 	const firstLevel = fromSource ? baseMipLevel : baseMipLevel + 1;
 	const lastLevel = baseMipLevel + mipLevelCount - 1;
