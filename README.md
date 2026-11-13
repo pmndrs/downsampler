@@ -65,11 +65,13 @@ downsampler.generate( hiZPow2 /* 2048×1024 r32float */, { source: { texture: de
 
 **Compatibility mode** (devices without `'core-features-and-limits'`) is handled: each batch writes scratch levels and a copy dispatch moves them in, with bit-identical results (`compatibility: 'auto'`).
 
-**Output paths.** Levels are written as storage textures, or, for formats that can't be (`rgb9e5ufloat`; `rg11b10ufloat` without `texture-formats-tier1`), packed into a buffer and copied in. `outputPath( texture )` says which; `output: 'buffer'` forces it.
+**Output paths.** Levels are written as storage textures, or, for formats that can't be (`rgb9e5ufloat`, the sRGB formats; `rg11b10ufloat` without `texture-formats-tier1`), packed into a buffer and copied in. `outputPath( texture )` says which; `output: 'buffer'` forces it; `scratch` shares one buffer across textures.
+
+**sRGB colour.** `rgba8unorm-srgb` and `bgra8unorm-srgb` are reduced in linear light (the sRGB view decodes, the shader encodes each level with correct rounding, alpha stays linear), as render-pass mipmaps of an sRGB texture are, so regular three.js colour textures work.
 
 **Identical results on every GPU.** Two options: `f16Rounding` (default `'nearest'`) rounds float16 levels to nearest even in the shader, because D3D12 truncates; `averageAccess: 'load'` applies bilinear weights in the shader instead of the hardware sampler, whose 8-bit weights round differently per vendor (2–13 % slower on an RTX 3060, 22–31 % on Intel UHD).
 
-**Formats.** `rgba8unorm`, `rgba8snorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, `rgb9e5ufloat`; with `texture-formats-tier1` also `r8unorm`, `rg8unorm`, `r8snorm`, `rg8snorm`, `r16float`, `rg16float`, the 16-bit normalized formats and `rg11b10ufloat` storage; `bgra8unorm` with `bgra8unorm-storage`. Sources: any float-sampleable 2D format, including depth.
+**Formats.** `rgba8unorm`, `rgba8snorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, `rgb9e5ufloat`; with `texture-formats-tier1` also `r8unorm`, `rg8unorm`, `r8snorm`, `rg8snorm`, `r16float`, `rg16float`, the 16-bit normalized formats and `rg11b10ufloat` storage; `bgra8unorm` with `bgra8unorm-storage`; `rgba8unorm-srgb` and `bgra8unorm-srgb` through the buffer path. Sources: any float-sampleable 2D format, including depth.
 
 ## three.js
 
@@ -78,7 +80,8 @@ import { generateMipmaps, requiredLimits, unsupportedReason } from 'downsampler/
 
 const renderer = new WebGPURenderer( { requiredLimits: requiredLimits( adapter ) } );
 await renderer.init();
-// A StorageTexture with generateMipmaps = true and mipmapsAutoUpdate = false, level 0 written.
+// A StorageTexture, or an sRGB colour texture (buffer path), with generateMipmaps = true and
+// mipmapsAutoUpdate = false, level 0 written.
 if ( ! generateMipmaps( renderer, texture ) ) console.warn( unsupportedReason( renderer, texture ) ); // then use three's own path
 generateMipmaps( renderer, texture, { encoder, downsampler: { averageAccess: 'load' } } );        // into your encoder, not submitted
 ```

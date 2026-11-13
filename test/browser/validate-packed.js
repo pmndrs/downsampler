@@ -12,7 +12,7 @@ const bitsF32 = bits => new Float32Array( new Uint32Array( [ bits ] ).buffer )[ 
 const nextFloat = ( value, direction ) => bitsF32( f32Bits( value ) + direction );
 
 /** Runs `fn ds_test(i: u32)` over `count` invocations: `input` and `output` are u32 arrays. */
-async function runCodec( device, helpers, body, input, outputWords, count ) {
+export async function runCodec( device, helpers, body, input, outputWords, count ) {
 
 	const code = `${ helpers }
 @group(0) @binding(0) var<storage, read> input: array<u32>;
@@ -338,7 +338,7 @@ async function validateBufferPath( device, { quick } ) {
 }
 
 /** Output textures at exactly each level's size; `storage` adds STORAGE_BINDING. */
-function levelTextures( device, reducer, width, height, layers, format, storage ) {
+export function levelTextures( device, reducer, width, height, layers, format, storage ) {
 
 	return reducer.levels.map( level => {
 
@@ -349,7 +349,7 @@ function levelTextures( device, reducer, width, height, layers, format, storage 
 
 }
 
-async function runReducer( device, reducer, source, outputs, mode = 'encode' ) {
+export async function runReducer( device, reducer, source, outputs, mode = 'encode' ) {
 
 	for ( const texture of outputs ) poison( device, texture, 0 );
 	const encoder = device.createCommandEncoder();
