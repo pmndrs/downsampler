@@ -9,7 +9,10 @@ test( 'even sizes are an exact 2x2 box', () => {
 	const level = reduceReference( rgba( [ 0, 1 / 255, 2 / 255, 5 / 255 ] ), 2, 2, 1, 'unorm8' );
 	assert.equal( level.width, 1 );
 	assert.equal( Math.round( level.values[ 0 ] * 255 ), 2 ); // 8 / 4
-	assert.equal( level.filterTolerance[ 0 ], 0 );
+	// Shader weights of exactly 1/2 need no allowance; a hardware sampler may be a weight step
+	// off even there (Intel truncates), 1.5 steps per axis times the contrast (gx 3, gy 4 units).
+	assert.equal( reduceReference( rgba( [ 0, 1 / 255, 2 / 255, 5 / 255 ] ), 2, 2, 1, 'unorm8', 'average', { weights: 'shader' } ).filterTolerance[ 0 ], 0 );
+	assert.equal( level.filterTolerance[ 0 ], Math.fround( 1.5 * ( 3 + 4 ) / 256 / 255 ) );
 
 } );
 

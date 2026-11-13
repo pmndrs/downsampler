@@ -3,11 +3,12 @@ import { outputBufferLayout, tileSize, workgroupSide } from '../core/plan.js';
 import { levelSize, tileDispatch } from '../core/pyramid.js';
 import { resolveReduction, type Channels, type Reduction, type TileEdgePolicy } from '../core/reduction.js';
 import { isCompatibilityTexture } from './compat.js';
-import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, sizeBinding, type KernelOptions, type OutputPath, type ViewDimension } from './kernel.js';
-import { checkToolBindings, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolGroupLayouts, toolPipelineLayout, type ToolBindings } from './tool.js';
+import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, sizeBinding, type F16Rounding, type KernelOptions, type OutputPath, type ViewDimension } from './kernel.js';
+import { checkToolBindings, retireBuffers, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolGroupLayouts, toolPipelineLayout, type ToolBindings } from './tool.js';
 
 export type { ToolBindings } from './tool.js';
 
+/** Options of `new Reducer( device, options )`. The kernel is generated and compiled in the constructor. See SPEC.md §14.1. */
 export interface ReducerOptions {
 	/**
 	 * Per-channel ops (`[ 'average', 'average', 'sum', 'max' ]`, with 'weight' and
@@ -42,12 +43,18 @@ export interface ReducerOptions {
 	 * 'buffer': packed texels into a buffer the Reducer owns, then a
 	 * `copyBufferToTexture` per level (SPEC.md §6.1). Default 'storage' when the
 	 * device can write `format` as a storage texture, else 'buffer' (rgb9e5ufloat;
-	 * rg11b10ufloat without texture-formats-tier1). float16 outputs round to
-	 * nearest even on both paths (quantized before the store). Buffer outputs need COPY_DST
+	 * rg11b10ufloat without texture-formats-tier1). float16 outputs are rounded
+	 * before the store on both paths (`f16Rounding`). Buffer outputs need COPY_DST
 	 * usage instead of STORAGE_BINDING; `encode` records the copies, and after
 	 * `encodePass` or a self-dispatch call `encodeCopies` once the pass has ended.
 	 */
 	output?: OutputPath;
+	/**
+	 * float16 output formats (no store hook): 'nearest' (default) rounds to nearest even
+	 * in the shader, the same on every GPU; 'device' uses `pack2x16float`, which
+	 * truncates on D3D12. See {@link F16Rounding}.
+	 */
+	f16Rounding?: F16Rounding;
 	/**
 	 * Accumulator channels per texel: 4 (a `vec4f`, default) or 8. With 8, the
 	 * load hook returns, the store hook takes, and a custom reduce combines
@@ -65,6 +72,7 @@ export interface TextureLevel {
 	mipLevel?: number;
 }
 
+/** One dispatch of a Reducer: the source size, textures and the tool's group 1. */
 export interface ReducerDispatch {
 	/** Source size in texels. Required with a load hook; otherwise the source level's size. */
 	width?: number;
@@ -79,12 +87,46 @@ export interface ReducerDispatch {
 	bindGroup?: GPUBindGroup;
 }
 
+/** A `copyBufferToTexture` of one emitted level (output 'buffer'), recorded by `encodeCopies`. */
+export interface ReducerCopy {
+	texture: GPUTexture;
+	mipLevel: number;
+	/** Byte offset in the Reducer's buffer, a multiple of 256. */
+	offset: number;
+	bytesPerRow: number;
+	rowsPerImage: number;
+	width: number;
+	height: number;
+	layers: number;
+}
+
+/**
+ * One dispatch of a Reducer, as `prepare( dispatch )` returns it: set `pipeline`,
+ * `bindGroup` at group 0 and your group 1, `dispatchWorkgroups( ...workgroups )`,
+ * then (output 'buffer', after the pass) record `copies` from `buffer`.
+ */
+export interface PreparedReducer {
+	pipeline: GPUComputePipeline;
+	/** Group 0, owned and cached by the Reducer. */
+	bindGroup: GPUBindGroup;
+	/** The tool's group 1 from the dispatch, if any. */
+	toolBindGroup: GPUBindGroup | undefined;
+	workgroups: [ number, number, number ];
+	/** Output 'buffer': the buffer the dispatch writes (owned by the Reducer), and one copy per emitted level. */
+	buffer?: GPUBuffer;
+	copies?: readonly ReducerCopy[];
+}
+
+/** A cached group-0 entry, per size and textures. */
 interface Prepared {
 	bindGroup: GPUBindGroup;
 	workgroups: [ number, number, number ];
-	/** Buffer output: the buffer the dispatch writes, and one copy per emitted level. */
 	buffer?: GPUBuffer;
-	copies?: { texture: GPUTexture; mipLevel: number; offset: number; bytesPerRow: number; rowsPerImage: number; width: number; height: number; layers: number }[];
+	copies?: readonly ReducerCopy[];
+	/** Textures the entry binds or copies into, for `release( texture )`. */
+	textures: GPUTexture[];
+	/** Buffers the Reducer created for the entry (size uniform, output buffer and layout): destroyed on eviction and release. */
+	owned: GPUBuffer[];
 }
 
 interface CachedPipeline {
@@ -107,7 +149,7 @@ const idOf = ( texture: GPUTexture ) => {
 const asLevel = ( value: GPUTexture | TextureLevel ): Required<TextureLevel> => 'texture' in value ? { texture: value.texture, mipLevel: value.mipLevel ?? 0 } : { texture: value, mipLevel: 0 };
 const mipSize = ( size: number, level: number ) => Math.max( 1, size >> level );
 
-/** Bind groups (and size uniforms) kept per Reducer, most recent last. */
+/** Bind groups (and their size uniforms and output buffers) kept per Reducer, most recent last. */
 const cacheSize = 16;
 
 /**
@@ -125,12 +167,17 @@ export class Reducer {
 	readonly device: GPUDevice;
 	/** The kernel's WGSL. Entry point {@link Reducer.entryPoint}. */
 	readonly wgsl: string;
+	/** The compute entry point of {@link Reducer.wgsl}. */
 	readonly entryPoint = 'main';
 	/** Pipeline layout: [ group 0 (ours), group 1 (the tool's, if it has bindings) ]. */
 	readonly layout: GPUPipelineLayout;
+	/** [ group 0 (the Reducer's), group 1 (the tool's, from `bindings`, if any) ]. Create the tool's bind group from index 1. */
 	readonly bindGroupLayouts: readonly GPUBindGroupLayout[];
+	/** The compiled pipeline, shared by equal Reducers on a device. */
 	readonly pipeline: GPUComputePipeline;
+	/** Emitted levels, source-relative (1 = half size). */
 	readonly levels: readonly number[];
+	/** Edge policy: 'zero-weight' (⌈n/2⌉ sizes) or 'clamp' (SPD, ⌊n/2⌋). */
 	readonly edges: TileEdgePolicy;
 	/** Accumulator channels per texel (4 or 8). */
 	readonly channels: Channels;
@@ -170,11 +217,11 @@ export class Reducer {
 
 		const kernel: KernelOptions = {
 			edges, levels: options.levels, reduction, format, dimension: options.dimension ?? '2d', sourceFormat: options.sourceFormat,
-			load: options.load, store: options.store, size: options.size, bindings: options.bindings?.wgsl, output, ...( channels === 8 ? { channels } : {} )
+			load: options.load, store: options.store, size: options.size, bindings: options.bindings?.wgsl, output, f16Rounding: options.f16Rounding, ...( channels === 8 ? { channels } : {} )
 		};
 		const deepest = options.levels[ options.levels.length - 1 ];
 		const invocations = workgroupSide( tileSize( deepest ) ) ** 2;
-		if ( Number.isInteger( deepest ) && invocations > device.limits.maxComputeInvocationsPerWorkgroup ) throw new Error( `downsampler: ${ deepest } levels take workgroups of ${ invocations } invocations; this device allows ${ device.limits.maxComputeInvocationsPerWorkgroup } (maxComputeInvocationsPerWorkgroup; compatibility mode defaults to 128). Emit at most 4 levels or request a higher limit (Downsampler.requiredLimits).` );
+		if ( Number.isInteger( deepest ) && invocations > device.limits.maxComputeInvocationsPerWorkgroup ) throw new Error( `downsampler: ${ deepest } levels take workgroups of ${ invocations } invocations; this device allows ${ device.limits.maxComputeInvocationsPerWorkgroup } (maxComputeInvocationsPerWorkgroup; compatibility mode defaults to 128). Emit at most 4 levels or request a higher limit (requiredLimits( adapter ) from downsampler/webgpu).` );
 		const tileBytes = tileSize( deepest ) ** 2 * channels * 4;
 		if ( Number.isInteger( deepest ) && tileBytes > device.limits.maxComputeWorkgroupStorageSize ) throw new Error( `downsampler: ${ deepest } levels of ${ channels }-channel accumulators take ${ tileBytes } bytes of workgroup memory; this device allows ${ device.limits.maxComputeWorkgroupStorageSize } (maxComputeWorkgroupStorageSize). Emit fewer levels or request a higher limit.` );
 
@@ -230,11 +277,11 @@ export class Reducer {
 	/**
 	 * The group-0 bind group for a dispatch: the source texture, the output
 	 * textures and the size uniform, as this kernel needs them. Cached per size
-	 * and textures (the most recent 16).
+	 * and textures (the most recent 16). Same as `prepare( dispatch ).bindGroup`.
 	 */
 	bindGroup( dispatch: ReducerDispatch = {} ): GPUBindGroup {
 
-		return this.prepare( dispatch ).bindGroup;
+		return this.entry( dispatch ).bindGroup;
 
 	}
 
@@ -244,12 +291,10 @@ export class Reducer {
 	 */
 	encodePass( pass: GPUComputePassEncoder, dispatch: ReducerDispatch = {} ): void {
 
-		const { bindGroup, workgroups } = this.prepare( dispatch );
-		pass.setPipeline( this.pipeline );
+		const { pipeline, bindGroup, toolBindGroup, workgroups } = this.prepare( dispatch );
+		pass.setPipeline( pipeline );
 		pass.setBindGroup( 0, bindGroup );
-		const reason = toolBindGroupReason( this.bindGroupLayouts.length > 1, dispatch.bindGroup, 'this Reducer' );
-		if ( reason !== null ) throw new Error( `downsampler: ${ reason }.` );
-		setToolBindGroup( pass, dispatch.bindGroup );
+		setToolBindGroup( pass, toolBindGroup );
 		pass.dispatchWorkgroups( ...workgroups );
 
 	}
@@ -272,7 +317,7 @@ export class Reducer {
 	 */
 	encodeCopies( encoder: GPUCommandEncoder, dispatch: ReducerDispatch = {} ): void {
 
-		const { buffer, copies = [] } = this.prepare( dispatch );
+		const { buffer, copies = [] } = this.entry( dispatch );
 		for ( const { texture, mipLevel, offset, bytesPerRow, rowsPerImage, width, height, layers } of copies ) {
 
 			encoder.copyBufferToTexture( { buffer: buffer!, offset, bytesPerRow, rowsPerImage }, { texture, mipLevel }, [ width, height, layers ] );
@@ -281,7 +326,44 @@ export class Reducer {
 
 	}
 
-	private prepare( dispatch: ReducerDispatch ): Prepared {
+	/**
+	 * What `encodePass` records for a dispatch, for tools that dispatch the
+	 * kernel themselves: the pipeline, the group-0 bind group, the dispatch's
+	 * group 1, the workgroup counts and (output 'buffer') the copies that follow
+	 * the pass. Validates like `encode` and throws with the reason. Cached per
+	 * size and textures, the most recent 16 (see {@link Reducer.release}).
+	 */
+	prepare( dispatch: ReducerDispatch = {} ): PreparedReducer {
+
+		const { bindGroup, workgroups, buffer, copies } = this.entry( dispatch );
+		const reason = toolBindGroupReason( this.bindGroupLayouts.length > 1, dispatch.bindGroup, 'this Reducer' );
+		if ( reason !== null ) throw new Error( `downsampler: ${ reason }.` );
+		return { pipeline: this.pipeline, bindGroup, toolBindGroup: dispatch.bindGroup, workgroups, ...( buffer !== undefined ? { buffer, copies } : {} ) };
+
+	}
+
+	/**
+	 * Drop cached bind groups and destroy the buffers the Reducer created for
+	 * them (size uniforms, buffer-output buffers): every entry, or only those
+	 * that bind or copy into `texture`. Call it after submitting the last work
+	 * that uses them. Pipelines stay cached per device; your textures, buffers
+	 * and bind groups are never destroyed. Entries evicted from the 16-entry
+	 * cache have their buffers destroyed once the queue has finished the work
+	 * submitted so far.
+	 */
+	release( texture?: GPUTexture ): void {
+
+		for ( const [ key, entry ] of this.cache ) {
+
+			if ( texture !== undefined && ! entry.textures.includes( texture ) ) continue;
+			for ( const buffer of entry.owned ) buffer.destroy();
+			this.cache.delete( key );
+
+		}
+
+	}
+
+	private entry( dispatch: ReducerDispatch ): Prepared {
 
 		const { load, store, size, format, dimension = '2d' } = this.options;
 		const source = dispatch.source === undefined ? undefined : asLevel( dispatch.source );
@@ -321,6 +403,7 @@ export class Reducer {
 		}
 
 		const entries: GPUBindGroupEntry[] = [];
+		const owned: GPUBuffer[] = [];
 		if ( source !== undefined ) {
 
 			if ( source.texture.depthOrArrayLayers < layers ) throw new Error( `downsampler: source has ${ source.texture.depthOrArrayLayers } layers, the dispatch ${ layers }.` );
@@ -344,41 +427,53 @@ export class Reducer {
 
 		} );
 
+		// Compatibility mode binds one view (mip range) of a texture per dispatch. Buffer
+		// outputs aren't bound (copies write them), so they may share the source's texture.
+		const bound = [ ...( source ? [ source.texture ] : [] ), ...( this.output === 'storage' ? outputs ?? [] : [] ).map( output => output.texture ) ];
+		if ( new Set( bound ).size < bound.length && bound.some( texture => isCompatibilityTexture( this.device, texture ) ) ) throw new Error( 'downsampler: in compatibility mode a dispatch binds one view of a texture, so the source and each output level must be separate textures (or use output \'buffer\' or a store hook).' );
+		const layout = this.output === 'buffer' && outputs !== undefined ? outputBufferLayout( this.levels.map( level => this.levelSize( level, width!, height! ) ), layers, formats[ format! ].bytesPerTexel ) : undefined;
+		const limit = Math.min( this.device.limits.maxStorageBufferBindingSize, this.device.limits.maxBufferSize );
+		if ( layout !== undefined && layout.size > limit ) throw new Error( `downsampler: the buffer output needs a ${ layout.size }-byte buffer, above this device's maxStorageBufferBindingSize / maxBufferSize (${ limit }).` );
+
+		// Validated: from here on the entry creates buffers, which it owns.
 		if ( load !== undefined && size === undefined ) {
 
 			const buffer = this.device.createBuffer( { label: `${ this.label } size`, size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
 			this.device.queue.writeBuffer( buffer, 0, Uint32Array.of( width, height, 0, 0 ) );
+			owned.push( buffer );
 			entries.push( { binding: sizeBinding, resource: { buffer } } );
 
 		}
 
 		// Buffer output: each emitted level at its own offset of one buffer, rows padded
 		// to 256 bytes, copied into its output texture by encodeCopies.
-		let buffer: GPUBuffer | undefined, copies: Prepared[ 'copies' ];
-		if ( this.output === 'buffer' && outputs !== undefined ) {
+		let buffer: GPUBuffer | undefined, copies: ReducerCopy[] | undefined;
+		if ( layout !== undefined && outputs !== undefined ) {
 
-			const sizes = this.levels.map( level => this.levelSize( level, width!, height! ) );
-			const layout = outputBufferLayout( sizes, layers, formats[ format! ].bytesPerTexel );
-			const limit = Math.min( this.device.limits.maxStorageBufferBindingSize, this.device.limits.maxBufferSize );
-			if ( layout.size > limit ) throw new Error( `downsampler: the buffer output needs a ${ layout.size }-byte buffer, above this device's maxStorageBufferBindingSize / maxBufferSize (${ limit }).` );
 			buffer = this.device.createBuffer( { label: `${ this.label } output`, size: layout.size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC } );
 			const words = new Uint32Array( outputLayoutBytes / 4 );
 			words.set( [ width, height ] );
 			layout.levels.forEach( ( level, i ) => { words[ 4 + i ] = level.offset / 4; words[ 12 + i ] = level.bytesPerRow / 4; words[ 20 + i ] = level.rowsPerImage; } );
 			const uniform = this.device.createBuffer( { label: `${ this.label } output layout`, size: outputLayoutBytes, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
 			this.device.queue.writeBuffer( uniform, 0, words );
+			owned.push( buffer, uniform );
 			entries.push( { binding: outputLayoutBinding, resource: { buffer: uniform } }, { binding: outputBufferBinding, resource: { buffer } } );
 			copies = layout.levels.map( ( level, i ) => ( { texture: outputs[ i ].texture, mipLevel: outputs[ i ].mipLevel, offset: level.offset, bytesPerRow: level.bytesPerRow, rowsPerImage: level.rowsPerImage, width: level.width, height: level.height, layers } ) );
 
 		}
 
-		// Compatibility mode binds one view (mip range) of a texture per dispatch. Buffer
-		// outputs aren't bound (copies write them), so they may share the source's texture.
-		const textures = [ ...( source ? [ source.texture ] : [] ), ...( this.output === 'storage' ? outputs ?? [] : [] ).map( output => output.texture ) ];
-		if ( new Set( textures ).size < textures.length && textures.some( texture => isCompatibilityTexture( this.device, texture ) ) ) throw new Error( 'downsampler: in compatibility mode a dispatch binds one view of a texture, so the source and each output level must be separate textures (or use output \'buffer\' or a store hook).' );
-		const prepared = { bindGroup: this.device.createBindGroup( { label: this.label, layout: this.bindGroupLayouts[ 0 ], entries } ), workgroups, buffer, copies };
+		const textures = [ ...( source ? [ source.texture ] : [] ), ...( outputs ?? [] ).map( output => output.texture ) ];
+		const prepared: Prepared = { bindGroup: this.device.createBindGroup( { label: this.label, layout: this.bindGroupLayouts[ 0 ], entries } ), workgroups, buffer, copies, textures, owned };
 		this.cache.set( key, prepared );
-		if ( this.cache.size > cacheSize ) this.cache.delete( this.cache.keys().next().value! );
+		if ( this.cache.size > cacheSize ) {
+
+			// The evicted entry may still be recorded in an unsubmitted encoder: destroy its buffers later.
+			const [ oldest, evicted ] = this.cache.entries().next().value!;
+			this.cache.delete( oldest );
+			retireBuffers( this.device, evicted.owned );
+
+		}
+
 		return prepared;
 
 	}

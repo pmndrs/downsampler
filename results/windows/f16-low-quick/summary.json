@@ -1,0 +1,4166 @@
+{
+	"date": "2026-11-12T11:40:46.350Z",
+	"flags": [
+		"--quick",
+		"--power=low"
+	],
+	"jobs": 4,
+	"shards": 12,
+	"capMinutes": 5,
+	"seconds": 169,
+	"adapter": {
+		"vendor": "intel",
+		"architecture": "gen-12lp",
+		"device": "",
+		"description": "",
+		"isFallbackAdapter": false,
+		"timestamps": true,
+		"features": [
+			"texture-formats-tier1",
+			"bgra8unorm-storage"
+		],
+		"compatibility": false,
+		"maxStorageTexturesPerShaderStage": 6,
+		"subgroupMinSize": 8,
+		"subgroupMaxSize": 128,
+		"adapterFeatures": [
+			"bgra8unorm-storage",
+			"chromium-experimental-multi-draw-indirect",
+			"chromium-experimental-timestamp-query-inside-passes",
+			"clip-distances",
+			"core-features-and-limits",
+			"depth-clip-control",
+			"depth32float-stencil8",
+			"dual-source-blending",
+			"float32-blendable",
+			"float32-filterable",
+			"indirect-first-instance",
+			"primitive-index",
+			"rg11b10ufloat-renderable",
+			"shader-f16",
+			"subgroups",
+			"texture-component-swizzle",
+			"texture-compression-bc",
+			"texture-compression-bc-sliced-3d",
+			"texture-formats-tier1",
+			"texture-formats-tier2",
+			"timestamp-query"
+		],
+		"maxTextureDimension2D": 8192
+	},
+	"ok": false,
+	"cases": 10439,
+	"checks": 25548,
+	"groups": {
+		"ran": 731,
+		"listed": 731
+	},
+	"failures": [
+		{
+			"shard": 1,
+			"label": "15x17x1 rgba16float storage average random L1 mip 1",
+			"first": "15x17x1 rgba16float storage average random L1 mip 1: value 12, actual 4.77734375, expected 4.79296875, error 0.015625 > 0.01437890625",
+			"failing": 16,
+			"values": 224,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 1,
+			"label": "31x33x1 rgba16float storage average random L1 mip 1",
+			"first": "31x33x1 rgba16float storage average random L1 mip 1: value 28, actual 2.912109375, expected 2.89453125, error 0.017578125 > 0.00868359375",
+			"failing": 39,
+			"values": 960,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 1,
+			"label": "31x33x1 rgba16float storage average random L1 mip 2",
+			"first": "31x33x1 rgba16float storage average random L1 mip 2: value 14, actual 1.505859375, expected 1.482421875, error 0.0234375 > 0.004447265625",
+			"failing": 12,
+			"values": 224,
+			"maxError": 0.0390625
+		},
+		{
+			"shard": 1,
+			"label": "192x108x1 rgba16float storage average random L1 mip 1",
+			"first": "192x108x1 rgba16float storage average random L1 mip 1: value 2, actual 3.583984375, expected 3.5625, error 0.021484375 > 0.0106875",
+			"failing": 12189,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 1,
+			"label": "192x108x1 rgba16float storage average random L1 mip 2",
+			"first": "192x108x1 rgba16float storage average random L1 mip 2: value 2, actual 2.203125, expected 2.189453125, error 0.013671875 > 0.006568359375",
+			"failing": 1565,
+			"values": 5184,
+			"maxError": 0.04296875
+		},
+		{
+			"shard": 1,
+			"label": "192x108x1 rgba16float storage average random L1 mip 3",
+			"first": "192x108x1 rgba16float storage average random L1 mip 3: value 588, actual 2.93359375, expected 2.921875, error 0.01171875 > 0.008765625",
+			"failing": 9,
+			"values": 1248,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 1,
+			"label": "192x108x1 rgba16float storage average edge L1 mip 1",
+			"first": "192x108x1 rgba16float storage average edge L1 mip 1: value 382, actual 0.297607421875, expected 0.300048828125, error 0.00244140625 > 0.002",
+			"failing": 106,
+			"values": 20736,
+			"maxError": 0.003173828125
+		},
+		{
+			"shard": 1,
+			"label": "192x108x1 rgba16float storage average edge L1 mip 2",
+			"first": "192x108x1 rgba16float storage average edge L1 mip 2: value 5183, actual 0.346435546875, expected 0.3486328125, error 0.002197265625 > 0.002",
+			"failing": 1,
+			"values": 5184,
+			"maxError": 0.002197265625
+		},
+		{
+			"shard": 1,
+			"label": "255x257x1 rgba16float storage average random L1 mip 2",
+			"first": "255x257x1 rgba16float storage average random L1 mip 2: value 376, actual -1.09765625, expected -1.12109375, error 0.0234375 > 0.00336328125",
+			"failing": 112,
+			"values": 16128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 1,
+			"label": "255x257x1 rgba16float storage average random L1 mip 4",
+			"first": "255x257x1 rgba16float storage average random L1 mip 4: value 28, actual 2.134765625, expected 2.125, error 0.009765625 > 0.0063750000000000005",
+			"failing": 8,
+			"values": 960,
+			"maxError": 0.013671875
+		},
+		{
+			"shard": 2,
+			"label": "3x7x1 rgba16float storage spd average random L1 mip 1",
+			"first": "3x7x1 rgba16float storage spd average random L1 mip 1: value 0, actual 2.8828125, expected 2.921875, error 0.0390625 > 0.008784312500414672",
+			"failing": 4,
+			"values": 12,
+			"maxError": 0.05078125
+		},
+		{
+			"shard": 2,
+			"label": "3x7x1 rgba16float storage spd average random L1 mip 2",
+			"first": "3x7x1 rgba16float storage spd average random L1 mip 2: value 1, actual 6.6015625, expected 6.625, error 0.0234375 > 0.01990150390706549",
+			"failing": 2,
+			"values": 4,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 2,
+			"label": "7x4x1 rgba16float storage spd average random L1 mip 1",
+			"first": "7x4x1 rgba16float storage spd average random L1 mip 1: value 0, actual -0.496337890625, expected -0.5, error 0.003662109375 > 0.0020049999998736894",
+			"failing": 13,
+			"values": 24,
+			"maxError": 0.03515625
+		},
+		{
+			"shard": 2,
+			"label": "7x4x1 rgba16float storage spd average random L1 mip 2",
+			"first": "7x4x1 rgba16float storage spd average random L1 mip 2: value 0, actual 4.1328125, expected 4.1484375, error 0.015625 > 0.012462894775177119",
+			"failing": 3,
+			"values": 4,
+			"maxError": 0.01953125
+		},
+		{
+			"shard": 2,
+			"label": "15x17x1 rgba16float storage spd average random L1 mip 1",
+			"first": "15x17x1 rgba16float storage spd average random L1 mip 1: value 0, actual 3.49609375, expected 3.53125, error 0.03515625 > 0.010614875000785106",
+			"failing": 137,
+			"values": 224,
+			"maxError": 0.05859375
+		},
+		{
+			"shard": 2,
+			"label": "15x17x1 rgba16float storage spd average random L1 mip 2",
+			"first": "15x17x1 rgba16float storage spd average random L1 mip 2: value 5, actual 1.8212890625, expected 1.828125, error 0.0068359375 > 0.005491688476544369",
+			"failing": 10,
+			"values": 48,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 2,
+			"label": "17x9x1 rgba16float storage spd average random L1 mip 1",
+			"first": "17x9x1 rgba16float storage spd average random L1 mip 1: value 0, actual 3.75390625, expected 3.78125, error 0.02734375 > 0.011365874999304651",
+			"failing": 63,
+			"values": 128,
+			"maxError": 0.05859375
+		},
+		{
+			"shard": 2,
+			"label": "31x33x1 rgba16float storage spd average random L1 mip 1",
+			"first": "31x33x1 rgba16float storage spd average random L1 mip 1: value 0, actual -0.62939453125, expected -0.609375, error 0.02001953125 > 0.0020123125000754954",
+			"failing": 617,
+			"values": 960,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 2,
+			"label": "31x33x1 rgba16float storage spd average random L1 mip 2",
+			"first": "31x33x1 rgba16float storage spd average random L1 mip 2: value 5, actual 2.724609375, expected 2.73828125, error 0.013671875 > 0.00822689453115163",
+			"failing": 50,
+			"values": 224,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 2,
+			"label": "65x129x1 rgba16float storage spd average random L1 mip 1",
+			"first": "65x129x1 rgba16float storage spd average random L1 mip 1: value 0, actual 2.48046875, expected 2.515625, error 0.03515625 > 0.007563937500774045",
+			"failing": 5113,
+			"values": 8192,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 2,
+			"label": "192x108x1 rgba16float storage spd average random L1 mip 1",
+			"first": "192x108x1 rgba16float storage spd average random L1 mip 1: value 2, actual 3.583984375, expected 3.5625, error 0.021484375 > 0.010704750000382774",
+			"failing": 12181,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 2,
+			"label": "192x108x1 rgba16float storage spd average random L1 mip 2",
+			"first": "192x108x1 rgba16float storage spd average random L1 mip 2: value 2, actual 2.203125, expected 2.189453125, error 0.013671875 > 0.006577120849418861",
+			"failing": 1562,
+			"values": 5184,
+			"maxError": 0.04296875
+		},
+		{
+			"shard": 2,
+			"label": "192x108x1 rgba16float storage spd average random L1 mip 3",
+			"first": "192x108x1 rgba16float storage spd average random L1 mip 3: value 25, actual 3.6796875, expected 3.69140625, error 0.01171875 > 0.011088981445172976",
+			"failing": 45,
+			"values": 1248,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 2,
+			"label": "192x108x1 rgba16float storage spd average edge L1 mip 1",
+			"first": "192x108x1 rgba16float storage spd average edge L1 mip 1: value 382, actual 0.297607421875, expected 0.300048828125, error 0.00244140625 > 0.0020012001953564323",
+			"failing": 106,
+			"values": 20736,
+			"maxError": 0.003173828125
+		},
+		{
+			"shard": 2,
+			"label": "192x108x1 rgba16float storage spd average edge L1 mip 2",
+			"first": "192x108x1 rgba16float storage spd average edge L1 mip 2: value 5183, actual 0.346435546875, expected 0.3486328125, error 0.002197265625 > 0.0020013947753814137",
+			"failing": 1,
+			"values": 5184,
+			"maxError": 0.002197265625
+		},
+		{
+			"shard": 2,
+			"label": "255x257x1 rgba16float storage spd average random L1 mip 1",
+			"first": "255x257x1 rgba16float storage spd average random L1 mip 1: value 0, actual -0.303466796875, expected -0.296875, error 0.006591796875 > 0.0020058125001487497",
+			"failing": 43367,
+			"values": 65024,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 2,
+			"label": "255x257x1 rgba16float storage spd average random L1 mip 2",
+			"first": "255x257x1 rgba16float storage spd average random L1 mip 2: value 1, actual 2.810546875, expected 2.8203125, error 0.009765625 > 0.008472216796813882",
+			"failing": 3382,
+			"values": 16128,
+			"maxError": 0.033203125
+		},
+		{
+			"shard": 2,
+			"label": "255x257x1 rgba16float storage spd average random L1 mip 3",
+			"first": "255x257x1 rgba16float storage spd average random L1 mip 3: value 14, actual 3.69921875, expected 3.712890625, error 0.013671875 > 0.011153525878893561",
+			"failing": 61,
+			"values": 3968,
+			"maxError": 0.015625
+		},
+		{
+			"shard": 2,
+			"label": "17x11x3 rgba16float storage spd average random L1 mip 1",
+			"first": "17x11x3 rgba16float storage spd average random L1 mip 1: value 0, actual 3.75390625, expected 3.78125, error 0.02734375 > 0.011365874999304651",
+			"failing": 301,
+			"values": 480,
+			"maxError": 0.0595703125
+		},
+		{
+			"shard": 2,
+			"label": "17x11x3 rgba16float storage spd average random L1 mip 2",
+			"first": "17x11x3 rgba16float storage spd average random L1 mip 2: value 11, actual 4.3359375, expected 4.3515625, error 0.015625 > 0.01307209277295624",
+			"failing": 17,
+			"values": 96,
+			"maxError": 0.03125
+		},
+		{
+			"shard": 2,
+			"label": "17x9x1 rgba16float storage spd average random L1 mip 1",
+			"first": "17x9x1 rgba16float storage spd average random L1 mip 1: value 0, actual 3.75390625, expected 3.78125, error 0.02734375 > 0.011365874999304651",
+			"failing": 63,
+			"values": 128,
+			"maxError": 0.05859375
+		},
+		{
+			"shard": 2,
+			"label": "31x33x1 r16float storage average random L4 mip 1",
+			"first": "31x33x1 r16float storage average random L4 mip 1: value 28, actual 7.50390625, expected 7.5390625, error 0.03515625 > 0.0226171875",
+			"failing": 9,
+			"values": 960,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 2,
+			"label": "31x33x1 r16float storage average random L4 mip 2",
+			"first": "31x33x1 r16float storage average random L4 mip 2: value 40, actual 2.158203125, expected 2.134765625, error 0.0234375 > 0.006404296875",
+			"failing": 4,
+			"values": 224,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 2,
+			"label": "192x108x1 r16float storage average random L4 mip 1",
+			"first": "192x108x1 r16float storage average random L4 mip 1: value 0, actual 3.41015625, expected 3.421875, error 0.01171875 > 0.010265625",
+			"failing": 3052,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 2,
+			"label": "192x108x1 r16float storage average random L4 mip 3",
+			"first": "192x108x1 r16float storage average random L4 mip 3: value 656, actual 3.830078125, expected 3.81640625, error 0.013671875 > 0.01144921875",
+			"failing": 1,
+			"values": 1248,
+			"maxError": 0.015625
+		},
+		{
+			"shard": 2,
+			"label": "31x33x1 rgb9e5ufloat buffer average random L4 mip 1",
+			"first": "31x33x1 rgb9e5ufloat buffer average random L4 mip 1: value 150, actual 5.453125, expected 5.1875, error 0.265625 > 0.0313720703125",
+			"failing": 9,
+			"values": 960,
+			"maxError": 5.296875
+		},
+		{
+			"shard": 2,
+			"label": "31x33x1 rgb9e5ufloat buffer average random L4 mip 2",
+			"first": "31x33x1 rgb9e5ufloat buffer average random L4 mip 2: value 12, actual 2.0703125, expected 2.015625, error 0.0546875 > 0.0157470703125",
+			"failing": 8,
+			"values": 224,
+			"maxError": 2
+		},
+		{
+			"shard": 2,
+			"label": "192x108x1 rgb9e5ufloat buffer average random L4 mip 1",
+			"first": "192x108x1 rgb9e5ufloat buffer average random L4 mip 1: value 6, actual 30.4375, expected 30.6875, error 0.25 > 0.1251220703125",
+			"failing": 2565,
+			"values": 20736,
+			"maxError": 8
+		},
+		{
+			"shard": 2,
+			"label": "192x108x1 rgb9e5ufloat buffer average random L4 mip 3",
+			"first": "192x108x1 rgb9e5ufloat buffer average random L4 mip 3: value 249, actual 62.875, expected 63.375, error 0.5 > 0.2950439453125",
+			"failing": 15,
+			"values": 1248,
+			"maxError": 2
+		},
+		{
+			"shard": 2,
+			"label": "packed/buffer-path",
+			"first": "packed/buffer-path threw: rgb9e5 from a separate source: level 0 is not the quantized copy",
+			"thrown": true
+		},
+		{
+			"shard": 3,
+			"label": "15x17x1 rgba16float storage tail average random L4 mip 1",
+			"first": "15x17x1 rgba16float storage tail average random L4 mip 1: value 12, actual 4.77734375, expected 4.79296875, error 0.015625 > 0.01437890625",
+			"failing": 16,
+			"values": 224,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 3,
+			"label": "31x33x1 rgba16float storage tail average random L4 mip 1",
+			"first": "31x33x1 rgba16float storage tail average random L4 mip 1: value 28, actual 2.912109375, expected 2.89453125, error 0.017578125 > 0.00868359375",
+			"failing": 39,
+			"values": 960,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 3,
+			"label": "31x33x1 r16float storage average random L5 mip 1",
+			"first": "31x33x1 r16float storage average random L5 mip 1: value 28, actual 7.50390625, expected 7.5390625, error 0.03515625 > 0.0226171875",
+			"failing": 9,
+			"values": 960,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 3,
+			"label": "31x33x1 r16float storage average random L5 mip 2",
+			"first": "31x33x1 r16float storage average random L5 mip 2: value 40, actual 2.158203125, expected 2.134765625, error 0.0234375 > 0.006404296875",
+			"failing": 4,
+			"values": 224,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 3,
+			"label": "192x108x1 r16float storage average random L5 mip 1",
+			"first": "192x108x1 r16float storage average random L5 mip 1: value 0, actual 3.41015625, expected 3.421875, error 0.01171875 > 0.010265625",
+			"failing": 3052,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 3,
+			"label": "192x108x1 r16float storage average random L5 mip 3",
+			"first": "192x108x1 r16float storage average random L5 mip 3: value 656, actual 3.830078125, expected 3.81640625, error 0.013671875 > 0.01144921875",
+			"failing": 1,
+			"values": 1248,
+			"maxError": 0.015625
+		},
+		{
+			"shard": 3,
+			"label": "31x33x1 rg16float storage average random L1 mip 1",
+			"first": "31x33x1 rg16float storage average random L1 mip 1: value 29, actual 1.00390625, expected 0.970703125, error 0.033203125 > 0.002912109375",
+			"failing": 20,
+			"values": 960,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 3,
+			"label": "31x33x1 rg16float storage average random L1 mip 2",
+			"first": "31x33x1 rg16float storage average random L1 mip 2: value 40, actual 2.76953125, expected 2.7578125, error 0.01171875 > 0.0082734375",
+			"failing": 7,
+			"values": 224,
+			"maxError": 0.0390625
+		},
+		{
+			"shard": 3,
+			"label": "31x33x1 rg16float storage average random L5 mip 1",
+			"first": "31x33x1 rg16float storage average random L5 mip 1: value 29, actual 1.00390625, expected 0.970703125, error 0.033203125 > 0.002912109375",
+			"failing": 20,
+			"values": 960,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 3,
+			"label": "31x33x1 rg16float storage average random L5 mip 2",
+			"first": "31x33x1 rg16float storage average random L5 mip 2: value 40, actual 2.76953125, expected 2.7578125, error 0.01171875 > 0.0082734375",
+			"failing": 7,
+			"values": 224,
+			"maxError": 0.0390625
+		},
+		{
+			"shard": 3,
+			"label": "192x108x1 rg16float storage average random L1 mip 1",
+			"first": "192x108x1 rg16float storage average random L1 mip 1: value 1, actual 6.48046875, expected 6.515625, error 0.03515625 > 0.019546875000000002",
+			"failing": 6085,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 3,
+			"label": "192x108x1 rg16float storage average random L1 mip 2",
+			"first": "192x108x1 rg16float storage average random L1 mip 2: value 1, actual 3.978515625, expected 3.9609375, error 0.017578125 > 0.011882812500000001",
+			"failing": 812,
+			"values": 5184,
+			"maxError": 0.041015625
+		},
+		{
+			"shard": 3,
+			"label": "192x108x1 rg16float storage average random L1 mip 3",
+			"first": "192x108x1 rg16float storage average random L1 mip 3: value 84, actual 3.310546875, expected 3.296875, error 0.013671875 > 0.0136595458984375",
+			"failing": 7,
+			"values": 1248,
+			"maxError": 0.021484375
+		},
+		{
+			"shard": 3,
+			"label": "192x108x1 rg16float storage average random L5 mip 1",
+			"first": "192x108x1 rg16float storage average random L5 mip 1: value 1, actual 6.48046875, expected 6.515625, error 0.03515625 > 0.019546875000000002",
+			"failing": 6085,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 3,
+			"label": "192x108x1 rg16float storage average random L5 mip 3",
+			"first": "192x108x1 rg16float storage average random L5 mip 3: value 584, actual 2.599609375, expected 2.58203125, error 0.017578125 > 0.00774609375",
+			"failing": 6,
+			"values": 1248,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 3,
+			"label": "15x17x1 rg11b10ufloat storage average random L1 mip 1",
+			"first": "15x17x1 rg11b10ufloat storage average random L1 mip 1: value 40, actual 34, expected 29, error 5 > 0.5001220703125",
+			"failing": 4,
+			"values": 224,
+			"maxError": 16
+		},
+		{
+			"shard": 3,
+			"label": "15x17x1 rg11b10ufloat storage average random L5 mip 1",
+			"first": "15x17x1 rg11b10ufloat storage average random L5 mip 1: value 40, actual 34, expected 29, error 5 > 0.5001220703125",
+			"failing": 4,
+			"values": 224,
+			"maxError": 16
+		},
+		{
+			"shard": 3,
+			"label": "31x33x1 rg11b10ufloat storage average random L1 mip 1",
+			"first": "31x33x1 rg11b10ufloat storage average random L1 mip 1: value 30, actual 0.010986328125, expected 0.00225830078125, error 0.00872802734375 > 0.000244140625",
+			"failing": 14,
+			"values": 960,
+			"maxError": 16
+		},
+		{
+			"shard": 3,
+			"label": "31x33x1 rg11b10ufloat storage average random L1 mip 2",
+			"first": "31x33x1 rg11b10ufloat storage average random L1 mip 2: value 13, actual 1.84375, expected 1.71875, error 0.125 > 0.0313720703125",
+			"failing": 7,
+			"values": 224,
+			"maxError": 4
+		},
+		{
+			"shard": 3,
+			"label": "31x33x1 rg11b10ufloat storage average random L5 mip 1",
+			"first": "31x33x1 rg11b10ufloat storage average random L5 mip 1: value 30, actual 0.010986328125, expected 0.00225830078125, error 0.00872802734375 > 0.000244140625",
+			"failing": 14,
+			"values": 960,
+			"maxError": 16
+		},
+		{
+			"shard": 3,
+			"label": "31x33x1 rg11b10ufloat storage average random L5 mip 2",
+			"first": "31x33x1 rg11b10ufloat storage average random L5 mip 2: value 13, actual 1.84375, expected 1.71875, error 0.125 > 0.0313720703125",
+			"failing": 7,
+			"values": 224,
+			"maxError": 4
+		},
+		{
+			"shard": 3,
+			"label": "192x108x1 rg11b10ufloat storage average random L1 mip 1",
+			"first": "192x108x1 rg11b10ufloat storage average random L1 mip 1: value 11401, actual 16.25, expected 15.875, error 0.375 > 0.2501220703125",
+			"failing": 1,
+			"values": 20736,
+			"maxError": 32
+		},
+		{
+			"shard": 3,
+			"label": "192x108x1 rg11b10ufloat storage average random L1 mip 2",
+			"first": "192x108x1 rg11b10ufloat storage average random L1 mip 2: value 1117, actual 130, expected 127, error 3 > 2.0001220703125",
+			"failing": 2,
+			"values": 5184,
+			"maxError": 8
+		},
+		{
+			"shard": 3,
+			"label": "192x108x1 rg11b10ufloat storage average random L1 mip 3",
+			"first": "192x108x1 rg11b10ufloat storage average random L1 mip 3: value 661, actual 3.5625, expected 3.25, error 0.3125 > 0.0626220703125",
+			"failing": 2,
+			"values": 1248,
+			"maxError": 4
+		},
+		{
+			"shard": 3,
+			"label": "192x108x1 rg11b10ufloat storage average random L5 mip 1",
+			"first": "192x108x1 rg11b10ufloat storage average random L5 mip 1: value 11401, actual 16.25, expected 15.875, error 0.375 > 0.2501220703125",
+			"failing": 1,
+			"values": 20736,
+			"maxError": 32
+		},
+		{
+			"shard": 3,
+			"label": "192x108x1 rg11b10ufloat storage average random L5 mip 3",
+			"first": "192x108x1 rg11b10ufloat storage average random L5 mip 3: value 644, actual 25, expected 24.25, error 0.75 > 0.5001220703125",
+			"failing": 3,
+			"values": 1248,
+			"maxError": 4
+		},
+		{
+			"shard": 3,
+			"label": "255x257x1 rg11b10ufloat storage average random L1 mip 2",
+			"first": "255x257x1 rg11b10ufloat storage average random L1 mip 2: value 376, actual 4.5625, expected 3.40625, error 1.15625 > 0.0626220703125",
+			"failing": 37,
+			"values": 16128,
+			"maxError": 16
+		},
+		{
+			"shard": 3,
+			"label": "255x257x1 rg11b10ufloat storage average random L1 mip 4",
+			"first": "255x257x1 rg11b10ufloat storage average random L1 mip 4: value 268, actual 7.4375, expected 7.125, error 0.3125 > 0.1251220703125",
+			"failing": 5,
+			"values": 960,
+			"maxError": 4
+		},
+		{
+			"shard": 3,
+			"label": "255x257x1 rg11b10ufloat storage average random L5 mip 2",
+			"first": "255x257x1 rg11b10ufloat storage average random L5 mip 2: value 376, actual 4.5625, expected 3.40625, error 1.15625 > 0.0626220703125",
+			"failing": 37,
+			"values": 16128,
+			"maxError": 16
+		},
+		{
+			"shard": 3,
+			"label": "255x257x1 rg11b10ufloat storage average random L5 mip 4",
+			"first": "255x257x1 rg11b10ufloat storage average random L5 mip 4: value 268, actual 7.4375, expected 7.125, error 0.3125 > 0.1251220703125",
+			"failing": 5,
+			"values": 960,
+			"maxError": 4
+		},
+		{
+			"shard": 4,
+			"label": "3x7x1 rgba16float storage spd average random L5 mip 1",
+			"first": "3x7x1 rgba16float storage spd average random L5 mip 1: value 0, actual 2.8828125, expected 2.921875, error 0.0390625 > 0.008784312500414672",
+			"failing": 4,
+			"values": 12,
+			"maxError": 0.05078125
+		},
+		{
+			"shard": 4,
+			"label": "3x7x1 rgba16float storage spd average random L5 mip 2",
+			"first": "3x7x1 rgba16float storage spd average random L5 mip 2: value 0, actual 2.00390625, expected 2.03515625, error 0.03125 > 0.006120640625020314",
+			"failing": 2,
+			"values": 4,
+			"maxError": 0.03125
+		},
+		{
+			"shard": 4,
+			"label": "7x4x1 rgba16float storage spd average random L5 mip 1",
+			"first": "7x4x1 rgba16float storage spd average random L5 mip 1: value 0, actual -0.496337890625, expected -0.5, error 0.003662109375 > 0.0020049999998736894",
+			"failing": 13,
+			"values": 24,
+			"maxError": 0.03515625
+		},
+		{
+			"shard": 4,
+			"label": "7x4x1 rgba16float storage spd average random L5 mip 2",
+			"first": "7x4x1 rgba16float storage spd average random L5 mip 2: value 0, actual 4.1484375, expected 4.1640625, error 0.015625 > 0.012512468749817344",
+			"failing": 2,
+			"values": 4,
+			"maxError": 0.017578125
+		},
+		{
+			"shard": 4,
+			"label": "15x17x1 rgba16float storage spd average random L5 mip 1",
+			"first": "15x17x1 rgba16float storage spd average random L5 mip 1: value 0, actual 3.49609375, expected 3.53125, error 0.03515625 > 0.010614875000785106",
+			"failing": 137,
+			"values": 224,
+			"maxError": 0.05859375
+		},
+		{
+			"shard": 4,
+			"label": "15x17x1 rgba16float storage spd average random L5 mip 2",
+			"first": "15x17x1 rgba16float storage spd average random L5 mip 2: value 0, actual 3.42578125, expected 3.44140625, error 0.015625 > 0.010347140624915483",
+			"failing": 19,
+			"values": 48,
+			"maxError": 0.02734375
+		},
+		{
+			"shard": 4,
+			"label": "17x9x1 rgba16float storage spd average random L5 mip 1",
+			"first": "17x9x1 rgba16float storage spd average random L5 mip 1: value 0, actual 3.75390625, expected 3.78125, error 0.02734375 > 0.011365874999304651",
+			"failing": 63,
+			"values": 128,
+			"maxError": 0.05859375
+		},
+		{
+			"shard": 4,
+			"label": "17x9x1 rgba16float storage spd average random L5 mip 2",
+			"first": "17x9x1 rgba16float storage spd average random L5 mip 2: value 0, actual 4.69140625, expected 4.70703125, error 0.015625 > 0.014143546874984168",
+			"failing": 6,
+			"values": 32,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 4,
+			"label": "31x33x1 rgba16float storage spd average random L5 mip 1",
+			"first": "31x33x1 rgba16float storage spd average random L5 mip 1: value 0, actual -0.62939453125, expected -0.609375, error 0.02001953125 > 0.0020123125000754954",
+			"failing": 617,
+			"values": 960,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 4,
+			"label": "31x33x1 rgba16float storage spd average random L5 mip 2",
+			"first": "31x33x1 rgba16float storage spd average random L5 mip 2: value 0, actual 2.669921875, expected 2.68359375, error 0.013671875 > 0.008069484375533648",
+			"failing": 86,
+			"values": 224,
+			"maxError": 0.0390625
+		},
+		{
+			"shard": 4,
+			"label": "31x33x1 rgba16float storage spd average random L5 mip 3",
+			"first": "31x33x1 rgba16float storage spd average random L5 mip 3: value 7, actual 3.24609375, expected 3.2578125, error 0.01171875 > 0.009792503906821367",
+			"failing": 4,
+			"values": 48,
+			"maxError": 0.015625
+		},
+		{
+			"shard": 4,
+			"label": "65x129x1 rgba16float storage spd average random L5 mip 1",
+			"first": "65x129x1 rgba16float storage spd average random L5 mip 1: value 0, actual 2.48046875, expected 2.515625, error 0.03515625 > 0.007563937500774045",
+			"failing": 5113,
+			"values": 8192,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 4,
+			"label": "65x129x1 rgba16float storage spd average random L5 mip 2",
+			"first": "65x129x1 rgba16float storage spd average random L5 mip 2: value 4, actual 3.865234375, expected 3.8828125, error 0.017578125 > 0.011669656249679975",
+			"failing": 734,
+			"values": 2048,
+			"maxError": 0.044921875
+		},
+		{
+			"shard": 4,
+			"label": "65x129x1 rgba16float storage spd average random L5 mip 3",
+			"first": "65x129x1 rgba16float storage spd average random L5 mip 3: value 20, actual 3.201171875, expected 3.2109375, error 0.009765625 > 0.00965141796944954",
+			"failing": 35,
+			"values": 512,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 4,
+			"label": "192x108x1 rgba16float storage spd average random L5 mip 1",
+			"first": "192x108x1 rgba16float storage spd average random L5 mip 1: value 2, actual 3.583984375, expected 3.5625, error 0.021484375 > 0.010704750000382774",
+			"failing": 12181,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 4,
+			"label": "192x108x1 rgba16float storage spd average random L5 mip 2",
+			"first": "192x108x1 rgba16float storage spd average random L5 mip 2: value 0, actual 3.060546875, expected 3.05078125, error 0.009765625 > 0.009170765625211061",
+			"failing": 1616,
+			"values": 5184,
+			"maxError": 0.0390625
+		},
+		{
+			"shard": 4,
+			"label": "192x108x1 rgba16float storage spd average random L5 mip 3",
+			"first": "192x108x1 rgba16float storage spd average random L5 mip 3: value 48, actual 4.85546875, expected 4.875, error 0.01953125 > 0.014646976562493365",
+			"failing": 51,
+			"values": 1248,
+			"maxError": 0.01953125
+		},
+		{
+			"shard": 4,
+			"label": "192x108x1 rgba16float storage spd average edge L5 mip 1",
+			"first": "192x108x1 rgba16float storage spd average edge L5 mip 1: value 382, actual 0.297607421875, expected 0.300048828125, error 0.00244140625 > 0.0020012001953564323",
+			"failing": 106,
+			"values": 20736,
+			"maxError": 0.003173828125
+		},
+		{
+			"shard": 4,
+			"label": "255x257x1 rgba16float storage spd average random L5 mip 1",
+			"first": "255x257x1 rgba16float storage spd average random L5 mip 1: value 0, actual -0.303466796875, expected -0.296875, error 0.006591796875 > 0.0020058125001487497",
+			"failing": 43367,
+			"values": 65024,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 4,
+			"label": "255x257x1 rgba16float storage spd average random L5 mip 2",
+			"first": "255x257x1 rgba16float storage spd average random L5 mip 2: value 1, actual 2.8203125, expected 2.796875, error 0.0234375 > 0.008406531249245746",
+			"failing": 5868,
+			"values": 16128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 4,
+			"label": "255x257x1 rgba16float storage spd average random L5 mip 3",
+			"first": "255x257x1 rgba16float storage spd average random L5 mip 3: value 0, actual 3.2578125, expected 3.248046875, error 0.009765625 > 0.009762398438280797",
+			"failing": 270,
+			"values": 3968,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 4,
+			"label": "255x257x1 rgba16float storage spd average random L5 mip 4",
+			"first": "255x257x1 rgba16float storage spd average random L5 mip 4: value 63, actual 3.490234375, expected 3.501953125, error 0.01171875 > 0.010524685546071852",
+			"failing": 1,
+			"values": 960,
+			"maxError": 0.01171875
+		},
+		{
+			"shard": 4,
+			"label": "17x11x3 rgba16float storage spd average random L5 mip 1",
+			"first": "17x11x3 rgba16float storage spd average random L5 mip 1: value 0, actual 3.75390625, expected 3.78125, error 0.02734375 > 0.011365874999304651",
+			"failing": 301,
+			"values": 480,
+			"maxError": 0.0595703125
+		},
+		{
+			"shard": 4,
+			"label": "17x11x3 rgba16float storage spd average random L5 mip 2",
+			"first": "17x11x3 rgba16float storage spd average random L5 mip 2: value 0, actual 4.69140625, expected 4.70703125, error 0.015625 > 0.014143546874984168",
+			"failing": 33,
+			"values": 96,
+			"maxError": 0.03076171875
+		},
+		{
+			"shard": 4,
+			"label": "17x11x3 rgba16float storage spd average random L5 mip 3",
+			"first": "17x11x3 rgba16float storage spd average random L5 mip 3: value 16, actual 3.525390625, expected 3.51171875, error 0.013671875 > 0.010555109374137828",
+			"failing": 2,
+			"values": 24,
+			"maxError": 0.013671875
+		},
+		{
+			"shard": 4,
+			"label": "17x9x1 rgba16float storage spd average random L5 mip 1",
+			"first": "17x9x1 rgba16float storage spd average random L5 mip 1: value 0, actual 3.75390625, expected 3.78125, error 0.02734375 > 0.011365874999304651",
+			"failing": 63,
+			"values": 128,
+			"maxError": 0.05859375
+		},
+		{
+			"shard": 4,
+			"label": "17x9x1 rgba16float storage spd average random L5 mip 2",
+			"first": "17x9x1 rgba16float storage spd average random L5 mip 2: value 0, actual 4.69140625, expected 4.70703125, error 0.015625 > 0.014143546874984168",
+			"failing": 6,
+			"values": 32,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 3x7x1 -> rgba16float half average random L1 spd mip 0",
+			"first": "rgba8unorm 3x7x1 -> rgba16float half average random L1 spd mip 0: value 0, actual 0.431884765625, expected 0.434326171875, error 0.00244140625 > 0.002001944357791217",
+			"failing": 2,
+			"values": 12,
+			"maxError": 0.003173828125
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 3x7x1 -> rgba16float half average random L4 spd mip 0",
+			"first": "rgba8unorm 3x7x1 -> rgba16float half average random L4 spd mip 0: value 0, actual 0.431884765625, expected 0.434326171875, error 0.00244140625 > 0.002001944357791217",
+			"failing": 2,
+			"values": 12,
+			"maxError": 0.003173828125
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 3x7x1 -> rgba16float half average random L5 spd mip 0",
+			"first": "rgba8unorm 3x7x1 -> rgba16float half average random L5 spd mip 0: value 0, actual 0.431884765625, expected 0.434326171875, error 0.00244140625 > 0.002001944357791217",
+			"failing": 2,
+			"values": 12,
+			"maxError": 0.003173828125
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 3x7x1 -> rgba16float half average random L6 spd mip 0",
+			"first": "rgba8unorm 3x7x1 -> rgba16float half average random L6 spd mip 0: value 0, actual 0.431884765625, expected 0.434326171875, error 0.00244140625 > 0.002001944357791217",
+			"failing": 2,
+			"values": 12,
+			"maxError": 0.003173828125
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 17x9x1 -> rgba16float half average random L1 spd mip 0",
+			"first": "rgba8unorm 17x9x1 -> rgba16float half average random L1 spd mip 0: value 1, actual 0.625, expected 0.62744140625, error 0.00244140625 > 0.0020028089914394514",
+			"failing": 11,
+			"values": 128,
+			"maxError": 0.00341796875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 17x9x1 -> rgba16float half average random L4 spd mip 0",
+			"first": "rgba8unorm 17x9x1 -> rgba16float half average random L4 spd mip 0: value 1, actual 0.625, expected 0.62744140625, error 0.00244140625 > 0.0020028089914394514",
+			"failing": 11,
+			"values": 128,
+			"maxError": 0.00341796875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 17x9x1 -> rgba16float half average random L5 spd mip 0",
+			"first": "rgba8unorm 17x9x1 -> rgba16float half average random L5 spd mip 0: value 1, actual 0.625, expected 0.62744140625, error 0.00244140625 > 0.0020028089914394514",
+			"failing": 11,
+			"values": 128,
+			"maxError": 0.00341796875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 17x9x1 -> rgba16float half average random L6 spd mip 0",
+			"first": "rgba8unorm 17x9x1 -> rgba16float half average random L6 spd mip 0: value 1, actual 0.625, expected 0.62744140625, error 0.00244140625 > 0.0020028089914394514",
+			"failing": 11,
+			"values": 128,
+			"maxError": 0.00341796875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 65x129x1 -> rgba16float half average random L1 spd mip 0",
+			"first": "rgba8unorm 65x129x1 -> rgba16float half average random L1 spd mip 0: value 0, actual 0.40673828125, expected 0.408935546875, error 0.002197265625 > 0.0020018302898752154",
+			"failing": 1356,
+			"values": 8192,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 65x129x1 -> rgba16float half average random L4 spd mip 0",
+			"first": "rgba8unorm 65x129x1 -> rgba16float half average random L4 spd mip 0: value 0, actual 0.40673828125, expected 0.408935546875, error 0.002197265625 > 0.0020018302898752154",
+			"failing": 1356,
+			"values": 8192,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 65x129x1 -> rgba16float half average random L4 spd mip 1",
+			"first": "rgba8unorm 65x129x1 -> rgba16float half average random L4 spd mip 1: value 843, actual 0.468505859375, expected 0.470703125, error 0.002197265625 > 0.002002106801730406",
+			"failing": 8,
+			"values": 2048,
+			"maxError": 0.002685546875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 65x129x1 -> rgba16float half average random L5 spd mip 0",
+			"first": "rgba8unorm 65x129x1 -> rgba16float half average random L5 spd mip 0: value 0, actual 0.40673828125, expected 0.408935546875, error 0.002197265625 > 0.0020018302898752154",
+			"failing": 1356,
+			"values": 8192,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 65x129x1 -> rgba16float half average random L5 spd mip 1",
+			"first": "rgba8unorm 65x129x1 -> rgba16float half average random L5 spd mip 1: value 843, actual 0.468505859375, expected 0.470703125, error 0.002197265625 > 0.002002106801730406",
+			"failing": 8,
+			"values": 2048,
+			"maxError": 0.002685546875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 65x129x1 -> rgba16float half average random L6 spd mip 0",
+			"first": "rgba8unorm 65x129x1 -> rgba16float half average random L6 spd mip 0: value 0, actual 0.40673828125, expected 0.408935546875, error 0.002197265625 > 0.0020018302898752154",
+			"failing": 1356,
+			"values": 8192,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 65x129x1 -> rgba16float half average random L6 spd mip 1",
+			"first": "rgba8unorm 65x129x1 -> rgba16float half average random L6 spd mip 1: value 843, actual 0.468505859375, expected 0.470703125, error 0.002197265625 > 0.002002106801730406",
+			"failing": 8,
+			"values": 2048,
+			"maxError": 0.002685546875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 255x257x1 -> rgba16float half average random L1 exact mip 1",
+			"first": "rgba8unorm 255x257x1 -> rgba16float half average random L1 exact mip 1: value 9197, actual 0.280517578125, expected 0.27783203125, error 0.002685546875 > 0.002",
+			"failing": 2,
+			"values": 16128,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 255x257x1 -> rgba16float half average random L1 spd mip 0",
+			"first": "rgba8unorm 255x257x1 -> rgba16float half average random L1 spd mip 0: value 18, actual 0.564453125, expected 0.56689453125, error 0.00244140625 > 0.0020025369829472766",
+			"failing": 13588,
+			"values": 65024,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 255x257x1 -> rgba16float half average random L1 spd mip 1",
+			"first": "rgba8unorm 255x257x1 -> rgba16float half average random L1 spd mip 1: value 3037, actual 0.37890625, expected 0.381103515625, error 0.002197265625 > 0.002001524047888779",
+			"failing": 2,
+			"values": 16128,
+			"maxError": 0.002197265625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 255x257x1 -> rgba16float half average random L4 exact mip 1",
+			"first": "rgba8unorm 255x257x1 -> rgba16float half average random L4 exact mip 1: value 9197, actual 0.280517578125, expected 0.27783203125, error 0.002685546875 > 0.002",
+			"failing": 2,
+			"values": 16128,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 255x257x1 -> rgba16float half average random L4 spd mip 0",
+			"first": "rgba8unorm 255x257x1 -> rgba16float half average random L4 spd mip 0: value 18, actual 0.564453125, expected 0.56689453125, error 0.00244140625 > 0.0020025369829472766",
+			"failing": 13588,
+			"values": 65024,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 255x257x1 -> rgba16float half average random L4 spd mip 1",
+			"first": "rgba8unorm 255x257x1 -> rgba16float half average random L4 spd mip 1: value 169, actual 0.63134765625, expected 0.62890625, error 0.00244140625 > 0.002002815572088366",
+			"failing": 107,
+			"values": 16128,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 255x257x1 -> rgba16float half average random L5 exact mip 1",
+			"first": "rgba8unorm 255x257x1 -> rgba16float half average random L5 exact mip 1: value 9197, actual 0.280517578125, expected 0.27783203125, error 0.002685546875 > 0.002",
+			"failing": 2,
+			"values": 16128,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 255x257x1 -> rgba16float half average random L5 spd mip 0",
+			"first": "rgba8unorm 255x257x1 -> rgba16float half average random L5 spd mip 0: value 18, actual 0.564453125, expected 0.56689453125, error 0.00244140625 > 0.0020025369829472766",
+			"failing": 13588,
+			"values": 65024,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 255x257x1 -> rgba16float half average random L5 spd mip 1",
+			"first": "rgba8unorm 255x257x1 -> rgba16float half average random L5 spd mip 1: value 169, actual 0.63134765625, expected 0.62890625, error 0.00244140625 > 0.002002815572088366",
+			"failing": 107,
+			"values": 16128,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 255x257x1 -> rgba16float half average random L6 exact mip 1",
+			"first": "rgba8unorm 255x257x1 -> rgba16float half average random L6 exact mip 1: value 9197, actual 0.280517578125, expected 0.27783203125, error 0.002685546875 > 0.002",
+			"failing": 2,
+			"values": 16128,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 255x257x1 -> rgba16float half average random L6 spd mip 0",
+			"first": "rgba8unorm 255x257x1 -> rgba16float half average random L6 spd mip 0: value 18, actual 0.564453125, expected 0.56689453125, error 0.00244140625 > 0.0020025369829472766",
+			"failing": 13588,
+			"values": 65024,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 255x257x1 -> rgba16float half average random L6 spd mip 1",
+			"first": "rgba8unorm 255x257x1 -> rgba16float half average random L6 spd mip 1: value 169, actual 0.63134765625, expected 0.62890625, error 0.00244140625 > 0.002002815572088366",
+			"failing": 107,
+			"values": 16128,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average random L1 exact mip 0",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average random L1 exact mip 0: value 3, actual 0.488037109375, expected 0.4853515625, error 0.002685546875 > 0.002000231433659792",
+			"failing": 2920,
+			"values": 20736,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average random L1 exact mip 1",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average random L1 exact mip 1: value 12, actual 0.496826171875, expected 0.49462890625, error 0.002197265625 > 0.002",
+			"failing": 20,
+			"values": 5184,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average random L1 spd mip 0",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average random L1 spd mip 0: value 3, actual 0.488037109375, expected 0.4853515625, error 0.002685546875 > 0.002002172610265916",
+			"failing": 2920,
+			"values": 20736,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average random L1 spd mip 1",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average random L1 spd mip 1: value 12, actual 0.496826171875, expected 0.49462890625, error 0.002197265625 > 0.0020019787596556853",
+			"failing": 20,
+			"values": 5184,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average random L4 exact mip 0",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average random L4 exact mip 0: value 3, actual 0.488037109375, expected 0.4853515625, error 0.002685546875 > 0.002000231433659792",
+			"failing": 2920,
+			"values": 20736,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average random L4 spd mip 0",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average random L4 spd mip 0: value 3, actual 0.488037109375, expected 0.4853515625, error 0.002685546875 > 0.002002172610265916",
+			"failing": 2920,
+			"values": 20736,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average random L4 spd mip 1",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average random L4 spd mip 1: value 498, actual 0.51708984375, expected 0.51953125, error 0.00244140625 > 0.0020023251827769855",
+			"failing": 13,
+			"values": 5184,
+			"maxError": 0.00244140625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average random L5 exact mip 0",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average random L5 exact mip 0: value 3, actual 0.488037109375, expected 0.4853515625, error 0.002685546875 > 0.002000231433659792",
+			"failing": 2920,
+			"values": 20736,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average random L5 spd mip 0",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average random L5 spd mip 0: value 3, actual 0.488037109375, expected 0.4853515625, error 0.002685546875 > 0.002002172610265916",
+			"failing": 2920,
+			"values": 20736,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average random L5 spd mip 1",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average random L5 spd mip 1: value 498, actual 0.51708984375, expected 0.51953125, error 0.00244140625 > 0.0020023251827769855",
+			"failing": 13,
+			"values": 5184,
+			"maxError": 0.00244140625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average random L6 exact mip 0",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average random L6 exact mip 0: value 3, actual 0.488037109375, expected 0.4853515625, error 0.002685546875 > 0.002000231433659792",
+			"failing": 2920,
+			"values": 20736,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average random L6 spd mip 0",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average random L6 spd mip 0: value 3, actual 0.488037109375, expected 0.4853515625, error 0.002685546875 > 0.002002172610265916",
+			"failing": 2920,
+			"values": 20736,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average random L6 spd mip 1",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average random L6 spd mip 1: value 498, actual 0.51708984375, expected 0.51953125, error 0.00244140625 > 0.0020023251827769855",
+			"failing": 13,
+			"values": 5184,
+			"maxError": 0.00244140625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average edge L1 exact mip 0",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average edge L1 exact mip 0: value 382, actual 0.297607421875, expected 0.300048828125, error 0.00244140625 > 0.0020001430744305253",
+			"failing": 106,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average edge L1 exact mip 1",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average edge L1 exact mip 1: value 5183, actual 0.346435546875, expected 0.348876953125, error 0.00244140625 > 0.002",
+			"failing": 1,
+			"values": 5184,
+			"maxError": 0.00244140625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average edge L1 spd mip 0",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average edge L1 spd mip 0: value 382, actual 0.297607421875, expected 0.300048828125, error 0.00244140625 > 0.0020013430744729704",
+			"failing": 106,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average edge L1 spd mip 1",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average edge L1 spd mip 1: value 5183, actual 0.346435546875, expected 0.348876953125, error 0.00244140625 > 0.002001395507865709",
+			"failing": 1,
+			"values": 5184,
+			"maxError": 0.00244140625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average edge L4 exact mip 0",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average edge L4 exact mip 0: value 382, actual 0.297607421875, expected 0.300048828125, error 0.00244140625 > 0.0020001430744305253",
+			"failing": 106,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average edge L4 spd mip 0",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average edge L4 spd mip 0: value 382, actual 0.297607421875, expected 0.300048828125, error 0.00244140625 > 0.0020013430744729704",
+			"failing": 106,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average edge L5 exact mip 0",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average edge L5 exact mip 0: value 382, actual 0.297607421875, expected 0.300048828125, error 0.00244140625 > 0.0020001430744305253",
+			"failing": 106,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average edge L5 spd mip 0",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average edge L5 spd mip 0: value 382, actual 0.297607421875, expected 0.300048828125, error 0.00244140625 > 0.0020013430744729704",
+			"failing": 106,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average edge L6 exact mip 0",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average edge L6 exact mip 0: value 382, actual 0.297607421875, expected 0.300048828125, error 0.00244140625 > 0.0020001430744305253",
+			"failing": 106,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 192x108x1 -> rgba16float half average edge L6 spd mip 0",
+			"first": "rgba8unorm 192x108x1 -> rgba16float half average edge L6 spd mip 0: value 382, actual 0.297607421875, expected 0.300048828125, error 0.00244140625 > 0.0020013430744729704",
+			"failing": 106,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 17x11x3 -> rgba16float half average random L1 spd mip 0",
+			"first": "rgba8unorm 17x11x3 -> rgba16float half average random L1 spd mip 0: value 1, actual 0.625, expected 0.62744140625, error 0.00244140625 > 0.0020028089914394514",
+			"failing": 85,
+			"values": 480,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 17x11x3 -> rgba16float half average random L4 spd mip 0",
+			"first": "rgba8unorm 17x11x3 -> rgba16float half average random L4 spd mip 0: value 1, actual 0.625, expected 0.62744140625, error 0.00244140625 > 0.0020028089914394514",
+			"failing": 85,
+			"values": 480,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 17x11x3 -> rgba16float half average random L5 spd mip 0",
+			"first": "rgba8unorm 17x11x3 -> rgba16float half average random L5 spd mip 0: value 1, actual 0.625, expected 0.62744140625, error 0.00244140625 > 0.0020028089914394514",
+			"failing": 85,
+			"values": 480,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba8unorm 17x11x3 -> rgba16float half average random L6 spd mip 0",
+			"first": "rgba8unorm 17x11x3 -> rgba16float half average random L6 spd mip 0: value 1, actual 0.625, expected 0.62744140625, error 0.00244140625 > 0.0020028089914394514",
+			"failing": 85,
+			"values": 480,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 17x9x1 -> rg11b10ufloat half average random L1 spd mip 0",
+			"first": "rgba16float 17x9x1 -> rg11b10ufloat half average random L1 spd mip 0: value 29, actual 0.42578125, expected 0.453125, error 0.02734375 > 0.007944882812807919",
+			"failing": 4,
+			"values": 128,
+			"maxError": 0.125
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 17x9x1 -> rg11b10ufloat half average random L4 spd mip 0",
+			"first": "rgba16float 17x9x1 -> rg11b10ufloat half average random L4 spd mip 0: value 29, actual 0.42578125, expected 0.453125, error 0.02734375 > 0.007944882812807919",
+			"failing": 4,
+			"values": 128,
+			"maxError": 0.125
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 17x9x1 -> rg11b10ufloat half average random L5 spd mip 0",
+			"first": "rgba16float 17x9x1 -> rg11b10ufloat half average random L5 spd mip 0: value 29, actual 0.42578125, expected 0.453125, error 0.02734375 > 0.007944882812807919",
+			"failing": 4,
+			"values": 128,
+			"maxError": 0.125
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 17x9x1 -> rg11b10ufloat half average random L6 spd mip 0",
+			"first": "rgba16float 17x9x1 -> rg11b10ufloat half average random L6 spd mip 0: value 29, actual 0.42578125, expected 0.453125, error 0.02734375 > 0.007944882812807919",
+			"failing": 4,
+			"values": 128,
+			"maxError": 0.125
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 65x129x1 -> rg11b10ufloat half average random L1 spd mip 0",
+			"first": "rgba16float 65x129x1 -> rg11b10ufloat half average random L1 spd mip 0: value 1, actual 0.4375, expected 0.421875, error 0.015625 > 0.007940757812320953",
+			"failing": 210,
+			"values": 8192,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 65x129x1 -> rg11b10ufloat half average random L4 spd mip 0",
+			"first": "rgba16float 65x129x1 -> rg11b10ufloat half average random L4 spd mip 0: value 1, actual 0.4375, expected 0.421875, error 0.015625 > 0.007940757812320953",
+			"failing": 210,
+			"values": 8192,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 65x129x1 -> rg11b10ufloat half average random L5 spd mip 0",
+			"first": "rgba16float 65x129x1 -> rg11b10ufloat half average random L5 spd mip 0: value 1, actual 0.4375, expected 0.421875, error 0.015625 > 0.007940757812320953",
+			"failing": 210,
+			"values": 8192,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 65x129x1 -> rg11b10ufloat half average random L6 spd mip 0",
+			"first": "rgba16float 65x129x1 -> rg11b10ufloat half average random L6 spd mip 0: value 1, actual 0.4375, expected 0.421875, error 0.015625 > 0.007940757812320953",
+			"failing": 210,
+			"values": 8192,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 255x257x1 -> rg11b10ufloat half average random L1 exact mip 1",
+			"first": "rgba16float 255x257x1 -> rg11b10ufloat half average random L1 exact mip 1: value 376, actual 0.01904296875, expected 0, error 0.01904296875 > 0.0001239776611328125",
+			"failing": 10,
+			"values": 16128,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 255x257x1 -> rg11b10ufloat half average random L1 spd mip 0",
+			"first": "rgba16float 255x257x1 -> rg11b10ufloat half average random L1 spd mip 0: value 16, actual 0.0751953125, expected 0.0625, error 0.0126953125 > 0.0020844453129029716",
+			"failing": 1821,
+			"values": 65024,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 255x257x1 -> rg11b10ufloat half average random L4 exact mip 1",
+			"first": "rgba16float 255x257x1 -> rg11b10ufloat half average random L4 exact mip 1: value 376, actual 0.01904296875, expected 0, error 0.01904296875 > 0.0001239776611328125",
+			"failing": 10,
+			"values": 16128,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 255x257x1 -> rg11b10ufloat half average random L4 spd mip 0",
+			"first": "rgba16float 255x257x1 -> rg11b10ufloat half average random L4 spd mip 0: value 16, actual 0.0751953125, expected 0.0625, error 0.0126953125 > 0.0020844453129029716",
+			"failing": 1821,
+			"values": 65024,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 255x257x1 -> rg11b10ufloat half average random L4 spd mip 1",
+			"first": "rgba16float 255x257x1 -> rg11b10ufloat half average random L4 spd mip 1: value 7462, actual 0.3828125, expected 0.40625, error 0.0234375 > 0.01575947656237986",
+			"failing": 8,
+			"values": 16128,
+			"maxError": 0.125
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 255x257x1 -> rg11b10ufloat half average random L5 exact mip 1",
+			"first": "rgba16float 255x257x1 -> rg11b10ufloat half average random L5 exact mip 1: value 376, actual 0.01904296875, expected 0, error 0.01904296875 > 0.0001239776611328125",
+			"failing": 10,
+			"values": 16128,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 255x257x1 -> rg11b10ufloat half average random L5 spd mip 0",
+			"first": "rgba16float 255x257x1 -> rg11b10ufloat half average random L5 spd mip 0: value 16, actual 0.0751953125, expected 0.0625, error 0.0126953125 > 0.0020844453129029716",
+			"failing": 1821,
+			"values": 65024,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 255x257x1 -> rg11b10ufloat half average random L5 spd mip 1",
+			"first": "rgba16float 255x257x1 -> rg11b10ufloat half average random L5 spd mip 1: value 7462, actual 0.3828125, expected 0.40625, error 0.0234375 > 0.01575947656237986",
+			"failing": 8,
+			"values": 16128,
+			"maxError": 0.125
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 255x257x1 -> rg11b10ufloat half average random L6 exact mip 1",
+			"first": "rgba16float 255x257x1 -> rg11b10ufloat half average random L6 exact mip 1: value 376, actual 0.01904296875, expected 0, error 0.01904296875 > 0.0001239776611328125",
+			"failing": 10,
+			"values": 16128,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 255x257x1 -> rg11b10ufloat half average random L6 spd mip 0",
+			"first": "rgba16float 255x257x1 -> rg11b10ufloat half average random L6 spd mip 0: value 16, actual 0.0751953125, expected 0.0625, error 0.0126953125 > 0.0020844453129029716",
+			"failing": 1821,
+			"values": 65024,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 255x257x1 -> rg11b10ufloat half average random L6 spd mip 1",
+			"first": "rgba16float 255x257x1 -> rg11b10ufloat half average random L6 spd mip 1: value 7462, actual 0.3828125, expected 0.40625, error 0.0234375 > 0.01575947656237986",
+			"failing": 8,
+			"values": 16128,
+			"maxError": 0.125
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 192x108x1 -> rg11b10ufloat half average random L1 exact mip 0",
+			"first": "rgba16float 192x108x1 -> rg11b10ufloat half average random L1 exact mip 0: value 8, actual 1.15625, expected 1.109375, error 0.046875 > 0.0313720703125",
+			"failing": 484,
+			"values": 20736,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 192x108x1 -> rg11b10ufloat half average random L1 exact mip 1",
+			"first": "rgba16float 192x108x1 -> rg11b10ufloat half average random L1 exact mip 1: value 1573, actual 2.03125, expected 1.984375, error 0.046875 > 0.0313720703125",
+			"failing": 1,
+			"values": 5184,
+			"maxError": 0.125
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 192x108x1 -> rg11b10ufloat half average random L1 spd mip 0",
+			"first": "rgba16float 192x108x1 -> rg11b10ufloat half average random L1 spd mip 0: value 8, actual 1.15625, expected 1.109375, error 0.046875 > 0.031387132812596974",
+			"failing": 484,
+			"values": 20736,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 192x108x1 -> rg11b10ufloat half average random L1 spd mip 1",
+			"first": "rgba16float 192x108x1 -> rg11b10ufloat half average random L1 spd mip 1: value 1573, actual 2.03125, expected 1.984375, error 0.046875 > 0.03138003124968236",
+			"failing": 1,
+			"values": 5184,
+			"maxError": 0.125
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 192x108x1 -> rg11b10ufloat half average random L4 exact mip 0",
+			"first": "rgba16float 192x108x1 -> rg11b10ufloat half average random L4 exact mip 0: value 8, actual 1.15625, expected 1.109375, error 0.046875 > 0.0313720703125",
+			"failing": 484,
+			"values": 20736,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 192x108x1 -> rg11b10ufloat half average random L4 spd mip 0",
+			"first": "rgba16float 192x108x1 -> rg11b10ufloat half average random L4 spd mip 0: value 8, actual 1.15625, expected 1.109375, error 0.046875 > 0.031387132812596974",
+			"failing": 484,
+			"values": 20736,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 192x108x1 -> rg11b10ufloat half average random L4 spd mip 1",
+			"first": "rgba16float 192x108x1 -> rg11b10ufloat half average random L4 spd mip 1: value 377, actual 0.921875, expected 0.9453125, error 0.0234375 > 0.01576038281291403",
+			"failing": 3,
+			"values": 5184,
+			"maxError": 0.125
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 192x108x1 -> rg11b10ufloat half average random L5 exact mip 0",
+			"first": "rgba16float 192x108x1 -> rg11b10ufloat half average random L5 exact mip 0: value 8, actual 1.15625, expected 1.109375, error 0.046875 > 0.0313720703125",
+			"failing": 484,
+			"values": 20736,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 192x108x1 -> rg11b10ufloat half average random L5 spd mip 0",
+			"first": "rgba16float 192x108x1 -> rg11b10ufloat half average random L5 spd mip 0: value 8, actual 1.15625, expected 1.109375, error 0.046875 > 0.031387132812596974",
+			"failing": 484,
+			"values": 20736,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 192x108x1 -> rg11b10ufloat half average random L5 spd mip 1",
+			"first": "rgba16float 192x108x1 -> rg11b10ufloat half average random L5 spd mip 1: value 377, actual 0.921875, expected 0.9453125, error 0.0234375 > 0.01576038281291403",
+			"failing": 3,
+			"values": 5184,
+			"maxError": 0.125
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 192x108x1 -> rg11b10ufloat half average random L6 exact mip 0",
+			"first": "rgba16float 192x108x1 -> rg11b10ufloat half average random L6 exact mip 0: value 8, actual 1.15625, expected 1.109375, error 0.046875 > 0.0313720703125",
+			"failing": 484,
+			"values": 20736,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 192x108x1 -> rg11b10ufloat half average random L6 spd mip 0",
+			"first": "rgba16float 192x108x1 -> rg11b10ufloat half average random L6 spd mip 0: value 8, actual 1.15625, expected 1.109375, error 0.046875 > 0.031387132812596974",
+			"failing": 484,
+			"values": 20736,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 192x108x1 -> rg11b10ufloat half average random L6 spd mip 1",
+			"first": "rgba16float 192x108x1 -> rg11b10ufloat half average random L6 spd mip 1: value 377, actual 0.921875, expected 0.9453125, error 0.0234375 > 0.01576038281291403",
+			"failing": 3,
+			"values": 5184,
+			"maxError": 0.125
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 17x11x3 -> rg11b10ufloat half average random L1 spd mip 0",
+			"first": "rgba16float 17x11x3 -> rg11b10ufloat half average random L1 spd mip 0: value 29, actual 0.42578125, expected 0.453125, error 0.02734375 > 0.007944882812807919",
+			"failing": 21,
+			"values": 480,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 17x11x3 -> rg11b10ufloat half average random L4 spd mip 0",
+			"first": "rgba16float 17x11x3 -> rg11b10ufloat half average random L4 spd mip 0: value 29, actual 0.42578125, expected 0.453125, error 0.02734375 > 0.007944882812807919",
+			"failing": 21,
+			"values": 480,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 17x11x3 -> rg11b10ufloat half average random L4 spd mip 1",
+			"first": "rgba16float 17x11x3 -> rg11b10ufloat half average random L4 spd mip 1: value 68, actual 0.8515625, expected 0.828125, error 0.0234375 > 0.015760585937641736",
+			"failing": 1,
+			"values": 96,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 17x11x3 -> rg11b10ufloat half average random L5 spd mip 0",
+			"first": "rgba16float 17x11x3 -> rg11b10ufloat half average random L5 spd mip 0: value 29, actual 0.42578125, expected 0.453125, error 0.02734375 > 0.007944882812807919",
+			"failing": 21,
+			"values": 480,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 17x11x3 -> rg11b10ufloat half average random L5 spd mip 1",
+			"first": "rgba16float 17x11x3 -> rg11b10ufloat half average random L5 spd mip 1: value 68, actual 0.8515625, expected 0.828125, error 0.0234375 > 0.015760585937641736",
+			"failing": 1,
+			"values": 96,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 17x11x3 -> rg11b10ufloat half average random L6 spd mip 0",
+			"first": "rgba16float 17x11x3 -> rg11b10ufloat half average random L6 spd mip 0: value 29, actual 0.42578125, expected 0.453125, error 0.02734375 > 0.007944882812807919",
+			"failing": 21,
+			"values": 480,
+			"maxError": 0.25
+		},
+		{
+			"shard": 4,
+			"label": "rgba16float 17x11x3 -> rg11b10ufloat half average random L6 spd mip 1",
+			"first": "rgba16float 17x11x3 -> rg11b10ufloat half average random L6 spd mip 1: value 68, actual 0.8515625, expected 0.828125, error 0.0234375 > 0.015760585937641736",
+			"failing": 1,
+			"values": 96,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "15x17x1 rgba16float storage average random L4 mip 1",
+			"first": "15x17x1 rgba16float storage average random L4 mip 1: value 12, actual 4.77734375, expected 4.79296875, error 0.015625 > 0.01437890625",
+			"failing": 16,
+			"values": 224,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "15x17x1 rgba16float storage average random L6 mip 1",
+			"first": "15x17x1 rgba16float storage average random L6 mip 1: value 12, actual 4.77734375, expected 4.79296875, error 0.015625 > 0.01437890625",
+			"failing": 16,
+			"values": 224,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "31x33x1 rgba16float storage average random L4 mip 1",
+			"first": "31x33x1 rgba16float storage average random L4 mip 1: value 28, actual 2.912109375, expected 2.89453125, error 0.017578125 > 0.00868359375",
+			"failing": 39,
+			"values": 960,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "31x33x1 rgba16float storage average random L4 mip 2",
+			"first": "31x33x1 rgba16float storage average random L4 mip 2: value 14, actual 1.505859375, expected 1.482421875, error 0.0234375 > 0.004447265625",
+			"failing": 12,
+			"values": 224,
+			"maxError": 0.0390625
+		},
+		{
+			"shard": 5,
+			"label": "31x33x1 rgba16float storage average random L6 mip 1",
+			"first": "31x33x1 rgba16float storage average random L6 mip 1: value 28, actual 2.912109375, expected 2.89453125, error 0.017578125 > 0.00868359375",
+			"failing": 39,
+			"values": 960,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "31x33x1 rgba16float storage average random L6 mip 2",
+			"first": "31x33x1 rgba16float storage average random L6 mip 2: value 14, actual 1.505859375, expected 1.482421875, error 0.0234375 > 0.004447265625",
+			"failing": 12,
+			"values": 224,
+			"maxError": 0.0390625
+		},
+		{
+			"shard": 5,
+			"label": "192x108x1 rgba16float storage average random L4 mip 1",
+			"first": "192x108x1 rgba16float storage average random L4 mip 1: value 2, actual 3.583984375, expected 3.5625, error 0.021484375 > 0.0106875",
+			"failing": 12189,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "192x108x1 rgba16float storage average random L4 mip 3",
+			"first": "192x108x1 rgba16float storage average random L4 mip 3: value 588, actual 2.927734375, expected 2.91796875, error 0.009765625 > 0.00875390625",
+			"failing": 9,
+			"values": 1248,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 5,
+			"label": "192x108x1 rgba16float storage average edge L4 mip 1",
+			"first": "192x108x1 rgba16float storage average edge L4 mip 1: value 382, actual 0.297607421875, expected 0.300048828125, error 0.00244140625 > 0.002",
+			"failing": 106,
+			"values": 20736,
+			"maxError": 0.003173828125
+		},
+		{
+			"shard": 5,
+			"label": "192x108x1 rgba16float storage average random L6 mip 1",
+			"first": "192x108x1 rgba16float storage average random L6 mip 1: value 2, actual 3.583984375, expected 3.5625, error 0.021484375 > 0.0106875",
+			"failing": 12189,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "192x108x1 rgba16float storage average random L6 mip 3",
+			"first": "192x108x1 rgba16float storage average random L6 mip 3: value 588, actual 2.927734375, expected 2.91796875, error 0.009765625 > 0.00875390625",
+			"failing": 9,
+			"values": 1248,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 5,
+			"label": "192x108x1 rgba16float storage average edge L6 mip 1",
+			"first": "192x108x1 rgba16float storage average edge L6 mip 1: value 382, actual 0.297607421875, expected 0.300048828125, error 0.00244140625 > 0.002",
+			"failing": 106,
+			"values": 20736,
+			"maxError": 0.003173828125
+		},
+		{
+			"shard": 5,
+			"label": "255x257x1 rgba16float storage average random L4 mip 2",
+			"first": "255x257x1 rgba16float storage average random L4 mip 2: value 376, actual -1.09765625, expected -1.12109375, error 0.0234375 > 0.00336328125",
+			"failing": 112,
+			"values": 16128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "255x257x1 rgba16float storage average random L4 mip 4",
+			"first": "255x257x1 rgba16float storage average random L4 mip 4: value 28, actual 2.134765625, expected 2.125, error 0.009765625 > 0.0063750000000000005",
+			"failing": 8,
+			"values": 960,
+			"maxError": 0.013671875
+		},
+		{
+			"shard": 5,
+			"label": "255x257x1 rgba16float storage average random L6 mip 2",
+			"first": "255x257x1 rgba16float storage average random L6 mip 2: value 376, actual -1.09765625, expected -1.12109375, error 0.0234375 > 0.00336328125",
+			"failing": 112,
+			"values": 16128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "255x257x1 rgba16float storage average random L6 mip 4",
+			"first": "255x257x1 rgba16float storage average random L6 mip 4: value 28, actual 2.134765625, expected 2.125, error 0.009765625 > 0.0063750000000000005",
+			"failing": 8,
+			"values": 960,
+			"maxError": 0.013671875
+		},
+		{
+			"shard": 5,
+			"label": "31x33x1 rgb9e5ufloat buffer average random L1 mip 1",
+			"first": "31x33x1 rgb9e5ufloat buffer average random L1 mip 1: value 150, actual 5.453125, expected 5.1875, error 0.265625 > 0.0313720703125",
+			"failing": 9,
+			"values": 960,
+			"maxError": 5.296875
+		},
+		{
+			"shard": 5,
+			"label": "31x33x1 rgb9e5ufloat buffer average random L1 mip 2",
+			"first": "31x33x1 rgb9e5ufloat buffer average random L1 mip 2: value 12, actual 2.0703125, expected 2.015625, error 0.0546875 > 0.0157470703125",
+			"failing": 8,
+			"values": 224,
+			"maxError": 2
+		},
+		{
+			"shard": 5,
+			"label": "192x108x1 rgb9e5ufloat buffer average random L1 mip 1",
+			"first": "192x108x1 rgb9e5ufloat buffer average random L1 mip 1: value 6, actual 30.4375, expected 30.6875, error 0.25 > 0.1251220703125",
+			"failing": 2565,
+			"values": 20736,
+			"maxError": 8
+		},
+		{
+			"shard": 5,
+			"label": "192x108x1 rgb9e5ufloat buffer average random L1 mip 2",
+			"first": "192x108x1 rgb9e5ufloat buffer average random L1 mip 2: value 9, actual 103.25, expected 104.75, error 1.5 > 0.5001220703125",
+			"failing": 634,
+			"values": 5184,
+			"maxError": 3.5
+		},
+		{
+			"shard": 5,
+			"label": "192x108x1 rgb9e5ufloat buffer average random L1 mip 3",
+			"first": "192x108x1 rgb9e5ufloat buffer average random L1 mip 3: value 249, actual 63, expected 63.5, error 0.5 > 0.2969970703125",
+			"failing": 16,
+			"values": 1248,
+			"maxError": 1.5
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x9x1 -> rgba8unorm half average random L1 spd mip 0",
+			"first": "rgba16float 17x9x1 -> rgba8unorm half average random L1 spd mip 0: value 29, actual 0.4274509847164154, expected 0.45490196347236633, error 0.027450978755950928 > 0.007892665441484389",
+			"failing": 5,
+			"values": 128,
+			"maxError": 0.04313725233078003
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x9x1 -> rgba8unorm half average random L4 spd mip 0",
+			"first": "rgba16float 17x9x1 -> rgba8unorm half average random L4 spd mip 0: value 29, actual 0.4274509847164154, expected 0.45490196347236633, error 0.027450978755950928 > 0.007892665441484389",
+			"failing": 5,
+			"values": 128,
+			"maxError": 0.04313725233078003
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x9x1 -> rgba8unorm half average random L5 spd mip 0",
+			"first": "rgba16float 17x9x1 -> rgba8unorm half average random L5 spd mip 0: value 29, actual 0.4274509847164154, expected 0.45490196347236633, error 0.027450978755950928 > 0.007892665441484389",
+			"failing": 5,
+			"values": 128,
+			"maxError": 0.04313725233078003
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x9x1 -> rgba8unorm half average random L6 spd mip 0",
+			"first": "rgba16float 17x9x1 -> rgba8unorm half average random L6 spd mip 0: value 29, actual 0.4274509847164154, expected 0.45490196347236633, error 0.027450978755950928 > 0.007892665441484389",
+			"failing": 5,
+			"values": 128,
+			"maxError": 0.04313725233078003
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 65x129x1 -> rgba8unorm half average random L1 spd mip 0",
+			"first": "rgba16float 65x129x1 -> rgba8unorm half average random L1 spd mip 0: value 1, actual 0.43921568989753723, expected 0.42352941632270813, error 0.0156862735748291 > 0.007888540440997424",
+			"failing": 319,
+			"values": 8192,
+			"maxError": 0.05882355570793152
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 65x129x1 -> rgba8unorm half average random L4 spd mip 0",
+			"first": "rgba16float 65x129x1 -> rgba8unorm half average random L4 spd mip 0: value 1, actual 0.43921568989753723, expected 0.42352941632270813, error 0.0156862735748291 > 0.007888540440997424",
+			"failing": 319,
+			"values": 8192,
+			"maxError": 0.05882355570793152
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 65x129x1 -> rgba8unorm half average random L4 spd mip 1",
+			"first": "rgba16float 65x129x1 -> rgba8unorm half average random L4 spd mip 1: value 88, actual 0.729411780834198, expected 0.7411764860153198, error 0.011764705181121826 > 0.007892134191077168",
+			"failing": 4,
+			"values": 2048,
+			"maxError": 0.0156862735748291
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 65x129x1 -> rgba8unorm half average random L5 spd mip 0",
+			"first": "rgba16float 65x129x1 -> rgba8unorm half average random L5 spd mip 0: value 1, actual 0.43921568989753723, expected 0.42352941632270813, error 0.0156862735748291 > 0.007888540440997424",
+			"failing": 319,
+			"values": 8192,
+			"maxError": 0.05882355570793152
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 65x129x1 -> rgba8unorm half average random L5 spd mip 1",
+			"first": "rgba16float 65x129x1 -> rgba8unorm half average random L5 spd mip 1: value 88, actual 0.729411780834198, expected 0.7411764860153198, error 0.011764705181121826 > 0.007892134191077168",
+			"failing": 4,
+			"values": 2048,
+			"maxError": 0.0156862735748291
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 65x129x1 -> rgba8unorm half average random L6 spd mip 0",
+			"first": "rgba16float 65x129x1 -> rgba8unorm half average random L6 spd mip 0: value 1, actual 0.43921568989753723, expected 0.42352941632270813, error 0.0156862735748291 > 0.007888540440997424",
+			"failing": 319,
+			"values": 8192,
+			"maxError": 0.05882355570793152
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 65x129x1 -> rgba8unorm half average random L6 spd mip 1",
+			"first": "rgba16float 65x129x1 -> rgba8unorm half average random L6 spd mip 1: value 88, actual 0.729411780834198, expected 0.7411764860153198, error 0.011764705181121826 > 0.007892134191077168",
+			"failing": 4,
+			"values": 2048,
+			"maxError": 0.0156862735748291
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgba8unorm half average random L1 spd mip 0",
+			"first": "rgba16float 255x257x1 -> rgba8unorm half average random L1 spd mip 0: value 16, actual 0.07450980693101883, expected 0.062745101749897, error 0.011764705181121826 > 0.007891602941579442",
+			"failing": 2581,
+			"values": 65024,
+			"maxError": 0.0627450942993164
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgba8unorm half average random L4 spd mip 0",
+			"first": "rgba16float 255x257x1 -> rgba8unorm half average random L4 spd mip 0: value 16, actual 0.07450980693101883, expected 0.062745101749897, error 0.011764705181121826 > 0.007891602941579442",
+			"failing": 2581,
+			"values": 65024,
+			"maxError": 0.0627450942993164
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgba8unorm half average random L4 spd mip 1",
+			"first": "rgba16float 255x257x1 -> rgba8unorm half average random L4 spd mip 1: value 13, actual 0.8352941274642944, expected 0.8235294222831726, error 0.011764705181121826 > 0.00789611856640284",
+			"failing": 25,
+			"values": 16128,
+			"maxError": 0.02745098154991865
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgba8unorm half average random L5 spd mip 0",
+			"first": "rgba16float 255x257x1 -> rgba8unorm half average random L5 spd mip 0: value 16, actual 0.07450980693101883, expected 0.062745101749897, error 0.011764705181121826 > 0.007891602941579442",
+			"failing": 2581,
+			"values": 65024,
+			"maxError": 0.0627450942993164
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgba8unorm half average random L5 spd mip 1",
+			"first": "rgba16float 255x257x1 -> rgba8unorm half average random L5 spd mip 1: value 13, actual 0.8352941274642944, expected 0.8235294222831726, error 0.011764705181121826 > 0.00789611856640284",
+			"failing": 25,
+			"values": 16128,
+			"maxError": 0.02745098154991865
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgba8unorm half average random L6 spd mip 0",
+			"first": "rgba16float 255x257x1 -> rgba8unorm half average random L6 spd mip 0: value 16, actual 0.07450980693101883, expected 0.062745101749897, error 0.011764705181121826 > 0.007891602941579442",
+			"failing": 2581,
+			"values": 65024,
+			"maxError": 0.0627450942993164
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgba8unorm half average random L6 spd mip 1",
+			"first": "rgba16float 255x257x1 -> rgba8unorm half average random L6 spd mip 1: value 13, actual 0.8352941274642944, expected 0.8235294222831726, error 0.011764705181121826 > 0.00789611856640284",
+			"failing": 25,
+			"values": 16128,
+			"maxError": 0.02745098154991865
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgba8unorm half average random L1 exact mip 0",
+			"first": "rgba16float 192x108x1 -> rgba8unorm half average random L1 exact mip 0: value 10, actual 0.929411768913269, expected 0.8901960849761963, error 0.039215683937072754 > 0.00788235294117647",
+			"failing": 761,
+			"values": 20736,
+			"maxError": 0.05882353335618973
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgba8unorm half average random L1 spd mip 0",
+			"first": "rgba16float 192x108x1 -> rgba8unorm half average random L1 spd mip 0: value 10, actual 0.929411768913269, expected 0.8901960849761963, error 0.039215683937072754 > 0.007898040440575535",
+			"failing": 761,
+			"values": 20736,
+			"maxError": 0.05882353335618973
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgba8unorm half average random L4 exact mip 0",
+			"first": "rgba16float 192x108x1 -> rgba8unorm half average random L4 exact mip 0: value 10, actual 0.929411768913269, expected 0.8901960849761963, error 0.039215683937072754 > 0.00788235294117647",
+			"failing": 761,
+			"values": 20736,
+			"maxError": 0.05882353335618973
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgba8unorm half average random L4 spd mip 0",
+			"first": "rgba16float 192x108x1 -> rgba8unorm half average random L4 spd mip 0: value 10, actual 0.929411768913269, expected 0.8901960849761963, error 0.039215683937072754 > 0.007898040440575535",
+			"failing": 761,
+			"values": 20736,
+			"maxError": 0.05882353335618973
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgba8unorm half average random L4 spd mip 1",
+			"first": "rgba16float 192x108x1 -> rgba8unorm half average random L4 spd mip 1: value 377, actual 0.9254902005195618, expected 0.9450980424880981, error 0.019607841968536377 > 0.007895665441590502",
+			"failing": 9,
+			"values": 5184,
+			"maxError": 0.019607841968536377
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgba8unorm half average random L5 exact mip 0",
+			"first": "rgba16float 192x108x1 -> rgba8unorm half average random L5 exact mip 0: value 10, actual 0.929411768913269, expected 0.8901960849761963, error 0.039215683937072754 > 0.00788235294117647",
+			"failing": 761,
+			"values": 20736,
+			"maxError": 0.05882353335618973
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgba8unorm half average random L5 spd mip 0",
+			"first": "rgba16float 192x108x1 -> rgba8unorm half average random L5 spd mip 0: value 10, actual 0.929411768913269, expected 0.8901960849761963, error 0.039215683937072754 > 0.007898040440575535",
+			"failing": 761,
+			"values": 20736,
+			"maxError": 0.05882353335618973
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgba8unorm half average random L5 spd mip 1",
+			"first": "rgba16float 192x108x1 -> rgba8unorm half average random L5 spd mip 1: value 377, actual 0.9254902005195618, expected 0.9450980424880981, error 0.019607841968536377 > 0.007895665441590502",
+			"failing": 9,
+			"values": 5184,
+			"maxError": 0.019607841968536377
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgba8unorm half average random L6 exact mip 0",
+			"first": "rgba16float 192x108x1 -> rgba8unorm half average random L6 exact mip 0: value 10, actual 0.929411768913269, expected 0.8901960849761963, error 0.039215683937072754 > 0.00788235294117647",
+			"failing": 761,
+			"values": 20736,
+			"maxError": 0.05882353335618973
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgba8unorm half average random L6 spd mip 0",
+			"first": "rgba16float 192x108x1 -> rgba8unorm half average random L6 spd mip 0: value 10, actual 0.929411768913269, expected 0.8901960849761963, error 0.039215683937072754 > 0.007898040440575535",
+			"failing": 761,
+			"values": 20736,
+			"maxError": 0.05882353335618973
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgba8unorm half average random L6 spd mip 1",
+			"first": "rgba16float 192x108x1 -> rgba8unorm half average random L6 spd mip 1: value 377, actual 0.9254902005195618, expected 0.9450980424880981, error 0.019607841968536377 > 0.007895665441590502",
+			"failing": 9,
+			"values": 5184,
+			"maxError": 0.019607841968536377
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x11x3 -> rgba8unorm half average random L1 spd mip 0",
+			"first": "rgba16float 17x11x3 -> rgba8unorm half average random L1 spd mip 0: value 29, actual 0.4274509847164154, expected 0.45490196347236633, error 0.027450978755950928 > 0.007892665441484389",
+			"failing": 20,
+			"values": 480,
+			"maxError": 0.04313725233078003
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x11x3 -> rgba8unorm half average random L4 spd mip 0",
+			"first": "rgba16float 17x11x3 -> rgba8unorm half average random L4 spd mip 0: value 29, actual 0.4274509847164154, expected 0.45490196347236633, error 0.027450978755950928 > 0.007892665441484389",
+			"failing": 20,
+			"values": 480,
+			"maxError": 0.04313725233078003
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x11x3 -> rgba8unorm half average random L4 spd mip 1",
+			"first": "rgba16float 17x11x3 -> rgba8unorm half average random L4 spd mip 1: value 68, actual 0.8549019694328308, expected 0.8235294222831726, error 0.0313725471496582 > 0.007895868566318206",
+			"failing": 1,
+			"values": 96,
+			"maxError": 0.0313725471496582
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x11x3 -> rgba8unorm half average random L5 spd mip 0",
+			"first": "rgba16float 17x11x3 -> rgba8unorm half average random L5 spd mip 0: value 29, actual 0.4274509847164154, expected 0.45490196347236633, error 0.027450978755950928 > 0.007892665441484389",
+			"failing": 20,
+			"values": 480,
+			"maxError": 0.04313725233078003
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x11x3 -> rgba8unorm half average random L5 spd mip 1",
+			"first": "rgba16float 17x11x3 -> rgba8unorm half average random L5 spd mip 1: value 68, actual 0.8549019694328308, expected 0.8235294222831726, error 0.0313725471496582 > 0.007895868566318206",
+			"failing": 1,
+			"values": 96,
+			"maxError": 0.0313725471496582
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x11x3 -> rgba8unorm half average random L6 spd mip 0",
+			"first": "rgba16float 17x11x3 -> rgba8unorm half average random L6 spd mip 0: value 29, actual 0.4274509847164154, expected 0.45490196347236633, error 0.027450978755950928 > 0.007892665441484389",
+			"failing": 20,
+			"values": 480,
+			"maxError": 0.04313725233078003
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x11x3 -> rgba8unorm half average random L6 spd mip 1",
+			"first": "rgba16float 17x11x3 -> rgba8unorm half average random L6 spd mip 1: value 68, actual 0.8549019694328308, expected 0.8235294222831726, error 0.0313725471496582 > 0.007895868566318206",
+			"failing": 1,
+			"values": 96,
+			"maxError": 0.0313725471496582
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x9x1 -> rgb9e5ufloat half average random L1 spd mip 0",
+			"first": "rgba16float 17x9x1 -> rgb9e5ufloat half average random L1 spd mip 0: value 17, actual 5.375, expected 5.328125, error 0.046875 > 0.03139888281293679",
+			"failing": 3,
+			"values": 128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x9x1 -> rgb9e5ufloat half average random L4 spd mip 0",
+			"first": "rgba16float 17x9x1 -> rgb9e5ufloat half average random L4 spd mip 0: value 17, actual 5.375, expected 5.328125, error 0.046875 > 0.03139888281293679",
+			"failing": 3,
+			"values": 128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x9x1 -> rgb9e5ufloat half average random L5 spd mip 0",
+			"first": "rgba16float 17x9x1 -> rgb9e5ufloat half average random L5 spd mip 0: value 17, actual 5.375, expected 5.328125, error 0.046875 > 0.03139888281293679",
+			"failing": 3,
+			"values": 128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x9x1 -> rgb9e5ufloat half average random L6 spd mip 0",
+			"first": "rgba16float 17x9x1 -> rgb9e5ufloat half average random L6 spd mip 0: value 17, actual 5.375, expected 5.328125, error 0.046875 > 0.03139888281293679",
+			"failing": 3,
+			"values": 128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 65x129x1 -> rgb9e5ufloat half average random L1 spd mip 0",
+			"first": "rgba16float 65x129x1 -> rgb9e5ufloat half average random L1 spd mip 0: value 4, actual 1.640625, expected 1.6875, error 0.046875 > 0.03138982031305204",
+			"failing": 853,
+			"values": 8192,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 65x129x1 -> rgb9e5ufloat half average random L4 spd mip 0",
+			"first": "rgba16float 65x129x1 -> rgb9e5ufloat half average random L4 spd mip 0: value 4, actual 1.640625, expected 1.6875, error 0.046875 > 0.03138982031305204",
+			"failing": 853,
+			"values": 8192,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 65x129x1 -> rgb9e5ufloat half average random L4 spd mip 1",
+			"first": "rgba16float 65x129x1 -> rgb9e5ufloat half average random L4 spd mip 1: value 80, actual 1.984375, expected 1.9609375, error 0.0234375 > 0.015763679686642718",
+			"failing": 26,
+			"values": 2048,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 65x129x1 -> rgb9e5ufloat half average random L5 spd mip 0",
+			"first": "rgba16float 65x129x1 -> rgb9e5ufloat half average random L5 spd mip 0: value 4, actual 1.640625, expected 1.6875, error 0.046875 > 0.03138982031305204",
+			"failing": 853,
+			"values": 8192,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 65x129x1 -> rgb9e5ufloat half average random L5 spd mip 1",
+			"first": "rgba16float 65x129x1 -> rgb9e5ufloat half average random L5 spd mip 1: value 80, actual 1.984375, expected 1.9609375, error 0.0234375 > 0.015763679686642718",
+			"failing": 26,
+			"values": 2048,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 65x129x1 -> rgb9e5ufloat half average random L6 spd mip 0",
+			"first": "rgba16float 65x129x1 -> rgb9e5ufloat half average random L6 spd mip 0: value 4, actual 1.640625, expected 1.6875, error 0.046875 > 0.03138982031305204",
+			"failing": 853,
+			"values": 8192,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 65x129x1 -> rgb9e5ufloat half average random L6 spd mip 1",
+			"first": "rgba16float 65x129x1 -> rgb9e5ufloat half average random L6 spd mip 1: value 80, actual 1.984375, expected 1.9609375, error 0.0234375 > 0.015763679686642718",
+			"failing": 26,
+			"values": 2048,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L1 exact mip 1",
+			"first": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L1 exact mip 1: value 2392, actual 1.0703125, expected 1.046875, error 0.0234375 > 0.0157470703125",
+			"failing": 4,
+			"values": 16128,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L1 spd mip 0",
+			"first": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L1 spd mip 0: value 28, actual 3.4453125, expected 3.421875, error 0.0234375 > 0.015768007811857387",
+			"failing": 8253,
+			"values": 65024,
+			"maxError": 0.078125
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L1 spd mip 1",
+			"first": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L1 spd mip 1: value 974, actual 3.296875, expected 3.3203125, error 0.0234375 > 0.0157603359375571",
+			"failing": 35,
+			"values": 16128,
+			"maxError": 0.03125
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L4 exact mip 1",
+			"first": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L4 exact mip 1: value 2392, actual 1.0703125, expected 1.046875, error 0.0234375 > 0.0157470703125",
+			"failing": 4,
+			"values": 16128,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L4 spd mip 0",
+			"first": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L4 spd mip 0: value 28, actual 3.4453125, expected 3.421875, error 0.0234375 > 0.015768007811857387",
+			"failing": 8253,
+			"values": 65024,
+			"maxError": 0.078125
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L4 spd mip 1",
+			"first": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L4 spd mip 1: value 1, actual 2.8203125, expected 2.796875, error 0.0234375 > 0.015762976561745745",
+			"failing": 244,
+			"values": 16128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L4 spd mip 2",
+			"first": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L4 spd mip 2: value 33, actual 3.453125, expected 3.4765625, error 0.0234375 > 0.01576563281196286",
+			"failing": 1,
+			"values": 3968,
+			"maxError": 0.03125
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L5 exact mip 1",
+			"first": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L5 exact mip 1: value 2392, actual 1.0703125, expected 1.046875, error 0.0234375 > 0.0157470703125",
+			"failing": 4,
+			"values": 16128,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L5 spd mip 0",
+			"first": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L5 spd mip 0: value 28, actual 3.4453125, expected 3.421875, error 0.0234375 > 0.015768007811857387",
+			"failing": 8253,
+			"values": 65024,
+			"maxError": 0.078125
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L5 spd mip 1",
+			"first": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L5 spd mip 1: value 1, actual 2.8203125, expected 2.796875, error 0.0234375 > 0.015762976561745745",
+			"failing": 244,
+			"values": 16128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L5 spd mip 2",
+			"first": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L5 spd mip 2: value 33, actual 3.453125, expected 3.4765625, error 0.0234375 > 0.01576563281196286",
+			"failing": 1,
+			"values": 3968,
+			"maxError": 0.03125
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L6 exact mip 1",
+			"first": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L6 exact mip 1: value 2392, actual 1.0703125, expected 1.046875, error 0.0234375 > 0.0157470703125",
+			"failing": 4,
+			"values": 16128,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L6 spd mip 0",
+			"first": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L6 spd mip 0: value 28, actual 3.4453125, expected 3.421875, error 0.0234375 > 0.015768007811857387",
+			"failing": 8253,
+			"values": 65024,
+			"maxError": 0.078125
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L6 spd mip 1",
+			"first": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L6 spd mip 1: value 1, actual 2.8203125, expected 2.796875, error 0.0234375 > 0.015762976561745745",
+			"failing": 244,
+			"values": 16128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L6 spd mip 2",
+			"first": "rgba16float 255x257x1 -> rgb9e5ufloat half average random L6 spd mip 2: value 33, actual 3.453125, expected 3.4765625, error 0.0234375 > 0.01576563281196286",
+			"failing": 1,
+			"values": 3968,
+			"maxError": 0.03125
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L1 exact mip 0",
+			"first": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L1 exact mip 0: value 2, actual 3.5859375, expected 3.5625, error 0.0234375 > 0.0157470703125",
+			"failing": 1917,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L1 exact mip 1",
+			"first": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L1 exact mip 1: value 69, actual 3.734375, expected 3.7578125, error 0.0234375 > 0.0157470703125",
+			"failing": 50,
+			"values": 5184,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L1 spd mip 0",
+			"first": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L1 spd mip 0: value 2, actual 3.5859375, expected 3.5625, error 0.0234375 > 0.015764320312882774",
+			"failing": 1917,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L1 spd mip 1",
+			"first": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L1 spd mip 1: value 69, actual 3.734375, expected 3.7578125, error 0.0234375 > 0.01576210156235902",
+			"failing": 50,
+			"values": 5184,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L4 exact mip 0",
+			"first": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L4 exact mip 0: value 2, actual 3.5859375, expected 3.5625, error 0.0234375 > 0.0157470703125",
+			"failing": 1917,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L4 spd mip 0",
+			"first": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L4 spd mip 0: value 2, actual 3.5859375, expected 3.5625, error 0.0234375 > 0.015764320312882774",
+			"failing": 1917,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L4 spd mip 1",
+			"first": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L4 spd mip 1: value 140, actual 3.765625, expected 3.7890625, error 0.0234375 > 0.01576380468759453",
+			"failing": 63,
+			"values": 5184,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L5 exact mip 0",
+			"first": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L5 exact mip 0: value 2, actual 3.5859375, expected 3.5625, error 0.0234375 > 0.0157470703125",
+			"failing": 1917,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L5 spd mip 0",
+			"first": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L5 spd mip 0: value 2, actual 3.5859375, expected 3.5625, error 0.0234375 > 0.015764320312882774",
+			"failing": 1917,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L5 spd mip 1",
+			"first": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L5 spd mip 1: value 140, actual 3.765625, expected 3.7890625, error 0.0234375 > 0.01576380468759453",
+			"failing": 63,
+			"values": 5184,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L6 exact mip 0",
+			"first": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L6 exact mip 0: value 2, actual 3.5859375, expected 3.5625, error 0.0234375 > 0.0157470703125",
+			"failing": 1917,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L6 spd mip 0",
+			"first": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L6 spd mip 0: value 2, actual 3.5859375, expected 3.5625, error 0.0234375 > 0.015764320312882774",
+			"failing": 1917,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L6 spd mip 1",
+			"first": "rgba16float 192x108x1 -> rgb9e5ufloat half average random L6 spd mip 1: value 140, actual 3.765625, expected 3.7890625, error 0.0234375 > 0.01576380468759453",
+			"failing": 63,
+			"values": 5184,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x11x3 -> rgb9e5ufloat half average random L1 spd mip 0",
+			"first": "rgba16float 17x11x3 -> rgb9e5ufloat half average random L1 spd mip 0: value 17, actual 5.375, expected 5.328125, error 0.046875 > 0.03139888281293679",
+			"failing": 49,
+			"values": 480,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x11x3 -> rgb9e5ufloat half average random L4 spd mip 0",
+			"first": "rgba16float 17x11x3 -> rgb9e5ufloat half average random L4 spd mip 0: value 17, actual 5.375, expected 5.328125, error 0.046875 > 0.03139888281293679",
+			"failing": 49,
+			"values": 480,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x11x3 -> rgb9e5ufloat half average random L5 spd mip 0",
+			"first": "rgba16float 17x11x3 -> rgb9e5ufloat half average random L5 spd mip 0: value 17, actual 5.375, expected 5.328125, error 0.046875 > 0.03139888281293679",
+			"failing": 49,
+			"values": 480,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "rgba16float 17x11x3 -> rgb9e5ufloat half average random L6 spd mip 0",
+			"first": "rgba16float 17x11x3 -> rgb9e5ufloat half average random L6 spd mip 0: value 17, actual 5.375, expected 5.328125, error 0.046875 > 0.03139888281293679",
+			"failing": 49,
+			"values": 480,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 5,
+			"label": "fixtures/1129x635",
+			"first": "fixtures/1129x635 threw: tool fixtures 1129x635: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp",
+			"thrown": true
+		},
+		{
+			"shard": 6,
+			"label": "fixtures/960x540",
+			"first": "fixtures/960x540 threw: tool fixtures 960x540: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp",
+			"thrown": true
+		},
+		{
+			"shard": 7,
+			"label": "3x7x1 rgba16float storage spd average random L6 mip 1",
+			"first": "3x7x1 rgba16float storage spd average random L6 mip 1: value 0, actual 2.8828125, expected 2.921875, error 0.0390625 > 0.008784312500414672",
+			"failing": 4,
+			"values": 12,
+			"maxError": 0.05078125
+		},
+		{
+			"shard": 7,
+			"label": "3x7x1 rgba16float storage spd average random L6 mip 2",
+			"first": "3x7x1 rgba16float storage spd average random L6 mip 2: value 0, actual 2.00390625, expected 2.03515625, error 0.03125 > 0.006120640625020314",
+			"failing": 2,
+			"values": 4,
+			"maxError": 0.03125
+		},
+		{
+			"shard": 7,
+			"label": "7x4x1 rgba16float storage spd average random L6 mip 1",
+			"first": "7x4x1 rgba16float storage spd average random L6 mip 1: value 0, actual -0.496337890625, expected -0.5, error 0.003662109375 > 0.0020049999998736894",
+			"failing": 13,
+			"values": 24,
+			"maxError": 0.03515625
+		},
+		{
+			"shard": 7,
+			"label": "7x4x1 rgba16float storage spd average random L6 mip 2",
+			"first": "7x4x1 rgba16float storage spd average random L6 mip 2: value 0, actual 4.1484375, expected 4.1640625, error 0.015625 > 0.012512468749817344",
+			"failing": 2,
+			"values": 4,
+			"maxError": 0.017578125
+		},
+		{
+			"shard": 7,
+			"label": "15x17x1 rgba16float storage spd average random L6 mip 1",
+			"first": "15x17x1 rgba16float storage spd average random L6 mip 1: value 0, actual 3.49609375, expected 3.53125, error 0.03515625 > 0.010614875000785106",
+			"failing": 137,
+			"values": 224,
+			"maxError": 0.05859375
+		},
+		{
+			"shard": 7,
+			"label": "15x17x1 rgba16float storage spd average random L6 mip 2",
+			"first": "15x17x1 rgba16float storage spd average random L6 mip 2: value 0, actual 3.42578125, expected 3.44140625, error 0.015625 > 0.010347140624915483",
+			"failing": 19,
+			"values": 48,
+			"maxError": 0.02734375
+		},
+		{
+			"shard": 7,
+			"label": "17x9x1 rgba16float storage spd average random L6 mip 1",
+			"first": "17x9x1 rgba16float storage spd average random L6 mip 1: value 0, actual 3.75390625, expected 3.78125, error 0.02734375 > 0.011365874999304651",
+			"failing": 63,
+			"values": 128,
+			"maxError": 0.05859375
+		},
+		{
+			"shard": 7,
+			"label": "17x9x1 rgba16float storage spd average random L6 mip 2",
+			"first": "17x9x1 rgba16float storage spd average random L6 mip 2: value 0, actual 4.69140625, expected 4.70703125, error 0.015625 > 0.014143546874984168",
+			"failing": 6,
+			"values": 32,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 7,
+			"label": "31x33x1 rgba16float storage spd average random L6 mip 1",
+			"first": "31x33x1 rgba16float storage spd average random L6 mip 1: value 0, actual -0.62939453125, expected -0.609375, error 0.02001953125 > 0.0020123125000754954",
+			"failing": 617,
+			"values": 960,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "31x33x1 rgba16float storage spd average random L6 mip 2",
+			"first": "31x33x1 rgba16float storage spd average random L6 mip 2: value 0, actual 2.669921875, expected 2.68359375, error 0.013671875 > 0.008069484375533648",
+			"failing": 86,
+			"values": 224,
+			"maxError": 0.0390625
+		},
+		{
+			"shard": 7,
+			"label": "31x33x1 rgba16float storage spd average random L6 mip 3",
+			"first": "31x33x1 rgba16float storage spd average random L6 mip 3: value 7, actual 3.24609375, expected 3.2578125, error 0.01171875 > 0.009792503906821367",
+			"failing": 4,
+			"values": 48,
+			"maxError": 0.015625
+		},
+		{
+			"shard": 7,
+			"label": "65x129x1 rgba16float storage spd average random L6 mip 1",
+			"first": "65x129x1 rgba16float storage spd average random L6 mip 1: value 0, actual 2.48046875, expected 2.515625, error 0.03515625 > 0.007563937500774045",
+			"failing": 5113,
+			"values": 8192,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "65x129x1 rgba16float storage spd average random L6 mip 2",
+			"first": "65x129x1 rgba16float storage spd average random L6 mip 2: value 4, actual 3.865234375, expected 3.8828125, error 0.017578125 > 0.011669656249679975",
+			"failing": 734,
+			"values": 2048,
+			"maxError": 0.044921875
+		},
+		{
+			"shard": 7,
+			"label": "65x129x1 rgba16float storage spd average random L6 mip 3",
+			"first": "65x129x1 rgba16float storage spd average random L6 mip 3: value 20, actual 3.201171875, expected 3.2109375, error 0.009765625 > 0.00965141796944954",
+			"failing": 35,
+			"values": 512,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 7,
+			"label": "192x108x1 rgba16float storage spd average random L6 mip 1",
+			"first": "192x108x1 rgba16float storage spd average random L6 mip 1: value 2, actual 3.583984375, expected 3.5625, error 0.021484375 > 0.010704750000382774",
+			"failing": 12181,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "192x108x1 rgba16float storage spd average random L6 mip 2",
+			"first": "192x108x1 rgba16float storage spd average random L6 mip 2: value 0, actual 3.060546875, expected 3.05078125, error 0.009765625 > 0.009170765625211061",
+			"failing": 1616,
+			"values": 5184,
+			"maxError": 0.0390625
+		},
+		{
+			"shard": 7,
+			"label": "192x108x1 rgba16float storage spd average random L6 mip 3",
+			"first": "192x108x1 rgba16float storage spd average random L6 mip 3: value 48, actual 4.85546875, expected 4.875, error 0.01953125 > 0.014646976562493365",
+			"failing": 51,
+			"values": 1248,
+			"maxError": 0.01953125
+		},
+		{
+			"shard": 7,
+			"label": "192x108x1 rgba16float storage spd average edge L6 mip 1",
+			"first": "192x108x1 rgba16float storage spd average edge L6 mip 1: value 382, actual 0.297607421875, expected 0.300048828125, error 0.00244140625 > 0.0020012001953564323",
+			"failing": 106,
+			"values": 20736,
+			"maxError": 0.003173828125
+		},
+		{
+			"shard": 7,
+			"label": "255x257x1 rgba16float storage spd average random L6 mip 1",
+			"first": "255x257x1 rgba16float storage spd average random L6 mip 1: value 0, actual -0.303466796875, expected -0.296875, error 0.006591796875 > 0.0020058125001487497",
+			"failing": 43367,
+			"values": 65024,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "255x257x1 rgba16float storage spd average random L6 mip 2",
+			"first": "255x257x1 rgba16float storage spd average random L6 mip 2: value 1, actual 2.8203125, expected 2.796875, error 0.0234375 > 0.008406531249245746",
+			"failing": 5868,
+			"values": 16128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 7,
+			"label": "255x257x1 rgba16float storage spd average random L6 mip 3",
+			"first": "255x257x1 rgba16float storage spd average random L6 mip 3: value 0, actual 3.2578125, expected 3.248046875, error 0.009765625 > 0.009762398438280797",
+			"failing": 270,
+			"values": 3968,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 7,
+			"label": "255x257x1 rgba16float storage spd average random L6 mip 4",
+			"first": "255x257x1 rgba16float storage spd average random L6 mip 4: value 63, actual 3.490234375, expected 3.501953125, error 0.01171875 > 0.010524685546071852",
+			"failing": 1,
+			"values": 960,
+			"maxError": 0.01171875
+		},
+		{
+			"shard": 7,
+			"label": "17x11x3 rgba16float storage spd average random L6 mip 1",
+			"first": "17x11x3 rgba16float storage spd average random L6 mip 1: value 0, actual 3.75390625, expected 3.78125, error 0.02734375 > 0.011365874999304651",
+			"failing": 301,
+			"values": 480,
+			"maxError": 0.0595703125
+		},
+		{
+			"shard": 7,
+			"label": "17x11x3 rgba16float storage spd average random L6 mip 2",
+			"first": "17x11x3 rgba16float storage spd average random L6 mip 2: value 0, actual 4.69140625, expected 4.70703125, error 0.015625 > 0.014143546874984168",
+			"failing": 33,
+			"values": 96,
+			"maxError": 0.03076171875
+		},
+		{
+			"shard": 7,
+			"label": "17x11x3 rgba16float storage spd average random L6 mip 3",
+			"first": "17x11x3 rgba16float storage spd average random L6 mip 3: value 16, actual 3.525390625, expected 3.51171875, error 0.013671875 > 0.010555109374137828",
+			"failing": 2,
+			"values": 24,
+			"maxError": 0.013671875
+		},
+		{
+			"shard": 7,
+			"label": "17x9x1 rgba16float storage spd average random L6 mip 1",
+			"first": "17x9x1 rgba16float storage spd average random L6 mip 1: value 0, actual 3.75390625, expected 3.78125, error 0.02734375 > 0.011365874999304651",
+			"failing": 63,
+			"values": 128,
+			"maxError": 0.05859375
+		},
+		{
+			"shard": 7,
+			"label": "17x9x1 rgba16float storage spd average random L6 mip 2",
+			"first": "17x9x1 rgba16float storage spd average random L6 mip 2: value 0, actual 4.69140625, expected 4.70703125, error 0.015625 > 0.014143546874984168",
+			"failing": 6,
+			"values": 32,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 7,
+			"label": "31x33x1 rgb9e5ufloat buffer average random L6 mip 1",
+			"first": "31x33x1 rgb9e5ufloat buffer average random L6 mip 1: value 150, actual 5.453125, expected 5.1875, error 0.265625 > 0.0313720703125",
+			"failing": 9,
+			"values": 960,
+			"maxError": 5.296875
+		},
+		{
+			"shard": 7,
+			"label": "31x33x1 rgb9e5ufloat buffer average random L6 mip 2",
+			"first": "31x33x1 rgb9e5ufloat buffer average random L6 mip 2: value 12, actual 2.0703125, expected 2.015625, error 0.0546875 > 0.0157470703125",
+			"failing": 8,
+			"values": 224,
+			"maxError": 2
+		},
+		{
+			"shard": 7,
+			"label": "192x108x1 rgb9e5ufloat buffer average random L6 mip 1",
+			"first": "192x108x1 rgb9e5ufloat buffer average random L6 mip 1: value 6, actual 30.4375, expected 30.6875, error 0.25 > 0.1251220703125",
+			"failing": 2565,
+			"values": 20736,
+			"maxError": 8
+		},
+		{
+			"shard": 7,
+			"label": "192x108x1 rgb9e5ufloat buffer average random L6 mip 3",
+			"first": "192x108x1 rgb9e5ufloat buffer average random L6 mip 3: value 249, actual 62.875, expected 63.375, error 0.5 > 0.2950439453125",
+			"failing": 15,
+			"values": 1248,
+			"maxError": 2
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 3x7x1 -> rgb9e5ufloat same average random L1 spd mip 1",
+			"first": "rgba32float 3x7x1 -> rgb9e5ufloat same average random L1 spd mip 1: value 0, actual 3.765625, expected 3.8125, error 0.046875 > 0.031387289062877244",
+			"failing": 1,
+			"values": 12,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 3x7x1 -> rgb9e5ufloat same average random L4 spd mip 1",
+			"first": "rgba32float 3x7x1 -> rgb9e5ufloat same average random L4 spd mip 1: value 0, actual 3.765625, expected 3.8125, error 0.046875 > 0.031387289062877244",
+			"failing": 1,
+			"values": 12,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 3x7x1 -> rgb9e5ufloat same average random L5 spd mip 1",
+			"first": "rgba32float 3x7x1 -> rgb9e5ufloat same average random L5 spd mip 1: value 0, actual 3.765625, expected 3.8125, error 0.046875 > 0.031387289062877244",
+			"failing": 1,
+			"values": 12,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 3x7x1 -> rgb9e5ufloat same average random L6 spd mip 1",
+			"first": "rgba32float 3x7x1 -> rgb9e5ufloat same average random L6 spd mip 1: value 0, actual 3.765625, expected 3.8125, error 0.046875 > 0.031387289062877244",
+			"failing": 1,
+			"values": 12,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 17x9x1 -> rgb9e5ufloat same average random L1 spd mip 1",
+			"first": "rgba32float 17x9x1 -> rgb9e5ufloat same average random L1 spd mip 1: value 34, actual 6.703125, expected 6.75, error 0.046875 > 0.031399039062307565",
+			"failing": 3,
+			"values": 128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 17x9x1 -> rgb9e5ufloat same average random L4 spd mip 1",
+			"first": "rgba32float 17x9x1 -> rgb9e5ufloat same average random L4 spd mip 1: value 34, actual 6.703125, expected 6.75, error 0.046875 > 0.031399039062307565",
+			"failing": 3,
+			"values": 128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 17x9x1 -> rgb9e5ufloat same average random L5 spd mip 1",
+			"first": "rgba32float 17x9x1 -> rgb9e5ufloat same average random L5 spd mip 1: value 34, actual 6.703125, expected 6.75, error 0.046875 > 0.031399039062307565",
+			"failing": 3,
+			"values": 128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 17x9x1 -> rgb9e5ufloat same average random L6 spd mip 1",
+			"first": "rgba32float 17x9x1 -> rgb9e5ufloat same average random L6 spd mip 1: value 34, actual 6.703125, expected 6.75, error 0.046875 > 0.031399039062307565",
+			"failing": 3,
+			"values": 128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 65x129x1 -> rgb9e5ufloat same average random L1 spd mip 1",
+			"first": "rgba32float 65x129x1 -> rgb9e5ufloat same average random L1 spd mip 1: value 53, actual 5.03125, expected 5.078125, error 0.046875 > 0.0313923828125553",
+			"failing": 486,
+			"values": 8192,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 65x129x1 -> rgb9e5ufloat same average random L4 spd mip 1",
+			"first": "rgba32float 65x129x1 -> rgb9e5ufloat same average random L4 spd mip 1: value 53, actual 5.03125, expected 5.078125, error 0.046875 > 0.0313923828125553",
+			"failing": 486,
+			"values": 8192,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 65x129x1 -> rgb9e5ufloat same average random L4 spd mip 2",
+			"first": "rgba32float 65x129x1 -> rgb9e5ufloat same average random L4 spd mip 2: value 80, actual 3.09375, expected 3.0703125, error 0.0234375 > 0.015759352539134852",
+			"failing": 3,
+			"values": 2048,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 65x129x1 -> rgb9e5ufloat same average random L5 spd mip 1",
+			"first": "rgba32float 65x129x1 -> rgb9e5ufloat same average random L5 spd mip 1: value 53, actual 5.03125, expected 5.078125, error 0.046875 > 0.0313923828125553",
+			"failing": 486,
+			"values": 8192,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 65x129x1 -> rgb9e5ufloat same average random L5 spd mip 2",
+			"first": "rgba32float 65x129x1 -> rgb9e5ufloat same average random L5 spd mip 2: value 80, actual 3.09375, expected 3.0703125, error 0.0234375 > 0.015759352539134852",
+			"failing": 3,
+			"values": 2048,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 65x129x1 -> rgb9e5ufloat same average random L6 spd mip 1",
+			"first": "rgba32float 65x129x1 -> rgb9e5ufloat same average random L6 spd mip 1: value 53, actual 5.03125, expected 5.078125, error 0.046875 > 0.0313923828125553",
+			"failing": 486,
+			"values": 8192,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 65x129x1 -> rgb9e5ufloat same average random L6 spd mip 2",
+			"first": "rgba32float 65x129x1 -> rgb9e5ufloat same average random L6 spd mip 2: value 80, actual 3.09375, expected 3.0703125, error 0.0234375 > 0.015759352539134852",
+			"failing": 3,
+			"values": 2048,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L1 exact mip 2",
+			"first": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L1 exact mip 2: value 6678, actual 2.3125, expected 2.28125, error 0.03125 > 0.0157470703125",
+			"failing": 1,
+			"values": 16128,
+			"maxError": 0.03125
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L1 spd mip 1",
+			"first": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L1 spd mip 1: value 6, actual 4.296875, expected 4.34375, error 0.046875 > 0.03138941406177764",
+			"failing": 4734,
+			"values": 65024,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L1 spd mip 2",
+			"first": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L1 spd mip 2: value 2936, actual 3.7265625, expected 3.75, error 0.0234375 > 0.015762054687911586",
+			"failing": 6,
+			"values": 16128,
+			"maxError": 0.03125
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L4 exact mip 2",
+			"first": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L4 exact mip 2: value 6678, actual 2.3125, expected 2.28125, error 0.03125 > 0.0157470703125",
+			"failing": 1,
+			"values": 16128,
+			"maxError": 0.03125
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L4 spd mip 1",
+			"first": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L4 spd mip 1: value 6, actual 4.296875, expected 4.34375, error 0.046875 > 0.03138941406177764",
+			"failing": 4734,
+			"values": 65024,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L4 spd mip 2",
+			"first": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L4 spd mip 2: value 262, actual 3.2734375, expected 3.296875, error 0.0234375 > 0.015760248046717606",
+			"failing": 20,
+			"values": 16128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L5 exact mip 2",
+			"first": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L5 exact mip 2: value 6678, actual 2.3125, expected 2.28125, error 0.03125 > 0.0157470703125",
+			"failing": 1,
+			"values": 16128,
+			"maxError": 0.03125
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L5 spd mip 1",
+			"first": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L5 spd mip 1: value 6, actual 4.296875, expected 4.34375, error 0.046875 > 0.03138941406177764",
+			"failing": 4734,
+			"values": 65024,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L5 spd mip 2",
+			"first": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L5 spd mip 2: value 262, actual 3.2734375, expected 3.296875, error 0.0234375 > 0.015760248046717606",
+			"failing": 20,
+			"values": 16128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L6 exact mip 2",
+			"first": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L6 exact mip 2: value 6678, actual 2.3125, expected 2.28125, error 0.03125 > 0.0157470703125",
+			"failing": 1,
+			"values": 16128,
+			"maxError": 0.03125
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L6 spd mip 1",
+			"first": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L6 spd mip 1: value 6, actual 4.296875, expected 4.34375, error 0.046875 > 0.03138941406177764",
+			"failing": 4734,
+			"values": 65024,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L6 spd mip 2",
+			"first": "rgba32float 255x257x1 -> rgb9e5ufloat same average random L6 spd mip 2: value 262, actual 3.2734375, expected 3.296875, error 0.0234375 > 0.015760248046717606",
+			"failing": 20,
+			"values": 16128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L1 exact mip 1",
+			"first": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L1 exact mip 1: value 8, actual 2.484375, expected 2.4453125, error 0.0390625 > 0.0157470703125",
+			"failing": 1026,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L1 exact mip 2",
+			"first": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L1 exact mip 2: value 386, actual 3.59375, expected 3.625, error 0.03125 > 0.0157470703125",
+			"failing": 8,
+			"values": 5184,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L1 spd mip 1",
+			"first": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L1 spd mip 1: value 8, actual 2.484375, expected 2.4453125, error 0.0390625 > 0.015756851562400698",
+			"failing": 1026,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L1 spd mip 2",
+			"first": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L1 spd mip 2: value 386, actual 3.59375, expected 3.625, error 0.03125 > 0.01576155468774232",
+			"failing": 8,
+			"values": 5184,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L4 spd mip 1",
+			"first": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L4 spd mip 1: value 8, actual 2.484375, expected 2.4453125, error 0.0390625 > 0.015756851562400698",
+			"failing": 1026,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L4 spd mip 2",
+			"first": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L4 spd mip 2: value 581, actual 3.796875, expected 3.828125, error 0.03125 > 0.015762386718051857",
+			"failing": 7,
+			"values": 5184,
+			"maxError": 0.03125
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L5 spd mip 1",
+			"first": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L5 spd mip 1: value 8, actual 2.484375, expected 2.4453125, error 0.0390625 > 0.015756851562400698",
+			"failing": 1026,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L5 spd mip 2",
+			"first": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L5 spd mip 2: value 581, actual 3.796875, expected 3.828125, error 0.03125 > 0.015762386718051857",
+			"failing": 7,
+			"values": 5184,
+			"maxError": 0.03125
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L6 spd mip 1",
+			"first": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L6 spd mip 1: value 8, actual 2.484375, expected 2.4453125, error 0.0390625 > 0.015756851562400698",
+			"failing": 1026,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L6 spd mip 2",
+			"first": "rgba32float 192x108x1 -> rgb9e5ufloat same average random L6 spd mip 2: value 581, actual 3.796875, expected 3.828125, error 0.03125 > 0.015762386718051857",
+			"failing": 7,
+			"values": 5184,
+			"maxError": 0.03125
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 17x11x3 -> rgb9e5ufloat same average random L1 spd mip 1",
+			"first": "rgba32float 17x11x3 -> rgb9e5ufloat same average random L1 spd mip 1: value 34, actual 6.703125, expected 6.75, error 0.046875 > 0.031399039062307565",
+			"failing": 30,
+			"values": 480,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 17x11x3 -> rgb9e5ufloat same average random L4 spd mip 1",
+			"first": "rgba32float 17x11x3 -> rgb9e5ufloat same average random L4 spd mip 1: value 34, actual 6.703125, expected 6.75, error 0.046875 > 0.031399039062307565",
+			"failing": 30,
+			"values": 480,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 17x11x3 -> rgb9e5ufloat same average random L5 spd mip 1",
+			"first": "rgba32float 17x11x3 -> rgb9e5ufloat same average random L5 spd mip 1: value 34, actual 6.703125, expected 6.75, error 0.046875 > 0.031399039062307565",
+			"failing": 30,
+			"values": 480,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 7,
+			"label": "rgba32float 17x11x3 -> rgb9e5ufloat same average random L6 spd mip 1",
+			"first": "rgba32float 17x11x3 -> rgb9e5ufloat same average random L6 spd mip 1: value 34, actual 6.703125, expected 6.75, error 0.046875 > 0.031399039062307565",
+			"failing": 30,
+			"values": 480,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 8,
+			"label": "15x17x1 rgba16float storage tail average random L5 mip 1",
+			"first": "15x17x1 rgba16float storage tail average random L5 mip 1: value 12, actual 4.77734375, expected 4.79296875, error 0.015625 > 0.01437890625",
+			"failing": 16,
+			"values": 224,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 8,
+			"label": "31x33x1 rgba16float storage tail average random L5 mip 1",
+			"first": "31x33x1 rgba16float storage tail average random L5 mip 1: value 28, actual 2.912109375, expected 2.89453125, error 0.017578125 > 0.00868359375",
+			"failing": 39,
+			"values": 960,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 8,
+			"label": "31x33x1 rg11b10ufloat buffer average random L6 mip 1",
+			"first": "31x33x1 rg11b10ufloat buffer average random L6 mip 1: value 30, actual 0.010986328125, expected 0.00225830078125, error 0.00872802734375 > 0.000244140625",
+			"failing": 14,
+			"values": 960,
+			"maxError": 16
+		},
+		{
+			"shard": 8,
+			"label": "31x33x1 rg11b10ufloat buffer average random L6 mip 2",
+			"first": "31x33x1 rg11b10ufloat buffer average random L6 mip 2: value 13, actual 1.84375, expected 1.71875, error 0.125 > 0.0313720703125",
+			"failing": 7,
+			"values": 224,
+			"maxError": 4
+		},
+		{
+			"shard": 8,
+			"label": "192x108x1 rg11b10ufloat buffer average random L6 mip 1",
+			"first": "192x108x1 rg11b10ufloat buffer average random L6 mip 1: value 11401, actual 16.25, expected 15.875, error 0.375 > 0.2501220703125",
+			"failing": 1,
+			"values": 20736,
+			"maxError": 32
+		},
+		{
+			"shard": 8,
+			"label": "192x108x1 rg11b10ufloat buffer average random L6 mip 3",
+			"first": "192x108x1 rg11b10ufloat buffer average random L6 mip 3: value 644, actual 25, expected 24.25, error 0.75 > 0.5001220703125",
+			"failing": 3,
+			"values": 1248,
+			"maxError": 4
+		},
+		{
+			"shard": 9,
+			"label": "15x17x1 rgba16float storage tail average random L6 mip 1",
+			"first": "15x17x1 rgba16float storage tail average random L6 mip 1: value 12, actual 4.77734375, expected 4.79296875, error 0.015625 > 0.01437890625",
+			"failing": 16,
+			"values": 224,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 9,
+			"label": "31x33x1 rgba16float storage tail average random L6 mip 1",
+			"first": "31x33x1 rgba16float storage tail average random L6 mip 1: value 28, actual 2.912109375, expected 2.89453125, error 0.017578125 > 0.00868359375",
+			"failing": 39,
+			"values": 960,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 9,
+			"label": "31x33x1 r16float storage average random L1 mip 1",
+			"first": "31x33x1 r16float storage average random L1 mip 1: value 28, actual 7.50390625, expected 7.5390625, error 0.03515625 > 0.0226171875",
+			"failing": 9,
+			"values": 960,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 9,
+			"label": "31x33x1 r16float storage average random L1 mip 2",
+			"first": "31x33x1 r16float storage average random L1 mip 2: value 40, actual 2.158203125, expected 2.134765625, error 0.0234375 > 0.006404296875",
+			"failing": 4,
+			"values": 224,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 9,
+			"label": "192x108x1 r16float storage average random L1 mip 1",
+			"first": "192x108x1 r16float storage average random L1 mip 1: value 0, actual 3.41015625, expected 3.421875, error 0.01171875 > 0.010265625",
+			"failing": 3052,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 9,
+			"label": "192x108x1 r16float storage average random L1 mip 2",
+			"first": "192x108x1 r16float storage average random L1 mip 2: value 4, actual 1.9345703125, expected 1.9287109375, error 0.005859375 > 0.0057861328125",
+			"failing": 407,
+			"values": 5184,
+			"maxError": 0.04296875
+		},
+		{
+			"shard": 9,
+			"label": "192x108x1 r16float storage average random L1 mip 3",
+			"first": "192x108x1 r16float storage average random L1 mip 3: value 272, actual 2.458984375, expected 2.470703125, error 0.01171875 > 0.01107421875",
+			"failing": 2,
+			"values": 1248,
+			"maxError": 0.015625
+		},
+		{
+			"shard": 9,
+			"label": "31x33x1 rg11b10ufloat buffer average random L4 mip 1",
+			"first": "31x33x1 rg11b10ufloat buffer average random L4 mip 1: value 30, actual 0.010986328125, expected 0.00225830078125, error 0.00872802734375 > 0.000244140625",
+			"failing": 14,
+			"values": 960,
+			"maxError": 16
+		},
+		{
+			"shard": 9,
+			"label": "31x33x1 rg11b10ufloat buffer average random L4 mip 2",
+			"first": "31x33x1 rg11b10ufloat buffer average random L4 mip 2: value 13, actual 1.84375, expected 1.71875, error 0.125 > 0.0313720703125",
+			"failing": 7,
+			"values": 224,
+			"maxError": 4
+		},
+		{
+			"shard": 9,
+			"label": "192x108x1 rg11b10ufloat buffer average random L4 mip 1",
+			"first": "192x108x1 rg11b10ufloat buffer average random L4 mip 1: value 11401, actual 16.25, expected 15.875, error 0.375 > 0.2501220703125",
+			"failing": 1,
+			"values": 20736,
+			"maxError": 32
+		},
+		{
+			"shard": 9,
+			"label": "192x108x1 rg11b10ufloat buffer average random L4 mip 3",
+			"first": "192x108x1 rg11b10ufloat buffer average random L4 mip 3: value 644, actual 25, expected 24.25, error 0.75 > 0.5001220703125",
+			"failing": 3,
+			"values": 1248,
+			"maxError": 4
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 3x7x1 -> rgba8unorm same average random L1 exact mip 0",
+			"first": "rgba16float 3x7x1 -> rgba8unorm same average random L1 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 2,
+			"values": 84,
+			"maxError": 0.03529411554336548
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 3x7x1 -> rgba8unorm same average random L1 spd copy",
+			"first": "rgba16float 3x7x1 -> rgba8unorm same average random L1 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 2,
+			"values": 84,
+			"maxError": 0.03529411554336548
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 3x7x1 -> rgba8unorm same average random L4 exact mip 0",
+			"first": "rgba16float 3x7x1 -> rgba8unorm same average random L4 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 2,
+			"values": 84,
+			"maxError": 0.03529411554336548
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 3x7x1 -> rgba8unorm same average random L4 spd copy",
+			"first": "rgba16float 3x7x1 -> rgba8unorm same average random L4 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 2,
+			"values": 84,
+			"maxError": 0.03529411554336548
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 3x7x1 -> rgba8unorm same average random L5 exact mip 0",
+			"first": "rgba16float 3x7x1 -> rgba8unorm same average random L5 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 2,
+			"values": 84,
+			"maxError": 0.03529411554336548
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 3x7x1 -> rgba8unorm same average random L5 spd copy",
+			"first": "rgba16float 3x7x1 -> rgba8unorm same average random L5 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 2,
+			"values": 84,
+			"maxError": 0.03529411554336548
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 3x7x1 -> rgba8unorm same average random L6 exact mip 0",
+			"first": "rgba16float 3x7x1 -> rgba8unorm same average random L6 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 2,
+			"values": 84,
+			"maxError": 0.03529411554336548
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 3x7x1 -> rgba8unorm same average random L6 spd copy",
+			"first": "rgba16float 3x7x1 -> rgba8unorm same average random L6 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 2,
+			"values": 84,
+			"maxError": 0.03529411554336548
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 17x9x1 -> rgba8unorm same average random L1 exact mip 0",
+			"first": "rgba16float 17x9x1 -> rgba8unorm same average random L1 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 25,
+			"values": 612,
+			"maxError": 0.07843136787414551
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 17x9x1 -> rgba8unorm same average random L1 spd copy",
+			"first": "rgba16float 17x9x1 -> rgba8unorm same average random L1 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 25,
+			"values": 612,
+			"maxError": 0.07843136787414551
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 17x9x1 -> rgba8unorm same average random L4 exact mip 0",
+			"first": "rgba16float 17x9x1 -> rgba8unorm same average random L4 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 25,
+			"values": 612,
+			"maxError": 0.07843136787414551
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 17x9x1 -> rgba8unorm same average random L4 spd copy",
+			"first": "rgba16float 17x9x1 -> rgba8unorm same average random L4 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 25,
+			"values": 612,
+			"maxError": 0.07843136787414551
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 17x9x1 -> rgba8unorm same average random L5 exact mip 0",
+			"first": "rgba16float 17x9x1 -> rgba8unorm same average random L5 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 25,
+			"values": 612,
+			"maxError": 0.07843136787414551
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 17x9x1 -> rgba8unorm same average random L5 spd copy",
+			"first": "rgba16float 17x9x1 -> rgba8unorm same average random L5 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 25,
+			"values": 612,
+			"maxError": 0.07843136787414551
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 17x9x1 -> rgba8unorm same average random L6 exact mip 0",
+			"first": "rgba16float 17x9x1 -> rgba8unorm same average random L6 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 25,
+			"values": 612,
+			"maxError": 0.07843136787414551
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 17x9x1 -> rgba8unorm same average random L6 spd copy",
+			"first": "rgba16float 17x9x1 -> rgba8unorm same average random L6 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 25,
+			"values": 612,
+			"maxError": 0.07843136787414551
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 65x129x1 -> rgba8unorm same average random L1 exact mip 0",
+			"first": "rgba16float 65x129x1 -> rgba8unorm same average random L1 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 1709,
+			"values": 33540,
+			"maxError": 0.08627451211214066
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 65x129x1 -> rgba8unorm same average random L1 spd copy",
+			"first": "rgba16float 65x129x1 -> rgba8unorm same average random L1 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 1709,
+			"values": 33540,
+			"maxError": 0.08627451211214066
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 65x129x1 -> rgba8unorm same average random L4 exact mip 0",
+			"first": "rgba16float 65x129x1 -> rgba8unorm same average random L4 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 1709,
+			"values": 33540,
+			"maxError": 0.08627451211214066
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 65x129x1 -> rgba8unorm same average random L4 spd copy",
+			"first": "rgba16float 65x129x1 -> rgba8unorm same average random L4 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 1709,
+			"values": 33540,
+			"maxError": 0.08627451211214066
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 65x129x1 -> rgba8unorm same average random L5 exact mip 0",
+			"first": "rgba16float 65x129x1 -> rgba8unorm same average random L5 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 1709,
+			"values": 33540,
+			"maxError": 0.08627451211214066
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 65x129x1 -> rgba8unorm same average random L5 spd copy",
+			"first": "rgba16float 65x129x1 -> rgba8unorm same average random L5 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 1709,
+			"values": 33540,
+			"maxError": 0.08627451211214066
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 65x129x1 -> rgba8unorm same average random L6 exact mip 0",
+			"first": "rgba16float 65x129x1 -> rgba8unorm same average random L6 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 1709,
+			"values": 33540,
+			"maxError": 0.08627451211214066
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 65x129x1 -> rgba8unorm same average random L6 spd copy",
+			"first": "rgba16float 65x129x1 -> rgba8unorm same average random L6 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 1709,
+			"values": 33540,
+			"maxError": 0.08627451211214066
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 255x257x1 -> rgba8unorm same average random L1 exact mip 0",
+			"first": "rgba16float 255x257x1 -> rgba8unorm same average random L1 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 13167,
+			"values": 262140,
+			"maxError": 0.09019608050584793
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 255x257x1 -> rgba8unorm same average random L1 spd copy",
+			"first": "rgba16float 255x257x1 -> rgba8unorm same average random L1 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 13167,
+			"values": 262140,
+			"maxError": 0.09019608050584793
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 255x257x1 -> rgba8unorm same average random L4 exact mip 0",
+			"first": "rgba16float 255x257x1 -> rgba8unorm same average random L4 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 13167,
+			"values": 262140,
+			"maxError": 0.09019608050584793
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 255x257x1 -> rgba8unorm same average random L4 spd copy",
+			"first": "rgba16float 255x257x1 -> rgba8unorm same average random L4 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 13167,
+			"values": 262140,
+			"maxError": 0.09019608050584793
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 255x257x1 -> rgba8unorm same average random L5 exact mip 0",
+			"first": "rgba16float 255x257x1 -> rgba8unorm same average random L5 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 13167,
+			"values": 262140,
+			"maxError": 0.09019608050584793
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 255x257x1 -> rgba8unorm same average random L5 spd copy",
+			"first": "rgba16float 255x257x1 -> rgba8unorm same average random L5 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 13167,
+			"values": 262140,
+			"maxError": 0.09019608050584793
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 255x257x1 -> rgba8unorm same average random L6 exact mip 0",
+			"first": "rgba16float 255x257x1 -> rgba8unorm same average random L6 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 13167,
+			"values": 262140,
+			"maxError": 0.09019608050584793
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 255x257x1 -> rgba8unorm same average random L6 spd copy",
+			"first": "rgba16float 255x257x1 -> rgba8unorm same average random L6 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 13167,
+			"values": 262140,
+			"maxError": 0.09019608050584793
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 192x108x1 -> rgba8unorm same average random L1 exact mip 0",
+			"first": "rgba16float 192x108x1 -> rgba8unorm same average random L1 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 3810,
+			"values": 82944,
+			"maxError": 0.09019608050584793
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 192x108x1 -> rgba8unorm same average random L1 spd copy",
+			"first": "rgba16float 192x108x1 -> rgba8unorm same average random L1 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 3810,
+			"values": 82944,
+			"maxError": 0.09019608050584793
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 192x108x1 -> rgba8unorm same average random L4 exact mip 0",
+			"first": "rgba16float 192x108x1 -> rgba8unorm same average random L4 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 3810,
+			"values": 82944,
+			"maxError": 0.09019608050584793
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 192x108x1 -> rgba8unorm same average random L4 spd copy",
+			"first": "rgba16float 192x108x1 -> rgba8unorm same average random L4 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 3810,
+			"values": 82944,
+			"maxError": 0.09019608050584793
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 192x108x1 -> rgba8unorm same average random L5 exact mip 0",
+			"first": "rgba16float 192x108x1 -> rgba8unorm same average random L5 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 3810,
+			"values": 82944,
+			"maxError": 0.09019608050584793
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 192x108x1 -> rgba8unorm same average random L5 spd copy",
+			"first": "rgba16float 192x108x1 -> rgba8unorm same average random L5 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 3810,
+			"values": 82944,
+			"maxError": 0.09019608050584793
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 192x108x1 -> rgba8unorm same average random L6 exact mip 0",
+			"first": "rgba16float 192x108x1 -> rgba8unorm same average random L6 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 3810,
+			"values": 82944,
+			"maxError": 0.09019608050584793
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 192x108x1 -> rgba8unorm same average random L6 spd copy",
+			"first": "rgba16float 192x108x1 -> rgba8unorm same average random L6 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 3810,
+			"values": 82944,
+			"maxError": 0.09019608050584793
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 17x11x3 -> rgba8unorm same average random L1 exact mip 0",
+			"first": "rgba16float 17x11x3 -> rgba8unorm same average random L1 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 104,
+			"values": 2244,
+			"maxError": 0.07843136787414551
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 17x11x3 -> rgba8unorm same average random L1 spd copy",
+			"first": "rgba16float 17x11x3 -> rgba8unorm same average random L1 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 104,
+			"values": 2244,
+			"maxError": 0.07843136787414551
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 17x11x3 -> rgba8unorm same average random L4 exact mip 0",
+			"first": "rgba16float 17x11x3 -> rgba8unorm same average random L4 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 104,
+			"values": 2244,
+			"maxError": 0.07843136787414551
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 17x11x3 -> rgba8unorm same average random L4 spd copy",
+			"first": "rgba16float 17x11x3 -> rgba8unorm same average random L4 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 104,
+			"values": 2244,
+			"maxError": 0.07843136787414551
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 17x11x3 -> rgba8unorm same average random L5 exact mip 0",
+			"first": "rgba16float 17x11x3 -> rgba8unorm same average random L5 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 104,
+			"values": 2244,
+			"maxError": 0.07843136787414551
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 17x11x3 -> rgba8unorm same average random L5 spd copy",
+			"first": "rgba16float 17x11x3 -> rgba8unorm same average random L5 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 104,
+			"values": 2244,
+			"maxError": 0.07843136787414551
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 17x11x3 -> rgba8unorm same average random L6 exact mip 0",
+			"first": "rgba16float 17x11x3 -> rgba8unorm same average random L6 exact mip 0: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 104,
+			"values": 2244,
+			"maxError": 0.07843136787414551
+		},
+		{
+			"shard": 9,
+			"label": "rgba16float 17x11x3 -> rgba8unorm same average random L6 spd copy",
+			"first": "rgba16float 17x11x3 -> rgba8unorm same average random L6 spd copy: value 10, actual 0.0313725508749485, expected 0, error 0.0313725508749485 > 0.00788235294117647",
+			"failing": 104,
+			"values": 2244,
+			"maxError": 0.07843136787414551
+		},
+		{
+			"shard": 10,
+			"label": "15x17x1 rgba16float storage average random L5 mip 1",
+			"first": "15x17x1 rgba16float storage average random L5 mip 1: value 12, actual 4.77734375, expected 4.79296875, error 0.015625 > 0.01437890625",
+			"failing": 16,
+			"values": 224,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 10,
+			"label": "31x33x1 rgba16float storage average random L5 mip 1",
+			"first": "31x33x1 rgba16float storage average random L5 mip 1: value 28, actual 2.912109375, expected 2.89453125, error 0.017578125 > 0.00868359375",
+			"failing": 39,
+			"values": 960,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 10,
+			"label": "31x33x1 rgba16float storage average random L5 mip 2",
+			"first": "31x33x1 rgba16float storage average random L5 mip 2: value 14, actual 1.505859375, expected 1.482421875, error 0.0234375 > 0.004447265625",
+			"failing": 12,
+			"values": 224,
+			"maxError": 0.0390625
+		},
+		{
+			"shard": 10,
+			"label": "192x108x1 rgba16float storage average random L5 mip 1",
+			"first": "192x108x1 rgba16float storage average random L5 mip 1: value 2, actual 3.583984375, expected 3.5625, error 0.021484375 > 0.0106875",
+			"failing": 12189,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 10,
+			"label": "192x108x1 rgba16float storage average random L5 mip 3",
+			"first": "192x108x1 rgba16float storage average random L5 mip 3: value 588, actual 2.927734375, expected 2.91796875, error 0.009765625 > 0.00875390625",
+			"failing": 9,
+			"values": 1248,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 10,
+			"label": "192x108x1 rgba16float storage average edge L5 mip 1",
+			"first": "192x108x1 rgba16float storage average edge L5 mip 1: value 382, actual 0.297607421875, expected 0.300048828125, error 0.00244140625 > 0.002",
+			"failing": 106,
+			"values": 20736,
+			"maxError": 0.003173828125
+		},
+		{
+			"shard": 10,
+			"label": "255x257x1 rgba16float storage average random L5 mip 2",
+			"first": "255x257x1 rgba16float storage average random L5 mip 2: value 376, actual -1.09765625, expected -1.12109375, error 0.0234375 > 0.00336328125",
+			"failing": 112,
+			"values": 16128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 10,
+			"label": "255x257x1 rgba16float storage average random L5 mip 4",
+			"first": "255x257x1 rgba16float storage average random L5 mip 4: value 28, actual 2.134765625, expected 2.125, error 0.009765625 > 0.0063750000000000005",
+			"failing": 8,
+			"values": 960,
+			"maxError": 0.013671875
+		},
+		{
+			"shard": 10,
+			"label": "31x33x1 rg11b10ufloat buffer average random L1 mip 1",
+			"first": "31x33x1 rg11b10ufloat buffer average random L1 mip 1: value 30, actual 0.010986328125, expected 0.00225830078125, error 0.00872802734375 > 0.000244140625",
+			"failing": 14,
+			"values": 960,
+			"maxError": 16
+		},
+		{
+			"shard": 10,
+			"label": "31x33x1 rg11b10ufloat buffer average random L1 mip 2",
+			"first": "31x33x1 rg11b10ufloat buffer average random L1 mip 2: value 13, actual 1.84375, expected 1.71875, error 0.125 > 0.0313720703125",
+			"failing": 7,
+			"values": 224,
+			"maxError": 4
+		},
+		{
+			"shard": 10,
+			"label": "192x108x1 rg11b10ufloat buffer average random L1 mip 1",
+			"first": "192x108x1 rg11b10ufloat buffer average random L1 mip 1: value 11401, actual 16.25, expected 15.875, error 0.375 > 0.2501220703125",
+			"failing": 1,
+			"values": 20736,
+			"maxError": 32
+		},
+		{
+			"shard": 10,
+			"label": "192x108x1 rg11b10ufloat buffer average random L1 mip 2",
+			"first": "192x108x1 rg11b10ufloat buffer average random L1 mip 2: value 1117, actual 130, expected 127, error 3 > 2.0001220703125",
+			"failing": 2,
+			"values": 5184,
+			"maxError": 8
+		},
+		{
+			"shard": 10,
+			"label": "192x108x1 rg11b10ufloat buffer average random L1 mip 3",
+			"first": "192x108x1 rg11b10ufloat buffer average random L1 mip 3: value 661, actual 3.5625, expected 3.25, error 0.3125 > 0.0626220703125",
+			"failing": 2,
+			"values": 1248,
+			"maxError": 4
+		},
+		{
+			"shard": 11,
+			"label": "31x33x1 r16float storage average random L6 mip 1",
+			"first": "31x33x1 r16float storage average random L6 mip 1: value 28, actual 7.50390625, expected 7.5390625, error 0.03515625 > 0.0226171875",
+			"failing": 9,
+			"values": 960,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 11,
+			"label": "31x33x1 r16float storage average random L6 mip 2",
+			"first": "31x33x1 r16float storage average random L6 mip 2: value 40, actual 2.158203125, expected 2.134765625, error 0.0234375 > 0.006404296875",
+			"failing": 4,
+			"values": 224,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 11,
+			"label": "192x108x1 r16float storage average random L6 mip 1",
+			"first": "192x108x1 r16float storage average random L6 mip 1: value 0, actual 3.41015625, expected 3.421875, error 0.01171875 > 0.010265625",
+			"failing": 3052,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 11,
+			"label": "192x108x1 r16float storage average random L6 mip 3",
+			"first": "192x108x1 r16float storage average random L6 mip 3: value 656, actual 3.830078125, expected 3.81640625, error 0.013671875 > 0.01144921875",
+			"failing": 1,
+			"values": 1248,
+			"maxError": 0.015625
+		},
+		{
+			"shard": 11,
+			"label": "31x33x1 rg16float storage average random L4 mip 1",
+			"first": "31x33x1 rg16float storage average random L4 mip 1: value 29, actual 1.00390625, expected 0.970703125, error 0.033203125 > 0.002912109375",
+			"failing": 20,
+			"values": 960,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 11,
+			"label": "31x33x1 rg16float storage average random L4 mip 2",
+			"first": "31x33x1 rg16float storage average random L4 mip 2: value 40, actual 2.76953125, expected 2.7578125, error 0.01171875 > 0.0082734375",
+			"failing": 7,
+			"values": 224,
+			"maxError": 0.0390625
+		},
+		{
+			"shard": 11,
+			"label": "31x33x1 rg16float storage average random L6 mip 1",
+			"first": "31x33x1 rg16float storage average random L6 mip 1: value 29, actual 1.00390625, expected 0.970703125, error 0.033203125 > 0.002912109375",
+			"failing": 20,
+			"values": 960,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 11,
+			"label": "31x33x1 rg16float storage average random L6 mip 2",
+			"first": "31x33x1 rg16float storage average random L6 mip 2: value 40, actual 2.76953125, expected 2.7578125, error 0.01171875 > 0.0082734375",
+			"failing": 7,
+			"values": 224,
+			"maxError": 0.0390625
+		},
+		{
+			"shard": 11,
+			"label": "192x108x1 rg16float storage average random L4 mip 1",
+			"first": "192x108x1 rg16float storage average random L4 mip 1: value 1, actual 6.48046875, expected 6.515625, error 0.03515625 > 0.019546875000000002",
+			"failing": 6085,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 11,
+			"label": "192x108x1 rg16float storage average random L4 mip 3",
+			"first": "192x108x1 rg16float storage average random L4 mip 3: value 584, actual 2.599609375, expected 2.58203125, error 0.017578125 > 0.00774609375",
+			"failing": 6,
+			"values": 1248,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 11,
+			"label": "192x108x1 rg16float storage average random L6 mip 1",
+			"first": "192x108x1 rg16float storage average random L6 mip 1: value 1, actual 6.48046875, expected 6.515625, error 0.03515625 > 0.019546875000000002",
+			"failing": 6085,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 11,
+			"label": "192x108x1 rg16float storage average random L6 mip 3",
+			"first": "192x108x1 rg16float storage average random L6 mip 3: value 584, actual 2.599609375, expected 2.58203125, error 0.017578125 > 0.00774609375",
+			"failing": 6,
+			"values": 1248,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 11,
+			"label": "15x17x1 rg11b10ufloat storage average random L4 mip 1",
+			"first": "15x17x1 rg11b10ufloat storage average random L4 mip 1: value 40, actual 34, expected 29, error 5 > 0.5001220703125",
+			"failing": 4,
+			"values": 224,
+			"maxError": 16
+		},
+		{
+			"shard": 11,
+			"label": "15x17x1 rg11b10ufloat storage average random L6 mip 1",
+			"first": "15x17x1 rg11b10ufloat storage average random L6 mip 1: value 40, actual 34, expected 29, error 5 > 0.5001220703125",
+			"failing": 4,
+			"values": 224,
+			"maxError": 16
+		},
+		{
+			"shard": 11,
+			"label": "31x33x1 rg11b10ufloat storage average random L4 mip 1",
+			"first": "31x33x1 rg11b10ufloat storage average random L4 mip 1: value 30, actual 0.010986328125, expected 0.00225830078125, error 0.00872802734375 > 0.000244140625",
+			"failing": 14,
+			"values": 960,
+			"maxError": 16
+		},
+		{
+			"shard": 11,
+			"label": "31x33x1 rg11b10ufloat storage average random L4 mip 2",
+			"first": "31x33x1 rg11b10ufloat storage average random L4 mip 2: value 13, actual 1.84375, expected 1.71875, error 0.125 > 0.0313720703125",
+			"failing": 7,
+			"values": 224,
+			"maxError": 4
+		},
+		{
+			"shard": 11,
+			"label": "31x33x1 rg11b10ufloat storage average random L6 mip 1",
+			"first": "31x33x1 rg11b10ufloat storage average random L6 mip 1: value 30, actual 0.010986328125, expected 0.00225830078125, error 0.00872802734375 > 0.000244140625",
+			"failing": 14,
+			"values": 960,
+			"maxError": 16
+		},
+		{
+			"shard": 11,
+			"label": "31x33x1 rg11b10ufloat storage average random L6 mip 2",
+			"first": "31x33x1 rg11b10ufloat storage average random L6 mip 2: value 13, actual 1.84375, expected 1.71875, error 0.125 > 0.0313720703125",
+			"failing": 7,
+			"values": 224,
+			"maxError": 4
+		},
+		{
+			"shard": 11,
+			"label": "192x108x1 rg11b10ufloat storage average random L4 mip 1",
+			"first": "192x108x1 rg11b10ufloat storage average random L4 mip 1: value 11401, actual 16.25, expected 15.875, error 0.375 > 0.2501220703125",
+			"failing": 1,
+			"values": 20736,
+			"maxError": 32
+		},
+		{
+			"shard": 11,
+			"label": "192x108x1 rg11b10ufloat storage average random L4 mip 3",
+			"first": "192x108x1 rg11b10ufloat storage average random L4 mip 3: value 644, actual 25, expected 24.25, error 0.75 > 0.5001220703125",
+			"failing": 3,
+			"values": 1248,
+			"maxError": 4
+		},
+		{
+			"shard": 11,
+			"label": "192x108x1 rg11b10ufloat storage average random L6 mip 1",
+			"first": "192x108x1 rg11b10ufloat storage average random L6 mip 1: value 11401, actual 16.25, expected 15.875, error 0.375 > 0.2501220703125",
+			"failing": 1,
+			"values": 20736,
+			"maxError": 32
+		},
+		{
+			"shard": 11,
+			"label": "192x108x1 rg11b10ufloat storage average random L6 mip 3",
+			"first": "192x108x1 rg11b10ufloat storage average random L6 mip 3: value 644, actual 25, expected 24.25, error 0.75 > 0.5001220703125",
+			"failing": 3,
+			"values": 1248,
+			"maxError": 4
+		},
+		{
+			"shard": 11,
+			"label": "255x257x1 rg11b10ufloat storage average random L4 mip 2",
+			"first": "255x257x1 rg11b10ufloat storage average random L4 mip 2: value 376, actual 4.5625, expected 3.40625, error 1.15625 > 0.0626220703125",
+			"failing": 37,
+			"values": 16128,
+			"maxError": 16
+		},
+		{
+			"shard": 11,
+			"label": "255x257x1 rg11b10ufloat storage average random L4 mip 4",
+			"first": "255x257x1 rg11b10ufloat storage average random L4 mip 4: value 268, actual 7.4375, expected 7.125, error 0.3125 > 0.1251220703125",
+			"failing": 5,
+			"values": 960,
+			"maxError": 4
+		},
+		{
+			"shard": 11,
+			"label": "255x257x1 rg11b10ufloat storage average random L6 mip 2",
+			"first": "255x257x1 rg11b10ufloat storage average random L6 mip 2: value 376, actual 4.5625, expected 3.40625, error 1.15625 > 0.0626220703125",
+			"failing": 37,
+			"values": 16128,
+			"maxError": 16
+		},
+		{
+			"shard": 11,
+			"label": "255x257x1 rg11b10ufloat storage average random L6 mip 4",
+			"first": "255x257x1 rg11b10ufloat storage average random L6 mip 4: value 268, actual 7.4375, expected 7.125, error 0.3125 > 0.1251220703125",
+			"failing": 5,
+			"values": 960,
+			"maxError": 4
+		},
+		{
+			"shard": 12,
+			"label": "3x7x1 rgba16float storage spd average random L4 mip 1",
+			"first": "3x7x1 rgba16float storage spd average random L4 mip 1: value 0, actual 2.8828125, expected 2.921875, error 0.0390625 > 0.008784312500414672",
+			"failing": 4,
+			"values": 12,
+			"maxError": 0.05078125
+		},
+		{
+			"shard": 12,
+			"label": "3x7x1 rgba16float storage spd average random L4 mip 2",
+			"first": "3x7x1 rgba16float storage spd average random L4 mip 2: value 0, actual 2.00390625, expected 2.03515625, error 0.03125 > 0.006120640625020314",
+			"failing": 2,
+			"values": 4,
+			"maxError": 0.03125
+		},
+		{
+			"shard": 12,
+			"label": "7x4x1 rgba16float storage spd average random L4 mip 1",
+			"first": "7x4x1 rgba16float storage spd average random L4 mip 1: value 0, actual -0.496337890625, expected -0.5, error 0.003662109375 > 0.0020049999998736894",
+			"failing": 13,
+			"values": 24,
+			"maxError": 0.03515625
+		},
+		{
+			"shard": 12,
+			"label": "7x4x1 rgba16float storage spd average random L4 mip 2",
+			"first": "7x4x1 rgba16float storage spd average random L4 mip 2: value 0, actual 4.1484375, expected 4.1640625, error 0.015625 > 0.012512468749817344",
+			"failing": 2,
+			"values": 4,
+			"maxError": 0.017578125
+		},
+		{
+			"shard": 12,
+			"label": "15x17x1 rgba16float storage spd average random L4 mip 1",
+			"first": "15x17x1 rgba16float storage spd average random L4 mip 1: value 0, actual 3.49609375, expected 3.53125, error 0.03515625 > 0.010614875000785106",
+			"failing": 137,
+			"values": 224,
+			"maxError": 0.05859375
+		},
+		{
+			"shard": 12,
+			"label": "15x17x1 rgba16float storage spd average random L4 mip 2",
+			"first": "15x17x1 rgba16float storage spd average random L4 mip 2: value 0, actual 3.42578125, expected 3.44140625, error 0.015625 > 0.010347140624915483",
+			"failing": 19,
+			"values": 48,
+			"maxError": 0.02734375
+		},
+		{
+			"shard": 12,
+			"label": "17x9x1 rgba16float storage spd average random L4 mip 1",
+			"first": "17x9x1 rgba16float storage spd average random L4 mip 1: value 0, actual 3.75390625, expected 3.78125, error 0.02734375 > 0.011365874999304651",
+			"failing": 63,
+			"values": 128,
+			"maxError": 0.05859375
+		},
+		{
+			"shard": 12,
+			"label": "17x9x1 rgba16float storage spd average random L4 mip 2",
+			"first": "17x9x1 rgba16float storage spd average random L4 mip 2: value 0, actual 4.69140625, expected 4.70703125, error 0.015625 > 0.014143546874984168",
+			"failing": 6,
+			"values": 32,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 12,
+			"label": "31x33x1 rgba16float storage spd average random L4 mip 1",
+			"first": "31x33x1 rgba16float storage spd average random L4 mip 1: value 0, actual -0.62939453125, expected -0.609375, error 0.02001953125 > 0.0020123125000754954",
+			"failing": 617,
+			"values": 960,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 12,
+			"label": "31x33x1 rgba16float storage spd average random L4 mip 2",
+			"first": "31x33x1 rgba16float storage spd average random L4 mip 2: value 0, actual 2.669921875, expected 2.68359375, error 0.013671875 > 0.008069484375533648",
+			"failing": 86,
+			"values": 224,
+			"maxError": 0.0390625
+		},
+		{
+			"shard": 12,
+			"label": "31x33x1 rgba16float storage spd average random L4 mip 3",
+			"first": "31x33x1 rgba16float storage spd average random L4 mip 3: value 7, actual 3.24609375, expected 3.2578125, error 0.01171875 > 0.009792503906821367",
+			"failing": 4,
+			"values": 48,
+			"maxError": 0.015625
+		},
+		{
+			"shard": 12,
+			"label": "65x129x1 rgba16float storage spd average random L4 mip 1",
+			"first": "65x129x1 rgba16float storage spd average random L4 mip 1: value 0, actual 2.48046875, expected 2.515625, error 0.03515625 > 0.007563937500774045",
+			"failing": 5113,
+			"values": 8192,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 12,
+			"label": "65x129x1 rgba16float storage spd average random L4 mip 2",
+			"first": "65x129x1 rgba16float storage spd average random L4 mip 2: value 4, actual 3.865234375, expected 3.8828125, error 0.017578125 > 0.011669656249679975",
+			"failing": 734,
+			"values": 2048,
+			"maxError": 0.044921875
+		},
+		{
+			"shard": 12,
+			"label": "65x129x1 rgba16float storage spd average random L4 mip 3",
+			"first": "65x129x1 rgba16float storage spd average random L4 mip 3: value 20, actual 3.201171875, expected 3.2109375, error 0.009765625 > 0.00965141796944954",
+			"failing": 35,
+			"values": 512,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 12,
+			"label": "192x108x1 rgba16float storage spd average random L4 mip 1",
+			"first": "192x108x1 rgba16float storage spd average random L4 mip 1: value 2, actual 3.583984375, expected 3.5625, error 0.021484375 > 0.010704750000382774",
+			"failing": 12181,
+			"values": 20736,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 12,
+			"label": "192x108x1 rgba16float storage spd average random L4 mip 2",
+			"first": "192x108x1 rgba16float storage spd average random L4 mip 2: value 0, actual 3.060546875, expected 3.05078125, error 0.009765625 > 0.009170765625211061",
+			"failing": 1616,
+			"values": 5184,
+			"maxError": 0.0390625
+		},
+		{
+			"shard": 12,
+			"label": "192x108x1 rgba16float storage spd average random L4 mip 3",
+			"first": "192x108x1 rgba16float storage spd average random L4 mip 3: value 48, actual 4.85546875, expected 4.875, error 0.01953125 > 0.014646976562493365",
+			"failing": 51,
+			"values": 1248,
+			"maxError": 0.01953125
+		},
+		{
+			"shard": 12,
+			"label": "192x108x1 rgba16float storage spd average edge L4 mip 1",
+			"first": "192x108x1 rgba16float storage spd average edge L4 mip 1: value 382, actual 0.297607421875, expected 0.300048828125, error 0.00244140625 > 0.0020012001953564323",
+			"failing": 106,
+			"values": 20736,
+			"maxError": 0.003173828125
+		},
+		{
+			"shard": 12,
+			"label": "255x257x1 rgba16float storage spd average random L4 mip 1",
+			"first": "255x257x1 rgba16float storage spd average random L4 mip 1: value 0, actual -0.303466796875, expected -0.296875, error 0.006591796875 > 0.0020058125001487497",
+			"failing": 43367,
+			"values": 65024,
+			"maxError": 0.0625
+		},
+		{
+			"shard": 12,
+			"label": "255x257x1 rgba16float storage spd average random L4 mip 2",
+			"first": "255x257x1 rgba16float storage spd average random L4 mip 2: value 1, actual 2.8203125, expected 2.796875, error 0.0234375 > 0.008406531249245746",
+			"failing": 5868,
+			"values": 16128,
+			"maxError": 0.046875
+		},
+		{
+			"shard": 12,
+			"label": "255x257x1 rgba16float storage spd average random L4 mip 3",
+			"first": "255x257x1 rgba16float storage spd average random L4 mip 3: value 0, actual 3.2578125, expected 3.248046875, error 0.009765625 > 0.009762398438280797",
+			"failing": 270,
+			"values": 3968,
+			"maxError": 0.0234375
+		},
+		{
+			"shard": 12,
+			"label": "255x257x1 rgba16float storage spd average random L4 mip 4",
+			"first": "255x257x1 rgba16float storage spd average random L4 mip 4: value 63, actual 3.490234375, expected 3.501953125, error 0.01171875 > 0.010524685546071852",
+			"failing": 1,
+			"values": 960,
+			"maxError": 0.01171875
+		},
+		{
+			"shard": 12,
+			"label": "17x11x3 rgba16float storage spd average random L4 mip 1",
+			"first": "17x11x3 rgba16float storage spd average random L4 mip 1: value 0, actual 3.75390625, expected 3.78125, error 0.02734375 > 0.011365874999304651",
+			"failing": 301,
+			"values": 480,
+			"maxError": 0.0595703125
+		},
+		{
+			"shard": 12,
+			"label": "17x11x3 rgba16float storage spd average random L4 mip 2",
+			"first": "17x11x3 rgba16float storage spd average random L4 mip 2: value 0, actual 4.69140625, expected 4.70703125, error 0.015625 > 0.014143546874984168",
+			"failing": 33,
+			"values": 96,
+			"maxError": 0.03076171875
+		},
+		{
+			"shard": 12,
+			"label": "17x11x3 rgba16float storage spd average random L4 mip 3",
+			"first": "17x11x3 rgba16float storage spd average random L4 mip 3: value 16, actual 3.525390625, expected 3.51171875, error 0.013671875 > 0.010555109374137828",
+			"failing": 2,
+			"values": 24,
+			"maxError": 0.013671875
+		},
+		{
+			"shard": 12,
+			"label": "17x9x1 rgba16float storage spd average random L4 mip 1",
+			"first": "17x9x1 rgba16float storage spd average random L4 mip 1: value 0, actual 3.75390625, expected 3.78125, error 0.02734375 > 0.011365874999304651",
+			"failing": 63,
+			"values": 128,
+			"maxError": 0.05859375
+		},
+		{
+			"shard": 12,
+			"label": "17x9x1 rgba16float storage spd average random L4 mip 2",
+			"first": "17x9x1 rgba16float storage spd average random L4 mip 2: value 0, actual 4.69140625, expected 4.70703125, error 0.015625 > 0.014143546874984168",
+			"failing": 6,
+			"values": 32,
+			"maxError": 0.0234375
+		}
+	],
+	"problems": [],
+	"skipped": [],
+	"perShard": [
+		{
+			"index": 1,
+			"ran": true,
+			"code": 1,
+			"seconds": 33,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 2,
+			"ran": true,
+			"code": 1,
+			"seconds": 60,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 3,
+			"ran": true,
+			"code": 1,
+			"seconds": 47,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 4,
+			"ran": true,
+			"code": 1,
+			"seconds": 74,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 5,
+			"ran": true,
+			"code": 1,
+			"seconds": 61,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 6,
+			"ran": true,
+			"code": 1,
+			"seconds": 54,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 7,
+			"ran": true,
+			"code": 1,
+			"seconds": 56,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 8,
+			"ran": true,
+			"code": 1,
+			"seconds": 49,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 9,
+			"ran": true,
+			"code": 1,
+			"seconds": 61,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 10,
+			"ran": true,
+			"code": 1,
+			"seconds": 48,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 11,
+			"ran": true,
+			"code": 1,
+			"seconds": 49,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 12,
+			"ran": true,
+			"code": 1,
+			"seconds": 46,
+			"timedOut": false,
+			"overBudget": false
+		}
+	],
+	"slowest": [
+		{
+			"id": "source/rgba16float/rg11b10ufloat/half",
+			"ms": 8891,
+			"cases": 11
+		},
+		{
+			"id": "source/rgba8unorm/rgba16float/half",
+			"ms": 7938,
+			"cases": 11
+		},
+		{
+			"id": "fixtures/960x540",
+			"ms": 7857,
+			"cases": 0
+		},
+		{
+			"id": "fixtures/1129x635",
+			"ms": 7649,
+			"cases": 0
+		},
+		{
+			"id": "source/rgba16float/rgb9e5ufloat/half",
+			"ms": 6988,
+			"cases": 11
+		},
+		{
+			"id": "source/rgba32float/rgb9e5ufloat/same",
+			"ms": 6447,
+			"cases": 11
+		},
+		{
+			"id": "downsampler/rgba16float/storage/L4/tail-average",
+			"ms": 5471,
+			"cases": 5
+		},
+		{
+			"id": "downsampler/rgba16float/storage/L1/average-load",
+			"ms": 5463,
+			"cases": 21
+		},
+		{
+			"id": "source/rgba16float/rgba8unorm/half",
+			"ms": 5307,
+			"cases": 11
+		},
+		{
+			"id": "source/depth32float/rg32float/half",
+			"ms": 5126,
+			"cases": 11
+		}
+	]
+}

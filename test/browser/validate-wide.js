@@ -223,7 +223,7 @@ async function validateWideScalar( device, { quick } ) {
 	const results = [];
 	const output = storageBuffer( device, 256 + 4 * 48 );
 	const bindings = { wgsl: wideBindings.wgsl, entries: wideBindings.entries() };
-	const scalar = new ScalarReduction( device, { reduce: scalarWideOps, load: wideLoad, bindings } );
+	const scalar = new ScalarReduction( device, { reduction: scalarWideOps, load: wideLoad, bindings } );
 	if ( scalar.resultBytes !== 48 || scalar.partialBytes !== 32 ) throw new Error( 'wide scalar: unexpected result or partial size' );
 
 	for ( const [ width, height, layers = 1 ] of quick ? wideShapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : wideShapes ) {
@@ -244,7 +244,7 @@ async function validateWideScalar( device, { quick } ) {
 	}
 
 	// Combine-only with 8 channels and no load hook (such a reduction only combines), from tool-written partials.
-	const combiner = new ScalarReduction( device, { reduce: scalarWideOps } );
+	const combiner = new ScalarReduction( device, { reduction: scalarWideOps } );
 	if ( combiner.unsupportedReason( { size: [ 4, 4 ], output: { buffer: output } } ) === null ) throw new Error( 'wide scalar: an 8-channel reduction without a load hook must reject image runs' );
 	let state = 5;
 	const next = () => ( state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0 ) / 2 ** 32;
@@ -289,8 +289,9 @@ function validateWideOptions( device ) {
 	expectThrow( () => new Reducer( device, { reduction: 'sum', channels: 6, levels: [ 1 ], load: wideLoad, store: wideStore, bindings } ), 'channels must be 4', 'six channels' );
 	// Six levels of DsWide take 32 KiB of workgroup memory: above the default limit.
 	if ( device.limits.maxComputeWorkgroupStorageSize < 32768 ) expectThrow( () => new Reducer( device, { reduction: wideOps, levels: [ 6 ], load: wideLoad, store: wideStore, bindings } ), 'maxComputeWorkgroupStorageSize', 'wide six levels' );
-	expectThrow( () => new ScalarReduction( device, { reduce: 'sum', channels: 5 } ), 'channels must be 4 or 8', 'scalar five channels' );
-	expectThrow( () => new ScalarReduction( device, { reduce: scalarWideOps } ).kernel(), 'combineKernel', 'wide scalar kernel() without a load hook' );
+	expectThrow( () => new ScalarReduction( device, { reduction: 'sum', channels: 5 } ), 'channels must be 4 or 8', 'scalar five channels' );
+	expectThrow( () => new ScalarReduction( device, { reduction: scalarWideOps } ).kernel(), 'combineKernel', 'wide scalar kernel() without a load hook' );
+	expectThrow( () => new ScalarReduction( device, { reduce: 'max' } ), 'not `reduce`', 'scalar old reduce key' );
 	return [ { option: 'wide validation' } ];
 
 }

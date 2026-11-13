@@ -3,7 +3,7 @@
 // every rounding boundary), buffer against storage output, the default storage
 // texture limit, and API behaviour.
 import { fromHalf, fromUfloat, packRgb9e5, quantizeTexel, reducePyramid, reduceReference, toHalf, toUfloat, unpackRgb9e5 } from '/dist/index.js';
-import { Downsampler, packedFloatWgsl, Reducer } from '/dist/webgpu/index.js';
+import { Downsampler, float16Wgsl, packedFloatWgsl, Reducer } from '/dist/webgpu/index.js';
 import { createTexture, makeData, poison, readMips, toFloats, upload } from './gpu.js';
 import { check, checkPyramid, reducerData } from './validate.js';
 
@@ -150,6 +150,41 @@ async function validateCodecs( device ) {
 
 	} );
 	results.push( { codec: 'rgb9e5', decoded: codes.length, encoded: texels.length } );
+
+	// float16 'nearest' (f16Rounding): ds_half_bits against core toHalf at every half's rounding
+	// boundaries (each midpoint and one float either side), both signs, overflow, NaN, f32 subnormals.
+	const halves = [ 0, - 0, NaN, - NaN, Infinity, - Infinity, 65504, 65519.99609375, 65520, 1e9, 2 ** - 149, 2 ** - 126, nextFloat( 2 ** - 126, - 1 ), 2 ** - 25, nextFloat( 2 ** - 25, 1 ), 2 ** - 24 ];
+	for ( let h = 0; h < 0x7c00; h ++ ) {
+
+		const lo = fromHalf( h ), hi = fromHalf( h + 1 ), mid = ( lo + hi ) / 2;
+		for ( const value of [ lo, mid, nextFloat( mid, - 1 ), nextFloat( mid, 1 ) ] ) halves.push( value, - value );
+
+	}
+	let seed = 9;
+	for ( let i = 0; i < 20000; i ++ ) {
+
+		seed = ( Math.imul( seed, 1664525 ) + 1013904223 ) >>> 0;
+		halves.push( bitsF32( ( seed & 0x807fffff ) | ( ( 95 + seed % 50 ) << 23 ) ) );
+
+	}
+	const halfInput = Uint32Array.from( halves, f32Bits );
+	const halfBits = await runCodec( device, float16Wgsl( 'nearest' ), '	output[i] = ds_half_bits(bitcast<f32>(input[i]));', halfInput, halfInput.length, halfInput.length );
+	halves.forEach( ( value, i ) => {
+
+		const expected = toHalf( value );
+		if ( halfBits[ i ] !== expected ) throw new Error( `ds_half_bits(${ value } [0x${ halfInput[ i ].toString( 16 ) }]) = 0x${ halfBits[ i ].toString( 16 ) }, expected 0x${ expected.toString( 16 ) }` );
+
+	} );
+	// ds_round_f16 (each level's rounding, by f32 add and subtract) against the same values as f32.
+	// Equal as numbers: f32 subnormal inputs may flush to a zero of either sign on the GPU.
+	const rounded = await runCodec( device, float16Wgsl( 'nearest' ), '	output[i] = bitcast<u32>(ds_round_f16(vec4f(bitcast<f32>(input[i]))).x);', halfInput, halfInput.length, halfInput.length );
+	halves.forEach( ( value, i ) => {
+
+		const expected = fromHalf( toHalf( value ) ), actual = bitsF32( rounded[ i ] );
+		if ( ! ( actual === expected || ( Number.isNaN( expected ) && Number.isNaN( actual ) ) ) ) throw new Error( `ds_round_f16(${ value } [0x${ halfInput[ i ].toString( 16 ) }]) = ${ actual }, expected ${ expected }` );
+
+	} );
+	results.push( { codec: 'float16 (round to nearest even)', encoded: halves.length, rounded: halves.length } );
 	return results;
 
 }
@@ -425,11 +460,13 @@ async function validateReducerBuffer( device, { quick } ) {
 }
 
 /**
- * Reducer float16 texture outputs round to nearest even (quantized with
- * pack2x16float before the store, as Downsampler does), on both paths: Apple's
- * textureStore truncates f32 → f16. Each 2×2 block holds one value 1/4, 1/2 or
- * 3/4 of a half step above a half, so its level-1 average is that value exactly,
- * and truncation would store the half below it.
+ * float16 outputs round to nearest even under f16Rounding 'nearest' (the default),
+ * on both output paths, for the Reducer and for Downsampler from a separate
+ * rgba32float source: textureStore and pack2x16float truncate f32 → f16 on D3D12,
+ * textureStore on Apple. Each 2×2 block holds one value 1/4, 1/2 or 3/4 of a half
+ * step above a half, so its level-1 average is that value exactly, and truncation
+ * would store the half below it. Under 'device', each value is that rounding or
+ * truncation toward zero (whichever the device does).
  */
 async function validateReducerHalfRounding( device ) {
 
@@ -452,18 +489,36 @@ async function validateReducerHalfRounding( device ) {
 	// Values that round away from zero: truncation stores the half below them.
 	const truncations = expected.filter( ( value, i ) => Math.abs( value ) > Math.abs( input[ i ] ) ).length;
 	if ( truncations === 0 ) throw new Error( 'reducer f16 rounding: the fixture has no value that truncation would change' );
-	for ( const output of [ 'storage', 'buffer' ] ) {
+	const truncated = expected.map( ( value, i ) => Math.abs( value ) > Math.abs( input[ i ] ) ? fromHalf( toHalf( value ) - 1 ) : value );
+	const verify = ( label, rounding, actual ) => actual.forEach( ( value, i ) => {
 
-		const reducer = new Reducer( device, { reduction: 'average', levels: [ 1 ], edges: 'clamp', format: 'rgba16float', output } );
+		if ( value === expected[ i ] || ( rounding === 'device' && value === truncated[ i ] ) ) return;
+		throw new Error( `${ label } f16Rounding '${ rounding }': value ${ i } stored ${ value }, round to nearest even gives ${ expected[ i ] }${ rounding === 'device' ? ` (truncation ${ truncated[ i ] })` : '' } (input ${ input[ i ] })` );
+
+	} );
+	let deviceTruncates = 0;
+	for ( const f16Rounding of [ 'nearest', 'device' ] ) for ( const output of [ 'storage', 'buffer' ] ) {
+
+		const reducer = new Reducer( device, { reduction: 'average', levels: [ 1 ], edges: 'clamp', format: 'rgba16float', output, f16Rounding } );
 		const outputs = levelTextures( device, reducer, width, height, 1, 'rgba16float', output === 'storage' );
 		const [ actual ] = await runReducer( device, reducer, source, outputs );
-		actual.forEach( ( value, i ) => { if ( value !== expected[ i ] ) throw new Error( `reducer rgba16float ${ output }: value ${ i } stored ${ value }, round to nearest even gives ${ expected[ i ] } (input ${ input[ i ] })` ); } );
+		verify( `reducer rgba16float ${ output }`, f16Rounding, actual );
+		if ( f16Rounding === 'device' ) deviceTruncates = Math.max( deviceTruncates, actual.filter( ( value, i ) => value !== expected[ i ] ).length );
 		outputs.forEach( texture => texture.destroy() );
+
+		// Downsampler from the same rgba32float source: destination level 0 is its half-size average.
+		const downsampler = new Downsampler( device, { output, f16Rounding } );
+		const destination = createTexture( device, { width: width / 2, height: height / 2, format: 'rgba16float', storage: output === 'storage' } );
+		poison( device, destination, 0 );
+		downsampler.generate( destination, { source: { texture: source } } );
+		const [ level0 ] = await readMips( device, destination, 0, 1 );
+		verify( `downsampler rgba32float → rgba16float ${ output }`, f16Rounding, level0 );
+		destination.destroy();
 
 	}
 
 	source.destroy();
-	return [ { option: `reducer rgba16float outputs round to nearest even (${ truncations } values differ under truncation)` } ];
+	return [ { option: `rgba16float outputs round to nearest even (${ truncations } values differ under truncation); under 'device' this device changed ${ deviceTruncates }` } ];
 
 }
 

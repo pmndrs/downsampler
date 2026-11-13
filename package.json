@@ -24,6 +24,8 @@
     "test:gpu": "node test/run.js",
     "bench": "npm run build && node test/run.js --bench",
     "lab": "npm run build && node test/serve.js",
+    "examples": "npm run build && node test/serve.js",
+    "test:examples": "npm run build && node test/examples.js",
     "tools": "npm run build && node test/tools/run.js"
   },
   "peerDependencies": {

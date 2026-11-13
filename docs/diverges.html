@@ -172,10 +172,11 @@ footer { color: var(--muted); font-size: 13px; display: grid; gap: 6px; max-widt
 			<div class="phase"><span class="st st-done">done</span><h3>M1 · core</h3><p>Kernel, Downsampler, three.js adapter, GPU suite, device lab, bench.</p></div>
 			<div class="phase"><span class="st st-done">done</span><h3>M2 · features</h3><p>Reductions, separate source (Hi-Z), 21 formats incl. rgb9e5 and rg11b10 via the buffer path, compatibility mode, encodePass.</p></div>
 			<div class="phase"><span class="st st-done">done</span><h3>M2T · tools first</h3><p>Reducer (hooks, sums, weights, 8 channels, payload folds, level selection), ScalarReduction, FSR 3.1 and upscaler fixtures, 'spd' mode and tail kernel measured.</p></div>
-			<div class="phase"><span class="st st-now">now</span><h3>Windows runs</h3><p>Cross-vendor timings for the upscaler exposure branch, the tool fixtures and the SPD comparison. Run sheet below.</p></div>
-			<div class="phase"><span class="st st-next">next</span><h3>M2.4 / M2.5</h3><p>Layer range and rect; 'box' odd sizes; power-of-two destination from a separate source.</p></div>
-			<div class="phase"><span class="st st-next">next</span><h3>M3 · dial in</h3><p>Throughput bench, STORAGE_BINDING cost, a cheaper exact kernel (~20 % headroom at 1024²), subgroups with fallback, fp16.</p></div>
-			<div class="phase"><span class="st st-next">later</span><h3>M4 · docs, M5 · ship</h3><p>Usage docs and examples; npm publish, tools as consumers, three.js PR, gpuweb comment (your review first).</p></div>
+			<div class="phase"><span class="st st-done">done</span><h3>Windows round 1</h3><p>RTX 3060 + Intel UHD: correctness, native D3D12/Vulkan matches, f16 rounding, sampler oracle, 32×32 exact tiles (docs/WINDOWS-REPORT.md). Round 2 (verify the merged milestones, M3 runs) is handed off in docs/WINDOWS-HANDOFF-2.md.</p></div>
+			<div class="phase"><span class="st st-done">done</span><h3>M2.4 / M2.5</h3><p>Done 2026-11-13: layer range and rect (partial updates), 'box' odd sizes, power-of-two (any-size) destinations from a separate source.</p></div>
+			<div class="phase"><span class="st st-now">now</span><h3>M3 · dial in</h3><p>Measurement modes built (throughput, STORAGE_BINDING cost, subgroup and fp16 upper bounds); defaults set from idle runs (tail on; exact tile 16 on Apple, 32 elsewhere). Timed runs on M5, RTX and Intel next.</p></div>
+			<div class="phase"><span class="st st-done">done</span><h3>M4 · docs</h3><p>README, docs/guide.md, notes for SPD users, five self-checking examples (npm run examples), API consistency pass.</p></div>
+			<div class="phase"><span class="st st-next">next</span><h3>M5 · ship</h3><p>npm publish, tools as consumers, three.js PR, the gpuweb#5253 comment (owner review).</p></div>
 		</div>
 	</section>
 
@@ -195,7 +196,7 @@ footer { color: var(--muted); font-size: 13px; display: grid; gap: 6px; max-widt
 	<section class="strip" aria-labelledby="strip-title">
 		<div class="strip-head">
 			<h2 id="strip-title">1920×1080, as we batch it today</h2>
-			<p>A batch ends wherever the next 2:1 reduction is inexact. This chain takes 7 dispatches. SPD takes 1 by dropping edges; our <code>oddSizes: 'spd'</code> does the same in 2 and measured 0.66× the time. The exact tail kernel (opt-in) merges the last five levels into one dispatch for 4 in total, with unchanged results, but measured 0.83–1.07×. nvpro would carry odd levels in pairs with a halo (entries 2 and 3).</p>
+			<p>A batch ends wherever the next 2:1 reduction is inexact. This chain takes 7 dispatches. SPD takes 1 by dropping edges; our <code>oddSizes: 'spd'</code> does the same in 2 and measured 0.66× the time. The exact tail kernel (the default since 2026-11-13) merges the last five levels into one dispatch for 4 in total, within one rgba8 step of the same results: 0.82–0.90× on an RTX 3060, 0.81–1.02× on an M5 Pro, neutral on Intel UHD. nvpro would carry odd levels in pairs with a halo (entries 2 and 3).</p>
 		</div>
 		<div class="chain"><div class="chain-row" id="chain"></div></div>
 		<div class="strip-key">
@@ -251,21 +252,21 @@ const entries = [
 		note: 'Revisit only if WGSL gains device-scope acquire/release, and measure first.' },
 	{ n: 2, title: 'A batch ends at every odd size', src: [ 'spd', 'nvpro' ], srcText: 'SPD, nvpro', verdict: 'candidate', effort: 'M–L',
 		they: 'SPD carries every level through odd sizes by dropping the last row or column. nvpro carries 2 levels per dispatch through odd sizes with a 1-texel halo.',
-		we: 'End the batch where the next reduction is inexact: 5–9 dispatches at render sizes (7 for 1920×1080). The exact tail kernel (M2T.4, opt-in tail: true) finishes the chain in one workgroup once a level fits 32×32: 3–6 dispatches.',
+		we: 'End the batch where the next reduction is inexact: 5–9 dispatches at render sizes (7 for 1920×1080). The exact tail kernel (M2T.4, default since 2026-11-13; tail: false turns it off) finishes the chain in one workgroup once a level fits 32×32: 3–6 dispatches.',
 		why: 'The simplest structure that keeps results identical to render passes.',
-		converge: 'Tail kernel: built, opt-in. Halo batches, M–L (candidate): our odd taps share nvpro\'s 2x…2x+2 support. They are what\'s left, because the time goes to the breaks at the large levels.',
+		converge: 'Tail kernel: built, default since 2026-11-13. Halo batches, M–L (candidate): our odd taps share nvpro\'s 2x…2x+2 support. They are what\'s left, because the time goes to the breaks at the large levels.',
 		quality: 'None. The tail matches \'exact\' within one 8-bit step (shader instead of sampler bilinear weights) and passed the full GPU matrix.',
 		perfKind: 'measured', perf: 'Tail 0.83–1.07× of \'exact\' (a gain at 960×540, otherwise mostly within noise): the trailing dispatches it removes are cheap. The \'spd\' structure, 2 dispatches with no batch ends, is 0.47–0.73× (rgba8) at render sizes, which bounds what halo batches could win. One compute pass for all batches measured 0.94–1.03×, so it isn\'t pass overhead.',
 		perfShort: 'Tail 0.83–1.07×; 2-dispatch bound 0.47–0.73×', qualityShort: 'None',
 		note: 'Tail stays opt-in; make it the default only if an idle-machine run shows ≥ 5 %.' },
 	{ n: 3, title: 'Odd sizes match render passes', src: [ 'spd', 'nvpro' ], srcText: 'SPD, nvpro', verdict: 'keep', effort: 'M',
 		they: 'SPD drops the last row or column. nvpro weights by area, (n−x, n, x+1)/(2n+1), so 3→1 averages all three texels.',
-		we: '\'exact\' by default (normalized-coordinate bilinear, identical to render-pass and WebGL mipmaps). oddSizes \'spd\' (M2T.4, opt-in) reproduces SPD with its own oracle. \'box\' with nvpro\'s weights is a planned opt-in.',
+		we: '\'exact\' by default (normalized-coordinate bilinear, identical to render-pass and WebGL mipmaps). oddSizes \'spd\' (M2T.4, opt-in) reproduces SPD with its own oracle. oddSizes \'box\' (M2.5, opt-in, 2026-11-13) applies nvpro\'s area weights in the shader, with \'exact\'\'s batches; the tail kernel carries its odd steps. Folds under \'box\' are identical to \'exact\'.',
 		why: 'Engines such as three.js can switch to us with no visual change, and Hi-Z stays conservative.',
-		converge: 'Done for SPD (opt-in). M for \'box\' (M2.5), with its own oracle.',
+		converge: 'Done for both (opt-ins): \'spd\' (M2T.4) and \'box\' (M2.5), each with its own oracle.',
 		quality: '\'spd\' agrees with \'exact\' to one 8-bit step until the first odd size, then differs by up to 0.24–0.64 (rgba8 scene). When level 0 or 1 is odd, its footprints drift by up to a texel. At levels ≥ 4, \'exact\' is 1.3–7× closer to the area-weighted ideal on a scene image; \'spd\' is closer on uniform noise. \'spd\' max leaves 0.01–15 % of texels below a base texel in their footprint (up to 52 % on noise); \'exact\' none. \'exact\' keeps the render-pass 31×31 flaw, which \'box\' fixes.',
-		perfKind: 'measured', perf: '\'spd\' is 1.4–2.1× faster than \'exact\' at render sizes up to 1440p in rgba8, 1.2–1.6× in rgba16f up to 1080p, within 3–9 % at 4K and at powers of two from 2048² (M5 Pro under load). \'box\' would share the folds\' structure (estimate).',
-		perfShort: '\'spd\' 1.4–2.1× faster (rgba8)', qualityShort: '\'spd\': drifting footprints, non-conservative Hi-Z', note: 'Default kept; \'spd\' is a public opt-in for \'average\' only (folds rejected); \'box\' planned (M2.5).' },
+		perfKind: 'measured', perf: '\'spd\' is 1.4–2.1× faster than \'exact\' at render sizes up to 1440p in rgba8, 1.2–1.6× in rgba16f up to 1080p, within 3–9 % at 4K and at powers of two from 2048² (M5 Pro under load). \'box\' takes the same dispatches as \'exact\' (1920×1080: 7, or 4 with the tail); not timed yet.',
+		perfShort: '\'spd\' 1.4–2.1× faster (rgba8)', qualityShort: '\'spd\': drifting footprints, non-conservative Hi-Z', note: 'Default kept; \'spd\' is a public opt-in for \'average\' only (folds rejected); \'box\' is an opt-in for quality-sensitive chains (GI, irradiance, roughness, UI).' },
 	{ n: 4, title: 'Conservative min/max footprint at odd edges', src: [ 'spd' ], srcText: 'SPD', verdict: 'keep', effort: 'S',
 		they: 'SPD\'s min/max skip the last row or column at odd sizes.',
 		we: 'Each fold covers texels 2x…2x+2 along an odd dimension: the smallest conservative footprint.',
@@ -349,13 +350,13 @@ const entries = [
 		quality: 'None.',
 		perfKind: 'estimate', perf: 'Saves one full-frame write and read per frame for video pyramids.',
 		perfShort: 'Saves a full-frame copy per frame', qualityShort: 'None', note: 'Matters for video, the upscaler and ML preprocessing.' },
-	{ n: 15, title: 'No sub-rectangle yet', src: [ 'spd' ], srcText: 'SPD', verdict: 'planned', effort: 'M',
+	{ n: 15, title: 'Sub-rectangles rewrite exact per-level regions, not 64-texel tiles', src: [ 'spd' ], srcText: 'SPD', verdict: 'keep', effort: '—',
 		they: 'SPD\'s rectInfo snaps to 64-texel source tiles and recomputes levels below 64×64 for the whole texture.',
-		we: 'Not yet: M2.4.',
-		why: 'Scheduled after formats.',
-		converge: 'M. Matching SPD\'s snapping is simplest; a tighter rect saves more work but needs per-level rounding rules.',
-		quality: 'Depends on the snapping decision.',
-		perfKind: 'estimate', perf: 'Saves work on partial updates.', perfShort: 'Saves work on partial updates', qualityShort: 'Depends on snapping', note: 'Decide snapping in M2.4.' },
+		we: 'Done (M2.4, 2026-11-13): encode( …, { rect, layers } ). Each level rewrites exactly the texels whose footprint touches the previous level\'s rewritten ones (2x … 2x+2 under exact and the tail; clamped blocks per batch under spd). Works with every path: tail, spd, buffer output, compatibility mode, separate sources, encodePass.',
+		why: 'Bit-identical to a full recompute when only the rect changed, and fewer texels than snapping to tiles.',
+		converge: 'None needed: tighter by design.',
+		quality: 'None: bit-identical to a full recompute (GPU suite, 11/11 mutations caught).',
+		perfKind: 'estimate', perf: 'Fewer texels per partial update than SPD; not timed yet.', perfShort: 'Fewer texels than SPD (not timed)', qualityShort: 'None', note: 'Resolved.' },
 	{ n: 16, title: 'sRGB through a scratch copy or buffer', src: [ 'spd' ], srcText: 'SPD', verdict: 'planned', effort: 'M',
 		they: 'SPD samples an sRGB view and writes a UNORM alias of the same texture.',
 		we: 'WebGPU forbids sRGB storage even through a view, so reduce in linear, write rgba8unorm scratch or a buffer, then copy.',
@@ -367,19 +368,19 @@ const entries = [
 	{ n: 17, title: 'Compute only, no per-device render fallback', src: [ 'community', 'gpuweb' ], srcText: 'greggman, toji', verdict: 'risk', effort: 'M',
 		they: 'greggman found compute generators slower than render passes on NVIDIA/D3D12 (up to 10× for SPD-style ports); toji reported a partner seeing the same. The community default is render passes.',
 		we: 'Compute only. The three.js adapter falls back to render passes only for textures we cannot handle.',
-		why: 'Measured faster on Apple; no other vendor data yet.',
+		why: 'Measured faster on Apple; on Windows render passes win rgba8 against our default (below).',
 		converge: 'M: cross-vendor data (M3), then per-device path selection in adapters, or a render-pass backend here (SPEC §3 leaves room).',
 		quality: 'None.',
-		perfKind: 'risky', perf: 'Apple: 1.3–27× faster than render passes. NVIDIA, AMD, Intel: unknown.',
-		perfShort: 'Unknown on NVIDIA/D3D12 (reported up to 10× slower)', qualityShort: 'None', note: 'The biggest open question; it decides the three.js default.' },
+		perfKind: 'measured', perf: 'Apple: 1.3–27× faster than render passes. Windows (Chrome 148, D3D12, same run, render sizes): with 8×8 exact workgroups our default exact ÷ WebGPU render passes was 1.25 (rgba8) / 1.06 (rgba16f) on an RTX 3060 Laptop and 1.71 / 0.94 on Intel UHD. With 32×32 exact tiles (default since 2026-11-13) it is 1.19 / 1.06 and 1.04 / 0.66; the tail kernel 0.98 / 0.90 and 1.02 / 0.63; spd 0.68–0.78. Rendering the large levels and finishing with exact does not help: render passes are cheaper per dependent step, not per texel. Natively, AMD SPD beats render passes by 27–31 % on the RTX; on Intel render passes and GenerateMips beat every SPD variant by ~27 % (rgba8). Nothing like 10× (results/windows/timings.md).',
+		perfShort: 'Windows: after the tile fix only RTX rgba8 favours render (1.19×); the tail kernel closes it (0.98)', qualityShort: 'None', note: 'Risk reduced: the lever is fewer dependent dispatches (tail kernel, exact batches across odd sizes), not a render-pass path.' },
 	{ n: 18, title: 'Textures need STORAGE_BINDING', src: [ 'gpuweb' ], srcText: 'gpuweb#5253 (Kangz)', verdict: 'risk', effort: '—',
 		they: 'Render-pass generators need only RENDER_ATTACHMENT. Kangz flagged an unmeasured cost of storage usage on sampled textures.',
 		we: 'Every destination needs STORAGE_BINDING; the three.js integration would add it automatically.',
 		why: 'Compute writes need storage textures.',
 		converge: 'Measure in M3. Avoiding it entirely would mean the buffer output path for every format.',
 		quality: 'None.',
-		perfKind: 'risky', perf: 'Unknown. Some drivers may disable compression on storage textures.',
-		perfShort: 'Unknown sampling cost', qualityShort: 'None', note: 'M3.' },
+		perfKind: 'measured', perf: 'Native D3D12, the same render-pass chain on a UAV-capable vs render-target-only texture: 0.99–1.01× (RTX 3060), 0.96–1.08× (Intel UHD), no consistent direction. Apple and AMD unmeasured.',
+		perfShort: 'No measurable cost on NVIDIA or Intel (D3D12)', qualityShort: 'None', note: 'Risk reduced.' },
 	{ n: 19, title: 'Timestamp benchmark only', src: [ 'community', 'nvpro' ], srcText: 'greggman, nvpro', verdict: 'planned', effort: 'S–M',
 		they: 'greggman measures work per frame because timestamp queries were unreliable. nvpro interleaves alternatives, takes min and median over 256 batches and compares to a speed-of-light kernel.',
 		we: 'Timestamps bracketing 16 repeats, medians of 11 rotated rounds.',
@@ -402,12 +403,19 @@ const entries = [
 		they: 'webgpu-spd 3.0.0 (git adc666e), a WGSL SPD port: min(storage texture limit, 12) mips per pass, with the atomic last-workgroup handoff above 6 and mip 6 in a shared f32 buffer (or a read-write texture). Subgroup quads when available. Simple API, integer and tier1 formats including rgb10a2, sub-rectangles, a 4-way custom filter.',
 		we: 'The \'exact\' default and oddSizes \'spd\' in ⌈mips/6⌉ dispatches, with no cross-workgroup communication (entries 1–3).',
 		why: 'Measured on the M5 Pro (results/compare/webgpu-spd.md). With ≤ 6 mips per pass it matches our SPD oracle on every in-bounds level. Its default here (8 per pass) returned stale levels 7+ in up to 5 % of frames at render sizes, 25–41 % at 4096² and up to 77 % at 256²; isolated runs disagreed too. That is entry 1\'s memory-model argument, observed. Also found: halfPrecision is non-functional, a separate target\'s last level is unwritten by default, the shared mip-6 buffer leaks other textures\' data into strips and sub-rects, and 3/4 of levels 7+ are unwritten above 4096².',
-		converge: 'None planned. Integer formats, rgb10a2 and sub-rectangles are already on our plan (M2.3.3, M2.3.7, M2.4).',
+		converge: 'None planned. Integer formats and rgb10a2 are on our plan (M2.3.3, M2.3.7); sub-rectangles are done (M2.4).',
 		quality: 'Its SPD odd sizes leave 0.07–52 % of min/max texels non-conservative at render sizes (ours: 0 under \'exact\'). Its default handoff is unsafe; 6 mips per pass and the read-write texture path had no failures.',
 		perfKind: 'measured', perf: 'Same-run ratios to \'exact\', load average 11–20. Its default: 1.16–1.32× (rgba8) and 0.95–1.41× (rgba16f) at render sizes. Its handoff-free mode: 0.81–1.25×. Our \'spd\', same semantics and dispatch count: 0.50–0.85×, so 1.2–2.1× faster. Its single dispatch (256²): 0.91× against 0.90× for our \'spd\' in two. Its subgroup path is 1.05–1.36× slower than its own non-subgroup path.',
 		perfShort: 'Our \'spd\' 1.2–2.1× faster than its handoff-free mode',
 		qualityShort: 'Default handoff: stale levels in up to 77 % of frames',
-		note: 'Keep. It is ahead on API simplicity, integer/rgb10a2 formats, sub-rects, bundle size (8.3 KB gzipped against 13.9 KB) and being released. For its users: set maxMipsPerPass: 6; don\'t use it for Hi-Z at odd sizes.' },
+		note: 'Keep. It is ahead on API simplicity, integer/rgb10a2 formats, bundle size (8.3 KB gzipped against 13.9 KB) and being released. For its users: set maxMipsPerPass: 6; don\'t use it for Hi-Z at odd sizes.' },
+	{ n: 23, title: 'Power-of-two Hi-Z from a render-size source: area folds, not one 2×2 tap', src: [ 'community', 'spd' ], srcText: 'niagara; SPD (FFX SSSR), Capsaicin', verdict: 'keep', effort: '—',
+		they: 'SPD-based setups (FidelityFX SSSR, Capsaicin) keep Hi-Z level 0 at the depth buffer\'s size. zeux\'s niagara uses a power-of-two pyramid (previousPow2 of the swapchain) filled by one min-sampler tap per texel, which misses a texel when the ratio isn\'t 2:1 (1920 → 1024 spans up to 3 source texels).',
+		we: 'source: { texture, resample: \'area\' } (M2.5): any destination size, up or down to 8× per axis. Averages are area-weighted; folds combine every source texel the destination texel overlaps, so the pyramid is conservative at every level. A 2048×1024 pyramid takes 2 dispatches for 12 levels. rect updates map the dirty source rect to the destination texels it overlaps.',
+		why: 'Hi-Z must not false-cull, and WebGPU has no reduction sampler, so the fold is ours anyway.',
+		converge: 'None needed.',
+		quality: 'A core test counts over 100 non-conservative texels on one 1920-texel row for the 2×2 tap; ours has none (GPU-checked against every source texel).',
+		perfKind: 'estimate', perf: 'The first batch loads the overlap (3×3 texels at 1920×1080 → 1024×512) instead of one sampler fetch. Not timed.', perfShort: 'Not timed', qualityShort: 'Conservative at any ratio', note: 'Keep.' },
 ];
 
 const esc = s => String( s ).replace( /[&<>"]/g, c => ( { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } )[ c ] );
@@ -499,22 +507,29 @@ const decisions = [
 	{ q: 'Package name', done: 'npm downsampler (unscoped; free on 2026-11-12), else @pmndrs/downsampler. GitHub pmndrs/downsampler.', meta: '', rec: '' },
 	{ q: 'Devices', done: 'RTX 3060 laptop + Intel UHD now through the windows-testing branch and a Windows agent, which also builds native D3D12/Vulkan matches. Wider coverage after publish.', meta: '', rec: '' },
 	{ q: 'oddSizes: \'spd\' public or test-only?', done: 'Public opt-in.', meta: '', rec: '' },
-	{ q: 'Tail kernel default?', done: 'Stays opt-in, documented. Revisit if Windows shows ≥5 %.', meta: '', rec: '' },
+	{ q: 'Tail kernel default?', done: 'Default since 2026-11-13: faster on the RTX 3060 (0.82–0.90×) and M5 Pro (0.81–1.02×), neutral on Intel UHD. exactTile defaults to 16 on Apple (32 was slower there).', meta: '', rec: '' },
 	{ q: 'Upscaler shading change: 8-channel or sign bit?', done: '8-channel, documented; the sign-bit version stays an experiment.', meta: '', rec: '' },
 	{ q: 'Upscaler exposure: every texel or the 1024 taps?', blocking: false, meta: 'Every texel is FSR\'s approach: a steadier estimate, but the exposure values change. The taps version is bit-identical and already 6–10× faster.', rec: '<strong>Agreed:</strong> merge the bit-identical perf/exposure-parallel first. Every texel is a separate decision (pros and cons sent 2026-11-12).' },
 	{ q: 'Payload folds: smaller-payload ties, or position ties?', blocking: false, meta: 'Ties are rare with continuous depth. Examples sent 2026-11-12.', rec: '<strong>Recommend:</strong> keep smaller-payload ties (order-independent, free); put a texel index first when position matters.' },
 	{ q: 'Reducer defaults: zero-weight edges, no rounding between levels, scalar finish layer argument', blocking: false, meta: 'Impact explained 2026-11-12.', rec: '<strong>Recommend:</strong> keep all three.' },
 	{ q: 'webgpu-spd bug reports', blocking: false, meta: 'Six issues drafted in drafts/webgpu-spd-issues.md (local, gitignored, never pushed). We don\'t use the library; the bench vendors a copy for comparison only.', rec: 'Waiting on your review.' },
+	{ q: 'float16 rounding (D3D12 truncates in textureStore and pack2x16float)', done: 'Round to nearest even in the shader by default (f16Rounding: \'nearest\', \'device\' opt-out), branch f16-rounding. Costs noise on the RTX, 14 % on Intel.', meta: '', rec: '' },
+	{ q: 'Sampler vs shader weights (averageAccess)', done: 'Keep \'sample\' the default; \'load\' documented as identical on every GPU (2–31 % slower). The test tolerance models the samplers\' 8-bit weights.', meta: '', rec: '' },
+	{ q: 'Empty rect (0×0): reject, or do nothing?', blocking: false, meta: 'Rejected today. WebGPU treats zero-size copies and writes as valid no-ops. Neither choice changes quality or speed.', rec: '<strong>Recommend:</strong> no-op, matching WebGPU; damage trackers often produce empty rects.' },
+	{ q: 'Rects that change every frame: ring buffer?', blocking: false, meta: 'Each new rect makes a 256-byte uniform buffer and bind groups (CPU cost, not GPU); the last 16 are cached per texture. A ring buffer avoids allocation but breaks if more than N updates are recorded before a submit.', rec: '<strong>Recommend:</strong> not yet. First, destroy evicted rect buffers after onSubmittedWorkDone (as Reducer does), then measure CPU cost if a tool updates rects per frame.' },
+	{ q: 'Any-size destination from a separate source: resample implicitly?', blocking: false, meta: 'source.resample: \'area\' is explicit today, so a destination left at the wrong size after a resize fails loudly instead of being silently resampled (blurred).', rec: '<strong>Recommend:</strong> keep it explicit.' },
+	{ q: 'Resample ratio cap: 8× per axis?', blocking: false, meta: 'Each destination texel reads up to 9 taps per axis (81 loads) in one invocation; the cost grows with the square of the ratio. Larger ratios can resample to a bigger level 0 and let the chain halve.', rec: '<strong>Recommend:</strong> keep 8×; raise it if a tool needs more.' },
+	{ q: 'f16 rounding: default to the device\'s conversion on some GPUs?', blocking: false, meta: 'The rounding was rewritten 2026-11-13 (Metal\'s fast math removed the old version, so Apple truncated). Cost of the new version is unmeasured: the old one cost 14 % on Intel, noise on the RTX. Truncation biases each level low by up to one f16 step (about 0.05 %).', rec: '<strong>Recommend:</strong> keep \'nearest\' everywhere and document \'device\'; revisit only if Windows round 2 shows more than ~10 % on Intel.' },
 	{ q: 'gpuweb#5253 comment', blocking: false, meta: 'Drafted in drafts/gpuweb-5253-comment.md (local only), with placeholders for the Windows numbers.', rec: 'Waiting on your review, after the Windows numbers.' },
 ];
 const runs = [
 	{ title: '1. Upscaler: parallel exposure (pmndrs/upscaler, branch perf/exposure-parallel)', note: 'Confirms the 6–10× exposure speedup off Apple and that DXC compile time stays at or under 39 ms. Run in the upscaler repo on that branch.',
 		cmd: 'node scripts/measure-exposure-parallel.mjs --power-preference high-performance --expected-vendor nvidia\nnode scripts/measure-exposure-parallel.mjs --power-preference low-power --expected-vendor intel\nnode scripts/measure-exposure-compile.mjs\nnode scripts/run-benchmark.mjs --smoke --ratios 1,1.5,2,3 --blocks 4 --warmup 240 --samples 300 --variant baseline --comparison exposure-serial-v1' },
-	{ title: '2. Downsampler: correctness on both GPUs', note: 'The full suite takes about 15–25 minutes per GPU. Any failure here matters more than any timing.',
+	{ title: '2. Downsampler: correctness on both GPUs (done 2026-11-12, results/windows/README.md)', note: 'Use node test/parallel.js: the full suite is CPU-bound and took 35+ min in one page on the laptop, 15–17 min in parallel; --quick takes 2 min. No run over 30 min.',
 		cmd: 'npm ci\nnpm run build\nnpm run test:gpu -- --power=high\nnpm run test:gpu -- --power=low' },
 	{ title: '3. Downsampler: tool fixtures (FSR 3.1 and upscaler passes vs the library)', note: 'Answers whether the library still ties or beats the upscaler\'s hand-written passes on NVIDIA and Intel, and settles the 8-channel question.',
 		cmd: 'npm run tools -- --power=high --output=results/tools/rtx3060.json\nnpm run tools -- --power=low --output=results/tools/intel-uhd.json' },
-	{ title: '4. Downsampler: SPD comparison and render-pass baseline (entries 1–3, 17)', note: 'exact vs spd vs tail vs single-dispatch atomic vs render passes. This is the run that tells us if compute loses to render passes on NVIDIA/D3D12.',
+	{ title: '4. Downsampler: SPD comparison and render-pass baseline (entries 1–3, 17; done 2026-11-12, results/windows/timings.md)', note: 'exact vs spd vs tail vs single-dispatch atomic vs render passes. This is the run that tells us if compute loses to render passes on NVIDIA/D3D12.',
 		cmd: 'npm run bench -- --compare=spd --skip-validation --power=high --output=results/spd/rtx3060.json\nnpm run bench -- --compare=spd --skip-validation --power=low --output=results/spd/intel-uhd.json' },
 ];
 document.getElementById( 'decisions' ).innerHTML = decisions.map( d => `

@@ -1,0 +1,106 @@
+# GPU suite, FAILED
+
+- Device: nvidia ampere
+- Flags: `--power=high`; 36 shards, 6 at a time, cap 10 min
+- 18291 cases, 53600 pattern runs, 1674 of 1674 case groups; wall 17 min 24 s
+
+## Failures (85)
+
+- 65x129x1 rgba16float storage average random L1 mip 1: value 18, actual 4.82421875, expected 4.8046875, error 0.01953125 > 0.0144140625 (2356/8192 values outside, max error 0.05078125)
+- 255x257x1 rgba16float storage average random L1 mip 1: value 12327, actual 0.92724609375, expected 0.96435546875, error 0.037109375 > 0.03560791015625 (16/65024 values outside, max error 0.0703125)
+- fixtures/1920x1080 threw: tool fixtures 1920x1080: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp
+- 65x129x1 rgba16float storage average random L5 mip 1: value 18, actual 4.82421875, expected 4.8046875, error 0.01953125 > 0.0144140625 (2356/8192 values outside, max error 0.05078125)
+- 255x257x1 rgba16float storage average random L5 mip 1: value 12327, actual 0.92724609375, expected 0.96435546875, error 0.037109375 > 0.03560791015625 (16/65024 values outside, max error 0.0703125)
+- fixtures/1707x960 threw: tool fixtures 1707x960: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp
+- fixtures/1129x635 threw: tool fixtures 1129x635: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp
+- 65x129x1 rg16float buffer average random L1 mip 1: value 16, actual 6.26171875, expected 6.28125, error 0.01953125 > 0.01884375 (1248/8192 values outside, max error 0.05078125)
+- fixtures/960x540 threw: tool fixtures 960x540: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp
+- fixtures/1280x720 threw: tool fixtures 1280x720: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp
+- 65x129x1 rg16float storage average random L4 mip 1: value 16, actual 6.26171875, expected 6.28125, error 0.01953125 > 0.01884375 (1248/8192 values outside, max error 0.05078125)
+- rgba32float 65x129x1 -> rgb9e5ufloat same average random L1 exact mip 1: value 460, actual 0.4296875, expected 0.4140625, error 0.015625 > 0.0079345703125 (50/8192 values outside, max error 0.046875)
+- rgba32float 65x129x1 -> rgb9e5ufloat same average random L4 exact mip 1: value 460, actual 0.4296875, expected 0.4140625, error 0.015625 > 0.0079345703125 (50/8192 values outside, max error 0.046875)
+- rgba32float 65x129x1 -> rgb9e5ufloat same average random L5 exact mip 1: value 460, actual 0.4296875, expected 0.4140625, error 0.015625 > 0.0079345703125 (50/8192 values outside, max error 0.046875)
+- rgba32float 65x129x1 -> rgb9e5ufloat same average random L6 exact mip 1: value 460, actual 0.4296875, expected 0.4140625, error 0.015625 > 0.0079345703125 (50/8192 values outside, max error 0.046875)
+- 255x257x1 rgba16float storage tail average random L6 mip 1: value 12327, actual 0.92724609375, expected 0.96435546875, error 0.037109375 > 0.03560791015625 (16/65024 values outside, max error 0.0703125)
+- 65x129x1 rg16float storage average random L1 mip 1: value 16, actual 6.26171875, expected 6.28125, error 0.01953125 > 0.01884375 (1248/8192 values outside, max error 0.05078125)
+- 65x129x1 rg11b10ufloat buffer average random L4 mip 1: value 182, actual 0.05859375, expected 0.0556640625, error 0.0029296875 > 0.0020751953125 (264/8192 values outside, max error 32)
+- 65x129x1 rgba16float storage average random L4 mip 1: value 18, actual 4.82421875, expected 4.8046875, error 0.01953125 > 0.0144140625 (2356/8192 values outside, max error 0.05078125)
+- 255x257x1 rgba16float storage average random L4 mip 1: value 12327, actual 0.92724609375, expected 0.96435546875, error 0.037109375 > 0.03560791015625 (16/65024 values outside, max error 0.0703125)
+- 255x257x1 rgb9e5ufloat buffer tail average random L5 mip 1: value 12945, actual 0.015625, expected 0.0625, error 0.046875 > 0.03624916076660156 (7/65024 values outside, max error 8)
+- 65x129x1 rg16float buffer average random L4 mip 1: value 16, actual 6.26171875, expected 6.28125, error 0.01953125 > 0.01884375 (1248/8192 values outside, max error 0.05078125)
+- rgba16float 65x129x1 -> rgba8unorm half average random L1 exact mip 0: value 35, actual 0.6901960968971252, expected 0.7019608020782471, error 0.011764705181121826 > 0.00788235294117647 (176/8192 values outside, max error 0.039215683937072754)
+- rgba16float 65x129x1 -> rgba8unorm half average random L4 exact mip 0: value 35, actual 0.6901960968971252, expected 0.7019608020782471, error 0.011764705181121826 > 0.00788235294117647 (176/8192 values outside, max error 0.039215683937072754)
+- rgba16float 65x129x1 -> rgba8unorm half average random L5 exact mip 0: value 35, actual 0.6901960968971252, expected 0.7019608020782471, error 0.011764705181121826 > 0.00788235294117647 (176/8192 values outside, max error 0.039215683937072754)
+- rgba16float 65x129x1 -> rgba8unorm half average random L6 exact mip 0: value 35, actual 0.6901960968971252, expected 0.7019608020782471, error 0.011764705181121826 > 0.00788235294117647 (176/8192 values outside, max error 0.039215683937072754)
+- rgba16float 255x257x1 -> rgba8unorm half average random L1 exact mip 0: value 31650, actual 0.4901960790157318, expected 0.5411764979362488, error 0.05098041892051697 > 0.05060696231617647 (2/65024 values outside, max error 0.05490196496248245)
+- rgba16float 255x257x1 -> rgba8unorm half average random L4 exact mip 0: value 31650, actual 0.4901960790157318, expected 0.5411764979362488, error 0.05098041892051697 > 0.05060696231617647 (2/65024 values outside, max error 0.05490196496248245)
+- rgba16float 255x257x1 -> rgba8unorm half average random L4 tail mip 0: value 31650, actual 0.4901960790157318, expected 0.5411764979362488, error 0.05098041892051697 > 0.05060696231617647 (2/65024 values outside, max error 0.05490196496248245)
+- rgba16float 255x257x1 -> rgba8unorm half average random L5 exact mip 0: value 31650, actual 0.4901960790157318, expected 0.5411764979362488, error 0.05098041892051697 > 0.05060696231617647 (2/65024 values outside, max error 0.05490196496248245)
+- rgba16float 255x257x1 -> rgba8unorm half average random L5 tail mip 0: value 31650, actual 0.4901960790157318, expected 0.5411764979362488, error 0.05098041892051697 > 0.05060696231617647 (2/65024 values outside, max error 0.05490196496248245)
+- rgba16float 255x257x1 -> rgba8unorm half average random L6 exact mip 0: value 31650, actual 0.4901960790157318, expected 0.5411764979362488, error 0.05098041892051697 > 0.05060696231617647 (2/65024 values outside, max error 0.05490196496248245)
+- rgba16float 255x257x1 -> rgba8unorm half average random L6 tail mip 0: value 31650, actual 0.4901960790157318, expected 0.5411764979362488, error 0.05098041892051697 > 0.05060696231617647 (2/65024 values outside, max error 0.05490196496248245)
+- 65x129x1 rgb9e5ufloat buffer average random L4 mip 1: value 20, actual 180, expected 181.5, error 1.5 > 1.0001220703125 (570/8192 values outside, max error 6.5)
+- 255x257x1 rgb9e5ufloat buffer average random L4 mip 1: value 12945, actual 0.015625, expected 0.0625, error 0.046875 > 0.03624916076660156 (7/65024 values outside, max error 8)
+- 65x129x1 rgba16float buffer average random L4 mip 1: value 18, actual 4.82421875, expected 4.8046875, error 0.01953125 > 0.0144140625 (2356/8192 values outside, max error 0.05078125)
+- 65x129x1 r16float storage average random L4 mip 1: value 28, actual 7.5703125, expected 7.546875, error 0.0234375 > 0.022640625 (595/8192 values outside, max error 0.046875)
+- 65x129x1 rgba16float buffer average random L1 mip 1: value 18, actual 4.82421875, expected 4.8046875, error 0.01953125 > 0.0144140625 (2356/8192 values outside, max error 0.05078125)
+- 65x129x1 r16float storage average random L1 mip 1: value 28, actual 7.5703125, expected 7.546875, error 0.0234375 > 0.022640625 (595/8192 values outside, max error 0.046875)
+- 65x129x1 rgba16float storage average random L6 mip 1: value 18, actual 4.82421875, expected 4.8046875, error 0.01953125 > 0.0144140625 (2356/8192 values outside, max error 0.05078125)
+- 255x257x1 rgba16float storage average random L6 mip 1: value 12327, actual 0.92724609375, expected 0.96435546875, error 0.037109375 > 0.03560791015625 (16/65024 values outside, max error 0.0703125)
+- 255x257x1 rgb9e5ufloat buffer tail average random L6 mip 1: value 12945, actual 0.015625, expected 0.0625, error 0.046875 > 0.03624916076660156 (7/65024 values outside, max error 8)
+- 65x129x1 rg11b10ufloat storage average random L1 mip 1: value 182, actual 0.05859375, expected 0.0556640625, error 0.0029296875 > 0.0020751953125 (264/8192 values outside, max error 32)
+- rgba16float 65x129x1 -> rg11b10ufloat half average random L1 exact mip 0: value 80, actual 0.390625, expected 0.37890625, error 0.01171875 > 0.0079345703125 (99/8192 values outside, max error 0.25)
+- rgba16float 65x129x1 -> rg11b10ufloat half average random L4 exact mip 0: value 80, actual 0.390625, expected 0.37890625, error 0.01171875 > 0.0079345703125 (99/8192 values outside, max error 0.25)
+- rgba16float 65x129x1 -> rg11b10ufloat half average random L5 exact mip 0: value 80, actual 0.390625, expected 0.37890625, error 0.01171875 > 0.0079345703125 (99/8192 values outside, max error 0.25)
+- rgba16float 65x129x1 -> rg11b10ufloat half average random L6 exact mip 0: value 80, actual 0.390625, expected 0.37890625, error 0.01171875 > 0.0079345703125 (99/8192 values outside, max error 0.25)
+- 65x129x1 rgb9e5ufloat buffer average random L5 mip 1: value 20, actual 180, expected 181.5, error 1.5 > 1.0001220703125 (570/8192 values outside, max error 6.5)
+- 255x257x1 rgb9e5ufloat buffer average random L5 mip 1: value 12945, actual 0.015625, expected 0.0625, error 0.046875 > 0.03624916076660156 (7/65024 values outside, max error 8)
+- 65x129x1 rg11b10ufloat buffer average random L1 mip 1: value 182, actual 0.05859375, expected 0.0556640625, error 0.0029296875 > 0.0020751953125 (264/8192 values outside, max error 32)
+- 65x129x1 rg16float buffer average random L5 mip 1: value 16, actual 6.26171875, expected 6.28125, error 0.01953125 > 0.01884375 (1248/8192 values outside, max error 0.05078125)
+- 255x257x1 rgb9e5ufloat buffer tail average random L4 mip 1: value 12945, actual 0.015625, expected 0.0625, error 0.046875 > 0.03624916076660156 (7/65024 values outside, max error 8)
+- 65x129x1 rg11b10ufloat buffer average random L5 mip 1: value 182, actual 0.05859375, expected 0.0556640625, error 0.0029296875 > 0.0020751953125 (264/8192 values outside, max error 32)
+- 65x129x1 r16float storage average random L6 mip 1: value 28, actual 7.5703125, expected 7.546875, error 0.0234375 > 0.022640625 (595/8192 values outside, max error 0.046875)
+- 65x129x1 rg16float storage average random L6 mip 1: value 16, actual 6.26171875, expected 6.28125, error 0.01953125 > 0.01884375 (1248/8192 values outside, max error 0.05078125)
+- 65x129x1 rgb9e5ufloat buffer average random L1 mip 1: value 20, actual 180, expected 181.5, error 1.5 > 1.0001220703125 (570/8192 values outside, max error 6.5)
+- 65x129x1 rgb9e5ufloat buffer average random L6 mip 1: value 20, actual 180, expected 181.5, error 1.5 > 1.0001220703125 (570/8192 values outside, max error 6.5)
+- 255x257x1 rgb9e5ufloat buffer average random L1 mip 1: value 12945, actual 0.015625, expected 0.0625, error 0.046875 > 0.03624916076660156 (7/65024 values outside, max error 8)
+- 255x257x1 rgb9e5ufloat buffer average random L6 mip 1: value 12945, actual 0.015625, expected 0.0625, error 0.046875 > 0.03624916076660156 (7/65024 values outside, max error 8)
+- 65x129x1 r16float storage average random L5 mip 1: value 28, actual 7.5703125, expected 7.546875, error 0.0234375 > 0.022640625 (595/8192 values outside, max error 0.046875)
+- 65x129x1 rg16float storage average random L5 mip 1: value 16, actual 6.26171875, expected 6.28125, error 0.01953125 > 0.01884375 (1248/8192 values outside, max error 0.05078125)
+- 255x257x1 rgba16float storage tail average random L5 mip 1: value 12327, actual 0.92724609375, expected 0.96435546875, error 0.037109375 > 0.03560791015625 (16/65024 values outside, max error 0.0703125)
+- 65x129x1 rg16float buffer average random L6 mip 1: value 16, actual 6.26171875, expected 6.28125, error 0.01953125 > 0.01884375 (1248/8192 values outside, max error 0.05078125)
+- 65x129x1 rgba16float buffer average random L5 mip 1: value 18, actual 4.82421875, expected 4.8046875, error 0.01953125 > 0.0144140625 (2356/8192 values outside, max error 0.05078125)
+- 255x257x1 rgba16float storage tail average random L4 mip 1: value 12327, actual 0.92724609375, expected 0.96435546875, error 0.037109375 > 0.03560791015625 (16/65024 values outside, max error 0.0703125)
+- 65x129x1 rg11b10ufloat storage average random L5 mip 1: value 182, actual 0.05859375, expected 0.0556640625, error 0.0029296875 > 0.0020751953125 (264/8192 values outside, max error 32)
+- rgba16float 65x129x1 -> rgb9e5ufloat half average random L1 exact mip 0: value 100, actual 3.109375, expected 3.078125, error 0.03125 > 0.0157470703125 (104/8192 values outside, max error 0.0625)
+- rgba16float 65x129x1 -> rgb9e5ufloat half average random L4 exact mip 0: value 100, actual 3.109375, expected 3.078125, error 0.03125 > 0.0157470703125 (104/8192 values outside, max error 0.0625)
+- rgba16float 65x129x1 -> rgb9e5ufloat half average random L5 exact mip 0: value 100, actual 3.109375, expected 3.078125, error 0.03125 > 0.0157470703125 (104/8192 values outside, max error 0.0625)
+- rgba16float 65x129x1 -> rgb9e5ufloat half average random L6 exact mip 0: value 100, actual 3.109375, expected 3.078125, error 0.03125 > 0.0157470703125 (104/8192 values outside, max error 0.0625)
+- rgba16float 255x257x1 -> rgb9e5ufloat half average random L1 exact mip 0: value 34994, actual 0.24365234375, expected 0.2265625, error 0.01708984375 > 0.0169677734375 (1/65024 values outside, max error 0.09375)
+- rgba16float 255x257x1 -> rgb9e5ufloat half average random L4 exact mip 0: value 34994, actual 0.24365234375, expected 0.2265625, error 0.01708984375 > 0.0169677734375 (1/65024 values outside, max error 0.09375)
+- rgba16float 255x257x1 -> rgb9e5ufloat half average random L4 tail mip 0: value 34994, actual 0.24365234375, expected 0.2265625, error 0.01708984375 > 0.0169677734375 (1/65024 values outside, max error 0.09375)
+- rgba16float 255x257x1 -> rgb9e5ufloat half average random L5 exact mip 0: value 34994, actual 0.24365234375, expected 0.2265625, error 0.01708984375 > 0.0169677734375 (1/65024 values outside, max error 0.09375)
+- rgba16float 255x257x1 -> rgb9e5ufloat half average random L5 tail mip 0: value 34994, actual 0.24365234375, expected 0.2265625, error 0.01708984375 > 0.0169677734375 (1/65024 values outside, max error 0.09375)
+- rgba16float 255x257x1 -> rgb9e5ufloat half average random L6 exact mip 0: value 34994, actual 0.24365234375, expected 0.2265625, error 0.01708984375 > 0.0169677734375 (1/65024 values outside, max error 0.09375)
+- rgba16float 255x257x1 -> rgb9e5ufloat half average random L6 tail mip 0: value 34994, actual 0.24365234375, expected 0.2265625, error 0.01708984375 > 0.0169677734375 (1/65024 values outside, max error 0.09375)
+- 65x129x1 rgba16float buffer average random L6 mip 1: value 18, actual 4.82421875, expected 4.8046875, error 0.01953125 > 0.0144140625 (2356/8192 values outside, max error 0.05078125)
+- 65x129x1 rg11b10ufloat storage average random L6 mip 1: value 182, actual 0.05859375, expected 0.0556640625, error 0.0029296875 > 0.0020751953125 (264/8192 values outside, max error 32)
+- 65x129x1 rg11b10ufloat buffer average random L6 mip 1: value 182, actual 0.05859375, expected 0.0556640625, error 0.0029296875 > 0.0020751953125 (264/8192 values outside, max error 32)
+- rgba8unorm 65x129x1 -> rgba16float half average random L1 exact mip 0: value 37, actual 0.4755859375, expected 0.47314453125, error 0.00244140625 > 0.0020002256128937006 (54/8192 values outside, max error 0.0029296875)
+- rgba8unorm 65x129x1 -> rgba16float half average random L4 exact mip 0: value 37, actual 0.4755859375, expected 0.47314453125, error 0.00244140625 > 0.0020002256128937006 (54/8192 values outside, max error 0.0029296875)
+- rgba8unorm 65x129x1 -> rgba16float half average random L5 exact mip 0: value 37, actual 0.4755859375, expected 0.47314453125, error 0.00244140625 > 0.0020002256128937006 (54/8192 values outside, max error 0.0029296875)
+- rgba8unorm 65x129x1 -> rgba16float half average random L6 exact mip 0: value 37, actual 0.4755859375, expected 0.47314453125, error 0.00244140625 > 0.0020002256128937006 (54/8192 values outside, max error 0.0029296875)
+- 65x129x1 rg11b10ufloat storage average random L4 mip 1: value 182, actual 0.05859375, expected 0.0556640625, error 0.0029296875 > 0.0020751953125 (264/8192 values outside, max error 32)
+
+## Slowest groups
+
+- `source/rgba32float/rgb9e5ufloat/same` 94.3 s, 13 cases
+- `source/rgba16float/rgba8unorm/same` 84.0 s, 13 cases
+- `source/rgba16float/rgba8unorm/half` 54.5 s, 13 cases
+- `source/rgba16float/rg11b10ufloat/half` 51.4 s, 13 cases
+- `source/rgba16float/rgb9e5ufloat/half` 46.4 s, 13 cases
+- `source/depth32float/r32float/same` 43.2 s, 13 cases
+- `source/rgba8unorm/rgba16float/half` 43.0 s, 13 cases
+- `source/depth32float/rg32float/half` 37.5 s, 13 cases
+- `downsampler/rg11b10ufloat/storage/L6/spd-average` 36.8 s, 24 cases
+- `downsampler/rg11b10ufloat/storage/L5/spd-average` 35.8 s, 24 cases

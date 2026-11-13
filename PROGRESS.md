@@ -6,23 +6,33 @@ Live status board. SPEC.md holds the design and the reasons behind it; this file
 
 **For agents:** read this after SPEC.md. When you start a task, move it to *Now* with your branch. When you finish, tick it, add the commit, and log the verification run. Keep entries to one line and link SPEC sections instead of restating them. Anything that needs the owner goes under *Waiting on owner*.
 
-Last updated: 2026-11-12 · Branch: `m2-reductions`
+Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Now
 
-- **Continued on branch `f16-rounding`** (from this branch): the library changes the owner decided on (`f16Rounding`, exact converting copies, the sampler tolerance model), every timing (native, webgpu-spd, locked clocks) and the handoff summary `results/windows/README.md`. This branch keeps `src/` unchanged, per the handoff.
-- [ ] Windows runs (owner + a Windows agent, RTX 3060 + Intel UHD): branch `windows-testing`, handoff in `docs/WINDOWS-HANDOFF.md`. Verification, cross-vendor timings, and native D3D12/Vulkan matches (FidelityFX SPD, D3D11 `GenerateMips`, nvpro) for the same sizes
-  - [x] Correctness: RTX full + quick + compat quick, Intel quick, all groups run; failures traced to f16 truncation and sampler precision ([results/windows/correctness.md](results/windows/correctness.md)); Intel-only deviations open
+- [x] Windows runs (owner + a Windows agent, RTX 3060 + Intel UHD), merged from `f16-rounding` (`a3b9517`): branch `windows-testing`, handoff in `docs/WINDOWS-HANDOFF.md`. Verification, cross-vendor timings, and native D3D12/Vulkan matches (FidelityFX SPD, D3D11 `GenerateMips`, nvpro) for the same sizes
+  - [x] Correctness: RTX full + quick + compat quick, Intel quick, all groups run; failures traced to f16 truncation and sampler precision, both explained by probes ([results/windows/correctness.md](results/windows/correctness.md))
   - [x] Native harnesses built (`native/`): D3D12 AMD SPD (8 variants), D3D12 render, D3D11 `GenerateMips`, Vulkan nvpro + blit; level dumps at 1129×635 match our oracles ([native-semantics-rtx3060.json](results/windows/native-semantics-rtx3060.json))
-  - [ ] Timings (library + native, `results/windows/run-benches.sh`): held for the owner's go-ahead after the correctness failures
+  - [x] `f16Rounding` (branch `f16-rounding`, `1af33de`): RTX full matrix 287 → 85 failures, every f16 one gone on both GPUs
+  - [x] Timings, native + `--compare=spd` on both GPUs ([results/windows/timings.md](results/windows/timings.md)); RTX WebGPU ran at 620–920 MHz vs native ~1600, so cross-API ratios there wait for locked clocks
+  - [x] webgpu-spd: timings and 256-frame check on both GPUs (0 stale frames of 41,472 each); our `'spd'` 1.6× / 3.5× faster than its default (RTX / Intel, rgba8) ([timings.md](results/windows/timings.md))
+  - [x] Sampler tolerance model (`ReferenceOptions.weights`) and exact converting copies (branch `f16-rounding`)
+  - [x] Render passes vs `'exact'` (`--compare=render`, DIVERGES #17): rendering the large levels doesn't help; Dawn's robustness/validation toggles change nothing. The cause on Intel was 8×8 exact workgroups: `exactTile` 32 default (hardware adapters with 256 invocations) + derived level sizes, `'exact'` 0.81× / 0.94× of before on Intel, 0.95× / 1.03× on the RTX (rgba8 / rgba16f). Verified: RTX full 18,292 cases, RTX + Intel quick, SwiftShader shard 2/14; only the FSR fixtures fail ([timings.md](results/windows/timings.md))
+  - [ ] Remaining handoff jobs: `bench`, `tools` per GPU (prepared in `run-benches.sh`, 25 min cap each)
+  - [x] Report: [docs/WINDOWS-REPORT.md](docs/WINDOWS-REPORT.md), with answers, method, what was ruled out, open questions and how to reproduce, linking every result file
+  - Handoff summary: [results/windows/README.md](results/windows/README.md); library changes are on branch `f16-rounding`
   - [x] `test/parallel.js`: the suite in capped parallel shards, one summary; full matrix 35+ → 17 min, quick 4.6 → 2 min (RTX 3060)
+- [ ] M3 runs: M5 Pro idle (throughput, throughput rAF, storage-usage, subgroups, f16; commands in test/bench/README.md), then RTX 3060 / Intel UHD via `--power=high|low`; decide the subgroup kernel on the `nosync` bound (≥ 5 % at render sizes) and fp16 on speed vs its precision and overflow cost
+- [ ] Windows round 2 (owner + Windows agent): `docs/WINDOWS-HANDOFF-2.md`. Verify the merged milestones on D3D12 before main (RTX full, Intel quick, compat quick, examples), confirm the tile/tail defaults, f16 rounding cost, M3 runs
 - [ ] CI: first GitHub run of the shards (`test/ci/README.md`): real shard times, Linux SwiftShader compat device, artifact collection. Then commit its `gpu-durations` artifact
 
 ## Next (SPEC §11)
 
-- [ ] Upscaler on the library through a local `file:` reference (owner: the upscaler releases after this is on npm)
-- [ ] M2.4: layer range + rect
-- [ ] M2.5: `oddSizes: 'box'`, power-of-two destination from a separate source (SPEC §2.1, §13)
+- [ ] One source shape after M2.5: `source: GPUTexture | TextureLevel` everywhere (ScalarRun's `texture` + `mipLevel` too), shared source checks in one module, `width`/`height` instead of `size: [ w, h ]`, `layers: [ first, count ]` everywhere (Reducer's count → `layerCount` until it takes a first layer)
+- [ ] Re-record `test/ci/durations.json` (41 new `region/*` groups, plus M2.5's)
+- [ ] Test hardening from the review: oracle `weights` default `'shader'` (fail closed; callers that sample opt into `'sampler'`); tile-equivalence at 16/32 on the buffer path, compat, `baseMipLevel` sub-range, separate source and tail; an f16 tie check through in-tile combine, tail and `'spd'` batches; a same-size copy next to Inf/NaN
+- [ ] Halo batches for `'exact'` and `'box'` together (SPEC §13 item 3): the remaining lever at render sizes, bounded by `'spd'`; own oracle + GPU cases first
+- [ ] Timings for `'box'` / `tailBox` (`--compare=spd`) and partial updates
 
 ## Deferred (three.js-driven)
 
@@ -32,11 +42,21 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
 
 ## Later
 
+- Rect updates without allocation: one ring buffer of region uniforms with dynamic offsets, for tools that change rects every frame (owner 2026-11-13: not now). Caveat to design around: more than N updates recorded before a submit would overwrite slots
 - **M3, dial in:** per-frame throughput benchmark; cross-vendor device lab runs (NVIDIA/D3D12 first); `STORAGE_BINDING` sampling cost; float32 sampler vs load; subgroup kernel with fallback (upper-bound test first); fp16
 - **M4, examples and docs:** usage docs, notes for SPD users, examples (mip chain, Hi-Z from depth, custom reduction, three.js)
 - **M5, ship:** npm publish, the upscaler and other tools as consumers, three.js in-tree PR, the gpuweb#5253 comment
 
 ## Done
+
+- [x] M2.5: `oddSizes: 'box'` (nvpro area weights in the shader, `'exact'` batches, the tail carries odd steps; folds identical to `'exact'`) and `source.resample: 'area'` (any destination size up/down to 8× per axis, e.g. power-of-two Hi-Z; conservative folds; 2048×1024 in 2 dispatches); `rect` composes with both (`areaDependents`); full-update WGSL unchanged (2,704 option sets byte-identical); 9/9 mutations caught (`2ad91a7`, `bb16237`, `ac86eee`, merge `a39022b`); DIVERGES #3 updated, #23 added
+- [x] M2.4: layer ranges + partial updates (`rect`): per-level dependent regions in core (exact footprint inverse, `'spd'` clamped blocks), bit-identical to a full recompute; composes with tail, `'spd'`, buffer path, compat, separate sources, `encodePass`; 11/11 mutations caught (`6ef5aa7`, `f78847b`, `9bc4c7e`, merged); DIVERGES #15 resolved
+- [x] API consistency before publish (`9a49043`, `7e09a59`, merged): ScalarReduction `reduce` → `reduction` (old key rejected), `'minmax'`; `Reducer.release( texture? )` / `ScalarReduction.release( resource? )` destroy owned buffers, evictions after `onSubmittedWorkDone`; `requiredLimits( adapter )` exported; `prepare` = what `encodePass` records on all three; `output.offset` from the device alignment; `averageAccess` reads `'sample'`; three: `getDownsampler( renderer, options )`, `generateMipmaps { encoder, downsampler }`, `unsupportedReason`. Source-shape unification waits for M2.5
+- [x] M3 measurement modes (`5b137a3`, merged): `--compare=throughput` (greggman work-per-frame, works without timestamp-query, order check against timestamps), `--compare=storage-usage`, `--compare=subgroups` (upper bound: `nosync` / `slot` / `shuffle`), `--compare=f16` (`f16` / `f16safe` with precision cost), `--strategies` for every mode; test/bench/README.md, SPEC §8. Bench `exact*` strategies pinned to `tail: false`
+- [x] M4: README front door, docs/guide.md (every option and default), docs/spd-users.md, examples/ (mip chain, Hi-Z from depth, Reducer block stats, ScalarReduction exposure, three.js r187) with on-page oracle readouts, `npm run examples` / `test:examples`, JSDoc pass (`f18c236`, `be2afe7`, `0c31357`, merged); M5 Pro: 10/10 example pages pass. Guide sections for M2.4/M2.5 filled after their merges
+- [x] M5 Pro render compare + tile sweep (3 idle runs each, `results/render/m5-pro-render-*.json`): `exactTile` 32 is 1.04–1.28× slower than 8 at render sizes on Apple, 16 ties 8 → default 16 on Apple, 32 on other hardware; tail with 16 tiles 0.81–1.02× of exact (`261e354`, `198728a`)
+- [x] f16 rounding fixed on Apple: `(x + c) − c` folded by Metal fast math, outputs truncated; branch-free integer rounding (`5f97c86`)
+- [x] Review of the Windows `src/` diff (independent agent): no defects; flagged the fast-math risk (confirmed on M5, fixed), the oracle's loose `weights: 'sampler'` default where callers omit it, and missing tile-equivalence coverage (buffer/compat/sub-range/tail at 16/32)
 
 - [x] CI shards like homefig: `--shard=i/N` over 323 SwiftShader case groups, LPT-balanced by `test/ci/durations.json`; 14 core shards (+14 compat on the full tier); `gpu-suite` aggregate checks coverage (`38beb25`, merge `44b25bc`)
 - [x] webgpu-spd 3.0.0 compared (`results/compare/webgpu-spd.md`, DIVERGES #22): its default single-dispatch handoff returned stale levels 7+ on M5 Pro (up to 5 % of frames at render sizes, 25–41 % at 4096²); correct with `maxMipsPerPass: 6`; our `'spd'` 1.2–2.1× faster for the same semantics (`805c21f`)
@@ -76,23 +96,32 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
 
 ## Waiting on owner
 
-- Payload-fold ties (smaller payload vs position): examples sent 2026-11-12; awaiting a call
-- Reducer defaults (`'zero-weight'` edges, no rounding between levels, scalar `finish` layer argument): impact explained 2026-11-12; awaiting a call
-- Upscaler exposure, every texel vs 1024 taps: pros/cons and sources sent 2026-11-12. Agreed: merge the bit-identical `perf/exposure-parallel` first
-- Review drafts (local only, gitignored, never pushed): `drafts/webgpu-spd-issues.md` (6 issues), `drafts/gpuweb-5253-comment.md` (numbers to fill from Windows)
-- Upscaler branch `perf/exposure-parallel` is local only: push it to pmndrs/upscaler so the Windows agent can run its measurements, or skip that run
-- Windows, sampler precision ([correctness.md](results/windows/correctness.md)): NVIDIA rounds each 2D tap weight to 1/256, Intel truncates axis weights (even sizes too); `averageAccess: 'load'` passes on both. Default `'sample'`, `'load'`, or `'load'` only after odd sizes? Decide after the sample-vs-load timings on both GPUs
+- Upscaler exposure, every texel vs 1024 taps: agreed to merge the bit-identical `perf/exposure-parallel` first (upscaler project)
+
+## Decided (owner, 2026-11-13)
+
+- Empty rect (0×0): a no-op, as WebGPU's zero-size copies are
+- Rect ring buffer (dynamic offsets, no allocation per new rect): not now; documented as a future task (Later)
+- `source.resample: 'area'` stays explicit; the ratio cap stays 8× per axis, as an option if that is free (`maxResampleRatio`), raised later if a tool needs it
+- f16: keep `'nearest'` everywhere, document `'device'`; re-test the cost on Windows (round 2) and decide per device only if it is large
+- Payload-fold ties: smaller payload wins (texel index first for position ties)
+- Reducer defaults kept: `'zero-weight'` edges, no rounding between in-tile levels, optional `layer` on scalar `finish`
+- Drafts (webgpu-spd issues, gpuweb#5253): done for now; kept local until the repo is public with solid work and examples to point at
+- Render fallback (DIVERGES #17): not needed (measured)
+- Process: the Windows machine takes the M3 measurement and tuning work (round 2, `windows-testing`); this machine does three.js, formats, docs and ship prep. Goal: finish the remaining phases today
 
 ## Decided (owner, 2026-11-12)
 
-- Upscaler uses the library through a local reference until npm; the upscaler releases after this is published
+- Upscaler uses the library through a local reference until npm; the upscaler releases after this is published. Upscaler changes happen in that project when the owner picks it up; this repo only keeps `docs/UPSCALER-HANDOFF.md`
 - Package: npm `downsampler` (unscoped; free on 2026-11-12), else `@pmndrs/downsampler`; GitHub `pmndrs/downsampler`
 - Devices: RTX 3060 laptop + Intel UHD now (maybe more NVIDIA); wider coverage after publish
 - `oddSizes: 'spd'` stays a public opt-in
-- Tail kernel stays opt-in, documented
+- ~~Tail kernel stays opt-in~~ → 2026-11-13: default if faster on most devices. Measured: RTX 0.82 / 0.90 of `'exact'`, Intel 0.97 / 0.97, M5 Pro 0.81–1.02 with 16 tiles → `tail: true` by default (`198728a`)
 - Upscaler shading change keeps the 8-channel version (documented); the sign-bit version stays an experiment
 - f16 outputs round to nearest even in the shader (D3D12 truncates in `textureStore` and `pack2x16float`), as a configurable default (branch `f16-rounding`)
 - Order on Windows: native timings now; library timings after the f16 change, with `'sample'` vs `'load'` and f16 rounding on/off in the comparison
+- `averageAccess` stays `'sample'` by default; `'load'` documented as identical on every GPU. The suite's tolerance models the samplers' 8-bit weights (`ReferenceOptions.weights`)
+- RTX clocks: lock them (`nvidia-smi -lgc`, owner runs it as admin) only for WebGPU-vs-native comparisons; unlocked, those were overstated 1.2–2×. Same-run ratios don't need it
 ## Verification log
 
 | Date | Commit | Device | Suite | Result |
@@ -122,6 +151,13 @@ Last updated: 2026-11-12 · Branch: `m2-reductions`
 | 2026-11-12 | `b6aca67` + harness fixes | RTX 3060 Laptop, D3D12, driver 592.00, Chrome 148 | full GPU matrix, `test/parallel.js` (36 shards × 6) | ❌ 18289 cases, 1674/1674 groups, 17 min; 287 failures: f16 truncation, sampler precision |
 | 2026-11-12 | `b6aca67` + harness fixes | RTX 3060 Laptop, D3D12 | quick / compat quick, parallel | ❌ 10444 cases, 2 min, 189 failures / ❌ 10355 cases, 2 min, 187 (same causes) |
 | 2026-11-12 | `b6aca67` + harness fixes | Intel UHD, D3D12, driver 31.0.101.5333 | quick, parallel (12 × 4) | ❌ 10437 cases, 2.4 min, 629 failures (f16 truncation + Intel-only deviations) |
+| 2026-11-13 | `198728a` | Apple M5 Pro, Chrome 148 | quick (unsharded) | ✅ 10477 cases, 731 groups, 40 s (before `5f97c86`: ❌ f16 truncation, separate-source rgba16float) |
+| 2026-11-13 | `a39022b` | Apple M5 Pro, Chrome 148, loaded | full GPU matrix (parallel, 9 shards × 3) / core / examples | ✅ 22436 cases, 65572 pattern runs, 1980/1980 groups, 0 failures, 22 min 55 s / ✅ 92 / ✅ 10 |
+| 2026-11-13 | `9bc4c7e` | Apple M5 Pro, Chrome 148, loaded | full GPU matrix (6 shards) / region quick on a compat device / core | ✅ 18830 cases / ✅ 267 / ✅ 80 (branch `m2.4-layers-rect`) |
+| 2026-11-13 | `9a49043` | Apple M5 Pro, Chrome 148, loaded | full GPU matrix (parallel, 3 jobs) / quick / core / examples | ✅ 18370 cases, 1674 groups / ✅ 10480 / ✅ 74 / ✅ 10 (branch `api-consistency`) |
+| 2026-11-13 | merge of both | Apple M5 Pro, Chrome 148 | quick / core / examples | ✅ 10797 cases / ✅ 81 / ✅ 10 |
+| 2026-11-13 | `5b137a3` | Apple M5 Pro, Chrome 148, loaded | quick `--only=downsampler` + core | ✅ 7885 cases, 570 groups; 73 core |
+| 2026-11-13 | `198728a` | Apple M5 Pro, Chrome 148 | full GPU matrix, `test/parallel.js` (12 shards × 4) | ✅ 18367 cases, 53600 pattern runs, 1674/1674 groups, 0 failures, 11 min 50 s |
 
 ## Notes
 

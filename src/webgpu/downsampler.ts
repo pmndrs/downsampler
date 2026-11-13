@@ -1,14 +1,17 @@
 import { bufferWritable, formats, isSupportedFormat, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { outputBufferLayout, planBatches, tailTile, type Batch, type BatchKernel, type OddSizePolicy } from '../core/plan.js';
 import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
+import { layersProblem, planRegions, rectProblem, type BatchRegion, type Rect } from '../core/region.js';
 import { isCompatibilityTexture } from './compat.js';
-import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
+import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, regionBinding, regionBytes, type F16Rounding, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
+import { requiredLimits } from './limits.js';
 
+/** Options of `new Downsampler( device, options )`. Every option is validated by the constructor. See docs/guide.md. */
 export interface DownsamplerOptions {
 	/**
 	 * Output levels per dispatch. Defaults to the most the path allows: on the
 	 * storage path min(6, maxStorageTexturesPerShaderStage) (six needs a device
-	 * created with a raised limit — see {@link Downsampler.requiredLimits}); on
+	 * created with a raised limit — see {@link requiredLimits}); on
 	 * the buffer path 6 at any storage texture limit. 5 and 6 levels also need
 	 * 256 invocations per workgroup (compatibility mode defaults to 128). Above
 	 * the storage limit only with output 'buffer'.
@@ -31,6 +34,9 @@ export interface DownsamplerOptions {
 	 * How 'average' reads the source level of each batch: one hardware bilinear
 	 * sample, or four `textureLoad`s with weights computed in the shader. Default
 	 * 'sample'. Unfilterable formats (float32, depth) and fold reductions always load.
+	 * Samplers round bilinear weights to 8 bits in vendor-specific ways (NVIDIA per 2D
+	 * tap, Intel by truncation), so 'sample' results differ slightly between GPUs;
+	 * 'load' is identical on every GPU and costs 2–31 % (results/windows/timings.md).
 	 */
 	averageAccess?: SourceAccess;
 	/**
@@ -48,12 +54,32 @@ export interface DownsamplerOptions {
 	 * 'exact' chains: once a level fits one workgroup (32×32, or 8×8 below 256
 	 * invocations per workgroup, as in compatibility mode), finish the chain in
 	 * one dispatch (the tail kernel) instead of a batch per odd size. Results
-	 * follow the same 'exact' rule. Works on both output paths and in
-	 * compatibility mode. Default false (SPEC.md §2.1).
+	 * follow the same 'exact' rule, with shader bilinear weights in the tail levels
+	 * (within one rgba8 step of the sampler's). Works on both output paths and in
+	 * compatibility mode. Default true: 0.82–0.90× of 'exact' on an RTX 3060, 0.81–1.02×
+	 * on an M5 Pro, neutral on Intel UHD (SPEC.md §2.1).
 	 */
 	tail?: boolean;
+	/**
+	 * float16 formats: how each level is rounded to a half, before it is stored and
+	 * before the next level reads it. 'nearest' (default): round to nearest even in the
+	 * shader, the same on every GPU. 'device': the device's own conversion
+	 * (`pack2x16float`), which truncates on D3D12. See {@link F16Rounding}.
+	 */
+	f16Rounding?: F16Rounding;
+	/**
+	 * 'exact' batches: the smallest output tile per workgroup, 8, 16 or 32. Default 32
+	 * (16 × 16 invocations, each writing 2 × 2 first-level texels) where a workgroup can
+	 * have 256 invocations, 16 on Apple GPUs, else 8; also 8 on fallback (software)
+	 * adapters, which compile 32×32-tile pipelines slowly. Results are the same; 8 × 8
+	 * workgroups were up to 1.6× slower on Intel UHD and 1.3× on an RTX 3060 at render
+	 * sizes (results/windows/timings.md), while 32 was 1.04–1.28× slower than 8 or 16 on
+	 * an M5 Pro (results/render/m5-pro-render-tiles-*.json).
+	 */
+	exactTile?: number;
 }
 
+/** A separate source for the first destination level (`EncodeOptions.source`), e.g. a depth buffer for Hi-Z. */
 export interface SourceOptions {
 	/**
 	 * Texture to read the first destination level from: any float-sampleable 2D
@@ -63,8 +89,23 @@ export interface SourceOptions {
 	texture: GPUTexture;
 	/** Level to read. Default 0. */
 	mipLevel?: number;
+	/**
+	 * 'area': the destination's first level may be any size (e.g. a power-of-two
+	 * Hi-Z, 1024×512 or 2048×1024 from 1920×1080), up to {@link maxResampleRatio}
+	 * times smaller per axis. Destination texel x covers [x·S/n, (x+1)·S/n) of the
+	 * source (S source texels, n destination texels per axis): 'average' weights
+	 * every source texel by its overlap, and folds combine every texel it overlaps,
+	 * so min/max stay conservative at any ratio, up or down. Later levels follow
+	 * `oddSizes`. Without it, the destination level must be the source's size or
+	 * half of it. SPEC.md §4 Separate source.
+	 */
+	resample?: 'area';
 }
 
+/** Largest source ÷ destination ratio per axis with `resample: 'area'` (at most 9 taps per axis). */
+export const maxResampleRatio = 8;
+
+/** Options of one chain: `encode`, `encodePass`, `generate` and `prepare`. Plans are cached per texture and option set. */
 export interface EncodeOptions {
 	/**
 	 * In place: the source level, with outputs from `baseMipLevel + 1`. With
@@ -72,7 +113,8 @@ export interface EncodeOptions {
 	 */
 	baseMipLevel?: number;
 	/**
-	 * Destination levels involved. In place this includes the source level.
+	 * Destination levels involved. In place this includes the source level, so
+	 * SPD's `mips = N` is `mipLevelCount: N + 1`. With `source`: the levels written.
 	 * Default: the rest of the chain.
 	 */
 	mipLevelCount?: number;
@@ -94,7 +136,13 @@ export interface EncodeOptions {
 	 * ⌈levels / levelsPerDispatch⌉ dispatches. Lower quality at odd sizes.
 	 * Folds are rejected: under these semantics min/max are not a conservative
 	 * Hi-Z. Works on both output paths and in compatibility mode.
-	 * 'box' (planned): area-weighted odd sizes. See SPEC.md §2.1.
+	 * 'box': area-weighted odd sizes (nvpro_pyramid's weights): each source texel
+	 * contributes in proportion to its overlap, so a 31×31 texture reduces to its
+	 * true mean. Same batches as 'exact'; batches that read an odd level (and tail
+	 * batches) load, with weights (n − x, n, x + 1) / (2n + 1) along an odd size
+	 * 2n + 1. Folds are the same as under 'exact' (the same 2x … 2x+2 footprint).
+	 * Works with the tail kernel, both output paths and compatibility mode.
+	 * See SPEC.md §2.1.
 	 */
 	oddSizes?: OddSizePolicy;
 	/**
@@ -106,19 +154,48 @@ export interface EncodeOptions {
 	 * sums have no 'exact' meaning and are rejected: use a `Reducer`.
 	 */
 	reduction?: Reduction;
+	/**
+	 * Reduce only these array layers, `[ first, count ]` (2d-array destinations, cube
+	 * faces as layers); the other layers are untouched. With `source`, the same layers
+	 * of the source are read. Default: every layer. See SPEC.md §5.
+	 */
+	layers?: readonly [ number, number ];
+	/**
+	 * A partial update (SPD's rectInfo): the texels of level `baseMipLevel` (in place)
+	 * or of the source level (with `source`) that changed since the chain was last
+	 * generated. Each later level rewrites only the texels whose footprint touches the
+	 * previous level's rewritten ones, so the result is bit-identical to a full
+	 * recompute when the old chain was valid and nothing changed outside the rect;
+	 * every other texel is untouched. Works with every odd-size policy, reduction,
+	 * output path, the tail kernel, compatibility mode and separate sources.
+	 * Each distinct rect and layer range costs a small uniform buffer and bind groups
+	 * (the 16 most recent are cached per texture). See SPEC.md §5.
+	 */
+	rect?: Rect;
 }
 
 /** A `copyBufferToTexture` of one level, after a buffer-path batch. */
 export interface BufferCopy {
 	mipLevel: number;
-	/** Byte offset in the batch's buffer, a multiple of 256. */
+	/** Byte offset in the batch's buffer: of the copied region's first texel (256-aligned for whole levels). */
 	offset: number;
 	bytesPerRow: number;
 	rowsPerImage: number;
+	/** Texture origin of the copy: texel x, y and the first layer (0 for whole levels). */
+	x: number;
+	y: number;
+	layer: number;
+	/** Copy extent: texels and layers. */
 	width: number;
 	height: number;
+	layers: number;
 }
 
+/**
+ * One dispatch of a chain, as `prepare()` returns it: dispatch it with
+ * `pipeline`, `bindGroup` at group 0 and `dispatchWorkgroups( groupsX, groupsY,
+ * layers )`, then (buffer path) record `copies` from `buffer` into the texture.
+ */
 export interface PreparedBatch extends Batch {
 	pipeline: GPUComputePipeline;
 	bindGroup: GPUBindGroup;
@@ -132,6 +209,16 @@ export interface PreparedBatch extends Batch {
 	 * `firstMipLevel` from its scratch texture into the destination (no reduction).
 	 */
 	copy?: boolean;
+	/** Array layers the dispatch covers, `[ first, count ]`: workgroup z is the layer, `count` the z dispatch size. */
+	layers: readonly [ number, number ];
+	/**
+	 * Partial updates (`rect` or `layers`): per level of the batch, the texels it
+	 * writes, or null for none. `groupsX`/`groupsY` then count the workgroups that
+	 * cover them, from the first workgroup `groupX`/`groupY` (in the batch's tiles).
+	 */
+	regions?: readonly ( Rect | null )[];
+	groupX?: number;
+	groupY?: number;
 }
 
 interface CachedPlan {
@@ -153,10 +240,39 @@ interface BatchKernelKey {
 	output: OutputPath;
 	kind: BatchKernel;
 	tile: number;
+	/** Area-weighted first output: see {@link KernelOptions.area}. */
+	area: boolean;
+	/** `oddSizes: 'box'`: area-weighted first output and tail steps ({@link KernelOptions.box}). */
+	box: boolean;
+	/** A partial update: the region uniform offsets the grid and restricts stores. */
+	region: boolean;
+}
+
+/** Recent partial-update plans kept per texture (each holds a uniform buffer and bind groups). */
+const regionPlanLimit = 16;
+/** Uniform slot stride: the default minUniformBufferOffsetAlignment. */
+const slotBytes = 256;
+
+interface PlanParameters {
+	source: SourceOptions | undefined;
+	baseMipLevel: number;
+	mipLevelCount: number;
+	oddSizes: OddSizePolicy;
+	reduction: Reduction;
+	sourceMipLevel: number;
 }
 
 /**
- * Generates mip chains with compute shaders, up to six levels per dispatch.
+ * Generates mip chains with compute shaders, up to six levels per dispatch:
+ * averages (render-pass semantics by default), min/max/minmax and custom fold
+ * pyramids (conservative at odd sizes, so a valid Hi-Z), in place or from a
+ * separate source such as a depth buffer.
+ *
+ * ```ts
+ * const downsampler = new Downsampler( device );
+ * downsampler.encode( encoder, texture );
+ * downsampler.encode( encoder, hiZ, { source: { texture: depth }, reduction: 'minmax' } );
+ * ```
  *
  * Dependent batches are separated by dispatch boundaries. There is deliberately
  * no single-dispatch (atomic last-workgroup) mode: WGSL barriers are
@@ -170,28 +286,36 @@ export class Downsampler {
 	readonly levelsPerDispatch: number;
 	/** Levels per dispatch on the buffer path: `levelsPerDispatch` if given, else 6 (4 below 256 invocations per workgroup). */
 	readonly bufferLevelsPerDispatch: number;
+	/** The `output` option: 'auto', 'storage' or 'buffer'. {@link Downsampler.outputPath} resolves it per texture. */
 	readonly output: 'auto' | OutputPath;
-	readonly averageAccess: SourceAccess | undefined;
+	/** How 'average' reads filterable sources (resolved `averageAccess` option, default 'sample'). */
+	readonly averageAccess: SourceAccess;
+	/** The `compatibility` option. {@link Downsampler.usesCompatibility} resolves it per texture. */
 	readonly compatibility: boolean | 'auto';
+	/** Whether 'exact' chains finish in a tail kernel (resolved `tail` option). */
 	readonly tail: boolean;
+	/** How float16 levels are rounded (resolved `f16Rounding` option). */
+	readonly f16Rounding: F16Rounding;
+	/** Smallest first-output tile of 'exact' batches (resolved `exactTile` option: 8, 16 or 32). */
+	readonly exactTile: number;
 	private readonly scratch = new WeakMap<GPUTexture, Map<number, GPUTexture>>();
 	private readonly pipelines = new Map<string, GPUComputePipeline>();
 	private readonly layouts = new Map<string, GPUBindGroupLayout>();
 	private readonly plans = new WeakMap<GPUTexture, Map<string, CachedPlan>>();
+	/** Partial-update plans per texture, least recently used first. */
+	private readonly regionPlans = new WeakMap<GPUTexture, Map<string, CachedPlan>>();
+	/** Buffer path, partial updates: one scratch buffer per texture, shared by its region plans. */
+	private readonly regionScratch = new WeakMap<GPUTexture, GPUBuffer>();
 	private readonly sampler: GPUSampler;
 
 	/**
-	 * Limits to request when creating a device, so six levels fit in one
-	 * dispatch: storage textures, and on compatibility-mode adapters (default
-	 * 128) the 256 invocations of the 5- and 6-level kernels and of
-	 * `ScalarReduction` (whose combine workgroup is 256 wide).
+	 * Limits to request when creating a device: the standalone
+	 * {@link requiredLimits} (exported from `downsampler/webgpu`), which also
+	 * covers 5- and 6-level `Reducer`s and `ScalarReduction`.
 	 */
 	static requiredLimits( adapter: GPUAdapter ): Record<string, number> {
 
-		const limits: Record<string, number> = { maxStorageTexturesPerShaderStage: Math.max( 4, Math.min( 6, adapter.limits.maxStorageTexturesPerShaderStage ) ) };
-		if ( adapter.limits.maxComputeInvocationsPerWorkgroup >= 256 ) limits.maxComputeInvocationsPerWorkgroup = 256;
-		if ( adapter.limits.maxComputeWorkgroupSizeX >= 256 ) limits.maxComputeWorkgroupSizeX = 256;
-		return limits;
+		return requiredLimits( adapter );
 
 	}
 
@@ -209,11 +333,20 @@ export class Downsampler {
 		this.bufferLevelsPerDispatch = options.levelsPerDispatch ?? invocations;
 		this.output = output;
 		if ( options.averageAccess !== undefined && options.averageAccess !== 'sample' && options.averageAccess !== 'load' ) throw new Error( 'downsampler: averageAccess must be "sample" or "load".' );
-		this.averageAccess = options.averageAccess;
+		this.averageAccess = options.averageAccess ?? 'sample';
 		const compatibility = options.compatibility ?? 'auto';
 		if ( compatibility !== 'auto' && typeof compatibility !== 'boolean' ) throw new Error( 'downsampler: compatibility must be true, false or "auto".' );
 		this.compatibility = compatibility;
-		this.tail = options.tail ?? false;
+		this.tail = options.tail ?? true;
+		const f16Rounding = options.f16Rounding ?? 'nearest';
+		if ( f16Rounding !== 'nearest' && f16Rounding !== 'device' ) throw new Error( 'downsampler: f16Rounding must be "nearest" or "device".' );
+		this.f16Rounding = f16Rounding;
+		// Software adapters (SwiftShader) keep 8: they take 30 s or more to compile a 32×32-tile pipeline.
+		const info = ( device as GPUDevice & { adapterInfo?: GPUAdapterInfo } ).adapterInfo;
+		const software = info?.isFallbackAdapter === true;
+		const exactTile = options.exactTile ?? ( invocations === 6 && ! software ? ( info?.vendor === 'apple' ? 16 : 32 ) : 8 );
+		if ( exactTile !== 8 && ( exactTile !== 16 && exactTile !== 32 || invocations < 6 ) ) throw new Error( 'downsampler: exactTile must be 8, or 16 or 32 on devices with 256 invocations per workgroup.' );
+		this.exactTile = exactTile;
 		this.sampler = device.createSampler( { label: 'downsampler', minFilter: 'linear', magFilter: 'linear' } );
 
 	}
@@ -274,6 +407,7 @@ export class Downsampler {
 
 	}
 
+	/** Whether `texture` can be a destination: {@link Downsampler.unsupportedReason} is null. */
 	supports( texture: GPUTexture ): boolean {
 
 		return this.unsupportedReason( texture ) === null;
@@ -288,13 +422,21 @@ export class Downsampler {
 		if ( texture.dimension !== '2d' ) return `source dimension ${ texture.dimension } is not supported`;
 		if ( texture.sampleCount !== 1 ) return 'multisampled sources are not supported (resolve first)';
 		if ( ( texture.usage & GPUTextureUsage.TEXTURE_BINDING ) === 0 ) return 'source needs TEXTURE_BINDING usage';
+		if ( source.resample !== undefined && source.resample !== 'area' ) return `source resample ${ JSON.stringify( source.resample ) } is unknown (only 'area')`;
 		if ( /int$/.test( texture.format ) || texture.format === 'stencil8' ) return `source format ${ texture.format } is not float-sampleable`;
 		if ( ! Number.isInteger( mipLevel ) || mipLevel < 0 || mipLevel >= texture.mipLevelCount ) return 'source mipLevel is outside the source texture';
 		if ( texture.depthOrArrayLayers !== destination.depthOrArrayLayers ) return `source has ${ texture.depthOrArrayLayers } layers, destination ${ destination.depthOrArrayLayers }`;
 		const sw = mipSize( texture.width, mipLevel ), sh = mipSize( texture.height, mipLevel );
 		const dw = mipSize( destination.width, baseMipLevel ), dh = mipSize( destination.height, baseMipLevel );
+		if ( source.resample === 'area' ) {
+
+			if ( sw > maxResampleRatio * dw || sh > maxResampleRatio * dh ) return `destination level ${ baseMipLevel } (${ dw }×${ dh }) is more than ${ maxResampleRatio }× smaller than the source level (${ sw }×${ sh }) along an axis; reduce into a larger level, or start from a smaller source level`;
+			return null;
+
+		}
+
 		const same = dw === sw && dh === sh, half = dw === Math.max( 1, sw >> 1 ) && dh === Math.max( 1, sh >> 1 );
-		if ( ! same && ! half ) return `destination level ${ baseMipLevel } (${ dw }×${ dh }) must be the source level's size (${ sw }×${ sh }) or half of it`;
+		if ( ! same && ! half ) return `destination level ${ baseMipLevel } (${ dw }×${ dh }) must be the source level's size (${ sw }×${ sh }) or half of it; for another size (e.g. a power-of-two Hi-Z) pass source.resample 'area'`;
 		return null;
 
 	}
@@ -307,12 +449,12 @@ export class Downsampler {
 			const pass = encoder.beginComputePass( { label: 'downsampler' } );
 			pass.setPipeline( batch.pipeline );
 			pass.setBindGroup( 0, batch.bindGroup );
-			pass.dispatchWorkgroups( batch.groupsX, batch.groupsY, texture.depthOrArrayLayers );
+			pass.dispatchWorkgroups( batch.groupsX, batch.groupsY, batch.layers[ 1 ] );
 			pass.end();
 			// Buffer path: each level into its texture, before the next batch reads it.
 			for ( const copy of batch.copies ?? [] ) {
 
-				encoder.copyBufferToTexture( { buffer: batch.buffer!, offset: copy.offset, bytesPerRow: copy.bytesPerRow, rowsPerImage: copy.rowsPerImage }, { texture, mipLevel: copy.mipLevel }, [ copy.width, copy.height, texture.depthOrArrayLayers ] );
+				encoder.copyBufferToTexture( { buffer: batch.buffer!, offset: copy.offset, bytesPerRow: copy.bytesPerRow, rowsPerImage: copy.rowsPerImage }, { texture, mipLevel: copy.mipLevel, origin: { x: copy.x, y: copy.y, z: copy.layer } }, [ copy.width, copy.height, copy.layers ] );
 
 			}
 
@@ -335,7 +477,7 @@ export class Downsampler {
 
 			pass.setPipeline( batch.pipeline );
 			pass.setBindGroup( 0, batch.bindGroup );
-			pass.dispatchWorkgroups( batch.groupsX, batch.groupsY, texture.depthOrArrayLayers );
+			pass.dispatchWorkgroups( batch.groupsX, batch.groupsY, batch.layers[ 1 ] );
 
 		}
 
@@ -351,10 +493,16 @@ export class Downsampler {
 	}
 
 	/**
-	 * The dispatches `encode` will record, prepared and cached per destination.
-	 * With a separate source, only the plan for the most recent source texture is
-	 * kept per option set, so recreating a depth buffer on resize does not grow
-	 * the cache.
+	 * What `encode` records for a chain, for tools that dispatch it themselves
+	 * (and to inspect the plan, or compile its pipelines ahead of time): one
+	 * {@link PreparedBatch} per dispatch, in order, with its pipeline, group-0
+	 * bind group and workgroup counts, and on the buffer path the copies that
+	 * follow it. Validates like `encode` and throws with the reason. Cached per
+	 * destination and option set (see {@link Downsampler.release}); with a
+	 * separate source only the most recent source texture's plan is kept per
+	 * option set, so recreating a depth buffer on resize does not grow the cache.
+	 * Partial updates (`rect`, `layers`) keep the 16 most recent regions per
+	 * texture; batches that write nothing are left out.
 	 */
 	prepare( texture: GPUTexture, options: EncodeOptions = {} ): readonly PreparedBatch[] {
 
@@ -372,16 +520,59 @@ export class Downsampler {
 		}
 
 		const oddSizes = options.oddSizes ?? 'exact';
-		if ( oddSizes !== 'exact' && oddSizes !== 'spd' ) throw new Error( `downsampler: odd size policy ${ JSON.stringify( oddSizes ) } is not implemented ('exact' or 'spd').` );
+		if ( oddSizes !== 'exact' && oddSizes !== 'spd' && oddSizes !== 'box' ) throw new Error( `downsampler: odd size policy ${ JSON.stringify( oddSizes ) } is not implemented ('exact', 'box' or 'spd').` );
 		const reduction = options.reduction ?? 'average';
 		if ( needsTileEdges( reduction ) ) throw new Error( 'downsampler: sums, per-channel reductions and custom sums have no \'exact\' mip-chain meaning; use a Reducer (edges \'zero-weight\' or \'clamp\').' );
 		if ( oddSizes === 'spd' && reduction !== 'average' ) throw new Error( 'downsampler: oddSizes \'spd\' is for \'average\' only. It drops the last odd row or column, so min/max/minmax and custom folds would not be a conservative Hi-Z; use oddSizes \'exact\' (the default), or a Reducer with edges \'zero-weight\' (⌈n/2⌉ sizes, every texel counted).' );
 		const sourceMipLevel = source?.mipLevel ?? 0;
-		const key = `${ baseMipLevel }:${ mipLevelCount }:${ oddSizes }:${ reductionKey( reduction ) }:${ source === undefined ? 'self' : `source:${ sourceMipLevel }` }`;
-		let cache = this.plans.get( texture );
-		if ( cache === undefined ) this.plans.set( texture, cache = new Map() );
-		const cached = cache.get( key );
-		if ( cached !== undefined && cached.source === source?.texture ) return cached.batches;
+		const parameters: PlanParameters = { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel };
+		const key = `${ baseMipLevel }:${ mipLevelCount }:${ oddSizes }:${ reductionKey( reduction ) }:${ source === undefined ? 'self' : `source:${ sourceMipLevel }${ source.resample === 'area' ? ':area' : '' }` }`;
+
+		if ( options.rect === undefined && options.layers === undefined ) {
+
+			let cache = this.plans.get( texture );
+			if ( cache === undefined ) this.plans.set( texture, cache = new Map() );
+			const cached = cache.get( key );
+			if ( cached !== undefined && cached.source === source?.texture ) return cached.batches;
+			const plan = this.build( texture, parameters, null );
+			cache.set( key, plan );
+			return plan.batches;
+
+		}
+
+		// A partial update: the dirty rect of the first source level, and a layer range.
+		const layerCount = texture.depthOrArrayLayers;
+		const layersReason = options.layers === undefined ? null : layersProblem( options.layers, layerCount );
+		if ( layersReason !== null ) throw new Error( `downsampler: ${ layersReason }.` );
+		const layers: [ number, number ] = options.layers === undefined ? [ 0, layerCount ] : [ options.layers[ 0 ], options.layers[ 1 ] ];
+		const rw = source === undefined ? mipSize( texture.width, baseMipLevel ) : mipSize( source.texture.width, sourceMipLevel );
+		const rh = source === undefined ? mipSize( texture.height, baseMipLevel ) : mipSize( source.texture.height, sourceMipLevel );
+		const rectReason = options.rect === undefined ? null : rectProblem( options.rect, rw, rh );
+		if ( rectReason !== null ) throw new Error( `downsampler: ${ rectReason }${ source === undefined ? ` (level ${ baseMipLevel })` : ' (the source level)' }.` );
+		const { x, y, width, height } = options.rect ?? { x: 0, y: 0, width: rw, height: rh };
+		const rect = { x, y, width, height };
+		const regionKey = `${ key }|${ layers.join() }|${ x },${ y },${ width },${ height }`;
+		let cache = this.regionPlans.get( texture );
+		if ( cache === undefined ) this.regionPlans.set( texture, cache = new Map() );
+		const cached = cache.get( regionKey );
+		cache.delete( regionKey );
+		if ( cached !== undefined && cached.source === source?.texture ) {
+
+			cache.set( regionKey, cached );
+			return cached.batches;
+
+		}
+
+		const plan = this.build( texture, parameters, { rect, layers } );
+		cache.set( regionKey, plan );
+		// Evicted plans aren't destroyed: an encoder not yet submitted may still use their buffers.
+		while ( cache.size > regionPlanLimit ) cache.delete( cache.keys().next().value! );
+		return plan.batches;
+
+	}
+
+	/** Prepares the batches of one plan; `region` makes it a partial update. */
+	private build( texture: GPUTexture, { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel }: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null ): CachedPlan {
 
 		const format = texture.format as SupportedFormat;
 		const viewDimension = ( texture as GPUTexture & { textureBindingViewDimension?: ViewDimension } ).textureBindingViewDimension;
@@ -396,79 +587,178 @@ export class Downsampler {
 
 		const output = this.outputPath( texture )!;
 		const levelsPerDispatch = output === 'buffer' && this.output === 'auto' ? this.bufferLevelsPerDispatch : this.levelsPerDispatch;
-		const copySource = source !== undefined && mipSize( source.texture.width, sourceMipLevel ) === mipSize( texture.width, baseMipLevel ) && mipSize( source.texture.height, sourceMipLevel ) === mipSize( texture.height, baseMipLevel );
+		const sourceWidth = source === undefined ? undefined : mipSize( source.texture.width, sourceMipLevel ), sourceHeight = source === undefined ? undefined : mipSize( source.texture.height, sourceMipLevel );
+		const copySource = source !== undefined && sourceWidth === mipSize( texture.width, baseMipLevel ) && sourceHeight === mipSize( texture.height, baseMipLevel );
 		// Tail tiles of 16 and 32 take 16 × 16 invocations; below 256 (compatibility mode) only 8.
 		const tailMaxTile = this.device.limits.maxComputeInvocationsPerWorkgroup >= 256 ? tailTile : 8;
-		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch, oddSizes, fromSource: source !== undefined, copySource, tail: oddSizes === 'exact' && this.tail, tailMaxTile } );
+		// Under 'spd', a resampled source is its own 1-level batch, like a copy.
+		const resample = source?.resample === 'area';
+		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch, oddSizes, fromSource: source !== undefined, copySource: copySource || resample, tail: oddSizes !== 'spd' && this.tail, tailMaxTile, exactMinTile: this.exactTile } );
+		const layerCount = texture.depthOrArrayLayers;
+		const layers: readonly [ number, number ] = region?.layers ?? [ 0, layerCount ];
+		const regions: BatchRegion[] | null = region === null ? null : planRegions( planned, region.rect, texture.width, texture.height, sourceWidth, sourceHeight );
+		// A partial update leaves out batches that write nothing (possible under 'spd' only).
+		const included = planned.map( ( batch, index ) => ( { batch, index } ) ).filter( ( { index } ) => regions === null || regions[ index ].groupsX * regions[ index ].groupsY > 0 );
+		const sourceSize = ( batch: Batch ): [ number, number ] => batch.sourceMipLevel === null ? [ sourceWidth!, sourceHeight! ] : [ mipSize( texture.width, batch.sourceMipLevel ), mipSize( texture.height, batch.sourceMipLevel ) ];
+		const odd = ( size: number ) => size > 1 && size % 2 === 1;
 
 		// Buffer path: one scratch buffer, sized for the largest batch, serves every
 		// batch in turn (each batch's copies are recorded before the next dispatch).
-		const layers = texture.depthOrArrayLayers;
-		const layouts = output === 'buffer' ? planned.map( batch => outputBufferLayout( Array.from( { length: batch.count }, ( _, i ) => [ mipSize( texture.width, batch.firstMipLevel + i ), mipSize( texture.height, batch.firstMipLevel + i ) ] as const ), layers, formats[ format ].bytesPerTexel ) ) : [];
+		// Its layout holds every layer and whole levels, so partial updates write it
+		// at the same offsets and copy their regions out.
+		const bytesPerTexel = formats[ format ].bytesPerTexel;
+		const layouts = output === 'buffer' ? planned.map( batch => outputBufferLayout( Array.from( { length: batch.count }, ( _, i ) => [ mipSize( texture.width, batch.firstMipLevel + i ), mipSize( texture.height, batch.firstMipLevel + i ) ] as const ), layerCount, bytesPerTexel ) ) : [];
 		const buffers: GPUBuffer[] = [];
 		let scratch: GPUBuffer | undefined;
-		if ( output === 'buffer' && planned.length > 0 ) {
+		if ( output === 'buffer' && included.length > 0 ) {
 
-			const size = Math.max( ...layouts.map( layout => layout.size ) );
+			const size = Math.max( ...included.map( ( { index } ) => layouts[ index ].size ) );
 			const limit = Math.min( this.device.limits.maxStorageBufferBindingSize, this.device.limits.maxBufferSize );
 			if ( size > limit ) throw new Error( `downsampler: the buffer output path needs a ${ size }-byte buffer for this texture, above this device's maxStorageBufferBindingSize / maxBufferSize (${ limit }); request higher limits.` );
-			buffers.push( scratch = this.device.createBuffer( { label: `downsampler output ${ format }`, size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC } ) );
+			if ( region === null ) buffers.push( scratch = this.device.createBuffer( { label: `downsampler output ${ format }`, size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC } ) );
+			else scratch = this.sharedScratch( texture, size );
 
 		}
 
 		// Compatibility mode, storage path: batches write scratch textures and read written
 		// levels from them (SPEC §4). The buffer path needs neither: it reads one level per
-		// dispatch and writes through copies.
+		// dispatch and writes through copies. A partial update writes only part of each
+		// scratch level, so it reads the destination, which the copies have brought up to date.
 		const compat = output === 'storage' && this.usesCompatibility( texture );
 		const firstWritten = source === undefined ? baseMipLevel + 1 : baseMipLevel;
 		const target = compat ? ( level: number ) => this.scratchView( texture, level, dimension ) : view;
-		const input = ( level: number ) => compat && level >= firstWritten ? this.scratchView( texture, level, dimension ) : view( level );
-		let batches = planned.map( ( batch, index ): PreparedBatch => {
+		const input = ( level: number ) => compat && region === null && level >= firstWritten ? this.scratchView( texture, level, dimension ) : view( level );
+
+		// Partial updates: one uniform buffer, a 256-byte slot per region uniform (and per
+		// layout uniform on the buffer path), written once: plans are cached per region.
+		const slots: Uint32Array[] = [];
+		const slot = ( words: ArrayLike<number> ) => {
+
+			const data = new Uint32Array( slotBytes / 4 );
+			data.set( words );
+			slots.push( data );
+			return ( slots.length - 1 ) * slotBytes;
+
+		};
+		const regionWords = ( groupX: number, groupY: number, levels: readonly ( Rect | null )[] ) => {
+
+			const words = [ groupX, groupY, layers[ 0 ], 0 ];
+			for ( const level of levels ) words.push( ...( level === null ? [ 0, 0, 0, 0 ] : [ level.x, level.y, level.x + level.width, level.y + level.height ] ) );
+			return words;
+
+		};
+		// Bind group entries that point into the uniform buffer, filled in once it exists.
+		const pending: { entry: GPUBindGroupEntry; offset: number; size: number }[] = [];
+		const uniformEntry = ( binding: number, offset: number, size: number ) => {
+
+			const entry: GPUBindGroupEntry = { binding, resource: { buffer: undefined as unknown as GPUBuffer, offset, size } };
+			pending.push( { entry, offset, size } );
+			return entry;
+
+		};
+		// Bind groups are created after the uniform buffer.
+		const deferred: ( () => void )[] = [];
+
+		let batches = included.map( ( { batch, index } ): PreparedBatch => {
 
 			const external = batch.sourceMipLevel === null;
 			const sourceFormat = external ? source!.texture.format : format;
-			const access = this.access( reduction, sourceFormat );
-			const kernel: BatchKernelKey = { format, dimension, count: batch.count, access, reduction, sourceFormat, output, kind: batch.kernel, tile: batch.tile };
+			// A same-size converting copy loads: a sampler at texel centres isn't exact on every
+			// GPU (Intel truncates the coordinate a hair below the centre and blends in 1/256 of a
+			// neighbour; results/windows/correctness.md).
+			// Area-weighted batches load: a resampled source (any reduction), and under 'box' the
+			// averages that read an odd level, or reduce odd levels in a tail. The others are
+			// the 'exact' kernels: an even step is the same 2×2 box, and folds are the same.
+			const [ sw, sh ] = sourceSize( batch );
+			const box = batch.kernel !== 'clamp' && oddSizes === 'box' && reduction === 'average' && ( batch.kernel === 'tail' || odd( sw ) || odd( sh ) );
+			const area = box || ( batch.kernel !== 'clamp' && external && resample );
+			const access = area || ( external && copySource && batch.firstMipLevel === baseMipLevel ) ? 'load' : this.access( reduction, sourceFormat );
+			const kernel: BatchKernelKey = { format, dimension, count: batch.count, access, reduction, sourceFormat, output, kind: batch.kernel, tile: batch.tile, area, box, region: region !== null };
 			const layout = this.layout( kernel );
 			const pipeline = this.pipeline( kernel );
 			const entries: GPUBindGroupEntry[] = access === 'sample' ? [ { binding: 0, resource: this.sampler } ] : [];
 			entries.push( { binding: 1, resource: external ? sourceView() : input( batch.sourceMipLevel! ) } );
-			if ( output === 'storage' ) {
+			const update = regions?.[ index ];
+			const prepared: PreparedBatch = { ...batch, pipeline, bindGroup: undefined as unknown as GPUBindGroup, output, layers };
+			if ( update !== undefined ) {
 
-				for ( let i = 0; i < batch.count; i ++ ) entries.push( { binding: i + 2, resource: target( batch.firstMipLevel + i ) } );
-				return { ...batch, pipeline, bindGroup: this.device.createBindGroup( { label: 'downsampler', layout, entries } ), output };
+				Object.assign( prepared, { groupX: update.groupX, groupY: update.groupY, groupsX: update.groupsX, groupsY: update.groupsY, regions: update.levels } );
+				entries.push( uniformEntry( regionBinding, slot( regionWords( update.groupX, update.groupY, update.levels ) ), regionBytes ) );
 
 			}
 
-			// The layout uniform: first-output size, then per level its offset and row stride in words and its rows.
-			const levels = layouts[ index ].levels;
-			const words = new Uint32Array( outputLayoutBytes / 4 );
-			words.set( [ batch.outputWidth, batch.outputHeight ] );
-			levels.forEach( ( level, i ) => { words[ 4 + i ] = level.offset / 4; words[ 12 + i ] = level.bytesPerRow / 4; words[ 20 + i ] = level.rowsPerImage; } );
-			const uniform = this.device.createBuffer( { label: 'downsampler output layout', size: outputLayoutBytes, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
-			this.device.queue.writeBuffer( uniform, 0, words );
-			buffers.push( uniform );
-			entries.push( { binding: outputLayoutBinding, resource: { buffer: uniform } }, { binding: outputBufferBinding, resource: { buffer: scratch! } } );
-			const copies = levels.map( ( { offset, bytesPerRow, rowsPerImage, width, height }, i ) => ( { mipLevel: batch.firstMipLevel + i, offset, bytesPerRow, rowsPerImage, width, height } ) );
-			return { ...batch, pipeline, bindGroup: this.device.createBindGroup( { label: 'downsampler', layout, entries } ), output, buffer: scratch, copies };
+			if ( output === 'storage' ) {
+
+				for ( let i = 0; i < batch.count; i ++ ) entries.push( { binding: i + 2, resource: target( batch.firstMipLevel + i ) } );
+
+			} else {
+
+				// The layout uniform: first-output size, then per level its offset and row stride in words and its rows.
+				const levels = layouts[ index ].levels;
+				const words = new Uint32Array( outputLayoutBytes / 4 );
+				words.set( [ batch.outputWidth, batch.outputHeight ] );
+				levels.forEach( ( level, i ) => { words[ 4 + i ] = level.offset / 4; words[ 12 + i ] = level.bytesPerRow / 4; words[ 20 + i ] = level.rowsPerImage; } );
+				if ( update === undefined ) {
+
+					const uniform = this.device.createBuffer( { label: 'downsampler output layout', size: outputLayoutBytes, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+					this.device.queue.writeBuffer( uniform, 0, words );
+					buffers.push( uniform );
+					entries.push( { binding: outputLayoutBinding, resource: { buffer: uniform } } );
+
+				} else entries.push( uniformEntry( outputLayoutBinding, slot( words ), outputLayoutBytes ) );
+				entries.push( { binding: outputBufferBinding, resource: { buffer: scratch! } } );
+				// Whole levels, or each level's region of the layers in range.
+				prepared.buffer = scratch;
+				prepared.copies = levels.flatMap( ( { offset, bytesPerRow, rowsPerImage, width, height }, i ): BufferCopy[] => {
+
+					const mipLevel = batch.firstMipLevel + i;
+					if ( update === undefined ) return [ { mipLevel, offset, bytesPerRow, rowsPerImage, x: 0, y: 0, layer: 0, width, height, layers: layerCount } ];
+					const r = update.levels[ i ];
+					if ( r === null ) return [];
+					return [ { mipLevel, offset: offset + ( layers[ 0 ] * rowsPerImage + r.y ) * bytesPerRow + r.x * bytesPerTexel, bytesPerRow, rowsPerImage, x: r.x, y: r.y, layer: layers[ 0 ], width: r.width, height: r.height, layers: layers[ 1 ] } ];
+
+				} );
+
+			}
+
+			deferred.push( () => { prepared.bindGroup = this.device.createBindGroup( { label: 'downsampler', layout, entries } ); } );
+			return prepared;
 
 		} );
-		if ( compat ) batches = batches.flatMap( batch => [ batch, ...this.compatCopies( texture, batch, dimension, view ) ] );
+		if ( compat ) batches = batches.flatMap( batch => [ batch, ...this.compatCopies( texture, batch, dimension, view, region === null ? null : { slot, regionWords, uniformEntry, deferred } ) ] );
 
-		cache.set( key, { source: source?.texture, batches, buffers } );
-		return batches;
+		if ( slots.length > 0 ) {
+
+			const uniform = this.device.createBuffer( { label: 'downsampler region', size: slots.length * slotBytes, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+			const data = new Uint32Array( slots.length * slotBytes / 4 );
+			slots.forEach( ( words, i ) => data.set( words, i * slotBytes / 4 ) );
+			this.device.queue.writeBuffer( uniform, 0, data );
+			buffers.push( uniform );
+			for ( const { entry, offset, size } of pending ) entry.resource = { buffer: uniform, offset, size };
+
+		}
+
+		for ( const create of deferred ) create();
+		return { source: source?.texture, batches, buffers };
 
 	}
 
 	/**
 	 * Drop cached bind groups for a destination texture (pipelines stay cached per
-	 * device), and destroy its buffer-path buffers: call it after submitting work
-	 * that uses them.
+	 * device), and destroy its buffer-path and partial-update buffers: call it after
+	 * submitting work that uses them.
 	 */
 	release( texture: GPUTexture ): void {
 
-		for ( const plan of this.plans.get( texture )?.values() ?? [] ) for ( const buffer of plan.buffers ) buffer.destroy();
-		this.plans.delete( texture );
+		for ( const plans of [ this.plans, this.regionPlans ] ) {
+
+			for ( const plan of plans.get( texture )?.values() ?? [] ) for ( const buffer of plan.buffers ) buffer.destroy();
+			plans.delete( texture );
+
+		}
+
+		this.regionScratch.get( texture )?.destroy();
+		this.regionScratch.delete( texture );
 		for ( const scratch of this.scratch.get( texture )?.values() ?? [] ) scratch.destroy();
 		this.scratch.delete( texture );
 
@@ -482,27 +772,61 @@ export class Downsampler {
 	}
 
 	/**
+	 * The buffer path's scratch buffer for partial updates of `texture`, at least `size`
+	 * bytes. Region plans share it (commands run in order); a larger one replaces it, and
+	 * the old one is left to plans that still hold it.
+	 */
+	private sharedScratch( texture: GPUTexture, size: number ): GPUBuffer {
+
+		let scratch = this.regionScratch.get( texture );
+		if ( scratch === undefined || scratch.size < size ) this.regionScratch.set( texture, scratch = this.device.createBuffer( { label: `downsampler output ${ texture.format } (partial updates)`, size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC } ) );
+		return scratch;
+
+	}
+
+	/**
 	 * Compatibility mode allows one view (mip range and aspect) of a texture per
 	 * dispatch. So a batch writes each level to a scratch texture of that
 	 * level's size, and one dispatch per level copies it into the destination:
 	 * the 1-level fold kernel on a same-size source, which reads one texel per
 	 * output (an exact copy; an average could turn an Inf neighbour into NaN).
+	 * A partial update copies only each level's region of the layers in range.
 	 */
-	private compatCopies( texture: GPUTexture, batch: Batch, dimension: ViewDimension, view: ( level: number ) => GPUTextureView ): PreparedBatch[] {
+	private compatCopies( texture: GPUTexture, batch: PreparedBatch, dimension: ViewDimension, view: ( level: number ) => GPUTextureView, partial: {
+		slot: ( words: ArrayLike<number> ) => number;
+		regionWords: ( groupX: number, groupY: number, levels: readonly ( Rect | null )[] ) => number[];
+		uniformEntry: ( binding: number, offset: number, size: number ) => GPUBindGroupEntry;
+		deferred: ( () => void )[];
+	} | null ): PreparedBatch[] {
 
 		const format = texture.format as SupportedFormat;
-		const kernel: BatchKernelKey = { format, dimension, count: 1, access: 'load', reduction: 'max', sourceFormat: format, output: 'storage', kind: 'exact', tile: 8 };
+		const kernel: BatchKernelKey = { format, dimension, count: 1, access: 'load', reduction: 'max', sourceFormat: format, output: 'storage', kind: 'exact', tile: 8, area: false, box: false, region: partial !== null };
 		const layout = this.layout( kernel );
 		const pipeline = this.pipeline( kernel );
-		return Array.from( { length: batch.count }, ( _, i ) => {
+		const tile = 8;
+		return Array.from( { length: batch.count }, ( _, i ) => i ).flatMap( ( i ): PreparedBatch[] => {
 
 			const level = batch.firstMipLevel + i;
-			const outputWidth = mipSize( texture.width, level ), outputHeight = mipSize( texture.height, level ), tile = 8;
+			const outputWidth = mipSize( texture.width, level ), outputHeight = mipSize( texture.height, level );
 			const entries: GPUBindGroupEntry[] = [ { binding: 1, resource: this.scratchView( texture, level, dimension ) }, { binding: 2, resource: view( level ) } ];
-			return {
+			const copy: PreparedBatch = {
 				kernel: 'exact', sourceMipLevel: level, firstMipLevel: level, count: 1, outputWidth, outputHeight, tile, groupsX: Math.ceil( outputWidth / tile ), groupsY: Math.ceil( outputHeight / tile ), copy: true, output: 'storage',
-				pipeline, bindGroup: this.device.createBindGroup( { label: 'downsampler compat copy', layout, entries } )
+				layers: batch.layers, pipeline, bindGroup: undefined as unknown as GPUBindGroup
 			};
+			if ( partial === null ) {
+
+				copy.bindGroup = this.device.createBindGroup( { label: 'downsampler compat copy', layout, entries } );
+				return [ copy ];
+
+			}
+
+			const r = batch.regions![ i ];
+			if ( r === null ) return [];
+			const groupX = Math.floor( r.x / tile ), groupY = Math.floor( r.y / tile );
+			Object.assign( copy, { groupX, groupY, groupsX: Math.ceil( ( r.x + r.width ) / tile ) - groupX, groupsY: Math.ceil( ( r.y + r.height ) / tile ) - groupY, regions: [ r ] } );
+			entries.push( partial.uniformEntry( regionBinding, partial.slot( partial.regionWords( groupX, groupY, [ r ] ) ), regionBytes ) );
+			partial.deferred.push( () => { copy.bindGroup = this.device.createBindGroup( { label: 'downsampler compat copy', layout, entries } ); } );
+			return [ copy ];
 
 		} );
 
@@ -530,7 +854,7 @@ export class Downsampler {
 		const float32 = format.endsWith( '32float' ) && this.device.features.has( 'float32-filterable' );
 		const known = isSupportedFormat( format ) ? ( formats[ format ] as FormatInfo ).filterable : ! format.startsWith( 'depth' ) && ! format.endsWith( '32float' ) && ! /16[us]norm$/.test( format );
 		const filterable = known || float32;
-		return filterable ? this.averageAccess ?? 'sample' : 'load';
+		return filterable ? this.averageAccess : 'load';
 
 	}
 
@@ -538,18 +862,20 @@ export class Downsampler {
 	 * Kernel options for a batch. 'clamp' batches (`oddSizes: 'spd'`) are the
 	 * Reducer's 'clamp' tile kernel emitting every level.
 	 */
-	private kernelOptions( { format, dimension, count, access, reduction, sourceFormat, output, kind, tile }: BatchKernelKey ): KernelOptions {
+	private kernelOptions( { format, dimension, count, access, reduction, sourceFormat, output, kind, tile, area, box, region }: BatchKernelKey ): KernelOptions {
 
-		if ( kind !== 'clamp' ) return { format, dimension, count, reduction, access, sourceFormat, output, ...( kind === 'tail' ? { tail: true, tile } : {} ) };
-		return { format, dimension, edges: 'clamp', count, reduction, access, sourceFormat, output };
+		const { f16Rounding } = this;
+		const partial = region ? { region: true } : {};
+		if ( kind !== 'clamp' ) return { format, dimension, count, reduction, access, sourceFormat, output, f16Rounding, tile, ...( kind === 'tail' ? { tail: true } : {} ), ...( box ? { box: true } : area ? { area: true } : {} ), ...partial };
+		return { format, dimension, edges: 'clamp', count, reduction, access, sourceFormat, output, f16Rounding, ...partial };
 
 	}
 
 	private layout( key: BatchKernelKey ): GPUBindGroupLayout {
 
-		const { format, dimension, count, access, output, kind } = key;
+		const { format, dimension, count, access, output, kind, region } = key;
 		// Exact and tail kernels share layouts; 'clamp' ones differ (no sampler under 'load').
-		const id = `${ format }:${ dimension }:${ count }:${ access }:${ output }${ kind === 'clamp' ? ':clamp' : '' }`;
+		const id = `${ format }:${ dimension }:${ count }:${ access }:${ output }${ kind === 'clamp' ? ':clamp' : '' }${ region ? ':region' : '' }`;
 		let layout = this.layouts.get( id );
 		if ( layout === undefined ) this.layouts.set( id, layout = this.device.createBindGroupLayout( { label: `downsampler ${ id }`, entries: kernelLayoutEntries( this.kernelOptions( key ) ) } ) );
 		return layout;
@@ -558,11 +884,11 @@ export class Downsampler {
 
 	private pipeline( key: BatchKernelKey ): GPUComputePipeline {
 
-		const { format, dimension, count, access, reduction, sourceFormat, output, kind, tile } = key;
-		const id = `${ kind }${ kind === 'tail' ? tile : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }:${ output }`;
+		const { format, dimension, count, access, reduction, sourceFormat, output, kind, tile, area, box, region } = key;
+		const id = `${ kind }${ kind === 'clamp' ? '' : tile }${ box ? ':box' : area ? ':area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }:${ output }${ region ? ':region' : '' }`;
 		let pipeline = this.pipelines.get( id );
 		if ( pipeline !== undefined ) return pipeline;
-		const label = `downsampler ${ kind }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ typeof reduction === 'string' ? reduction : 'custom' }:${ output }`;
+		const label = `downsampler ${ kind }${ box ? ' box' : area ? ' area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ typeof reduction === 'string' ? reduction : 'custom' }:${ output }${ region ? ':region' : '' }`;
 		const module = this.device.createShaderModule( { label, code: createKernel( this.kernelOptions( key ) ) } );
 		const layout = this.device.createPipelineLayout( { label, bindGroupLayouts: [ this.layout( key ) ] } );
 		pipeline = this.device.createComputePipeline( { label, layout, compute: { module, entryPoint: 'main' } } );

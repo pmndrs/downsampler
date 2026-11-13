@@ -15,11 +15,19 @@ export interface ReferenceLevel {
 	/** RGBA values, layer-major then row-major. */
 	values: Float32Array;
 	/**
-	 * Extra per-value tolerance for hardware bilinear weights, which may be
-	 * quantized to 8 fractional bits when a weight is not exactly representable.
+	 * Extra per-value tolerance for bilinear weights: see {@link ReferenceOptions.weights}.
 	 */
 	filterTolerance: Float32Array;
 }
+
+/**
+ * Bilinear weight steps a hardware sampler may be off per axis, in units of 1/256.
+ * Samplers keep 8 fractional bits and round them their own way (measured 2026-11-12,
+ * results/windows/correctness.md): NVIDIA rounds each of the four 2D tap weights to
+ * 1/256; Intel truncates each axis weight, a step low even at exact halves (the float
+ * texture coordinate lands a hair under the texel edge), up to 1.07 steps measured.
+ */
+export const samplerWeightSteps = 1.5;
 
 export interface ReferenceOptions {
 	/**
@@ -38,9 +46,23 @@ export interface ReferenceOptions {
 	 * sizes and integer formats ignore it. Default: exact (f64) arithmetic.
 	 */
 	pairing?: 'float32';
+	/**
+	 * Who applies the bilinear weights of an 'average' level, which sets `filterTolerance`:
+	 * - 'sampler' (default): a hardware sampler. Each axis may be off by
+	 *   {@link samplerWeightSteps} steps of 1/256 times the local contrast, at any weight.
+	 * - 'shader': weights computed in f32 in the shader (`averageAccess: 'load'`, tail
+	 *   kernels' in-tile levels). Only weights not representable in 8 bits get one step.
+	 */
+	weights?: 'sampler' | 'shader';
 }
 
-export function reduceReference( source: Float32Array, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction = 'average', { quantizedInput = true, pairing }: ReferenceOptions = {} ): ReferenceLevel {
+/**
+ * One 'exact' reduction step on the CPU: level n + 1 from level n (`source`,
+ * RGBA floats, layer-major then row-major), quantized to `quantization`, with a
+ * per-value `filterTolerance` for hardware bilinear weights. Compare with
+ * {@link tolerance}.
+ */
+export function reduceReference( source: Float32Array, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction = 'average', { quantizedInput = true, pairing, weights = 'sampler' }: ReferenceOptions = {} ): ReferenceLevel {
 
 	const w = Math.max( 1, Math.floor( width / 2 ) ), h = Math.max( 1, Math.floor( height / 2 ) );
 	const values = new Float32Array( w * h * layers * 4 );
@@ -125,7 +147,18 @@ export function reduceReference( source: Float32Array, width: number, height: nu
 					const index = ( ( layer * h + y ) * w + x ) * 4 + c;
 					const gx = Math.max( Math.abs( b - a ), Math.abs( e - d ) );
 					const gy = Math.max( Math.abs( d - a ), Math.abs( e - b ) );
-					filterTolerance[ index ] = ( ( exactX ? 0 : gx / 256 ) + ( exactY ? 0 : gy / 256 ) ) / scale;
+					if ( weights === 'sampler' ) {
+
+						// A sampler that truncates (Intel) puts a position a hair below the texel
+						// grid's line one texel lower: at a weight of exactly 0 the base texel
+						// becomes x0 − 1 (or y0 − 1), so its contrast with x0 counts too.
+						const left = ( row: number ) => units[ ( row + clamp( x0 - 1, width ) ) * 4 + c ];
+						const up = ( col: number ) => units[ ( ( layer * height + clamp( y0 - 1, height ) ) * width + col ) * 4 + c ];
+						const sx2 = Math.max( gx, Math.abs( a - left( r0 ) ), Math.abs( d - left( r1 ) ) );
+						const sy2 = Math.max( gy, Math.abs( a - up( c0 ) ), Math.abs( b - up( c1 ) ) );
+						filterTolerance[ index ] = samplerWeightSteps * ( sx2 + sy2 ) / 256 / scale;
+
+					} else filterTolerance[ index ] = ( ( exactX ? 0 : gx / 256 ) + ( exactY ? 0 : gy / 256 ) ) / scale;
 					const value = top * ( 1 - fy ) + bottom * fy;
 					values[ index ] = domain ? roundHalfEven( Math.min( domain.max, Math.max( domain.min, value ) ) ) / scale : perValue( value );
 

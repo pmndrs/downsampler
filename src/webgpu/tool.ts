@@ -94,3 +94,19 @@ export function setToolBindGroup( pass: GPUComputePassEncoder, bindGroup: GPUBin
 	if ( bindGroup !== undefined ) pass.setBindGroup( 1, bindGroup );
 
 }
+
+/**
+ * Destroys buffers a cache evicted, once the queue has finished the work
+ * submitted so far. An evicted entry may still be recorded in a command buffer
+ * the caller hasn't submitted yet (more than a cache's worth of dispatches in
+ * one encoder); destroying it at once would make that submit fail. The
+ * promise resolves in a later task, after a frame's usual encode-and-submit;
+ * destroy() then waits for any submitted work that still uses the buffers.
+ */
+export function retireBuffers( device: GPUDevice, buffers: readonly GPUBuffer[] ): void {
+
+	if ( buffers.length === 0 ) return;
+	const destroy = () => { for ( const buffer of buffers ) buffer.destroy(); };
+	device.queue.onSubmittedWorkDone().then( destroy, destroy );
+
+}

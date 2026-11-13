@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Scalar reduction</title>
+		<link rel="icon" href="data:,">
+		<link rel="stylesheet" href="style.css">
+	</head>
+	<body>
+		<nav><a href="./">Examples</a> · <a href="../docs/guide.md">Guide</a></nav>
+		<h1><code>ScalarReduction</code>: average luminance and exposure</h1>
+		<p>
+			<code>ScalarReduction</code> reduces a whole image to one <code>vec4f</code> (and a weight) in two dispatches at any
+			size: per-workgroup partials, then one workgroup combines them. Every texel counts once; no edge row or column is
+			dropped and nothing is limited to a power-of-two window.
+		</p>
+		<p>
+			The first reduction meters a 1920 × 1080 <code>rgba16float</code> HDR frame for auto exposure: a <code>load</code> hook
+			returns <code>(log luma, luma, luma, luma)</code>, reduced per channel as
+			<code>[ 'average', 'max', 'min', 'average' ]</code>, and a <code>finish</code> hook, run once on the GPU, turns the log
+			average into an exposure (<code>0.18 / geometric mean</code>) and stores it in the tool's own buffer, where a
+			tone-mapping pass could read it the same frame. The second reduction has no hooks at all: it averages the texture's
+			colour into an output buffer. Move the slider: the scene gets brighter, the exposure drops, and the tone-mapped image
+			(drawn on the CPU here with the GPU's exposure) stays about the same.
+		</p>
+		<pre><code>const metering = new ScalarReduction( device, {
+	reduction: [ 'average', 'max', 'min', 'average' ],
+	bindings: { wgsl: '@group(1) @binding(0) var hdr: texture_2d&lt;f32&gt;; @group(1) @binding(1) var&lt;storage, read_write&gt; result: array&lt;vec4f, 2&gt;;', entries },
+	load: 'fn load( texel: vec2i, layer: u32 ) -&gt; vec4f { let l = max( luma( texel ), 1e-4 ); return vec4f( log( l ), l, l, l ); }',
+	finish: 'fn finish( value: vec4f, weight: f32 ) { result[ 0 ] = value; result[ 1 ] = vec4f( exp( value.x ), 0.18 / exp( value.x ), weight, 0.0 ); }',
+} );
+metering.encode( encoder, { size: [ width, height ], bindGroup } );
+new ScalarReduction( device ).encode( encoder, { texture: hdr, output: { buffer } } );  // { value: vec4f, weight: f32 }</code></pre>
+		<p class="muted" id="adapter"></p>
+
+		<h2>Readout</h2>
+		<ul id="readout"></ul>
+
+		<h2>Frame</h2>
+		<div class="controls">
+			<label>Scene brightness <input type="range" id="brightness" min="-3" max="3" step="0.5" value="0"></label>
+			<span id="brightnessValue">×1</span>
+		</div>
+		<table id="values"></table>
+		<div class="view">
+			<figure><canvas class="level" id="frame"></canvas><figcaption>tone mapped with the measured exposure (Reinhard, gamma 2.2)</figcaption></figure>
+		</div>
+
+		<script type="module">
+			import { fromHalf, scalarReference, toHalf } from '../dist/index.js';
+			import { ScalarReduction } from '../dist/webgpu/index.js';
+			import { drawLevel, fail, initDevice, report } from './common.js';
+
+			const width = 1920, height = 1080;
+
+			/** A small HDR scene: sky gradient, a sun, a noisy ground. RGBA, linear. */
+			function makeScene( scale ) {
+
+				const values = new Float32Array( width * height * 4 );
+				const hash = ( x, y ) => { const s = Math.sin( x * 127.1 + y * 311.7 ) * 43758.5453; return s - Math.floor( s ); };
+				for ( let y = 0; y < height; y ++ ) for ( let x = 0; x < width; x ++ ) {
+
+					const u = x / width, v = y / height;
+					let rgb;
+					if ( ( u - 0.72 ) ** 2 + ( ( v - 0.22 ) * height / width ) ** 2 < 0.0009 ) rgb = [ 60, 55, 42 ];
+					else if ( v < 0.55 ) { const sky = 1.2 + 2.5 * ( 0.55 - v ); rgb = [ 0.45 * sky, 0.6 * sky, 0.95 * sky ]; }
+					else { const ground = 0.15 + 0.6 * hash( Math.floor( x / 8 ), Math.floor( y / 8 ) ); rgb = [ 0.3 * ground, 0.24 * ground, 0.14 * ground ]; }
+					values.set( [ ...rgb.map( c => c * scale ), 1 ], ( y * width + x ) * 4 );
+
+				}
+
+				return values;
+
+			}
+
+			try {
+
+				const { device } = await initDevice();
+				const hdr = device.createTexture( { label: 'example hdr', format: 'rgba16float', size: [ width, height ], usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST } );
+				const result = device.createBuffer( { label: 'metering result', size: 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC } );
+				const averageOutput = device.createBuffer( { label: 'average colour', size: 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC } );
+
+				const reduce = [ 'average', 'max', 'min', 'average' ];
+				const metering = new ScalarReduction( device, {
+					reduction: reduce,
+					bindings: {
+						wgsl: /* wgsl */ `@group(1) @binding(0) var hdr: texture_2d<f32>;
+							@group(1) @binding(1) var<storage, read_write> result: array<vec4f, 2>;
+							fn luma( texel: vec2i ) -> f32 { return dot( textureLoad( hdr, texel, 0 ).rgb, vec3f( 0.2126, 0.7152, 0.0722 ) ); }`,
+						entries: [
+							{ binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
+							{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }
+						]
+					},
+					load: 'fn load( texel: vec2i, layer: u32 ) -> vec4f { let l = max( luma( texel ), 1e-4 ); return vec4f( log( l ), l, l, l ); }',
+					finish: 'fn finish( value: vec4f, weight: f32 ) { result[ 0 ] = value; result[ 1 ] = vec4f( exp( value.x ), 0.18 / exp( value.x ), weight, 0.0 ); }'
+				} );
+				// The tool's group 1 has the layout of its `entries`.
+				const bindGroup = device.createBindGroup( {
+					layout: device.createBindGroupLayout( { entries: [
+						{ binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
+						{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }
+					] } ),
+					entries: [ { binding: 0, resource: hdr.createView() }, { binding: 1, resource: { buffer: result } } ]
+				} );
+				const average = new ScalarReduction( device ); // 'average' of every channel, read straight from the texture
+
+				async function readBuffer( buffer ) {
+
+					const staging = device.createBuffer( { size: buffer.size, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ } );
+					const encoder = device.createCommandEncoder();
+					encoder.copyBufferToBuffer( buffer, 0, staging, 0, buffer.size );
+					device.queue.submit( [ encoder.finish() ] );
+					await staging.mapAsync( GPUMapMode.READ );
+					const values = new Float32Array( staging.getMappedRange().slice( 0 ) );
+					staging.destroy();
+					return values;
+
+				}
+
+				async function run( scale ) {
+
+					// Upload the frame as halves, and keep what the GPU reads for the oracle.
+					const scene = makeScene( scale );
+					const halves = Uint16Array.from( scene, toHalf );
+					device.queue.writeTexture( { texture: hdr }, halves, { bytesPerRow: width * 8 }, [ width, height ] );
+
+					const encoder = device.createCommandEncoder();
+					metering.encode( encoder, { size: [ width, height ], bindGroup } );
+					average.encode( encoder, { texture: hdr, output: { buffer: averageOutput } } );
+					device.queue.submit( [ encoder.finish() ] );
+					const [ measured, colour ] = await Promise.all( [ readBuffer( result ), readBuffer( averageOutput ) ] );
+
+					// Oracles: the hook's values in f64 from the stored halves; bounds from scalarReference.
+					const read = new Float32Array( scene.length );
+					const terms = new Float64Array( scene.length );
+					for ( let i = 0; i < scene.length; i += 4 ) {
+
+						for ( let c = 0; c < 4; c ++ ) read[ i + c ] = fromHalf( halves[ i + c ] );
+						const l = Math.max( 0.2126 * read[ i ] + 0.7152 * read[ i + 1 ] + 0.0722 * read[ i + 2 ], 1e-4 );
+						terms.set( [ Math.log( l ), l, l, l ], i );
+
+					}
+
+					// The GPU's luma (f32 dot) and log (not correctly rounded) are input error.
+					const [ meter ] = scalarReference( terms, width, height, 1, reduce, { inputError: { absolute: 2 ** - 20, relative: 2 ** - 20 } } );
+					const [ mean ] = scalarReference( read, width, height, 1, 'average' );
+					const names = [ 'average log luma', 'max luma', 'min luma', 'average luma' ];
+					const checks = names.map( ( name, c ) => {
+
+						const error = Math.abs( measured[ c ] - meter.exact[ c ] );
+						return { name: `${ name } within the oracle's error bound`, ok: error <= meter.bound[ c ], detail: `${ measured[ c ].toPrecision( 7 ) }, error ${ error.toExponential( 1 ) } ≤ ${ meter.bound[ c ].toExponential( 1 ) }` };
+
+					} );
+					checks.push( { name: 'every texel counted (weight = texel count)', ok: measured[ 6 ] === width * height, detail: `${ measured[ 6 ] }` } );
+					const exposure = 0.18 / Math.exp( measured[ 0 ] );
+					checks.push( { name: 'finish hook: exposure = 0.18 / exp( average log luma )', ok: Math.abs( measured[ 5 ] - exposure ) <= 1e-5 * exposure, detail: `${ measured[ 5 ].toPrecision( 5 ) }` } );
+					const colourOk = [ 0, 1, 2, 3 ].every( c => Math.abs( colour[ c ] - mean.exact[ c ] ) <= mean.bound[ c ] );
+					checks.push( { name: 'average colour (no hooks, output buffer) within its bound', ok: colourOk, detail: `(${ [ ...colour.slice( 0, 3 ) ].map( c => c.toFixed( 4 ) ).join( ', ' ) }), weight ${ colour[ 4 ] }` } );
+					report( checks );
+
+					document.getElementById( 'values' ).innerHTML = `<tr><th>Measured</th><th>Value</th></tr>
+						<tr><td>geometric mean luma</td><td>${ measured[ 4 ].toPrecision( 4 ) }</td></tr>
+						<tr><td>arithmetic mean luma</td><td>${ measured[ 3 ].toPrecision( 4 ) }</td></tr>
+						<tr><td>min / max luma</td><td>${ measured[ 2 ].toPrecision( 3 ) } / ${ measured[ 1 ].toPrecision( 4 ) }</td></tr>
+						<tr><td>exposure</td><td>${ measured[ 5 ].toPrecision( 4 ) }</td></tr>`;
+
+					// Display: exposure, Reinhard, gamma.
+					const display = new Float32Array( width * height * 4 );
+					for ( let i = 0; i < read.length; i ++ ) { const c = read[ i ] * measured[ 5 ]; display[ i ] = Math.pow( c / ( 1 + c ), 1 / 2.2 ); }
+					drawLevel( document.getElementById( 'frame' ), { width, height, values: display } );
+
+				}
+
+				const slider = document.getElementById( 'brightness' );
+				slider.addEventListener( 'input', () => {
+
+					const scale = 2 ** Number( slider.value );
+					document.getElementById( 'brightnessValue' ).textContent = `×${ scale.toPrecision( 3 ) }`;
+					run( scale ).catch( fail );
+
+				} );
+				await run( 1 );
+
+			} catch ( error ) {
+
+				fail( error );
+
+			}
+		</script>
+	</body>
+</html>

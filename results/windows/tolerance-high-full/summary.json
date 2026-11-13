@@ -1,0 +1,490 @@
+{
+	"date": "2026-11-12T16:05:23.263Z",
+	"flags": [
+		"--power=high",
+		"--durations=C:/Users/denni/Documents/GitHub/pmndrs/denoiser/downsampler/results/windows/f16fast-high-full/durations.json"
+	],
+	"jobs": 6,
+	"shards": 36,
+	"capMinutes": 10,
+	"seconds": 972,
+	"adapter": {
+		"vendor": "nvidia",
+		"architecture": "ampere",
+		"device": "",
+		"description": "",
+		"isFallbackAdapter": false,
+		"timestamps": true,
+		"features": [
+			"texture-formats-tier1",
+			"bgra8unorm-storage"
+		],
+		"compatibility": false,
+		"maxStorageTexturesPerShaderStage": 6,
+		"subgroupMinSize": 32,
+		"subgroupMaxSize": 128,
+		"adapterFeatures": [
+			"bgra8unorm-storage",
+			"chromium-experimental-multi-draw-indirect",
+			"chromium-experimental-timestamp-query-inside-passes",
+			"clip-distances",
+			"core-features-and-limits",
+			"depth-clip-control",
+			"depth32float-stencil8",
+			"dual-source-blending",
+			"float32-blendable",
+			"float32-filterable",
+			"indirect-first-instance",
+			"primitive-index",
+			"rg11b10ufloat-renderable",
+			"shader-f16",
+			"subgroups",
+			"texture-component-swizzle",
+			"texture-compression-bc",
+			"texture-compression-bc-sliced-3d",
+			"texture-formats-tier1",
+			"texture-formats-tier2",
+			"timestamp-query"
+		],
+		"maxTextureDimension2D": 8192
+	},
+	"ok": false,
+	"cases": 18291,
+	"checks": 53600,
+	"groups": {
+		"ran": 1674,
+		"listed": 1674
+	},
+	"failures": [
+		{
+			"shard": 6,
+			"label": "fixtures/960x540",
+			"first": "fixtures/960x540 threw: tool fixtures 960x540: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp",
+			"thrown": true
+		},
+		{
+			"shard": 8,
+			"label": "255x257x1 rgb9e5ufloat buffer average random L6 mip 1",
+			"first": "255x257x1 rgb9e5ufloat buffer average random L6 mip 1: value 12945, actual 0.015625, expected 0.0625, error 0.046875 > 0.0467529296875",
+			"failing": 1,
+			"values": 65024,
+			"maxError": 8
+		},
+		{
+			"shard": 12,
+			"label": "255x257x1 rgb9e5ufloat buffer tail average random L4 mip 1",
+			"first": "255x257x1 rgb9e5ufloat buffer tail average random L4 mip 1: value 12945, actual 0.015625, expected 0.0625, error 0.046875 > 0.0467529296875",
+			"failing": 1,
+			"values": 65024,
+			"maxError": 8
+		},
+		{
+			"shard": 14,
+			"label": "255x257x1 rgb9e5ufloat buffer tail average random L6 mip 1",
+			"first": "255x257x1 rgb9e5ufloat buffer tail average random L6 mip 1: value 12945, actual 0.015625, expected 0.0625, error 0.046875 > 0.0467529296875",
+			"failing": 1,
+			"values": 65024,
+			"maxError": 8
+		},
+		{
+			"shard": 15,
+			"label": "fixtures/1920x1080",
+			"first": "fixtures/1920x1080 threw: tool fixtures 1920x1080: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp",
+			"thrown": true
+		},
+		{
+			"shard": 24,
+			"label": "255x257x1 rgb9e5ufloat buffer average random L1 mip 1",
+			"first": "255x257x1 rgb9e5ufloat buffer average random L1 mip 1: value 12945, actual 0.015625, expected 0.0625, error 0.046875 > 0.0467529296875",
+			"failing": 1,
+			"values": 65024,
+			"maxError": 8
+		},
+		{
+			"shard": 24,
+			"label": "fixtures/1129x635",
+			"first": "fixtures/1129x635 threw: tool fixtures 1129x635: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp",
+			"thrown": true
+		},
+		{
+			"shard": 27,
+			"label": "fixtures/1707x960",
+			"first": "fixtures/1707x960 threw: tool fixtures 1707x960: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp",
+			"thrown": true
+		},
+		{
+			"shard": 28,
+			"label": "255x257x1 rgb9e5ufloat buffer average random L4 mip 1",
+			"first": "255x257x1 rgb9e5ufloat buffer average random L4 mip 1: value 12945, actual 0.015625, expected 0.0625, error 0.046875 > 0.0467529296875",
+			"failing": 1,
+			"values": 65024,
+			"maxError": 8
+		},
+		{
+			"shard": 29,
+			"label": "255x257x1 rgb9e5ufloat buffer tail average random L5 mip 1",
+			"first": "255x257x1 rgb9e5ufloat buffer tail average random L5 mip 1: value 12945, actual 0.015625, expected 0.0625, error 0.046875 > 0.0467529296875",
+			"failing": 1,
+			"values": 65024,
+			"maxError": 8
+		},
+		{
+			"shard": 32,
+			"label": "255x257x1 rgb9e5ufloat buffer average random L5 mip 1",
+			"first": "255x257x1 rgb9e5ufloat buffer average random L5 mip 1: value 12945, actual 0.015625, expected 0.0625, error 0.046875 > 0.0467529296875",
+			"failing": 1,
+			"values": 65024,
+			"maxError": 8
+		},
+		{
+			"shard": 36,
+			"label": "fixtures/1280x720",
+			"first": "fixtures/1280x720 threw: tool fixtures 1280x720: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp",
+			"thrown": true
+		}
+	],
+	"problems": [],
+	"skipped": [],
+	"perShard": [
+		{
+			"index": 1,
+			"ran": true,
+			"code": 0,
+			"seconds": 177,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 2,
+			"ran": true,
+			"code": 0,
+			"seconds": 169,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 3,
+			"ran": true,
+			"code": 0,
+			"seconds": 166,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 4,
+			"ran": true,
+			"code": 0,
+			"seconds": 155,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 5,
+			"ran": true,
+			"code": 0,
+			"seconds": 162,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 6,
+			"ran": true,
+			"code": 1,
+			"seconds": 176,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 7,
+			"ran": true,
+			"code": 0,
+			"seconds": 170,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 8,
+			"ran": true,
+			"code": 1,
+			"seconds": 162,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 9,
+			"ran": true,
+			"code": 0,
+			"seconds": 175,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 10,
+			"ran": true,
+			"code": 0,
+			"seconds": 158,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 11,
+			"ran": true,
+			"code": 0,
+			"seconds": 137,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 12,
+			"ran": true,
+			"code": 1,
+			"seconds": 159,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 13,
+			"ran": true,
+			"code": 0,
+			"seconds": 180,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 14,
+			"ran": true,
+			"code": 1,
+			"seconds": 136,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 15,
+			"ran": true,
+			"code": 1,
+			"seconds": 167,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 16,
+			"ran": true,
+			"code": 0,
+			"seconds": 148,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 17,
+			"ran": true,
+			"code": 0,
+			"seconds": 134,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 18,
+			"ran": true,
+			"code": 0,
+			"seconds": 154,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 19,
+			"ran": true,
+			"code": 0,
+			"seconds": 186,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 20,
+			"ran": true,
+			"code": 0,
+			"seconds": 183,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 21,
+			"ran": true,
+			"code": 0,
+			"seconds": 166,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 22,
+			"ran": true,
+			"code": 0,
+			"seconds": 155,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 23,
+			"ran": true,
+			"code": 0,
+			"seconds": 185,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 24,
+			"ran": true,
+			"code": 1,
+			"seconds": 144,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 25,
+			"ran": true,
+			"code": 0,
+			"seconds": 141,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 26,
+			"ran": true,
+			"code": 0,
+			"seconds": 198,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 27,
+			"ran": true,
+			"code": 1,
+			"seconds": 161,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 28,
+			"ran": true,
+			"code": 1,
+			"seconds": 156,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 29,
+			"ran": true,
+			"code": 1,
+			"seconds": 149,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 30,
+			"ran": true,
+			"code": 0,
+			"seconds": 163,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 31,
+			"ran": true,
+			"code": 0,
+			"seconds": 162,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 32,
+			"ran": true,
+			"code": 1,
+			"seconds": 158,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 33,
+			"ran": true,
+			"code": 0,
+			"seconds": 163,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 34,
+			"ran": true,
+			"code": 0,
+			"seconds": 144,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 35,
+			"ran": true,
+			"code": 0,
+			"seconds": 125,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 36,
+			"ran": true,
+			"code": 1,
+			"seconds": 130,
+			"timedOut": false,
+			"overBudget": false
+		}
+	],
+	"slowest": [
+		{
+			"id": "source/rgba32float/rgb9e5ufloat/same",
+			"ms": 94499,
+			"cases": 13
+		},
+		{
+			"id": "source/rgba16float/rgba8unorm/same",
+			"ms": 84271,
+			"cases": 13
+		},
+		{
+			"id": "source/rgba8unorm/rgba16float/half",
+			"ms": 56804,
+			"cases": 13
+		},
+		{
+			"id": "source/rgba16float/rgb9e5ufloat/half",
+			"ms": 54979,
+			"cases": 13
+		},
+		{
+			"id": "source/rgba16float/rg11b10ufloat/half",
+			"ms": 54915,
+			"cases": 13
+		},
+		{
+			"id": "source/rgba16float/rgba8unorm/half",
+			"ms": 54225,
+			"cases": 13
+		},
+		{
+			"id": "source/depth32float/rg32float/half",
+			"ms": 44422,
+			"cases": 13
+		},
+		{
+			"id": "downsampler/rg11b10ufloat/storage/L4/spd-average",
+			"ms": 42010,
+			"cases": 24
+		},
+		{
+			"id": "downsampler/rgb9e5ufloat/buffer/L6/spd-average",
+			"ms": 41669,
+			"cases": 24
+		},
+		{
+			"id": "source/depth16unorm/r32float/half",
+			"ms": 41512,
+			"cases": 13
+		}
+	]
+}

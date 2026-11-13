@@ -5,6 +5,7 @@ import { isBuiltinReduction, needsTileEdges, reductionKey, resolveReduction, typ
 import { lanes, payloadCombine } from './lanes.js';
 import { checkHooks } from './tool.js';
 
+/** Texture view dimension of kernel sources and outputs: '2d', or '2d-array' (every layer; cube maps as 6 layers). */
 export type ViewDimension = '2d' | '2d-array';
 
 /**
@@ -18,6 +19,18 @@ export type ViewDimension = '2d' | '2d-array';
  */
 export type SourceAccess = 'sample' | 'load';
 
+/**
+ * How float16 outputs are rounded from the f32 working values before they are stored:
+ * - 'nearest' (default): round to nearest even in the shader with integer math
+ *   ({@link float16Wgsl}), so stored halves are the same on every GPU and match the
+ *   CPU oracles. The store then writes an exact half, which no conversion changes.
+ * - 'device': WGSL `pack2x16float`, the device's own conversion. Cheaper, but its
+ *   rounding varies: D3D12 (NVIDIA, Intel) truncates toward zero, Metal rounds
+ *   (results/probes/f16-store-rounding.mjs, results/windows/correctness.md).
+ */
+export type F16Rounding = 'nearest' | 'device';
+
+/** Options of the pure WGSL generator {@link createKernel} and {@link kernelLayoutEntries}. `Downsampler` and `Reducer` build these for you. */
 export interface KernelOptions {
 	/** Storage format of the output levels. Required unless a `store` hook writes them. */
 	format?: SupportedFormat;
@@ -40,7 +53,23 @@ export interface KernelOptions {
 	 * workgroup memory by the same 'exact' rule, odd sizes included.
 	 */
 	tail?: boolean;
-	/** Tail kernels: the tile edge, 8, 16 or 32, at least the first output's larger side. Default 32. */
+	/**
+	 * 'exact' only: an area-weighted first output (`source.resample: 'area'`; `areaReference`
+	 * in core). It covers [x·S/n, (x+1)·S/n) of its source level at any size ratio S/n:
+	 * averages weight each texel it overlaps by the overlap, folds combine every texel it
+	 * overlaps. Needs access 'load'.
+	 */
+	area?: boolean;
+	/**
+	 * 'exact' only: `oddSizes: 'box'`. The first output is area-weighted (as `area`), and so
+	 * are a tail's further levels (three taps at odd sizes). Needs access 'load'.
+	 */
+	box?: boolean;
+	/**
+	 * The tile edge, 8, 16 or 32. Tail kernels: at least the first output's larger
+	 * side, default 32. Exact kernels: at least what `count` levels need (8 up to four
+	 * levels, then 16 and 32), which is the default.
+	 */
 	tile?: number;
 	/**
 	 * Format of the texture the first output reads, when it isn't `format` (a
@@ -71,12 +100,43 @@ export interface KernelOptions {
 	bindings?: string;
 	/** Kernels without a store hook: write storage textures (default) or packed texels into a buffer ({@link OutputPath}). */
 	output?: OutputPath;
+	/** float16 output formats: how values are rounded before the store ({@link F16Rounding}). Default 'nearest'. */
+	f16Rounding?: F16Rounding;
 	/**
 	 * Tile kernels: accumulator channels per texel, 4 (a `vec4f`, default) or 8
 	 * (`DsWide { lo: vec4f, hi: vec4f }`, which the load and store hooks and a
 	 * custom reduce then take instead). Eight channels need both hooks.
 	 */
 	channels?: Channels;
+	/**
+	 * 'exact' kernels and 'clamp' tile kernels without hooks: a partial update
+	 * (`Downsampler` `rect` and `layers`). Adds the region uniform ({@link regionBinding}):
+	 * the dispatch's first workgroup and layer, and per level the texels to store.
+	 * Every texel is computed as in a full dispatch; only stores are restricted.
+	 */
+	region?: boolean;
+}
+
+/** Group 0 binding of the region uniform of partial updates ({@link KernelOptions.region}). */
+export const regionBinding = 11;
+/**
+ * Bytes of the region uniform: `struct { origin: vec4u, bounds: array<vec4u, 6> }`. `origin`
+ * is the first workgroup (x, y, in tiles) and the first layer (z); `bounds[i]` the texels
+ * level i of the dispatch stores, (x0, y0, x1, y1) with x0 ≤ x < x1, or all 0 for none.
+ */
+export const regionBytes = 112;
+
+/** WGSL of the region uniform and `ds_inside(i, texel)`, shared by the kernels that take it. */
+function regionWgsl(): string {
+
+	return `struct DsRegion { origin: vec4u, bounds: array<vec4u, 6> }
+@group(0) @binding(${ regionBinding }) var<uniform> ds_region: DsRegion;
+fn ds_inside(i: u32, texel: vec2u) -> bool {
+	let b = ds_region.bounds[i];
+	return all(texel >= b.xy) && all(texel < b.zw);
+}
+`;
+
 }
 
 /** Group 0 binding of the size uniform (`struct { size: vec2u }`) of tile kernels with a load hook. */
@@ -207,7 +267,7 @@ function packedWords( format: SupportedFormat, normalized = false ): string[] {
 			return Array.from( { length: channels / 2 }, ( _, w ) => `${ unsigned( ch[ 2 * w ], '0xffffu' ) } | (${ unsigned( ch[ 2 * w + 1 ], '0xffffu' ) } << 16u)` );
 		case 'float16':
 			if ( channels < 2 ) break;
-			return Array.from( { length: channels / 2 }, ( _, w ) => `pack2x16float(v.${ ch[ 2 * w ] }${ ch[ 2 * w + 1 ] })` );
+			return Array.from( { length: channels / 2 }, ( _, w ) => `ds_pack_f16(v.${ ch[ 2 * w ] }${ ch[ 2 * w + 1 ] })` );
 		case 'float32':
 			return ch.slice( 0, channels ).map( c => `bitcast<u32>(v.${ c })` );
 		case 'rgb9e5ufloat':
@@ -222,14 +282,69 @@ function packedWords( format: SupportedFormat, normalized = false ): string[] {
 }
 
 /**
+ * WGSL for float16 rounding ({@link F16Rounding}), shared by every kernel that stores float16:
+ * - `ds_pack_f16(v: vec2f) -> u32`: two halves, as `pack2x16float` packs them
+ * - `ds_round_f16(v: vec4f) -> vec4f`: each channel rounded to a half, as f32
+ * 'nearest' mirrors core `toHalf` bit for bit (NaN → 0x7e00, ≥ 65520 → infinity, subnormals
+ * rounded): `ds_pack_f16` with integer math on the float's bits; `ds_round_f16`, every level's
+ * hot path, branch-free: in the half normal range, round the f32 bits to 10 mantissa bits with
+ * integer math (a carry into the exponent is correct); below it, `round( x · 2^24 ) · 2^−24`.
+ * Not the shorter `( x + c ) − c` with c = 2^(exponent + 13): Metal compiles WGSL with fast
+ * math, which folds that to x, so nothing was rounded on Apple GPUs (2026-11-13).
+ * 'device' uses `pack2x16float`.
+ */
+export function float16Wgsl( rounding: F16Rounding = 'nearest' ): string {
+
+	if ( rounding !== 'nearest' && rounding !== 'device' ) throw new Error( `downsampler: f16Rounding must be 'nearest' or 'device', got ${ JSON.stringify( rounding ) }.` );
+	if ( rounding === 'device' ) return `fn ds_pack_f16(v: vec2f) -> u32 { return pack2x16float(v); }
+fn ds_round_f16(v: vec4f) -> vec4f { return vec4f(unpack2x16float(pack2x16float(v.xy)), unpack2x16float(pack2x16float(v.zw))); }
+`;
+	return `fn ds_half_bits(x: f32) -> u32 {
+	let b = bitcast<u32>(x);
+	let sign = (b >> 16u) & 0x8000u;
+	let a = b & 0x7fffffffu;
+	if (a > 0x7f800000u) { return sign | 0x7e00u; }
+	if (a >= 0x477ff000u) { return sign | 0x7c00u; }
+	if (a >= 0x38800000u) {
+		let m = a - 0x38000000u;
+		return sign | ((m + 0xfffu + ((m >> 13u) & 1u)) >> 13u);
+	}
+	let e = a >> 23u;
+	if (e < 102u) { return sign; }
+	let mantissa = (a & 0x7fffffu) | 0x800000u;
+	let shift = 126u - e;
+	let halfway = 1u << (shift - 1u);
+	let remainder = mantissa & ((1u << shift) - 1u);
+	var q = mantissa >> shift;
+	if (remainder > halfway || (remainder == halfway && (q & 1u) == 1u)) { q += 1u; }
+	return sign | q;
+}
+fn ds_pack_f16(v: vec2f) -> u32 { return ds_half_bits(v.x) | (ds_half_bits(v.y) << 16u); }
+fn ds_round_f16(v: vec4f) -> vec4f {
+	let bits = bitcast<vec4u>(v);
+	let a = bits & vec4u(0x7fffffffu);
+	let normal = (a + vec4u(0xfffu) + ((a >> vec4u(13u)) & vec4u(1u))) & vec4u(0xffffe000u);
+	let subnormal = bitcast<vec4u>(round(bitcast<vec4f>(a) * 16777216.0) * (1.0 / 16777216.0));
+	let r = select(subnormal, normal, a >= vec4u(0x38800000u));
+	let q = select(select(r, vec4u(0x7f800000u), a >= vec4u(0x477ff000u)), vec4u(0x7fc00000u), a > vec4u(0x7f800000u));
+	return bitcast<vec4f>(q | (bits & vec4u(0x80000000u)));
+}
+`;
+
+}
+
+/**
  * WGSL for the buffer output path (see {@link OutputPath}): the layout uniform,
  * the buffer, and `fn ds_put(i: u32, texel: vec2u, layer: u32, v: vec4f)`, which
  * writes level i's texel. Shared by every kernel family that writes buffers.
+ * float16 formats include {@link float16Wgsl} with `f16Rounding`, unless it is
+ * false (the caller defines `ds_pack_f16` itself).
  */
-export function bufferOutputWgsl( format: SupportedFormat, normalized = false ): string {
+export function bufferOutputWgsl( format: SupportedFormat, normalized = false, f16Rounding: F16Rounding | false = 'nearest' ): string {
 
 	const words = packedWords( format, normalized );
-	return `struct DsOutput { size: vec2u, offset: array<vec4u, 2>, stride: array<vec4u, 2>, rows: array<vec4u, 2> }
+	const half = formats[ format ].quantization === 'float16' && f16Rounding !== false ? float16Wgsl( f16Rounding ) : '';
+	return `${ half }struct DsOutput { size: vec2u, offset: array<vec4u, 2>, stride: array<vec4u, 2>, rows: array<vec4u, 2> }
 @group(0) @binding(${ outputLayoutBinding }) var<uniform> ds_output: DsOutput;
 @group(0) @binding(${ outputBufferBinding }) var<storage, read_write> ds_texels: array<u32>;
 fn ds_put(i: u32, texel: vec2u, layer: u32, v: vec4f) {
@@ -242,7 +357,8 @@ ${ words.map( ( word, w ) => `	ds_texels[index${ w ? ` + ${ w }u` : '' }] = ${ w
 /** Validates tile kernel options and resolves their defaults. */
 function tileOptions( options: KernelOptions ) {
 
-	const { format, dimension = '2d', reduction = 'average', edges, load, store, size, bindings = '', sourceFormat } = options;
+	const { format, dimension = '2d', reduction = 'average', edges, load, store, size, bindings = '', sourceFormat, f16Rounding = 'nearest' } = options;
+	if ( f16Rounding !== 'nearest' && f16Rounding !== 'device' ) throw new Error( `downsampler: f16Rounding must be 'nearest' or 'device', got ${ JSON.stringify( f16Rounding ) }.` );
 	if ( edges !== 'zero-weight' && edges !== 'clamp' ) throw new Error( `downsampler: unknown edge policy ${ JSON.stringify( edges ) }; expected 'exact', 'zero-weight' or 'clamp'.` );
 	const levels = options.levels ?? Array.from( { length: options.count ?? 0 }, ( _, i ) => i + 1 );
 	checkLevels( levels );
@@ -253,6 +369,7 @@ function tileOptions( options: KernelOptions ) {
 	if ( access === 'sample' && ( edges !== 'clamp' || load !== undefined || resolveReduction( reduction, options.channels ).ops?.some( op => op !== 'average' ) !== false ) ) throw new Error( 'downsampler: tile kernels sample (access "sample") only under \'clamp\', for an all-\'average\' reduction read from a texture; otherwise they read with textureLoad.' );
 	if ( options.tail !== undefined || options.tile !== undefined ) throw new Error( 'downsampler: tail and tile are \'exact\' kernel options.' );
 	checkHooks( { load, store, size } );
+	if ( options.region === true && ( load !== undefined || store !== undefined ) ) throw new Error( 'downsampler: region (partial update) tile kernels read a source texture and write output textures or the buffer output; hooks aren\'t supported.' );
 	if ( size !== undefined && load === undefined ) throw new Error( 'downsampler: a size hook replaces the size uniform of a load hook; without a load hook the size is the source texture\'s.' );
 	if ( typeof bindings !== 'string' ) throw new Error( 'downsampler: bindings must be WGSL declarations for @group(1).' );
 	if ( store === undefined && ( format === undefined || ! isSupportedFormat( format ) ) ) throw new Error( `downsampler: output format ${ JSON.stringify( format ) } is not supported; pass a supported format or a store hook.` );
@@ -264,7 +381,7 @@ function tileOptions( options: KernelOptions ) {
 	const { channels } = resolveReduction( reduction, options.channels );
 	// Eight channels never reach output textures (or the buffer output, which writes them).
 	if ( channels === 8 && ( load === undefined || store === undefined ) ) throw new Error( 'downsampler: 8-channel accumulators need a load hook and a store hook (textures hold at most 4 channels, so neither output textures nor output \'buffer\' can take them).' );
-	return { format, dimension, reduction, edges, access, levels, count, load, store, size, bindings, output, channels, sourceFormat: sourceFormat ?? format ?? 'rgba32float' };
+	return { format, dimension, reduction, edges, access, levels, count, load, store, size, bindings, output, channels, sourceFormat: sourceFormat ?? format ?? 'rgba32float', f16Rounding };
 
 }
 
@@ -282,6 +399,7 @@ export function kernelLayoutEntries( options: KernelOptions ): GPUBindGroupLayou
 		if ( store === undefined && output === 'buffer' ) entries.push( { binding: outputLayoutBinding, visibility, buffer: { type: 'uniform', minBindingSize: outputLayoutBytes } }, { binding: outputBufferBinding, visibility, buffer: { type: 'storage' } } );
 		else if ( store === undefined ) levels.forEach( ( _, i ) => entries.push( { binding: i + 2, visibility, storageTexture: { access: 'write-only', format: format!, viewDimension: dimension } } ) );
 		if ( load !== undefined && size === undefined ) entries.push( { binding: sizeBinding, visibility, buffer: { type: 'uniform', minBindingSize: 8 } } );
+		if ( options.region === true ) entries.push( { binding: regionBinding, visibility, buffer: { type: 'uniform', minBindingSize: regionBytes } } );
 		return entries;
 
 	}
@@ -296,7 +414,29 @@ export function kernelLayoutEntries( options: KernelOptions ): GPUBindGroupLayou
 		entries.push( { binding: outputBufferBinding, visibility, buffer: { type: 'storage' } } );
 
 	} else for ( let i = 0; i < count!; i ++ ) entries.push( { binding: i + 2, visibility, storageTexture: { access: 'write-only', format: format!, viewDimension: dimension } } );
+	if ( options.region === true ) entries.push( { binding: regionBinding, visibility, buffer: { type: 'uniform', minBindingSize: regionBytes } } );
 	return entries;
+
+}
+
+/**
+ * WGSL for area-weighted steps (see `areaReference` in core): the span of source
+ * texels output texel x of n overlaps in a level of S, `[x·S/n, (x+1)·S/n)`, and
+ * (averages) each texel's weight, overlap / S. The overlap is an integer in units
+ * of 1/n texel. Halving and same-size axes take exact weights (1/2, 1): GPU float
+ * division isn't correctly rounded (WGSL allows 2.5 ulp), and an even step must
+ * stay the 'exact' rule's 2×2 box bit for bit.
+ */
+function areaWgsl( average: boolean ): string {
+
+	return `fn ds_area_first(x: vec2u, s: vec2u, n: vec2u) -> vec2u { return (x * s) / n; }
+fn ds_area_last(x: vec2u, s: vec2u, n: vec2u) -> vec2u { return ((x + vec2u(1u)) * s - vec2u(1u)) / n; }
+${ average ? `fn ds_area_weight(t: u32, x: u32, s: u32, n: u32) -> f32 {
+	if (s == 2u * n) { return 0.5; }
+	if (s == n) { return 1.0; }
+	return f32(min(n * (t + 1u), (x + 1u) * s) - max(n * t, x * s)) / f32(s);
+}
+` : '' }`;
 
 }
 
@@ -342,12 +482,14 @@ export function createKernel( options: KernelOptions ): string {
  * tile by the 'exact' rule at any parity (shader bilinear weights for 'average',
  * the `2x … 2x+2` footprint for folds), each quantized as stored.
  */
-function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage', tail = false, tile: tailEdge = tailTile }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
+function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage', tail = false, box = false, area = box, tile: tileOption, f16Rounding = 'nearest', region = false }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
 
 	reductionKey( reduction );
 	const average = reduction === 'average';
-	access ??= average ? 'sample' : 'load';
+	if ( box && ! area ) throw new Error( 'downsampler: a box kernel\'s first output is area-weighted (area true).' );
+	access ??= average && ! area ? 'sample' : 'load';
 	if ( ! average && access !== 'load' ) throw new Error( 'downsampler: fold reductions read their source with textureLoad (access "load").' );
+	if ( area && access !== 'load' ) throw new Error( 'downsampler: area-weighted (box) kernels read their source with textureLoad (access "load").' );
 
 	const array = dimension === '2d-array';
 	const suffix = array ? '_array' : '';
@@ -356,9 +498,9 @@ function createExactKernel( { format, dimension, count, reduction = 'average', a
 	const integer = isIntegerDomain( quantization );
 	const exactLoads = integer && isSupportedFormat( sourceFormat ) && formats[ sourceFormat ].quantization === quantization;
 	const splat = sampledChannels( sourceFormat ) === 1 ? '.xxxx' : '';
-	if ( tail && tailEdge !== 8 && tailEdge !== 16 && tailEdge !== 32 ) throw new Error( `downsampler: a tail tile is 8, 16 or 32, got ${ tailEdge }.` );
-	if ( ! tail && tailEdge !== tailTile ) throw new Error( 'downsampler: tile is a tail kernel option.' );
-	const tile = tail ? tailEdge : tileSize( count );
+	const tile = tileOption ?? ( tail ? tailTile : tileSize( count ) );
+	if ( tile !== 8 && tile !== 16 && tile !== 32 ) throw new Error( `downsampler: a tile is 8, 16 or 32, got ${ tile }.` );
+	if ( ! tail && tile < tileSize( count ) ) throw new Error( `downsampler: ${ count } levels need a tile of at least ${ tileSize( count ) }, got ${ tile }.` );
 	const side = workgroupSide( tile );
 	const samples = tile / side;
 
@@ -369,8 +511,10 @@ var<workgroup> tile: array<vec4f, ${ tile * tile }>;
 	const buffer = output === 'buffer';
 	if ( output !== 'storage' && ! buffer ) throw new Error( `downsampler: unknown output path ${ JSON.stringify( output ) }; expected 'storage' or 'buffer'.` );
 	if ( ! buffer && ( formats[ format ] as FormatInfo ).storage === false ) throw new Error( `downsampler: ${ format } can't be a storage texture; use output 'buffer'.` );
-	if ( buffer ) code += bufferOutputWgsl( format );
+	if ( quantization === 'float16' ) code += float16Wgsl( f16Rounding );
+	if ( buffer ) code += bufferOutputWgsl( format, false, false );
 	else for ( let i = 0; i < count; i ++ ) code += `@group(0) @binding(${ i + 2 }) var mip${ i }: texture_storage_2d${ suffix }<${ format }, write>;\n`;
+	if ( region ) code += regionWgsl();
 
 	// Intermediate levels are quantized exactly as they would be stored.
 	// Normalized values stay in integer units (value × scale) so 2:1 averages are
@@ -395,9 +539,7 @@ fn quantize(value: vec4f) -> vec4f {
 
 		code += `
 const SCALE = 1.0;
-fn quantize(value: vec4f) -> vec4f {
-	return vec4f(unpack2x16float(pack2x16float(value.xy)), unpack2x16float(pack2x16float(value.zw)));
-}
+fn quantize(value: vec4f) -> vec4f { return ds_round_f16(value); }
 `;
 
 	} else if ( isPackedQuantization( quantization ) ) {
@@ -438,11 +580,34 @@ fn load(p: vec2u, layer: u32) -> vec4f {
 
 	}
 
+	if ( area ) code += areaWgsl( average );
+
 	code += `
 fn first(pos: vec2u, size: vec2u, layer: u32) -> vec4f {
 `;
 
-	if ( access === 'sample' ) {
+	if ( area ) {
+
+		// Every texel of [pos·S/n, (pos+1)·S/n) per axis, at any ratio S/n (a same-size
+		// source reads its texel alone, with weight 1).
+		code += `	let sourceSize = textureDimensions(source);
+	let lo = ds_area_first(pos, sourceSize, size);
+	let hi = ds_area_last(pos, sourceSize, size);
+${ average ? `	var sum = vec4f(0.0);
+	for (var y = lo.y; y <= hi.y; y++) {
+		var row = vec4f(0.0);
+		for (var x = lo.x; x <= hi.x; x++) { row += ds_area_weight(x, pos.x, sourceSize.x, size.x) * load(vec2u(x, y), layer); }
+		sum += ds_area_weight(y, pos.y, sourceSize.y, size.y) * row;
+	}
+	return quantize(sum);
+` : `	var v = load(lo, layer);
+	for (var y = lo.y; y <= hi.y; y++) {
+		for (var x = lo.x; x <= hi.x; x++) { v = fold(v, load(vec2u(x, y), layer)); }
+	}
+	return quantize(v);
+` }`;
+
+	} else if ( access === 'sample' ) {
 
 		code += `	let uv = (vec2f(pos) + 0.5) / vec2f(size);
 	return quantize(textureSampleLevel(source, imageSampler, uv${ array ? ', i32(layer)' : '' }, 0.0)${ splat } * SCALE);
@@ -454,8 +619,11 @@ fn first(pos: vec2u, size: vec2u, layer: u32) -> vec4f {
 		// them but without its fixed-point weight rounding. The sample position
 		// (x + 0.5) * S / n - 0.5 is ((2x + 1) * S - n) / 2n: integer math keeps
 		// the base texel exact (float division isn't correctly rounded on GPUs),
-		// and gives weights of exactly 0 or 0.5 for copies and even sizes.
+		// and gives weights of exactly 0 or 0.5 for copies and even sizes. A same-size
+		// level (a converting copy) reads its texel alone: a zero weight on an Inf
+		// neighbour would still give NaN.
 		code += `	let sourceSize = textureDimensions(source);
+	if (all(sourceSize == size)) { return quantize(load(pos, layer)); }
 	let last = sourceSize - vec2u(1);
 	let numerator = (2u * pos + vec2u(1)) * sourceSize - size;
 	let denominator = 2u * size;
@@ -495,8 +663,16 @@ fn first(pos: vec2u, size: vec2u, layer: u32) -> vec4f {
 	if ( buffer ) code += `
 fn ds_level_size(i: u32) -> vec2u { return max(ds_output.size >> vec2u(i), vec2u(1u)); }
 `;
-	const dims = ( i: number ) => buffer ? `ds_level_size(${ i }u)` : `textureDimensions(mip${ i })`;
+	// Later sizes are derived from the first (floored halves, at least 1), not queried:
+	// textureDimensions on a storage texture is a resource query per call (5–25 % of the
+	// chain on Intel UHD, rgba8; results/windows/timings.md).
+	const dims = ( i: number ) => buffer ? `ds_level_size(${ i }u)` : i === 0 ? 'textureDimensions(mip0)' : `max(size0 >> vec2u(${ i }u), vec2u(1u))`;
 	const put = ( i: number, pos: string ) => buffer ? `ds_put(${ i }u, ${ pos }, group.z, value);` : `textureStore(mip${ i }, vec2i(${ pos })${ layer }, value / SCALE);`;
+	// Partial updates store only the region's texels (which lie inside the level).
+	const stored = ( i: number, pos: string, size: string ) => region ? `ds_inside(${ i }u, ${ pos })` : `all(${ pos } < ${ size })`;
+	// Partial updates offset the workgroup grid and the layer.
+	const entry = region ? `@builtin(workgroup_id) ds_group: vec3u) {
+	let group = ds_group + ds_region.origin.xyz;` : '@builtin(workgroup_id) group: vec3u) {';
 
 	if ( tail ) {
 
@@ -507,7 +683,17 @@ fn tileAt(p: vec2u) -> vec4f { return tile[p.y * ${ tile }u + p.x]; }
 fn tailStep(pos: vec2u, sourceSize: vec2u, size: vec2u) -> vec4f {
 	let last = sourceSize - vec2u(1);
 `;
-		code += average ? `	let numerator = (2u * pos + vec2u(1)) * sourceSize - size;
+		code += average && box ? `	let lo = ds_area_first(pos, sourceSize, size);
+	let hi = ds_area_last(pos, sourceSize, size);
+	var sum = vec4f(0.0);
+	for (var y = lo.y; y <= hi.y; y++) {
+		var row = vec4f(0.0);
+		for (var x = lo.x; x <= hi.x; x++) { row += ds_area_weight(x, pos.x, sourceSize.x, size.x) * tileAt(vec2u(x, y)); }
+		sum += ds_area_weight(y, pos.y, sourceSize.y, size.y) * row;
+	}
+	return quantize(sum);
+}
+` : average ? `	let numerator = (2u * pos + vec2u(1)) * sourceSize - size;
 	let denominator = 2u * size;
 	let lo = min(numerator / denominator, last);
 	let hi = min(lo + vec2u(1), last);
@@ -532,7 +718,7 @@ fn tailStep(pos: vec2u, sourceSize: vec2u, size: vec2u) -> vec4f {
 
 	code += `
 @compute @workgroup_size(${ side }, ${ side })
-fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group: vec3u) {
+fn main(@builtin(local_invocation_id) local: vec3u, ${ entry }
 	let size0 = ${ dims( 0 ) };
 	var value: vec4f;
 `;
@@ -545,7 +731,7 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
 		let pos0 = group.xy * ${ tile }u + p;
 		value = first(min(pos0, size0 - vec2u(1)), size0, group.z);
 		tile[p.y * ${ tile }u + p.x] = value;
-		if (all(pos0 < size0)) { ${ put( 0, 'pos0' ) } }
+		if (${ stored( 0, 'pos0', 'size0' ) }) { ${ put( 0, 'pos0' ) } }
 	}
 `;
 
@@ -567,7 +753,7 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
 	workgroupBarrier();
 	if (all(local.xy < ${ dims( i ) })) {
 		tile[local.y * ${ tile }u + local.x] = value;
-		${ put( i, 'local.xy' ) }
+		${ region ? `if (ds_inside(${ i }u, local.xy)) { ${ put( i, 'local.xy' ) } }` : put( i, 'local.xy' ) }
 	}
 `;
 
@@ -596,7 +782,7 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
 	if (local.x < ${ extent }u && local.y < ${ extent }u) {
 		tile[local.y * ${ tile }u + local.x] = value;
 		let pos = group.xy * ${ extent }u + local.xy;
-		if (all(pos < ${ dims( i ) })) { ${ put( i, 'pos' ) } }
+		if (${ stored( i, 'pos', dims( i ) ) }) { ${ put( i, 'pos' ) } }
 	}
 `;
 
@@ -623,8 +809,9 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
  */
 function createTileKernel( options: KernelOptions ): string {
 
-	const { format, dimension, reduction, edges, access, levels, count, load, store, size, bindings, output, channels, sourceFormat } = tileOptions( options );
+	const { format, dimension, reduction, edges, access, levels, count, load, store, size, bindings, output, channels, sourceFormat, f16Rounding } = tileOptions( options );
 	const buffer = store === undefined && output === 'buffer';
+	const half = store === undefined && formats[ format! ].quantization === 'float16';
 	const packed = store === undefined && isPackedQuantization( formats[ format! ].quantization ) ? formats[ format! ].quantization as 'rgb9e5ufloat' | 'rg11b10ufloat' : null;
 	const resolved = resolveReduction( reduction, channels );
 	const array = dimension === '2d-array';
@@ -640,11 +827,14 @@ function createTileKernel( options: KernelOptions ): string {
 	let code = declarations;
 	if ( access === 'sample' ) code += '@group(0) @binding(0) var ds_sampler: sampler;\n';
 	if ( load === undefined ) code += `@group(0) @binding(1) var ds_source: texture_2d${ suffix }<f32>;\n`;
-	if ( buffer ) code += bufferOutputWgsl( format!, true );
+	if ( half ) code += float16Wgsl( f16Rounding );
+	if ( buffer ) code += bufferOutputWgsl( format!, true, false );
 	// Packed floats are quantized by our encoder on either path, so stored values never depend on the GPU's conversion.
 	if ( packed !== null ) code += packedFloatWgsl( packed );
 	if ( store === undefined && ! buffer ) levels.forEach( ( level, i ) => code += `@group(0) @binding(${ i + 2 }) var ds_out${ level }: texture_storage_2d${ suffix }<${ format }, write>;\n` );
 	if ( load !== undefined && size === undefined ) code += `struct DsParams { size: vec2u }\n@group(0) @binding(${ sizeBinding }) var<uniform> ds_params: DsParams;\n`;
+	const region = options.region === true;
+	if ( region ) code += regionWgsl();
 	if ( bindings !== '' ) code += `\n// Tool bindings (group 1)\n${ bindings }\n`;
 	if ( load !== undefined ) code += `\n// load hook\n${ load }\n`;
 	if ( store !== undefined ) code += `\n// store hook\n${ store }\n`;
@@ -789,17 +979,21 @@ fn ds_first(p: vec2u, layer: u32) -> ${ T } {
 
 		}
 
-		// float16 outputs round to nearest even with pack2x16float before the store, as
-		// Downsampler does: Apple's textureStore truncates f32 → f16 (results/probes/f16-store-rounding.mjs).
-		if ( store === undefined && formats[ format! ].quantization === 'float16' ) return `{ let v = ${ value }; textureStore(ds_out${ level }, vec2i(${ pos })${ array ? ', i32(group.z)' : '' }, vec4f(unpack2x16float(pack2x16float(v.xy)), unpack2x16float(pack2x16float(v.zw)))); }`;
+		// float16 outputs are rounded before the store (f16Rounding), as Downsampler does:
+		// textureStore truncates f32 → f16 on Apple and D3D12 (results/probes/f16-store-rounding.mjs).
+		if ( half ) return `textureStore(ds_out${ level }, vec2i(${ pos })${ array ? ', i32(group.z)' : '' }, ds_round_f16(${ value }));`;
 
 		return store !== undefined ? `store(${ level }u, vec2i(${ pos }), group.z, ${ value });` : `textureStore(ds_out${ level }, vec2i(${ pos })${ array ? ', i32(group.z)' : '' }, ${ value });`;
 
 	};
 
+	// Partial updates offset the workgroup grid and the layer, and store only the region's texels.
+	const entry = region ? `@builtin(workgroup_id) ds_group: vec3u) {
+	let group = ds_group + ds_region.origin.xyz;` : '@builtin(workgroup_id) group: vec3u) {';
+	const inside = ( level: number ) => region ? ` && ds_inside(${ levels.indexOf( level ) }u, pos)` : '';
 	code += `
 @compute @workgroup_size(${ side }, ${ side })
-fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group: vec3u) {
+fn main(@builtin(local_invocation_id) local: vec3u, ${ entry }
 	var value: ${ T };
 `;
 	if ( levels.includes( 1 ) ) code += `	let size1 = ${ levelSize( 1 ) };\n`;
@@ -811,7 +1005,7 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
 		let p = local.xy + vec2u(${ ( i % samples ) * side }u, ${ Math.floor( i / samples ) * side }u);
 		let pos = group.xy * ${ tile }u + p;
 		value = ds_first(pos, group.z);
-${ count > 1 ? `		ds_tile[p.y * ${ tile }u + p.x] = value;\n` : '' }${ levels.includes( 1 ) ? `		if (all(pos < size1)) { ${ emit( 1, 'pos' ) } }\n` : '' }	}
+${ count > 1 ? `		ds_tile[p.y * ${ tile }u + p.x] = value;\n` : '' }${ levels.includes( 1 ) ? `		if (all(pos < size1)${ inside( 1 ) }) { ${ emit( 1, 'pos' ) } }\n` : '' }	}
 `;
 
 	}
@@ -833,7 +1027,7 @@ ${ count > 1 ? `		ds_tile[p.y * ${ tile }u + p.x] = value;\n` : '' }${ levels.in
 `;
 		if ( levels.includes( level ) ) code += `	if (local.x < ${ extent }u && local.y < ${ extent }u) {
 		let pos = group.xy * ${ extent }u + local.xy;
-		if (all(pos < ${ levelSize( level ) })) { ${ emit( level, 'pos' ) } }
+		if (all(pos < ${ levelSize( level ) })${ inside( level ) }) { ${ emit( level, 'pos' ) } }
 	}
 `;
 
