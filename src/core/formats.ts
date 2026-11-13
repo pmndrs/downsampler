@@ -8,7 +8,7 @@
  * whole texel ({@link quantizeTexel}): rgb9e5ufloat shares one exponent across
  * r, g and b, and rg11b10ufloat has 11-, 11- and 10-bit channels.
  */
-export type Quantization = 'unorm8' | 'snorm8' | 'unorm16' | 'snorm16' | 'float16' | 'float32' | PackedQuantization;
+export type Quantization = 'unorm8' | 'snorm8' | 'unorm16' | 'snorm16' | 'unorm10a2' | 'float16' | 'float32' | PackedQuantization | IntQuantization;
 
 /** Quantizations of formats that pack r, g and b into one 32-bit word (no alpha). */
 export type PackedQuantization = 'rgb9e5ufloat' | 'rg11b10ufloat';
@@ -23,12 +23,15 @@ export function isPackedQuantization( quantization: Quantization ): quantization
  * Normalized formats are reduced in integer units (value × scale), so 2:1 sums
  * are exact in f32 (4 × 65535 < 2²⁴) and ties round to even. snorm clamps to
  * ±scale: −128 and −32768 also decode to −1, so they are never produced.
+ * rgb10a2unorm ('unorm10a2') has 10-bit r, g, b and a 2-bit alpha: the entry
+ * here is r, g and b; {@link channelDomain} gives each channel's.
  */
 export const integerDomains = {
 	unorm8: { scale: 255, min: 0, max: 255 },
 	snorm8: { scale: 127, min: - 127, max: 127 },
 	unorm16: { scale: 65535, min: 0, max: 65535 },
-	snorm16: { scale: 32767, min: - 32767, max: 32767 }
+	snorm16: { scale: 32767, min: - 32767, max: 32767 },
+	unorm10a2: { scale: 1023, min: 0, max: 1023 }
 } as const;
 
 export type IntegerQuantization = keyof typeof integerDomains;
@@ -36,6 +39,64 @@ export type IntegerQuantization = keyof typeof integerDomains;
 export function isIntegerDomain( quantization: Quantization ): quantization is IntegerQuantization {
 
 	return Object.prototype.hasOwnProperty.call( integerDomains, quantization );
+
+}
+
+/** The 2-bit alpha of rgb10a2unorm. */
+const alpha2 = { scale: 3, min: 0, max: 3 } as const;
+
+/** The integer units of one channel of a normalized format (rgb10a2unorm's alpha is 2-bit). */
+export function channelDomain( quantization: IntegerQuantization, channel: number ): { scale: number; min: number; max: number } {
+
+	return quantization === 'unorm10a2' && channel === 3 ? alpha2 : integerDomains[ quantization ];
+
+}
+
+/**
+ * Integer formats (r32uint, rgba8sint, rgb10a2uint, …): unnormalized integers, read
+ * as `texture_2d<u32>` / `<i32>` and never filtered. Channel widths in bits; signed
+ * formats are two's complement. Kernels reduce them in exact integer arithmetic
+ * (SPEC.md §6.1 Integer formats; `intReference` in core is the oracle).
+ */
+export const intDomains = {
+	uint8: { signed: false, bits: [ 8, 8, 8, 8 ] },
+	sint8: { signed: true, bits: [ 8, 8, 8, 8 ] },
+	uint16: { signed: false, bits: [ 16, 16, 16, 16 ] },
+	sint16: { signed: true, bits: [ 16, 16, 16, 16 ] },
+	uint32: { signed: false, bits: [ 32, 32, 32, 32 ] },
+	sint32: { signed: true, bits: [ 32, 32, 32, 32 ] },
+	uint10a2: { signed: false, bits: [ 10, 10, 10, 2 ] }
+} as const;
+
+export type IntQuantization = keyof typeof intDomains;
+
+export function isIntQuantization( quantization: Quantization ): quantization is IntQuantization {
+
+	return Object.prototype.hasOwnProperty.call( intDomains, quantization );
+
+}
+
+/** Whether a supported format is an integer format (uint or sint). */
+export function isIntFormat( format: SupportedFormat ): boolean {
+
+	return isIntQuantization( formats[ format ].quantization );
+
+}
+
+/** The values one channel of an integer format holds: [ min, max ]. */
+export function intRange( quantization: IntQuantization, channel: number ): [ number, number ] {
+
+	const { signed, bits } = intDomains[ quantization ];
+	const width = bits[ channel ];
+	return signed ? [ - ( 2 ** ( width - 1 ) ), 2 ** ( width - 1 ) - 1 ] : [ 0, 2 ** width - 1 ];
+
+}
+
+/** How a texture of `format` is sampled: 'uint' or 'sint' for integer formats (any, not only supported ones), else 'float'. */
+export function sampleKind( format: string ): 'uint' | 'sint' | 'float' {
+
+	if ( /uint$/.test( format ) || format === 'stencil8' ) return 'uint';
+	return /sint$/.test( format ) ? 'sint' : 'float';
 
 }
 
@@ -85,7 +146,30 @@ export const formats = {
 	// it is always written through the buffer output path; rg11b10ufloat takes
 	// that path without texture-formats-tier1 (or without STORAGE_BINDING usage).
 	rgb9e5ufloat: { quantization: 'rgb9e5ufloat', bytesPerTexel: 4, channels: 3, filterable: true, storage: false },
-	rg11b10ufloat: { quantization: 'rg11b10ufloat', bytesPerTexel: 4, channels: 3, filterable: true, feature: 'texture-formats-tier1' }
+	rg11b10ufloat: { quantization: 'rg11b10ufloat', bytesPerTexel: 4, channels: 3, filterable: true, feature: 'texture-formats-tier1' },
+	// 10-bit r, g, b and 2-bit alpha in one word; storage with tier1, else the buffer path.
+	rgb10a2unorm: { quantization: 'unorm10a2', bytesPerTexel: 4, channels: 4, filterable: true, feature: 'texture-formats-tier1' },
+	// Integer formats: never filtered, so every batch loads; exact integer arithmetic
+	// (SPEC.md §6.1). rg32uint/rg32sint have no storage in compatibility mode.
+	rgba8uint: { quantization: 'uint8', bytesPerTexel: 4, channels: 4, filterable: false },
+	rgba8sint: { quantization: 'sint8', bytesPerTexel: 4, channels: 4, filterable: false },
+	rgba16uint: { quantization: 'uint16', bytesPerTexel: 8, channels: 4, filterable: false },
+	rgba16sint: { quantization: 'sint16', bytesPerTexel: 8, channels: 4, filterable: false },
+	r32uint: { quantization: 'uint32', bytesPerTexel: 4, channels: 1, filterable: false },
+	r32sint: { quantization: 'sint32', bytesPerTexel: 4, channels: 1, filterable: false },
+	rg32uint: { quantization: 'uint32', bytesPerTexel: 8, channels: 2, filterable: false, coreStorage: true },
+	rg32sint: { quantization: 'sint32', bytesPerTexel: 8, channels: 2, filterable: false, coreStorage: true },
+	rgba32uint: { quantization: 'uint32', bytesPerTexel: 16, channels: 4, filterable: false },
+	rgba32sint: { quantization: 'sint32', bytesPerTexel: 16, channels: 4, filterable: false },
+	r8uint: { quantization: 'uint8', bytesPerTexel: 1, channels: 1, filterable: false, feature: 'texture-formats-tier1' },
+	r8sint: { quantization: 'sint8', bytesPerTexel: 1, channels: 1, filterable: false, feature: 'texture-formats-tier1' },
+	rg8uint: { quantization: 'uint8', bytesPerTexel: 2, channels: 2, filterable: false, feature: 'texture-formats-tier1' },
+	rg8sint: { quantization: 'sint8', bytesPerTexel: 2, channels: 2, filterable: false, feature: 'texture-formats-tier1' },
+	r16uint: { quantization: 'uint16', bytesPerTexel: 2, channels: 1, filterable: false, feature: 'texture-formats-tier1' },
+	r16sint: { quantization: 'sint16', bytesPerTexel: 2, channels: 1, filterable: false, feature: 'texture-formats-tier1' },
+	rg16uint: { quantization: 'uint16', bytesPerTexel: 4, channels: 2, filterable: false, feature: 'texture-formats-tier1' },
+	rg16sint: { quantization: 'sint16', bytesPerTexel: 4, channels: 2, filterable: false, feature: 'texture-formats-tier1' },
+	rgb10a2uint: { quantization: 'uint10a2', bytesPerTexel: 4, channels: 4, filterable: false, feature: 'texture-formats-tier1' }
 } as const satisfies Record<string, FormatInfo>;
 
 export type SupportedFormat = keyof typeof formats;
@@ -173,14 +257,26 @@ export function fromHalf( bits: number ): number {
 
 }
 
-/** Quantize a value the way the GPU kernels do between levels. Packed formats quantize whole texels: use {@link quantizeTexel}. */
-export function quantize( value: number, quantization: Quantization ): number {
+/**
+ * Quantize a value the way the GPU kernels do between levels. `channel` matters for
+ * rgb10a2unorm and rgb10a2uint (2-bit alpha). Integer formats round to the nearest
+ * integer (ties to even) and clamp to the channel's range. Packed formats quantize
+ * whole texels: use {@link quantizeTexel}.
+ */
+export function quantize( value: number, quantization: Quantization, channel = 0 ): number {
 
 	if ( isPackedQuantization( quantization ) ) throw new Error( `downsampler: ${ quantization } quantizes whole texels; use quantizeTexel.` );
 	if ( isIntegerDomain( quantization ) ) {
 
-		const { scale, min, max } = integerDomains[ quantization ];
+		const { scale, min, max } = channelDomain( quantization, channel );
 		return roundHalfEven( Math.min( max, Math.max( min, value * scale ) ) ) / scale;
+
+	}
+
+	if ( isIntQuantization( quantization ) ) {
+
+		const [ min, max ] = intRange( quantization, channel );
+		return Math.min( max, Math.max( min, roundHalfEven( value ) ) );
 
 	}
 
@@ -354,7 +450,7 @@ export function quantizeTexel( values: { [ index: number ]: number }, offset: nu
 
 	}
 
-	for ( let c = 0; c < 4; c ++ ) values[ offset + c ] = quantize( values[ offset + c ], quantization );
+	for ( let c = 0; c < 4; c ++ ) values[ offset + c ] = quantize( values[ offset + c ], quantization, c );
 
 }
 

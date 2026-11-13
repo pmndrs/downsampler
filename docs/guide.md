@@ -54,10 +54,14 @@ downsampler.encodePass( pass, texture, encodeOptions );  // into a compute pass 
 | `rgba8unorm`, `rgba8snorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float` | core |
 | `r8unorm`, `rg8unorm`, `r8snorm`, `rg8snorm`, `r16float`, `rg16float`, `r16unorm`, `rg16unorm`, `rgba16unorm`, `r16snorm`, `rg16snorm`, `rgba16snorm` | `texture-formats-tier1` |
 | `bgra8unorm` | `bgra8unorm-storage` |
-| `rg11b10ufloat` | storage with `texture-formats-tier1`; otherwise the buffer path |
+| `rg11b10ufloat`, `rgb10a2unorm` | storage with `texture-formats-tier1`; otherwise the buffer path |
 | `rgb9e5ufloat` | always the buffer path (it is never a storage texture) |
+| `rgba8uint`, `rgba8sint`, `rgba16uint`, `rgba16sint`, `r32uint`, `r32sint`, `rg32uint`, `rg32sint`, `rgba32uint`, `rgba32sint` | core (`rg32uint`/`rg32sint`: the buffer path in compatibility mode) |
+| `r8uint`, `r8sint`, `rg8uint`, `rg8sint`, `r16uint`, `r16sint`, `rg16uint`, `rg16sint`, `rgb10a2uint` | `texture-formats-tier1`; without it the 4-byte ones (`rg16uint`, `rg16sint`, `rgb10a2uint`) take the buffer path |
 
-Not yet: sRGB formats, `rgb10a2unorm`, integer formats (deferred, SPEC §11). Depth formats can't be destinations: use a separate source into `r32float` or `rg32float`.
+**Integer formats** are reduced in exact integer arithmetic (SPEC §6.1 Integer formats). `'average'` is the exact mean, rounded to the nearest integer with ties to even, at every width (32-bit sums don't overflow): the 2×2 mean at even sizes, the render-pass bilinear weights as exact fractions at odd sizes under `'exact'`, area weights under `'box'`. Folds work as for any format; a custom fold is `fn reduce(a: vec4u, b: vec4u) -> vec4u` for uint formats (e.g. `a | b` for occupancy) and takes `vec4i` for sint formats. A separate source must be an integer format of the same signedness; values are clamped to the destination's range. `oddSizes: 'spd'`, `Reducer` and `ScalarReduction` don't take integer formats (they accumulate floats).
+
+Not yet: sRGB formats (deferred, SPEC §11). Depth formats can't be destinations: use a separate source into `r32float` or `rg32float`.
 
 `supports( texture )` and `unsupportedReason( texture )` (a string or `null`) say whether it can, and why not: a missing feature, usage or format. `encode`, `generate` and `prepare` throw with the same reason.
 
@@ -390,4 +394,4 @@ downsampler.encode( encoder, faces, { layers: [ 2, 1 ] } );
 
 ### Later
 
-sRGB destinations, `rgb10a2unorm`, integer formats (deferred, three.js-driven); subgroup kernels and fp16 math only if measured faster (M3). The full list is in [SPEC.md §11](../SPEC.md#11-milestones) and [DIVERGES.md](../DIVERGES.md).
+sRGB destinations (deferred, three.js-driven); subgroup kernels and fp16 math only if measured faster (M3). The full list is in [SPEC.md §11](../SPEC.md#11-milestones) and [DIVERGES.md](../DIVERGES.md).

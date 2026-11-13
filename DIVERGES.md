@@ -12,7 +12,7 @@ Each entry says what they do, what we do, why, what it would take to converge, a
 
 Effort: **S** is under a day, **M** a few days including oracle and GPU cases, **L** a week or more.
 
-Last updated: 2026-11-13 (M2.5: `oddSizes: 'box'` and resampled sources, entries 3 and 23. Before that, Windows: RTX 3060 Laptop and Intel UHD, native D3D12/Vulkan baselines; entries 1, 5, 17, 18, 22; results/windows/README.md)
+Last updated: 2026-11-13 (M2.3.3/M2.3.7: rgb10a2unorm and integer formats, entries 22 and 24. M2.5: `oddSizes: 'box'` and resampled sources, entries 3 and 23. Before that, Windows: RTX 3060 Laptop and Intel UHD, native D3D12/Vulkan baselines; entries 1, 5, 17, 18, 22; results/windows/README.md)
 
 ## Summary
 
@@ -41,6 +41,7 @@ Last updated: 2026-11-13 (M2.5: `oddSizes: 'box'` and resampled sources, entries
 | 21 | No size or level cap | SPD | Keep | — | — | — |
 | 22 | webgpu-spd 3.0.0, measured side by side ([results](results/compare/webgpu-spd.md)) | webgpu-spd | Keep | — | Its default handoff gave stale levels 7+ in up to 77 % of frames; Hi-Z up to 52 % non-conservative | Measured: our `'spd'` 1.2–2.1× faster (M5), 1.6× / 3.5× faster than its default (RTX / Intel, rgba8); no stale frames on Windows |
 | 23 | Power-of-two Hi-Z from a render-size source: area folds, not one 2×2 tap | niagara; SPD (FFX SSSR), Capsaicin | Keep | — | Ours conservative at any ratio; a 2×2 tap misses a texel at 1920 → 1024 | Up to ⌈S/n⌉ + 1 loads per axis; not timed |
+| 24 | Integer averages: exact mean, rounded to nearest (ties to even), no overflow; not a truncating `/ 4` | webgpu-spd | Keep | S | Truncation loses 3/8 of a unit per level on average; its 32-bit sums wrap | A few integer ops per texel; odd sizes split values into 16-bit halves; not timed |
 
 ## Dispatch structure
 
@@ -135,6 +136,15 @@ Last updated: 2026-11-13 (M2.5: `oddSizes: 'box'` and resampled sources, entries
 - **Quality:** SPD's output is closer to a true box average of the base level on deep 8-bit chains. Ours matches what every render-pass generator produces, and doesn't depend on the batch layout.
 - **Performance:** unknown; a few ALU ops per texel. Likely noise at bandwidth-bound sizes.
 - **Verdict:** keep as the default; the opt-in is a candidate.
+
+### 24. Integer averages are exact, rounded to nearest
+- **They:** webgpu-spd averages integer formats as `(v0 + v1 + v2 + v3) / 4` in the format's integer type: integer division truncates (toward zero for sint), and 32-bit sums wrap, so averages of values from 2³⁰ (u32) or 2²⁹ (i32) up are garbage. SPD (the FidelityFX sample) has no integer path; render-pass mipmaps can't make integer levels at all (integer formats aren't filterable).
+- **We:** the exact weighted mean, rounded to nearest with ties to even, at every width, 32-bit included: the 2×2 mean at even sizes, render-pass bilinear weights as exact rationals at odd ones (`'exact'`), area weights under `'box'` and for resampled sources. Signed formats are offset by 2³¹, so min, max and tie parity work unchanged (SPEC §6.1 Integer formats).
+- **Why:** the same rule as every normalized format here (§4 Quantization: integer units, ties to even), no drift along a chain, and no overflow. The oracle (`intReference`) is exact, so every level is checked bit for bit.
+- **Effort to converge:** S, a truncating mode would be a different `ds_mean`. Not planned.
+- **Quality:** truncation biases every level down by 3/8 of a unit on average (remainders 0–3 equally likely), compounding along the chain: about 4 units by the 1×1 of a 2048² chain.
+- **Performance:** not timed. The 2×2 step costs a few more integer ops than a sum and a shift; odd steps split each value into 16-bit halves and carry the division as quotient and remainder. Integer chains are rare (IDs and occupancy use folds, which cost the same as for other formats).
+- **Verdict:** keep.
 
 ## Reductions
 
@@ -290,8 +300,8 @@ Last updated: 2026-11-13 (M2.5: `oddSizes: 'box'` and resampled sources, entries
     - Our `'spd'`, with the same semantics and dispatch count: 0.50–0.85×, so 1.2–2.1× faster.
     - The handoff costs 1.1–1.25× over 6 mips per pass. Its subgroup path is 1.05–1.36× slower than its own non-subgroup path.
     - Its one dispatch (256²): 0.91×, against 0.90× for our `'spd'` in two.
-- **Where it is ahead:** a simpler API, integer formats and rgb10a2, sub-rectangles, a smaller bundle (8.3 KB gzipped against 13.9 KB for `Downsampler`), and it is released.
-- **Effort to converge:** none planned. Integer formats, rgb10a2 and sub-rectangles are already on our plan (M2.3.3, M2.3.7, M2.4).
+- **Where it is ahead:** a simpler API, a smaller bundle (8.3 KB gzipped against 13.9 KB for `Downsampler`), and it is released. Integer formats, rgb10a2 and sub-rectangles were ahead until we built them (M2.3.3, M2.3.7, M2.4; its integer averages truncate and overflow, entry 24).
+- **Effort to converge:** none planned.
 - **Measured on Windows** (RTX 3060 Laptop and Intel UHD, Chrome 148, D3D12, 2026-11-12; results/windows/timings.md):
   - **Stale levels:** none: 0 of 41,472 frames on each GPU (27 size/format rows × 3 variants × 256 frames, one encoder and one submit per frame). The race is real on Apple, not observed on NVIDIA or Intel.
   - **Speed:** its default ÷ our `'spd'` is 1.64 (rgba8) / 1.07 (rgba16f) on the RTX and 3.52 / 2.68 on Intel, where its subgroup path is the cost (1.78 / 1.35 without). Against native AMD SPD: its default 2.0× / 1.36× on the RTX (locked clocks), ours 1.26× / 1.27×.

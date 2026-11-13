@@ -19,7 +19,7 @@
  * the smallest conservative footprint at any ratio. For a 2:1 step it is
  * `footprint()`, so under `oddSizes: 'box'` folds are the 'exact' folds.
  */
-import { integerDomains, isIntegerDomain, isPackedQuantization, quantize, quantizeTexel, roundHalfEven, type Quantization } from './formats.js';
+import { channelDomain, isIntegerDomain, isIntQuantization, isPackedQuantization, quantize, quantizeTexel, roundHalfEven, type Quantization } from './formats.js';
 import { pyramidTolerance } from './pyramid.js';
 import { foldChannel, type ReferenceReduction } from './reduction.js';
 import { reduceReference, type ReferenceLevel, type ReferenceOptions } from './reference.js';
@@ -74,6 +74,7 @@ const exactBox = ( source: number, size: number ) => halves( source, size ) && (
 export function areaReference( source: ArrayLike<number>, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction, outWidth: number, outHeight: number, options: ReferenceOptions = {} ): ReferenceLevel {
 
 	if ( ! Number.isInteger( outWidth ) || ! Number.isInteger( outHeight ) || outWidth < 1 || outHeight < 1 ) throw new Error( `downsampler: area reference size ${ outWidth }×${ outHeight } is not a texture size.` );
+	if ( isIntQuantization( quantization ) ) throw new Error( `downsampler: ${ quantization } is an integer format; use intReference with weights 'area'.` );
 	const twoToOne = halves( width, outWidth ) && halves( height, outHeight );
 	if ( twoToOne && ( reduction !== 'average' || ( exactBox( width, outWidth ) && exactBox( height, outHeight ) ) ) ) return reduceReference( Float32Array.from( source ), width, height, layers, quantization, reduction, options );
 
@@ -94,16 +95,17 @@ export function areaReference( source: ArrayLike<number>, width: number, height:
 			const ys = rows[ y ].texels, xs = columns[ x ].texels;
 			let value = at( layer, xs[ 0 ], ys[ 0 ], c );
 			for ( const sy of ys ) for ( const sx of xs ) value = fold( value, at( layer, sx, sy, c ), c );
-			values[ ( ( layer * h + y ) * w + x ) * 4 + c ] = packed ? value : quantize( value, quantization );
+			values[ ( ( layer * h + y ) * w + x ) * 4 + c ] = packed ? value : quantize( value, quantization, c );
 
 		}
 
 	} else {
 
-		const domain = isIntegerDomain( quantization ) && quantizedInput ? integerDomains[ quantization ] : null;
+		const integer = isIntegerDomain( quantization ) && quantizedInput ? quantization : null;
 		const denominator = width * height;
 		for ( let layer = 0; layer < layers; layer ++ ) for ( let y = 0; y < h; y ++ ) for ( let x = 0; x < w; x ++ ) for ( let c = 0; c < 4; c ++ ) {
 
+			const domain = integer === null ? null : channelDomain( integer, c );
 			const { texels: ys, overlaps: oy } = rows[ y ], { texels: xs, overlaps: ox } = columns[ x ];
 			const index = ( ( layer * h + y ) * w + x ) * 4 + c;
 			if ( domain ) {
@@ -124,7 +126,7 @@ export function areaReference( source: ArrayLike<number>, width: number, height:
 				magnitude += Math.abs( term );
 
 			} ) );
-			values[ index ] = packed ? sum : quantize( sum, quantization );
+			values[ index ] = packed ? sum : quantize( sum, quantization, c );
 			filterTolerance[ index ] = isIntegerDomain( quantization ) ? 0 : pyramidTolerance( magnitude );
 
 		}

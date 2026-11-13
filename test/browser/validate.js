@@ -1,11 +1,12 @@
 // GPU correctness suite. Every texel of every generated level is checked against
 // the CPU reference, computed from the GPU's own previous level so permitted
 // rounding differences do not accumulate along the chain.
-import { areaReference, boxReference, copyReference, formats, maxViolations, fromHalf, isIntegerDomain, isPackedQuantization, levelSize, pyramidTolerance, quantize, reducePyramid, reduceReference, sampledChannels, spdReference, storageWritable, toHalf, tolerance } from '/dist/index.js';
+import { areaReference, boxReference, bufferWritable, copyReference, formats, maxViolations, fromHalf, isIntegerDomain, isIntQuantization, isPackedQuantization, levelSize, pyramidTolerance, quantize, reducePyramid, reduceReference, sampledChannels, spdReference, storageWritable, toHalf, tolerance } from '/dist/index.js';
 import { Downsampler, Reducer, requiredLimits } from '/dist/webgpu/index.js';
 import * as three from '/dist/three/index.js';
 import { createDepthSource, createTexture, makeData, poison, readMip, readMips, toFloats, trackBuffers, upload } from './gpu.js';
 import { validateBox } from './validate-box.js';
+import { validateInteger } from './validate-integer.js';
 import { validatePacked } from './validate-packed.js';
 import { validateScalar } from './validate-scalar.js';
 import { validatePayload } from './validate-payload.js';
@@ -26,7 +27,7 @@ export const shapes = [
 // a family differ only in channel count or storage format string, so they run a
 // representative subset: unit and odd sizes, 1D tails, partial tiles, layers,
 // both view dimensions and a multi-batch shape (512×32 is multi-batch at every width).
-export const familyFormats = [ 'rgba8unorm', 'rgba8snorm', 'rgba16unorm', 'rgba16snorm', 'rgba16float', 'rgba32float' ];
+export const familyFormats = [ 'rgba8unorm', 'rgba8snorm', 'rgba16unorm', 'rgba16snorm', 'rgba16float', 'rgba32float', 'rgb10a2unorm' ];
 export const subsetShapes = [
 	[ 1, 1 ], [ 3, 7 ], [ 17, 9 ], [ 31, 33 ], [ 65, 129 ], [ 1, 128 ], [ 128, 8 ], [ 192, 108 ], [ 512, 32 ],
 	[ 17, 11, 3 ], [ 17, 9, 1, '2d-array' ]
@@ -148,7 +149,8 @@ export function check( actual, expected, quantization, label, reduction = 'avera
 		// The largest channel may be off by its own filter allowance, and so cross an exponent: take its upper bound.
 		const t = i - i % 4;
 		const upper = c => expected.values[ t + c ] + expected.filterTolerance[ t + c ];
-		const texel = packed ? { channel: i % 4, texelMax: Math.max( upper( 0 ), upper( 1 ), upper( 2 ) ) } : undefined;
+		// The channel also sets rgb10a2unorm's step (2-bit alpha).
+		const texel = packed ? { channel: i % 4, texelMax: Math.max( upper( 0 ), upper( 1 ), upper( 2 ) ) } : { channel: i % 4, texelMax: 0 };
 		const limit = exact ? 0 : tolerance( expected.values[ i ], quantization, expected.filterTolerance[ i ], reduction, texel ) + Math.abs( expected.values[ i ] ) * slack;
 		if ( ! Number.isFinite( actual[ i ] ) || error > limit ) {
 
@@ -193,6 +195,8 @@ export const compatibility = device => ! device.features.has( 'core-features-and
  * 'odd' runs only the 'spd' and tail variants of the main matrix (part of 'downsampler', for debugging),
  * 'box' the main matrix's 'box' variants and validate-box.js (M2.5; also part of 'downsampler').
  * 'region' runs only the partial updates (`rect`, `layers`; validate-region.js; part of 'downsampler').
+ * 'integer' runs only the integer formats (validate-integer.js; part of 'downsampler'), and 'format:<name>'
+ * the main matrix of one format (for debugging and mutation checks).
  *
  * `shard` ({ index, total }, 1-based) runs one shard of the case groups (after `only`), split by
  * `durations` (group id → ms; test/ci/README.md). `list` runs nothing and returns the group ids
@@ -237,7 +241,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 	const results = [];
 	const started = performance.now();
-	const cases = only === 'scalar' || only === 'reducer' || only === 'fixtures' || only === 'region' ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
+	const cases = only === 'scalar' || only === 'reducer' || only === 'fixtures' || only === 'region' || only?.startsWith( 'integer' ) ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
 	let scalarPrecision = null;
 	let runs = 0;
 	const skipped = [];
@@ -264,11 +268,15 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 			const { quantization, channels, filterable, feature, coreStorage } = formats[ format ];
 			const packed = isPackedQuantization( quantization );
 			if ( only?.startsWith( 'packed' ) && ( ! packed || only !== 'packed' ) ) continue;
+			const int = isIntQuantization( quantization );
+			if ( only?.startsWith( 'integer' ) && ( ! int || only !== 'integer' ) ) continue;
+			// 'format:<name>': one format's main matrix alone (for debugging and mutation checks).
+			if ( only?.startsWith( 'format:' ) && format !== only.slice( 7 ) ) continue;
 			const compatNoStorage = coreStorage === true && compatibility( device );
 			const storagePath = storageWritable( format, device.features ) && ! compatNoStorage;
-			// Without storage, packed formats (and rg32float in compatibility mode) fall back to the
-			// buffer path, with output 'buffer'; the rest are skipped.
-			const fallback = packed || compatNoStorage;
+			// Without storage, packed formats, rgb10a2unorm (tier1) and rg32float in compatibility mode fall
+			// back to the buffer path ('auto' takes it for them); the rest are skipped.
+			const fallback = packed || compatNoStorage || ( ( format === 'rgb10a2unorm' || int ) && bufferWritable( format ) );
 			if ( compatNoStorage ) {
 
 				skipped.push( `${ format } storage path (no storage in compatibility mode)` );
@@ -283,6 +291,10 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 				if ( ! fallback ) continue;
 
 			}
+
+			// Integer formats have their own matrix and exact oracle (validate-integer.js; --only=integer), which
+			// takes the buffer path where they have no storage. Missing paths are reported as skipped above.
+			if ( int ) continue;
 
 			// --quick (CI, SwiftShader) runs the 'spd' variants on the family formats and
 			// the tail on rgba8unorm and rgba16float (integer and float16 paths), with two
@@ -427,6 +439,14 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 			results.push( ...await validateRegion( device, { quick, onProgress, select } ) );
 
+		} else if ( only?.startsWith( 'format:' ) ) {
+
+			// The main matrix of one format (above).
+
+		} else if ( only?.startsWith( 'integer' ) ) {
+
+			results.push( ...await validateInteger( device, { quick, onProgress, select, part: only } ) );
+
 		} else if ( only?.startsWith( 'packed' ) ) {
 
 			// 'packed-source' and 'packed-api' run one part (for debugging).
@@ -442,6 +462,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 				results.push( ...await validateRegion( device, { quick, onProgress, select } ) );
 				results.push( ...await validatePacked( device, { quick, onProgress, part: 'downsampler', select } ) );
 				results.push( ...await validateBox( device, { quick, onProgress, select } ) );
+				results.push( ...await validateInteger( device, { quick, onProgress, select } ) );
 
 			}
 
@@ -545,7 +566,8 @@ export async function makeSource( device, format, width, height, layers, pattern
 /** Single-channel sources are splatted by the kernel; the oracle sees the same. */
 export function splat( floats ) {
 
-	const output = new Float32Array( floats.length );
+	// The input's array type: integer sources come as Float64Arrays (a Float32Array can't hold every u32).
+	const output = new floats.constructor( floats.length );
 	for ( let i = 0; i < floats.length; i += 4 ) output.fill( floats[ i ], i, i + 4 );
 	return output;
 

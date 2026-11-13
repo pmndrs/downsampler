@@ -65,11 +65,11 @@ downsampler.generate( hiZPow2 /* 2048×1024 r32float */, { source: { texture: de
 
 **Compatibility mode** (devices without `'core-features-and-limits'`) is handled: each batch writes scratch levels and a copy dispatch moves them in, with bit-identical results (`compatibility: 'auto'`).
 
-**Output paths.** Levels are written as storage textures, or, for formats that can't be (`rgb9e5ufloat`; `rg11b10ufloat` without `texture-formats-tier1`), packed into a buffer and copied in. `outputPath( texture )` says which; `output: 'buffer'` forces it.
+**Output paths.** Levels are written as storage textures, or, for formats that can't be (`rgb9e5ufloat`; `rg11b10ufloat`, `rgb10a2unorm` and the other 4-byte tier1 formats without `texture-formats-tier1`), packed into a buffer and copied in. `outputPath( texture )` says which; `output: 'buffer'` forces it.
 
 **Identical results on every GPU.** Two options: `f16Rounding` (default `'nearest'`) rounds float16 levels to nearest even in the shader, because D3D12 truncates; `averageAccess: 'load'` applies bilinear weights in the shader instead of the hardware sampler, whose 8-bit weights round differently per vendor (2–13 % slower on an RTX 3060, 22–31 % on Intel UHD).
 
-**Formats.** `rgba8unorm`, `rgba8snorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, `rgb9e5ufloat`; with `texture-formats-tier1` also `r8unorm`, `rg8unorm`, `r8snorm`, `rg8snorm`, `r16float`, `rg16float`, the 16-bit normalized formats and `rg11b10ufloat` storage; `bgra8unorm` with `bgra8unorm-storage`. Sources: any float-sampleable 2D format, including depth.
+**Formats.** `rgba8unorm`, `rgba8snorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, `rgb9e5ufloat`; with `texture-formats-tier1` also `r8unorm`, `rg8unorm`, `r8snorm`, `rg8snorm`, `r16float`, `rg16float`, the 16-bit normalized formats and `rg11b10ufloat` and `rgb10a2unorm` storage; `bgra8unorm` with `bgra8unorm-storage`. Integer formats (`r32uint`, `rgba8sint`, … and `rgb10a2uint`) reduce exactly: averages round to nearest with ties to even at any width, folds (min, max, a bitwise custom `reduce` on `vec4u`/`vec4i`) for ID and occupancy pyramids. Sources: any float-sampleable 2D format, including depth; integer destinations read integer sources of the same signedness.
 
 ## three.js
 

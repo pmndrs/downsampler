@@ -1,5 +1,5 @@
 // Shared browser-side helpers for the GPU suite, benchmark and device lab.
-import { formats, fromHalf, integerDomains, isIntegerDomain, isPackedQuantization, isSupportedFormat, packTexel, storageWritable, toHalf, unpackTexel } from '/dist/index.js';
+import { channelDomain, formats, fromHalf, intRange, isIntegerDomain, isIntQuantization, isPackedQuantization, isSupportedFormat, packTexel, storageWritable, toHalf, unpackTexel } from '/dist/index.js';
 import { requiredLimits } from '/dist/webgpu/index.js';
 
 /**
@@ -57,22 +57,30 @@ export function createTexture( device, { width, height, layers = 1, format, dime
 
 }
 
-/** Stored values per texel and the typed array that holds them (packed formats: one u32 word per texel). */
+/**
+ * Stored values per texel and the typed array that holds them (packed formats: one u32 word per texel;
+ * rgb10a2unorm and rgb10a2uint too, `word10a2`, their four channels packed with `pack10a2`).
+ */
 function storage( format ) {
 
 	const { quantization, channels } = formats[ format ];
 	if ( isPackedQuantization( quantization ) ) return { channels: 1, Array: Uint32Array, quantization, packed: true };
-	const arrays = { unorm8: Uint8Array, snorm8: Int8Array, unorm16: Uint16Array, snorm16: Int16Array, float16: Uint16Array, float32: Float32Array };
+	if ( quantization === 'unorm10a2' || quantization === 'uint10a2' ) return { channels: 1, Array: Uint32Array, quantization, word10a2: true };
+	const arrays = { unorm8: Uint8Array, snorm8: Int8Array, unorm16: Uint16Array, snorm16: Int16Array, float16: Uint16Array, float32: Float32Array, uint8: Uint8Array, sint8: Int8Array, uint16: Uint16Array, sint16: Int16Array, uint32: Uint32Array, sint32: Int32Array };
 	return { channels, Array: arrays[ quantization ], quantization };
 
 }
 
-/** A value in a format's encoding (the inverse of `decode`), rounding to nearest. */
-function encode( value, quantization ) {
+/** Four 10-, 10-, 10- and 2-bit channel integers as one rgb10a2 word, and back. */
+export const pack10a2 = ( r, g, b, a ) => ( r | ( g << 10 ) | ( b << 20 ) | ( a << 30 ) ) >>> 0;
+export const unpack10a2 = word => [ word & 0x3ff, ( word >>> 10 ) & 0x3ff, ( word >>> 20 ) & 0x3ff, word >>> 30 ];
+
+/** A value in a format's encoding (the inverse of `decode`), rounding to nearest. `channel` matters for rgb10a2unorm's 2-bit alpha. */
+function encode( value, quantization, channel = 0 ) {
 
 	if ( isIntegerDomain( quantization ) ) {
 
-		const { scale, min, max } = integerDomains[ quantization ];
+		const { scale, min, max } = channelDomain( quantization, channel );
 		return Math.min( max, Math.max( min, Math.round( value * scale ) ) );
 
 	}
@@ -81,10 +89,35 @@ function encode( value, quantization ) {
 
 }
 
-function decode( stored, quantization ) {
+function decode( stored, quantization, channel = 0 ) {
 
-	if ( isIntegerDomain( quantization ) ) return Math.max( - 1, stored / integerDomains[ quantization ].scale );
+	if ( isIntegerDomain( quantization ) ) return Math.max( - 1, stored / channelDomain( quantization, channel ).scale );
+	if ( isIntQuantization( quantization ) ) return stored;
 	return quantization === 'float16' ? fromHalf( stored ) : stored;
+
+}
+
+/**
+ * Integer fixtures: 'random' spans each channel's range, a quarter of the values at or next to its
+ * ends (overflow and sign handling); 'small' takes values in [min, min + 3] and [max − 3, max] (frequent
+ * exact ties next to the extremes); the other patterns are as in `makeData`, scaled to the range.
+ */
+function intValue( quantization, pattern, state, x, y, c, layer, width, height, layers, seed ) {
+
+	const [ min, max ] = intRange( quantization, c );
+	const span = max - min + 1;
+	// Every bit of a second hash, so low bits (tie parity) vary at every width.
+	const bits = Math.imul( state ^ ( state >>> 15 ), 0x2c1b3c6d ) >>> 0;
+	const end = () => ( bits >>> 2 ) & 1 ? max - ( bits & 3 ) : min + ( bits & 3 );
+	switch ( pattern ) {
+
+		case 'random': return state >>> 30 === 0 ? end() : min + ( bits % span );
+		case 'small': return end();
+		case 'edge': return x === width - 1 || y === height - 1 ? max - c - layer : min + c;
+		case 'constant': return min + Math.floor( span * ( c + layer + 1 ) / ( layers + 5 ) );
+		default: return min + ( ( ( ( x >> 6 ) * 53 + ( y >> 6 ) * 29 + seed * 97 + c * 37 + layer * 11 ) % 256 ) * Math.floor( span / 256 ) );
+
+	}
 
 }
 
@@ -96,14 +129,47 @@ function decode( stored, quantization ) {
  */
 export function makeData( width, height, layers, format, pattern = 'random', seed = 1, { unit = false } = {} ) {
 
-	const { channels, Array, quantization, packed } = storage( format );
+	const { channels, Array, quantization, packed, word10a2 } = storage( format );
 	if ( packed ) return makePackedData( width, height, layers, quantization, pattern, seed );
+	if ( word10a2 ) {
+
+		// Four channels per word: the rgb10a2unorm values of 'random' etc., or rgb10a2uint's integers.
+		const words = new Uint32Array( width * height * layers );
+		let state = seed;
+		for ( let i = 0; i < words.length; i ++ ) {
+
+			const x = i % width, y = Math.floor( i / width ) % height, layer = Math.floor( i / ( width * height ) );
+			words[ i ] = pack10a2( ...[ 0, 1, 2, 3 ].map( c => {
+
+				state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0;
+				if ( quantization === 'uint10a2' ) return intValue( quantization, pattern, state, x, y, c, layer, width, height, layers, seed );
+				let value = ( state >>> 22 ) / 1023;
+				if ( pattern === 'edge' ) value = x === width - 1 || y === height - 1 ? ( c + layer + 1 ) / ( layers + 4 ) : 0;
+				if ( pattern === 'constant' ) value = ( c + layer + 1 ) / ( layers + 4 );
+				if ( pattern === 'tiles' ) value = ( ( ( x >> 6 ) * 53 + ( y >> 6 ) * 29 + seed * 97 + c * 37 + layer * 11 ) % 256 ) / 255;
+				return encode( value, quantization, c );
+
+			} ) );
+
+		}
+
+		return words;
+
+	}
+
 	const data = new Array( width * height * layers * channels );
 	let state = seed;
 
 	for ( let layer = 0; layer < layers; layer ++ ) for ( let y = 0; y < height; y ++ ) for ( let x = 0; x < width; x ++ ) for ( let c = 0; c < channels; c ++ ) {
 
 		state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0;
+		if ( isIntQuantization( quantization ) ) {
+
+			data[ ( ( layer * height + y ) * width + x ) * channels + c ] = intValue( quantization, pattern, state, x, y, c, layer, width, height, layers, seed );
+			continue;
+
+		}
+
 		let value = ( state >>> 24 ) / 255;
 		if ( pattern === 'random' && quantization === 'float16' && ! unit ) value = ( ( state >>> 24 ) - 64 ) / 16;
 		if ( pattern === 'random' && quantization === 'float32' ) value = unit ? ( state >>> 8 ) / 2 ** 24 : ( state >>> 8 ) / 2 ** 20 - 4;
@@ -154,10 +220,13 @@ function makePackedData( width, height, layers, quantization, pattern, seed ) {
 
 }
 
-/** Stored values to RGBA floats, as a texture read returns them (missing channels read 0, 0, 1). */
+/**
+ * Stored values to RGBA floats, as a texture read returns them (missing channels read 0, 0, 1).
+ * Integer formats give their exact integers, in a Float64Array (a Float32Array can't hold every u32).
+ */
 export function toFloats( data, format ) {
 
-	const { channels, quantization, packed } = storage( format );
+	const { channels, quantization, packed, word10a2 } = storage( format );
 	if ( packed ) {
 
 		const output = new Float32Array( data.length * 4 );
@@ -165,12 +234,22 @@ export function toFloats( data, format ) {
 		return output;
 
 	}
+
+	const int = isIntQuantization( quantization );
+	if ( word10a2 ) {
+
+		const output = new ( int ? Float64Array : Float32Array )( data.length * 4 );
+		for ( let i = 0; i < data.length; i ++ ) output.set( unpack10a2( data[ i ] ).map( ( value, c ) => decode( value, quantization, c ) ), i * 4 );
+		return output;
+
+	}
+
 	const texels = data.length / channels;
-	const output = new Float32Array( texels * 4 );
+	const output = new ( int ? Float64Array : Float32Array )( texels * 4 );
 	for ( let i = 0; i < texels; i ++ ) for ( let c = 0; c < 4; c ++ ) {
 
 		const value = c < channels ? data[ i * channels + c ] : c === 3 ? 1 : 0;
-		output[ i * 4 + c ] = c >= channels ? value : decode( value, quantization );
+		output[ i * 4 + c ] = c >= channels ? value : decode( value, quantization, c );
 
 	}
 
@@ -192,8 +271,11 @@ export function upload( device, texture, data ) {
  */
 export function poison( device, texture, fromLevel = 1 ) {
 
-	const { channels, Array, quantization, packed } = storage( texture.format );
-	const colour = packed ? [ packTexel( 0.9, 0.1, 0.7, quantization ) ] : [ 0.9, 0.1, 0.7, 0.3 ].slice( 0, channels ).map( value => encode( value, quantization ) );
+	const { channels, Array, quantization, packed, word10a2 } = storage( texture.format );
+	// Integer formats: a value near each channel's top, bottom and middle.
+	const tint = c => { const [ min, max ] = intRange( quantization, c ); return [ max - 1, min + 3, min + Math.floor( ( max - min ) / 3 ), max ][ c ]; };
+	const rgba = [ 0.9, 0.1, 0.7, 0.3 ].map( ( value, c ) => isIntQuantization( quantization ) ? tint( c ) : encode( value, quantization, c ) );
+	const colour = packed ? [ packTexel( 0.9, 0.1, 0.7, quantization ) ] : word10a2 ? [ pack10a2( ...rgba ) ] : rgba.slice( 0, channels );
 
 	for ( let level = fromLevel; level < texture.mipLevelCount; level ++ ) {
 

@@ -3,7 +3,8 @@
 //   node test/run.js --quick             small shapes only
 //   node test/run.js --only=scalar       one part of the suite: downsampler, reducer, scalar, fixtures
 //                                        (a partition), or mips (downsampler + reducer); CI uses --shard instead
-//                                        or box (the 'box' and resample checks of downsampler, for debugging)
+//                                        or box (the 'box' and resample checks of downsampler, for debugging), integer
+//                                        (the integer formats), format:rgb10a2unorm (one format's main matrix)
 //   node test/run.js --bench             validation + benchmark
 //   node test/run.js --bench --sizes=1024x1024,512x512x6 --formats=rgba8unorm --rounds=11 --repeats=16
 //   node test/run.js --output=results/report.json --headful
