@@ -355,6 +355,7 @@ const exposure = new ScalarReduction( device, {
 	finish: 'fn finish( value: vec4f, weight: f32 ) { … temporal smoothing, store … }',
 } );
 exposure.encodePass( pass, { width, height, bindGroup } ); // also { layers: [ first, count ] }; without a load hook { source: texture | { texture, mipLevel } }
+exposure.bindGroupLayouts[ 1 ];  // the hooks' group-1 layout, as on a Reducer (index 0: group 0 of a '2d' source)
 exposure.prepare( run );        // what encodePass records: pipelines, group 0 and 1 bind groups, workgroup counts (dispatch it yourself)
 exposure.release( resource );   // drop a texture's or buffer's plans, destroy their params/partials (release(): all)
 exposure.kernel();              // { wgsl, layout, partials, combine }

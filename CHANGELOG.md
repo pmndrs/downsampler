@@ -21,7 +21,7 @@ The first release.
 ### Tool kernels (`downsampler/webgpu`)
 
 - `Reducer`: one dispatch reduces up to six levels per tile and stores the levels you choose. Per-channel ops (sums, averages, min, max, weighted means, argmin/argmax with payloads), 4 or 8 channels, `'zero-weight'` or `'clamp'` (SPD/FSR) edges, `load`/`store`/`size` hooks over your own `@group(1)`, output textures or a buffer.
-- `ScalarReduction`: any image to one value per layer in two dispatches, every texel counted once, with a `finish` hook on the GPU; combine-only runs over partials a `Reducer` wrote.
+- `ScalarReduction`: any image to one value per layer in two dispatches, every texel counted once, with a `finish` hook on the GPU; combine-only runs over partials a `Reducer` wrote; `bindGroupLayouts[ 1 ]` for the hooks' bind group, as on a `Reducer`.
 - One source shape everywhere: `source` is a texture or `{ texture, mipLevel }`, with the same checks; sizes are `width`/`height`; layer ranges are `layers: [ first, count ]` (a bare count is `layerCount`).
 - The WGSL generators (`createKernel`, `createScalarKernel`, …) for vendoring, and `requiredLimits( adapter )`.
 

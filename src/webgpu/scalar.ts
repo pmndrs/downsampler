@@ -3,7 +3,7 @@ import { isSumOp, scalarBlock, scalarInvocations, scalarOps, scalarSide, scalarW
 import type { ViewDimension } from './kernel.js';
 import { lanes, payloadCombine } from './lanes.js';
 import { asTextureLevel, bindingViewDimension, levelSizeOf, sourceShapeReason, sourceTextureReason, sourceView, type TextureLevel } from './source.js';
-import { checkHooks, checkToolBindings, hookArity, retireBuffers, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolPipelineLayout, type ToolBindings } from './tool.js';
+import { checkHooks, checkToolBindings, hookArity, retireBuffers, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolGroupLayouts, toolPipelineLayout, type ToolBindings } from './tool.js';
 
 /** Options of `new ScalarReduction( device, options )`. See SPEC.md §4 Scalar reductions. */
 export interface ScalarReductionOptions {
@@ -359,6 +359,7 @@ export class ScalarReduction {
 	private readonly toolLayout: GPUBindGroupLayout | undefined;
 	private readonly variants = new Map<string, ScalarKernel>();
 	private combineOnly: ScalarCombineKernel | undefined;
+	private groupLayouts: GPUBindGroupLayout[] | undefined;
 	private readonly plans = new WeakMap<object, Plan[]>();
 	/** Every plan owner, held weakly (so caching never keeps a texture alive), for `release()` without a resource. */
 	private owners: WeakRef<object>[] = [];
@@ -433,6 +434,26 @@ export class ScalarReduction {
 		const module = this.device.createShaderModule( { label, code: wgsl } );
 		const combine = this.device.createComputePipeline( { label, layout: toolPipelineLayout( this.device, label, layout, this.toolLayout ), compute: { module, entryPoint: 'combine' } } );
 		return this.combineOnly = { layout, combine, wgsl };
+
+	}
+
+	/**
+	 * `[ group 0, group 1 ]`, as `Reducer.bindGroupLayouts`: create the tool's bind group for
+	 * the hooks from index 1 (present with `bindings`; every variant's pipeline uses this very
+	 * layout). Group 0 is the reduction's own: here the layout of a '2d' source (or of a load
+	 * hook, or combine-only), equal to `kernel().layout`; other source shapes have their own
+	 * (`kernel( { dimension } ).layout`). Creating it compiles nothing.
+	 */
+	get bindGroupLayouts(): readonly GPUBindGroupLayout[] {
+
+		if ( this.groupLayouts === undefined ) {
+
+			const group0 = this.device.createBindGroupLayout( { label: `downsampler scalar ${ this.ops.join( ',' ) } group 0`, entries: scalarLayoutEntries( { ...this.options, dimension: '2d', combineOnly: this.combinesOnly } ) } );
+			this.groupLayouts = toolGroupLayouts( group0, this.toolLayout );
+
+		}
+
+		return this.groupLayouts;
 
 	}
 

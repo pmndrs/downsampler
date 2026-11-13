@@ -10,6 +10,10 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Now
 
+- [ ] Formats: rgb10a2unorm (M2.3.3) + integer formats (M2.3.7) (agent, branch `formats-rgb10a2-int`)
+- [ ] sRGB destinations + transform hooks (M2.3.5) (agent, branch `srgb`)
+- [ ] API polish + ship prep: empty rect no-op, region buffers destroyed after submit, `maxResampleRatio` option, one source shape, package/CHANGELOG/release workflow, durations re-record (agent, branch `ship-prep`)
+- [ ] three.js in-tree compute mipmaps (SPEC §10.2), local three.js worktree `three.js-compute-mips`, branch `compute-mipmaps`; not pushed (agent)
 - [x] Windows runs (owner + a Windows agent, RTX 3060 + Intel UHD), merged from `f16-rounding` (`a3b9517`): branch `windows-testing`, handoff in `docs/WINDOWS-HANDOFF.md`. Verification, cross-vendor timings, and native D3D12/Vulkan matches (FidelityFX SPD, D3D11 `GenerateMips`, nvpro) for the same sizes
   - [x] Correctness: RTX full + quick + compat quick, Intel quick, all groups run; failures traced to f16 truncation and sampler precision, both explained by probes ([results/windows/correctness.md](results/windows/correctness.md))
   - [x] Native harnesses built (`native/`): D3D12 AMD SPD (8 variants), D3D12 render, D3D11 `GenerateMips`, Vulkan nvpro + blit; level dumps at 1129×635 match our oracles ([native-semantics-rtx3060.json](results/windows/native-semantics-rtx3060.json))
@@ -23,7 +27,7 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
   - Handoff summary: [results/windows/README.md](results/windows/README.md); library changes are on branch `f16-rounding`
   - [x] `test/parallel.js`: the suite in capped parallel shards, one summary; full matrix 35+ → 17 min, quick 4.6 → 2 min (RTX 3060)
 - [ ] M3 runs: M5 Pro idle (throughput, throughput rAF, storage-usage, subgroups, f16; commands in test/bench/README.md), then RTX 3060 / Intel UHD via `--power=high|low`; decide the subgroup kernel on the `nosync` bound (≥ 5 % at render sizes) and fp16 on speed vs its precision and overflow cost
-- [ ] Windows round 2 (owner + Windows agent): `docs/WINDOWS-HANDOFF-2.md`. Verify the merged milestones on D3D12 before main (RTX full, Intel quick, compat quick, examples), confirm the tile/tail defaults, f16 rounding cost, M3 runs
+- [ ] Windows round 2 + M3 (owner + Windows agent, branch `windows-testing`): `docs/WINDOWS-HANDOFF-2.md`. Verify, set defaults by rule, M3 measurements, then build halo batches / cheaper exact kernel / subgroups / fp16 by the data. Verify the merged milestones on D3D12 before main (RTX full, Intel quick, compat quick, examples), confirm the tile/tail defaults, f16 rounding cost, M3 runs
 - [ ] CI: first GitHub run of the shards (`test/ci/README.md`): real shard times, Linux SwiftShader compat device, artifact collection. Then commit its `gpu-durations` artifact
 
 ## Next (SPEC §11)
@@ -49,6 +53,8 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] Examples round 2: partial-update.html (rect + layers, bit-identical to a full recompute), odd-sizes.html ('exact'/'spd'/'box' vs the area-weighted ideal: mean error at 1129×635 is 2.1 / 5.1 / 0.29 in 1/255), hi-z-pow2.html (resample 'area', conservative vs every depth texel; a 2×2-tap pyramid misses 93,859 texels at 1024×512); Recipes in docs/guide.md, snippets type-checked against dist (`4c2f55d`, merged); M5 Pro: 21/21 example pages pass
+- [ ] Follow-up: `ScalarReduction` exposes no `bindGroupLayouts` for hooks (Reducer does)
 - [x] M2.5: `oddSizes: 'box'` (nvpro area weights in the shader, `'exact'` batches, the tail carries odd steps; folds identical to `'exact'`) and `source.resample: 'area'` (any destination size up/down to 8× per axis, e.g. power-of-two Hi-Z; conservative folds; 2048×1024 in 2 dispatches); `rect` composes with both (`areaDependents`); full-update WGSL unchanged (2,704 option sets byte-identical); 9/9 mutations caught (`2ad91a7`, `bb16237`, `ac86eee`, merge `a39022b`); DIVERGES #3 updated, #23 added
 - [x] M2.4: layer ranges + partial updates (`rect`): per-level dependent regions in core (exact footprint inverse, `'spd'` clamped blocks), bit-identical to a full recompute; composes with tail, `'spd'`, buffer path, compat, separate sources, `encodePass`; 11/11 mutations caught (`6ef5aa7`, `f78847b`, `9bc4c7e`, merged); DIVERGES #15 resolved
 - [x] API consistency before publish (`9a49043`, `7e09a59`, merged): ScalarReduction `reduce` → `reduction` (old key rejected), `'minmax'`; `Reducer.release( texture? )` / `ScalarReduction.release( resource? )` destroy owned buffers, evictions after `onSubmittedWorkDone`; `requiredLimits( adapter )` exported; `prepare` = what `encodePass` records on all three; `output.offset` from the device alignment; `averageAccess` reads `'sample'`; three: `getDownsampler( renderer, options )`, `generateMipmaps { encoder, downsampler }`, `unsupportedReason`. Source-shape unification waits for M2.5

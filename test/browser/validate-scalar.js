@@ -197,7 +197,7 @@ export async function validateScalar( device, { quick = false, onProgress = () =
 
 		const results = [];
 		const reduction = new ScalarReduction( device, { reduction: variant.reduce, load: variant.load, bindings: proceduralBindings } );
-		const bindGroup = device.createBindGroup( { layout: reduction.kernel().partials.getBindGroupLayout( 1 ), entries: [ { binding: 0, resource: { buffer: seedBuffer } } ] } );
+		const bindGroup = device.createBindGroup( { layout: reduction.bindGroupLayouts[ 1 ], entries: [ { binding: 0, resource: { buffer: seedBuffer } } ] } );
 
 		for ( const [ width, height, layers = 1 ] of shapes ) for ( const [ seed, mode ] of [ [ 1, 'encode' ], [ 2, 'encodePass' ] ] ) {
 
@@ -678,6 +678,7 @@ async function validateScalarOptions( device ) {
 	const prepared = average.prepare( { source: texture, output: { buffer: output } } );
 	if ( prepared.workgroups.join() !== '1,1,1' || prepared.combineWorkgroups.join() !== '1,1,1' ) throw new Error( 'scalar prepare(): unexpected workgroup counts' );
 	if ( ! /fn partials/.test( average.kernel().wgsl ) || ! /fn combine/.test( average.kernel().wgsl ) ) throw new Error( 'scalar kernel(): missing entry points' );
+	if ( average.bindGroupLayouts.length !== 1 || hooked.bindGroupLayouts.length !== 2 || hooked.bindGroupLayouts !== hooked.bindGroupLayouts ) throw new Error( 'scalar bindGroupLayouts: expected [ group 0 ] without bindings, [ group 0, group 1 ] with them, cached' );
 	texture.destroy();
 	output.destroy();
 	results.push( { option: 'scalar validation and prepare' } );

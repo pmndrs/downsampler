@@ -21,6 +21,8 @@
 			texels under it: the pyramid is conservative, which is what occlusion culling needs (an object is hidden if its
 			nearest depth is behind the tile's <code>max</code>; with reverse-Z, compare with <code>min</code>). The readout checks
 			this independently of the library, and shows what an SPD-style max pyramid (last odd row or column dropped) would miss.
+			For a power-of-two pyramid from the same depth buffer (<code>source.resample: 'area'</code>), see
+			<a href="hi-z-pow2.html">hi-z-pow2.html</a>.
 		</p>
 		<pre><code>const hiZ = device.createTexture( { format: 'rg32float', size: [ 1280, 720 ], mipLevelCount: 11,
 	usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING } );

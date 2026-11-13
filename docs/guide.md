@@ -4,6 +4,7 @@ Every public API, option and default, checked against the TypeScript source (`sr
 
 - [Setup](#setup)
 - [Sources: one shape everywhere](#sources-one-shape-everywhere)
+- [Recipes](#recipes)
 - [Downsampler: mip chains and Hi-Z](#downsampler-mip-chains-and-hi-z)
 - [Reducer: tile reductions for tools](#reducer-tile-reductions-for-tools)
 - [ScalarReduction: an image to one value](#scalarreduction-an-image-to-one-value)
@@ -51,6 +52,123 @@ The other shared names:
 
 - **Sizes** are `width` and `height` fields (Reducer dispatches, ScalarReduction runs). With a source they default to its level's size, and must match it if given.
 - **Layer ranges** are `layers: [ first, count ]` (Downsampler options, ScalarReduction runs, `PreparedBatch.layers`, `BufferCopy.layers`). A bare count is `layerCount` (Reducer dispatches, from layer 0; `ReducerCopy.layerCount`).
+
+## Recipes
+
+The lines that matter for each common job, each with a page in [examples/](../examples/) that runs it and checks its own output. `downsampler` is a `new Downsampler( device )`, made once per device; `encoder` is a `GPUCommandEncoder` you submit.
+
+### Mip chain ([mip-chain.html](../examples/mip-chain.html))
+
+```js
+const texture = device.createTexture( {
+	format: 'rgba8unorm', size: [ width, height ], mipLevelCount: Math.floor( Math.log2( Math.max( width, height ) ) ) + 1,
+	usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_DST,
+} );
+device.queue.writeTexture( { texture }, pixels, { bytesPerRow: width * 4 }, [ width, height ] );
+downsampler.encode( encoder, texture );            // levels 1 … n from level 0, as render-pass mipmaps
+downsampler.generate( texture );                   // or: in its own encoder, submitted
+```
+
+### Hi-Z from depth, conservative ([hi-z.html](../examples/hi-z.html))
+
+Depth formats can't be storage textures, so the pyramid is a separate `rg32float` (or `r32float`) texture with the depth buffer as its `source`. Odd sizes fold `2x … 2x+2`, so every texel bounds every depth texel under it.
+
+```js
+const hiZ = device.createTexture( {
+	format: 'rg32float', size: [ width, height ], mipLevelCount: Math.floor( Math.log2( Math.max( width, height ) ) ) + 1,
+	usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
+} );
+const pass = encoder.beginComputePass();
+downsampler.encodePass( pass, hiZ, { source: depth, reduction: 'minmax' } ); // r = min, g = max
+pass.end();
+// Conventional depth: occluded if the object's nearest depth is beyond g of the texels it covers (reverse-Z: r).
+```
+
+### Power-of-two Hi-Z from a render-size depth buffer ([hi-z-pow2.html](../examples/hi-z-pow2.html))
+
+`resample: 'area'` (with the source as `{ texture, resample }`) lets level 0 be any size (up to 8× smaller per axis by default, `maxResampleRatio`) and folds every depth texel that each Hi-Z texel's area overlaps, so the pyramid stays conservative. Later levels halve cleanly: 12 levels of 2048×1024 take 2 dispatches.
+
+```js
+const previousPow2 = n => 2 ** Math.floor( Math.log2( n ) );
+const size = [ previousPow2( width ), previousPow2( height ) ];    // 1920×1080 → 1024×1024
+const hiZ = device.createTexture( {
+	format: 'r32float', size, mipLevelCount: Math.log2( Math.max( ...size ) ) + 1,
+	usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
+} );
+downsampler.encode( encoder, hiZ, { source: { texture: depth, resample: 'area' }, reduction: 'max' } );
+```
+
+One 2×2 tap per texel (a min/max reduction sampler at the texel centre) misses depth texels at 1920 → 1024; the page counts them.
+
+### Partial update ([partial-update.html](../examples/partial-update.html))
+
+```js
+device.queue.writeTexture( { texture, origin: [ x, y ] }, pixels, { offset: ( y * width + x ) * 4, bytesPerRow: width * 4 }, [ w, h ] );
+downsampler.encode( encoder, texture, { rect: { x, y, width: w, height: h } } );   // only the texels that depend on it
+downsampler.encode( encoder, faces, { layers: [ 2, 1 ] } );                        // one face of a 6-layer array
+downsampler.encode( encoder, faces, { layers: [ 4, 1 ], rect: decal } );           // a decal on face 4
+```
+
+Bit-identical to a full recompute when nothing changed outside `rect`. Each distinct rect caches a small uniform buffer; the 16 most recent are kept per texture, and older ones are destroyed once the queue has finished the work submitted so far, so a painter needs no cleanup ([Partial updates](#partial-updates-rect-and-layers)). An empty rect records nothing.
+
+### Area-weighted odd sizes ([odd-sizes.html](../examples/odd-sizes.html))
+
+```js
+downsampler.encode( encoder, irradiance, { oddSizes: 'box' } );  // every level keeps the mean: a 31×31's 1×1 is its mean
+downsampler.encode( encoder, bloom, { oddSizes: 'spd' } );       // SPD: fewest dispatches, drops the last odd row or column
+```
+
+The default, `'exact'`, matches render-pass mipmaps. On the page's 1129×635 test image the mean error against the area-weighted ideal over levels 1–10 is 2.1 (`'exact'`), 5.1 (`'spd'`) and 0.3 (`'box'`) 8-bit steps.
+
+### Block statistics with `Reducer` ([reducer.html](../examples/reducer.html))
+
+```js
+const stats = new Reducer( device, {
+	reduction: [ 'average', 'average', 'max', 'sum' ],      // mean, mean of squares, max, count
+	levels: [ 3, 5 ],                                        // 8×8 and 32×32 blocks, in one dispatch
+	format: 'rgba32float',
+	bindings: { wgsl: '@group(1) @binding(0) var image: texture_2d<f32>;', entries: [ { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } } ] },
+	load: `fn load( texel: vec2i, layer: u32 ) -> vec4f {
+		let l = dot( textureLoad( image, texel, 0 ).rgb, vec3f( 0.2126, 0.7152, 0.0722 ) );
+		return vec4f( l, l * l, l, 1.0 );
+	}`,
+} );
+const bindGroup = device.createBindGroup( { layout: stats.bindGroupLayouts[ 1 ], entries: [ { binding: 0, resource: image.createView() } ] } );
+const outputs = stats.levels.map( level => device.createTexture( { format: 'rgba32float', size: stats.levelSize( level, width, height ), usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING } ) );
+stats.encode( encoder, { width, height, bindGroup, outputs } );
+```
+
+### Exposure with `ScalarReduction` ([scalar.html](../examples/scalar.html))
+
+```js
+const entries = [
+	{ binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
+	{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+];
+const metering = new ScalarReduction( device, {
+	reduction: [ 'average', 'max', 'min', 'average' ],
+	bindings: { wgsl: '@group(1) @binding(0) var hdr: texture_2d<f32>; @group(1) @binding(1) var<storage, read_write> exposure: array<vec4f, 2>;', entries },
+	load: 'fn load( texel: vec2i, layer: u32 ) -> vec4f { let l = max( dot( textureLoad( hdr, texel, 0 ).rgb, vec3f( 0.2126, 0.7152, 0.0722 ) ), 1e-4 ); return vec4f( log( l ), l, l, l ); }',
+	finish: 'fn finish( value: vec4f, weight: f32 ) { exposure[ 0 ] = value; exposure[ 1 ] = vec4f( exp( value.x ), 0.18 / exp( value.x ), weight, 0.0 ); }',
+} );
+const bindGroup = device.createBindGroup( { layout: metering.bindGroupLayouts[ 1 ], entries: [ { binding: 0, resource: hdr.createView() }, { binding: 1, resource: { buffer: exposureBuffer } } ] } );
+metering.encode( encoder, { width, height, bindGroup } );  // two dispatches at any size; the exposure stays on the GPU
+```
+
+### three.js ([three.html](../examples/three.html))
+
+```js
+import { generateMipmaps, requiredLimits, unsupportedReason } from 'downsampler/three';
+
+const renderer = new THREE.WebGPURenderer( { requiredLimits: requiredLimits( await navigator.gpu.requestAdapter() ) } );
+await renderer.init();
+const texture = new THREE.StorageTexture( width, height );
+texture.generateMipmaps = true;        // allocate the full chain
+texture.mipmapsAutoUpdate = false;     // the library writes the mips
+texture.minFilter = THREE.LinearMipmapLinearFilter;
+// … write level 0 with a compute pass …
+if ( ! generateMipmaps( renderer, texture ) ) console.warn( unsupportedReason( renderer, texture ) ); // then three's own path
+```
 
 ## Downsampler: mip chains and Hi-Z
 
@@ -193,6 +311,8 @@ downsampler.encode( encoder, faces, { layers: [ 2, 1 ] } );
 // Nothing changed this frame: a no-op.
 downsampler.encode( encoder, texture, { rect: { x: 0, y: 0, width: 0, height: 0 } } );
 ```
+
+`prepare( texture, { rect } )` lists what each batch writes: `regions` (per level of the batch, a rect or `null`) and the workgroup offset `groupX`/`groupY`. See [examples/partial-update.html](../examples/partial-update.html), which paints into a texture and checks every update against a full recompute.
 
 ### Output paths
 
@@ -368,6 +488,7 @@ metering.encodePass( pass, { width, height, bindGroup } );
 | `combineKernel()` | `{ wgsl, layout, combine }` for combine-only runs. |
 | `workgroups( width, height, layerCount? )`, `partialsBytes( width, height, layerCount? )` | Sizes of the partials dispatch and buffer. |
 | `release( resource? )` | Drops the cached plans of a source texture, partials buffer or output buffer (without one: every plan) and destroys the params and partials buffers the reduction created for them, never yours. Call it after the last submitted use. Plans are kept for 4 run shapes per resource; older ones are destroyed once the queue has finished the work submitted so far. |
+| `bindGroupLayouts` | `[ group 0, group 1 ]` as on a `Reducer`: create your hooks' bind group from index 1 (with `bindings`). Group 0 is that of a `'2d'` source, a load hook or a combine-only run. |
 | `ops`, `block`, `partialBytes`, `resultBytes`, `combinesOnly` | The resolved options. |
 
 `createScalarKernel( options )` and `scalarLayoutEntries( … )` are the pure WGSL generator and its layout, for vendoring.
