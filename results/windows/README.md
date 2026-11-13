@@ -1,5 +1,8 @@
 # Windows results (RTX 3060 Laptop + Intel UHD), 2026-11-12/13
 
+**Start with [docs/WINDOWS-REPORT.md](../../docs/WINDOWS-REPORT.md)**: answers, method, what was ruled out, open questions and how to
+reproduce. This file indexes the data.
+
 Handoff: `docs/WINDOWS-HANDOFF.md`. Two branches:
 
 | Branch | What | Library code (`src/`) |
