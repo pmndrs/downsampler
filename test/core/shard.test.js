@@ -74,3 +74,32 @@ test( 'Selection: lists without running, runs only its shard, counts cases', asy
 	assert.notEqual( digest( [ 'a', 'b' ] ), digest( [ 'b', 'a' ] ) );
 
 } );
+
+test( 'Selection: enter and leave bracket each group; an error from leave fails it', async () => {
+
+	const select = new Selection();
+	const calls = [];
+	let pending = null;
+	select.enter = id => calls.push( `enter ${ id }` );
+	select.leave = async id => {
+
+		calls.push( `leave ${ id }` );
+		const error = pending;
+		pending = null;
+		return error;
+
+	};
+	assert.deepEqual( await select.run( 'a', async () => [ 1 ] ), [ 1 ] );
+	pending = new Error( 'validation' );
+	await assert.rejects( select.run( 'b', async () => [ 1 ] ), /validation/ );
+	pending = new Error( 'validation' );
+	await assert.rejects( select.run( 'c', async () => { throw new Error( 'mismatch' ); } ), /validation; then: mismatch/ );
+	assert.deepEqual( calls, [ 'enter a', 'leave a', 'enter b', 'leave b', 'enter c', 'leave c' ] );
+
+	const failed = [];
+	select.onError = ( id, error ) => failed.push( `${ id }: ${ error.message }` );
+	pending = new Error( 'validation' );
+	assert.deepEqual( await select.run( 'd', async () => [ 1, 2 ] ), [ 1, 2 ] );
+	assert.deepEqual( failed, [ 'd: validation' ] );
+
+} );

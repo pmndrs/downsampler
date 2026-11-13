@@ -180,7 +180,7 @@ async function validateDecode( device ) {
 	const words = new Uint32Array( readback.getMappedRange().slice( 0 ) );
 	readback.unmap();
 	for ( const resource of [ texture, out, readback ] ) resource.destroy();
-	let inexact = 0, worst = 0;
+	let inexact = 0, worst = 0, alphaInexact = 0;
 	for ( const i of input ) {
 
 		const decoded = bitsF32( words[ 4 * i ] );
@@ -188,12 +188,16 @@ async function validateDecode( device ) {
 		const gap = srgbDecodeTable[ Math.min( 255, i + 1 ) ] - srgbDecodeTable[ Math.max( 0, i - 1 ) ];
 		worst = Math.max( worst, Math.abs( decoded - srgbDecodeTable[ i ] ) / ( gap / 2 ) );
 		if ( words[ 4 * i + 1 ] !== i || words[ 4 * i + 2 ] !== 255 - i ) throw new Error( `srgb decode: the hardware's decode of code ${ i } (${ decoded }) re-encodes to ${ words[ 4 * i + 1 ] }` );
-		if ( bitsF32( words[ 4 * i + 3 ] ) !== Math.fround( i / 255 ) ) throw new Error( `srgb decode: alpha ${ i } reads ${ bitsF32( words[ 4 * i + 3 ] ) }, not linear` );
+		// Alpha is linear: i / 255 within float error (a compatibility-mode SwiftShader device reads 3 one
+		// ulp high, as c · (1 / 255) would), never the sRGB curve, which is ≥ 0.0035 away at every code but 0 and 255.
+		const alpha = bitsF32( words[ 4 * i + 3 ] );
+		if ( alpha !== Math.fround( i / 255 ) ) alphaInexact ++;
+		if ( Math.abs( alpha - i / 255 ) > 1e-6 ) throw new Error( `srgb decode: alpha ${ i } reads ${ alpha }, not linear` );
 
 	}
 
 	// Informational: how far the device's decode is from the exact table (M5 Pro: 254 codes, 0.39 of a step).
-	return [ { srgb: 'decode', hardwareInexact: inexact, worstStepFraction: Number( worst.toFixed( 3 ) ) } ];
+	return [ { srgb: 'decode', hardwareInexact: inexact, worstStepFraction: Number( worst.toFixed( 3 ) ), alphaInexact } ];
 
 }
 
@@ -366,16 +370,21 @@ async function validateApi( device ) {
 		}
 
 		// The kernel's storage output (codes into an rgba8unorm scratch, copied into the level) writes the buffer path's bits.
+		// It binds a storage texture per level: below 6 storage textures (SwiftShader: 4) the buffer path's 6-level plan
+		// doesn't fit, so both run a plan of the storage limit.
 		if ( ! compatibility( device ) ) {
 
 			const viaScratch = track( make( 'rgba8unorm-srgb' ) );
+			const fits = downsampler.bufferLevelsPerDispatch <= downsampler.levelsPerDispatch;
+			const planner = fits ? downsampler : new Downsampler( device, { levelsPerDispatch: downsampler.levelsPerDispatch } );
+			const expected = fits ? reference : await chain( planner, track( make( 'rgba8unorm-srgb' ) ), data2 );
 			upload( device, viaScratch, data2 );
 			poison( device, viaScratch );
-			const prototype = scratchPrototype( device, downsampler );
+			const prototype = scratchPrototype( device, planner );
 			const encoder = device.createCommandEncoder();
 			prototype.encode( encoder, viaScratch );
 			device.queue.submit( [ encoder.finish() ] );
-			same( await readMips( device, viaScratch, 0 ), reference, 'srgb storage output into an rgba8unorm scratch' );
+			same( await readMips( device, viaScratch, 0 ), expected, 'srgb storage output into an rgba8unorm scratch' );
 
 		}
 

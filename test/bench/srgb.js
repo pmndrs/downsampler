@@ -56,6 +56,8 @@ export function scratchPrototype( device, downsampler ) {
 		const view = ( target, level ) => target.createView( { dimension, baseMipLevel: level, mipLevelCount: 1 } );
 		const batches = downsampler.prepare( texture ).map( batch => {
 
+			// One storage texture per level: a plan of the buffer path's 6 levels needs 6.
+			if ( batch.count > device.limits.maxStorageTexturesPerShaderStage ) throw new Error( `srgb scratch: a ${ batch.count }-level batch needs ${ batch.count } storage textures, above this device's ${ device.limits.maxStorageTexturesPerShaderStage }; plan with levelsPerDispatch ≤ the limit` );
 			const options = { format: texture.format, dimension, count: batch.count, access: 'sample', sourceFormat: texture.format, output: 'storage', tile: batch.tile, ...( batch.kernel === 'tail' ? { tail: true } : {} ) };
 			const { layout, pipeline: compute } = pipeline( options );
 			const entries = [ { binding: 0, resource: sampler }, { binding: 1, resource: view( texture, batch.sourceMipLevel ) } ];
