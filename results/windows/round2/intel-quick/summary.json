@@ -1,0 +1,277 @@
+{
+	"date": "2026-11-14T08:30:35.290Z",
+	"flags": [
+		"--quick",
+		"--power=low"
+	],
+	"jobs": 6,
+	"shards": 18,
+	"part": null,
+	"capMinutes": 10,
+	"seconds": 1534,
+	"adapter": {
+		"vendor": "intel",
+		"architecture": "gen-12lp",
+		"device": "",
+		"description": "",
+		"isFallbackAdapter": false,
+		"timestamps": true,
+		"features": [
+			"texture-formats-tier1",
+			"bgra8unorm-storage"
+		],
+		"compatibility": false,
+		"maxStorageTexturesPerShaderStage": 6,
+		"subgroupMinSize": 8,
+		"subgroupMaxSize": 128,
+		"adapterFeatures": [
+			"bgra8unorm-storage",
+			"chromium-experimental-multi-draw-indirect",
+			"chromium-experimental-timestamp-query-inside-passes",
+			"clip-distances",
+			"core-features-and-limits",
+			"depth-clip-control",
+			"depth32float-stencil8",
+			"dual-source-blending",
+			"float32-blendable",
+			"float32-filterable",
+			"indirect-first-instance",
+			"primitive-index",
+			"rg11b10ufloat-renderable",
+			"shader-f16",
+			"subgroups",
+			"texture-component-swizzle",
+			"texture-compression-bc",
+			"texture-compression-bc-sliced-3d",
+			"texture-formats-tier1",
+			"texture-formats-tier2",
+			"timestamp-query"
+		],
+		"maxTextureDimension2D": 8192
+	},
+	"ok": false,
+	"cases": 18097,
+	"checks": 27118,
+	"groups": {
+		"ran": 1544,
+		"listed": 1850
+	},
+	"failures": [
+		{
+			"shard": 4,
+			"label": "fixtures/1129x635",
+			"first": "fixtures/1129x635 threw: tool fixtures 1129x635: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp",
+			"thrown": true
+		},
+		{
+			"shard": 6,
+			"label": "fixtures/960x540",
+			"first": "fixtures/960x540 threw: tool fixtures 960x540: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp",
+			"thrown": true
+		}
+	],
+	"problems": [
+		"shard 1: exit 1, no report: Backend messages: |  * Device removed reason: DXGI_ERROR_DEVICE_HUNG (0x887A0006) | Node.js v24.13.1",
+		"shard 5: exit 1, no report:                       ^ | Error: The browser is already running for C:\\Users\\denni\\AppData\\Local\\Temp\\puppeteer_dev_chrome_profile-oKO0Mq. Use a different `userDataDir` or stop the running browser first. | Node.js v24.13.1",
+		"shard 7: exit 1, no report:                       ^ | TimeoutError: Timed out after 30000 ms while waiting for the WS endpoint URL to appear in stdout! | Node.js v24.13.1"
+	],
+	"skipped": [],
+	"perShard": [
+		{
+			"index": 1,
+			"ran": true,
+			"code": 1,
+			"seconds": 483,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 2,
+			"ran": true,
+			"code": 0,
+			"seconds": 529,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 3,
+			"ran": true,
+			"code": 0,
+			"seconds": 522,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 4,
+			"ran": true,
+			"code": 1,
+			"seconds": 523,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 5,
+			"ran": true,
+			"code": 1,
+			"seconds": 107,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 6,
+			"ran": true,
+			"code": 1,
+			"seconds": 512,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 7,
+			"ran": true,
+			"code": 1,
+			"seconds": 247,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 8,
+			"ran": true,
+			"code": 0,
+			"seconds": 434,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 9,
+			"ran": true,
+			"code": 0,
+			"seconds": 366,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 10,
+			"ran": true,
+			"code": 0,
+			"seconds": 427,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 11,
+			"ran": true,
+			"code": 0,
+			"seconds": 460,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 12,
+			"ran": true,
+			"code": 0,
+			"seconds": 466,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 13,
+			"ran": true,
+			"code": 0,
+			"seconds": 496,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 14,
+			"ran": true,
+			"code": 0,
+			"seconds": 431,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 15,
+			"ran": true,
+			"code": 0,
+			"seconds": 449,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 16,
+			"ran": true,
+			"code": 0,
+			"seconds": 576,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 17,
+			"ran": true,
+			"code": 0,
+			"seconds": 552,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 18,
+			"ran": true,
+			"code": 0,
+			"seconds": 513,
+			"timedOut": false,
+			"overBudget": false
+		}
+	],
+	"slowest": [
+		{
+			"id": "region/box/rgba16float/average",
+			"ms": 86734,
+			"cases": 8
+		},
+		{
+			"id": "source/rgba8unorm-srgb/rgba8unorm-srgb/same",
+			"ms": 74595,
+			"cases": 11
+		},
+		{
+			"id": "source/rgba32float/rgb9e5ufloat/same",
+			"ms": 67453,
+			"cases": 11
+		},
+		{
+			"id": "region/exact/rgba16float/max",
+			"ms": 59867,
+			"cases": 8
+		},
+		{
+			"id": "source/bgra8unorm-srgb/bgra8unorm-srgb/half",
+			"ms": 57936,
+			"cases": 11
+		},
+		{
+			"id": "region/box/rgba8unorm/max",
+			"ms": 57902,
+			"cases": 8
+		},
+		{
+			"id": "source/rgba16float/rgba8unorm-srgb/half",
+			"ms": 55762,
+			"cases": 11
+		},
+		{
+			"id": "source/depth32float/r32float/same",
+			"ms": 54063,
+			"cases": 11
+		},
+		{
+			"id": "source/rgba16float/rg11b10ufloat/half",
+			"ms": 50520,
+			"cases": 11
+		},
+		{
+			"id": "region/spd/rgba16float/average",
+			"ms": 43087,
+			"cases": 8
+		}
+	]
+}

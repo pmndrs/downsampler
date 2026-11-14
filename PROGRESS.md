@@ -179,6 +179,7 @@ Last updated: 2026-11-14 · Branch: `main` (the Mac's work merged; the Windows a
 | 2026-11-14 | `c00cda3` | RTX 3060 Laptop (nvidia ampere, driver 592.00), Chrome 148, D3D12 | core + examples (`--power=high`) | ✅ core 120/120, 21/21 example pages |
 | 2026-11-14 | `c00cda3` | Intel UHD (gen-12lp, driver 31.0.101.5333), Chrome 148, D3D12 | examples (`--power=low`) | ✅ 21/21 example pages |
 | 2026-11-14 | `bed39dd` | RTX 3060 Laptop (nvidia ampere, 592.00), Chrome 148, D3D12 | quick, `test/parallel.js` (shards 1–9, then 10–18 with `--part=2/2`) | ⚠️ 21,621 cases, 1850/1850 groups; failures: the 2 FSR luma-pyramid fixtures (expected) and 27 checks in `source/rgba8unorm-srgb/rgba16float/half` (sampled sRGB source, the RTX's filtered decode up to 6 f16 steps off, e.g. 0.9765625 = 1000/1024 for 0.97363; predates this round) |
+| 2026-11-14 | `4ac7f9f` | Intel UHD (gen-12lp, 31.0.101.5333), Chrome 148, D3D12 | quick: `test/parallel.js` (15 of 18 shards), then shards 1 (without `packed/buffer-path`), 5, 7 and `packed/buffer-path` alone | ✅ 21,621 cases, 1850/1850 groups; only the 2 FSR luma-pyramid fixtures fail (expected). Shard 1 with `packed/buffer-path` hangs the device: two devices writing rgb9e5ufloat ([intel-device-hung.md](results/windows/round2/intel-device-hung.md)) |
 
 ## Notes
 
