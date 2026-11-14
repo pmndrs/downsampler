@@ -8,6 +8,9 @@ The brief was [WINDOWS-HANDOFF.md](WINDOWS-HANDOFF.md). Everything here is on br
 `windows-testing` and changes `src/` under owner decisions (see [Library changes](#library-changes-that-came-out-of-this)).
 Until it merges, read that branch.
 
+**Round 2 (2026-11-14)** is [below](#round-2-2026-11-14): verification of the merged milestones, the defaults, halo batches
+and two D3D12-only issues (sRGB tables, an Intel device hang).
+
 ## Setup
 
 | | |
@@ -190,3 +193,82 @@ The native build and run commands are in [native/README.md](../native/README.md)
 | Probe scripts and outputs | `results/probes/*.mjs`, `results/windows/{sampler,kernel-ramp,f16-store-rounding}-*.json` |
 | Job logs and clock samples | `results/windows/logs/` |
 | Where we differ from SPD, nvpro and the community, and why | [DIVERGES.md](../DIVERGES.md) #1, #2, #17, #22 |
+
+## Round 2 (2026-11-14)
+
+The brief was [WINDOWS-HANDOFF-2.md](WINDOWS-HANDOFF-2.md): verify the Mac's merged work on D3D12, set the defaults by
+its rules, and do M3 here. Same machine, driver and Chrome as round 1 (Setup above). Work is on `windows-testing`
+(= `main` + this round); halo batches were built on `halo-batches` and merged after their verification.
+
+### Answers
+
+**Is the merged work correct on D3D12?** Yes, after two library fixes this round. Every run's only failures are
+known and explained:
+
+| Run | Cases | Groups | Failures |
+|---|---:|---:|---|
+| RTX full matrix (36 shards, in parts) | 36,220 | 3225 / 3225 | FSR luma-pyramid fixtures (AMD's own f16 stores, expected); `source/rgba8unorm-srgb/rgba16float/half` (below) |
+| RTX quick | 21,621 | 1850 / 1850 | the same two |
+| RTX compat quick | 21,036 | 1793 / 1793 | the same two; two test expectations that ignored compatibility mode (fixed) |
+| Intel quick | 21,621 | 1850 / 1850 | FSR fixtures only |
+| Examples, both GPUs | 21 pages | | none |
+
+**What broke, and the fixes:**
+
+- **sRGB kernels were 4× slower and 8–19× slower to compile on D3D12** (library, fixed `bed39dd`). The exact sRGB
+  tables were WGSL `const` arrays indexed at run time; Tint/DXC put them in per-invocation memory. A small sRGB
+  test group took 70–90 s, which timed out every full-matrix shard. They now come from a 2 KiB storage buffer at
+  binding 12 (`srgbTable( device )`): 1920×1080 0.90 → 0.24 ms, 4096² 5.2 → 1.3 ms, same bits.
+  [round2/srgb.md](../results/windows/round2/srgb.md)
+- **Golden WGSL failed on Windows checkouts** (`core.autocrlf` → CRLF; fixed with `.gitattributes`).
+- **Test harness:** the GPU lookup (PowerShell) timed out under six parallel shards and crashed nine of them;
+  two Chromes shared a profile; Chrome took over 30 s to start. Fixed: one lookup per run, a profile per run,
+  a 2-minute launch timeout. `test/parallel.js` gained `--part=i/n` and `--shard-list`; `test/run.js`
+  `--groups=` (exact case groups, for bisection); the suite logs when the device is lost.
+
+**Open correctness items (owner):**
+
+- **Sampled sRGB sources on NVIDIA.** An `rgba8unorm-srgb` source sampled into rgba16float: the RTX's filtered
+  decode is up to 6 f16 steps off the exact decode (0.9765625 = 1000/1024 for 0.97363), outside the oracle's
+  sampler tolerance. Intel and the M5 pass. Widen the tolerance for sampled sRGB sources, or load them.
+- **Intel UHD loses the device** (`DXGI_ERROR_DEVICE_HUNG`) when a second device writes rgb9e5ufloat after the
+  first did. Two case groups reproduce it every time; one device is fine; most likely the driver. Test-only
+  (`packed/buffer-path` opens a default-limits device). [round2/intel-device-hung.md](../results/windows/round2/intel-device-hung.md)
+
+**Defaults (handoff §2).** [round2/defaults.md](../results/windows/round2/defaults.md)
+
+| Rule | RTX | Intel | Result |
+|---|---|---|---|
+| Tile 16 everywhere if within 5 % | 16 costs 3–12 % (rgba8), up to 31 % | 4–14 %, up to 41 % | **32 stays** off Apple |
+| Tail off if it loses ≥ 5 % | 0.82 / 0.86 of `'exact'` | 0.99 / 0.99 | **Tail stays on** |
+| f16 `'nearest'` cost, act if Intel > ~10 % | 5 % (rgba16float) | 8.5 % | **Kept** |
+| `'box'` cost (report) | 1.45–2.15× of `'exact'` | 1.54–1.58× | M5 was 1.23–1.28× |
+
+**Halo batches (M3 build 1).** Built, **opt-in** (`halo: true`). Odd steps are carried inside a batch with nvpro's
+halo; the planner takes one only where it saves a dispatch, on first outputs up to 128². Results are the same
+'exact' rule (bit-identical with shader weights). Against the default chain: RTX 0.85–1.00× (8–15 % at 960×540,
+1129×635, 1477×831, 1920×1080), Intel neutral. Without the 128² cap Intel lost 24–52 % (16-texel tiles on
+large levels). The rule for a default is ≥ 5 % on both GPUs, so the M5 decides.
+[round2/halo.md](../results/windows/round2/halo.md)
+
+**sRGB vs render passes (M3 build 5).** Even after the table fix, render passes are 2.6–3.3× faster than our sRGB
+path on the RTX at every size (they write sRGB levels directly; we write a buffer and copy). three.js should
+keep render-pass mipmaps for sRGB textures.
+
+### Not done this round
+
+- M3 measurements on Windows (handoff §3: throughput, storage-usage, subgroups, f16) and builds 2–4 (cheaper
+  exact kernel, subgroup kernel, fp16), and the round-1 leftover `bench` / `tools` jobs.
+- The Intel full matrix (only quick runs; the full matrix needs ~2.5 h of shard time on the RTX already).
+- M5 runs: halo default, `'box'` tail per size.
+
+### Reproduce
+
+```sh
+node test/parallel.js --jobs=6 --shards=36 --part=1/3 --cap=10 --budget=30 -- --power=high   # then 2/3, 3/3
+node test/parallel.js --jobs=7 --shards=36 --shard-list=3,4,6 --cap=25 --budget=30 -- --power=high   # capped shards again
+node test/run.js --quick --power=low --keep-going --groups=@ids.txt     # exact case groups (ids: --list --verbose)
+node test/run.js --only=halo --power=high                               # halo batches against plain chains
+npm run bench -- --compare=render --skip-validation --strategies=render,tail,halo,haloAny --power=low
+node results/probes/srgb-compile-time.mjs --power=high                  # sRGB pipeline compile times
+```
