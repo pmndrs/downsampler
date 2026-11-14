@@ -368,7 +368,9 @@ export async function validateRegion( device, { quick, onProgress = () => {}, se
 			if ( plain.limits.maxStorageTexturesPerShaderStage !== 4 ) throw new Error( `region default limits: the device has ${ plain.limits.maxStorageTexturesPerShaderStage } storage textures, not WebGPU's default 4` );
 			for ( const [ mode, downsampler, options ] of [ [ 'tail', new Downsampler( plain ), {} ], [ 'exact', new Downsampler( plain, { tail: false } ), {} ], [ 'spd', new Downsampler( plain ), { oddSizes: 'spd' } ] ] ) {
 
-				if ( downsampler.levelsPerDispatch !== 4 || downsampler.bufferLevelsPerDispatch !== 6 ) throw new Error( `region default limits: ${ downsampler.levelsPerDispatch } storage and ${ downsampler.bufferLevelsPerDispatch } buffer levels per dispatch, not 4 and 6` );
+				// The buffer path's 6 levels take 256 invocations; a compatibility-mode device defaults to 128 (4 levels).
+				const bufferLevels = plain.limits.maxComputeInvocationsPerWorkgroup >= 256 ? 6 : 4;
+				if ( downsampler.levelsPerDispatch !== 4 || downsampler.bufferLevelsPerDispatch !== bufferLevels ) throw new Error( `region default limits: ${ downsampler.levelsPerDispatch } storage and ${ downsampler.bufferLevelsPerDispatch } buffer levels per dispatch, not 4 and ${ bufferLevels }` );
 				for ( const [ width, height ] of quick ? quickShapes : smallShapes ) {
 
 					const updates = rectsFor( width, height, width * 7 + height, 9 ).map( rect => ( { rect } ) );

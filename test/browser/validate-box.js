@@ -368,7 +368,9 @@ async function validateBoxOptions( device, { quick } ) {
 	const frame = await createDepthSource( device, { width: big[ 0 ], height: big[ 1 ] }, makeData( big[ 0 ], big[ 1 ], 1, 'r32float', 'random', 25, { unit: true } ) );
 	const hiZOptions = { source: { texture: frame.texture, resample: 'area' }, reduction: 'min' };
 	const batches = plain.prepare( pyramid, hiZOptions );
-	if ( levelsPerDispatch === 6 && batches.length !== Math.ceil( pyramid.mipLevelCount / 6 ) ) throw new Error( `resample: expected ${ Math.ceil( pyramid.mipLevelCount / 6 ) } dispatches, got ${ batches.length }` );
+	// Reduction dispatches; compatibility mode adds its copy dispatches (`copy`) between batches.
+	const reductions = batches.filter( batch => ! batch.copy ).length;
+	if ( levelsPerDispatch === 6 && reductions !== Math.ceil( pyramid.mipLevelCount / 6 ) ) throw new Error( `resample: expected ${ Math.ceil( pyramid.mipLevelCount / 6 ) } reduction dispatches, got ${ reductions }` );
 	const reference = await run( plain, pyramid, null, hiZOptions, 'encode', 0 );
 	check( reference[ 0 ], areaReference( splat( frame.floats ), big[ 0 ], big[ 1 ], 1, 'float32', 'min', big[ 2 ], big[ 3 ] ), 'float32', 'resample hi-z mip 0', 'min', 1 );
 	same( reference, await run( plain, pyramid, null, hiZOptions, 'pass', 0 ), 'resample encodePass' );
