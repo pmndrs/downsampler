@@ -14,6 +14,7 @@
 // the full matrix has since outgrown one 30 min budget there: run it in parts).
 // `--part=i/n` runs the i-th of n contiguous blocks of the `--shards` shards, so a suite that doesn't
 // fit one budget runs as n invocations that together cover every shard once (same --shards in each).
+// `--shard-list=i,j,…` runs exactly those shards instead.
 //
 // Writes to --out: shard-<i>.log, report-<i>.json, timing-<i>.json, and
 //   summary.md / summary.json   failures, timeouts, crashes, cases, wall time, slowest groups
@@ -50,7 +51,10 @@ gpuChoiceArgs( passed.find( arg => arg.startsWith( '--power=' ) )?.split( '=' )[
 
 const started = Date.now();
 const perPart = Math.ceil( total / parts );
-const shards = Array.from( { length: total }, ( _, i ) => ( { index: i + 1 } ) ).slice( ( part - 1 ) * perPart, part * perPart );
+// `--shard-list=3,4,6`: exactly those shards of `--shards` (re-running the ones a capped run didn't finish).
+const list = value( 'shard-list' )?.split( ',' ).map( Number );
+if ( list && list.some( index => ! Number.isInteger( index ) || index < 1 || index > total ) ) throw new Error( `test/parallel.js: --shard-list takes shard numbers from 1 to ${ total }` );
+const shards = Array.from( { length: total }, ( _, i ) => ( { index: i + 1 } ) ).filter( ( { index } ) => list ? list.includes( index ) : index > ( part - 1 ) * perPart && index <= part * perPart );
 console.log( `${ parts > 1 ? `part ${ part }/${ parts }: shards ${ shards[ 0 ].index }–${ shards[ shards.length - 1 ].index } of ` : '' }${ total } shards, ${ jobs } at a time, ${ capMs / 60000 } min cap each, ${ budgetMs / 60000 } min budget → ${ out }` );
 const running = new Set();
 let overBudget = false;
