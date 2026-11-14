@@ -1,15 +1,18 @@
 // GPU correctness suite. Every texel of every generated level is checked against
 // the CPU reference, computed from the GPU's own previous level so permitted
 // rounding differences do not accumulate along the chain.
-import { areaReference, boxReference, copyReference, formats, maxViolations, fromHalf, isIntegerDomain, isPackedQuantization, levelSize, pyramidTolerance, quantize, reducePyramid, reduceReference, sampledChannels, spdReference, storageWritable, toHalf, tolerance } from '/dist/index.js';
+import { areaReference, boxReference, bufferWritable, copyReference, formats, maxViolations, fromHalf, isIntegerDomain, isIntQuantization, isPackedQuantization, levelSize, pyramidTolerance, quantize, reducePyramid, reduceReference, sampledChannels, spdReference, storageWritable, toHalf, tolerance } from '/dist/index.js';
 import { Downsampler, Reducer, requiredLimits } from '/dist/webgpu/index.js';
 import * as three from '/dist/three/index.js';
 import { createDepthSource, createTexture, makeData, poison, readMip, readMips, toFloats, trackBuffers, upload } from './gpu.js';
 import { validateBox } from './validate-box.js';
+import { validateMipmap } from './validate-mipmap.js';
+import { validateInteger } from './validate-integer.js';
 import { validatePacked } from './validate-packed.js';
 import { validateScalar } from './validate-scalar.js';
 import { validatePayload } from './validate-payload.js';
 import { validateRegion } from './validate-region.js';
+import { validateSrgb } from './validate-srgb.js';
 import { validateWide } from './validate-wide.js';
 import { assignShards, digest, Selection } from '../ci/shard.js';
 
@@ -26,7 +29,7 @@ export const shapes = [
 // a family differ only in channel count or storage format string, so they run a
 // representative subset: unit and odd sizes, 1D tails, partial tiles, layers,
 // both view dimensions and a multi-batch shape (512×32 is multi-batch at every width).
-export const familyFormats = [ 'rgba8unorm', 'rgba8snorm', 'rgba16unorm', 'rgba16snorm', 'rgba16float', 'rgba32float' ];
+export const familyFormats = [ 'rgba8unorm', 'rgba8snorm', 'rgba16unorm', 'rgba16snorm', 'rgba16float', 'rgba32float', 'rgb10a2unorm' ];
 export const subsetShapes = [
 	[ 1, 1 ], [ 3, 7 ], [ 17, 9 ], [ 31, 33 ], [ 65, 129 ], [ 1, 128 ], [ 128, 8 ], [ 192, 108 ], [ 512, 32 ],
 	[ 17, 11, 3 ], [ 17, 9, 1, '2d-array' ]
@@ -84,7 +87,7 @@ export const variants = [
 ];
 
 /** Formats the 'box' variants run on: each quantization family's 4-channel format, the packed floats and r32float. */
-export const boxFormats = [ ...familyFormats, 'rgb9e5ufloat', 'rg11b10ufloat', 'r32float' ];
+export const boxFormats = [ ...familyFormats, 'rgb9e5ufloat', 'rg11b10ufloat', 'r32float', 'rgba8unorm-srgb' ];
 
 const mipSize = ( size, level ) => Math.max( 1, size >> level );
 
@@ -148,7 +151,8 @@ export function check( actual, expected, quantization, label, reduction = 'avera
 		// The largest channel may be off by its own filter allowance, and so cross an exponent: take its upper bound.
 		const t = i - i % 4;
 		const upper = c => expected.values[ t + c ] + expected.filterTolerance[ t + c ];
-		const texel = packed ? { channel: i % 4, texelMax: Math.max( upper( 0 ), upper( 1 ), upper( 2 ) ) } : undefined;
+		// The channel also sets rgb10a2unorm's step (2-bit alpha) and sRGB's (linear alpha).
+		const texel = packed || quantization === 'srgb8' ? { channel: i % 4, texelMax: Math.max( upper( 0 ), upper( 1 ), upper( 2 ) ) } : { channel: i % 4, texelMax: 0 };
 		const limit = exact ? 0 : tolerance( expected.values[ i ], quantization, expected.filterTolerance[ i ], reduction, texel ) + Math.abs( expected.values[ i ] ) * slack;
 		if ( ! Number.isFinite( actual[ i ] ) || error > limit ) {
 
@@ -193,6 +197,10 @@ export const compatibility = device => ! device.features.has( 'core-features-and
  * 'odd' runs only the 'spd' and tail variants of the main matrix (part of 'downsampler', for debugging),
  * 'box' the main matrix's 'box' variants and validate-box.js (M2.5; also part of 'downsampler').
  * 'region' runs only the partial updates (`rect`, `layers`; validate-region.js; part of 'downsampler').
+ * 'mipmap' runs only the `downsampler/mipmap` entry's chains against a Downsampler's (validate-mipmap.js; part of 'downsampler').
+ * 'srgb' runs the sRGB formats of the main matrix, sRGB separate sources and validate-srgb.js (M2.3.5; part of 'downsampler').
+ * 'integer' runs only the integer formats (validate-integer.js; part of 'downsampler'), and 'format:<name>'
+ * the main matrix of one format (for debugging and mutation checks).
  *
  * `shard` ({ index, total }, 1-based) runs one shard of the case groups (after `only`), split by
  * `durations` (group id → ms; test/ci/README.md). `list` runs nothing and returns the group ids
@@ -217,6 +225,15 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 	}
 
+	// Each group in its own validation error scope, so a GPU validation error names its group
+	// (the suite's own scope still catches errors from setup shared between groups).
+	select.enter = () => device.pushErrorScope( 'validation' );
+	select.leave = async id => {
+
+		const error = await device.popErrorScope();
+		return error ? new Error( `GPU validation error in ${ id }: ${ error.message }` ) : null;
+
+	};
 	// A group that throws outside check() (a direct assertion, a lost device) is recorded too.
 	if ( keepGoing ) select.onError = ( id, error ) => failures.push( { label: id, first: `${ id } threw: ${ error.message }`, thrown: true } );
 	const report = await suite( device, { onProgress, quick, only, select } );
@@ -237,7 +254,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 	const results = [];
 	const started = performance.now();
-	const cases = only === 'scalar' || only === 'reducer' || only === 'fixtures' || only === 'region' ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
+	const cases = only === 'scalar' || only === 'reducer' || only === 'fixtures' || only === 'region' || only === 'mipmap' || only?.startsWith( 'integer' ) ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
 	let scalarPrecision = null;
 	let runs = 0;
 	const skipped = [];
@@ -262,13 +279,20 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 		for ( const format of Object.keys( formats ) ) {
 
 			const { quantization, channels, filterable, feature, coreStorage } = formats[ format ];
-			const packed = isPackedQuantization( quantization );
+			const packed = isPackedQuantization( quantization ), srgb = quantization === 'srgb8';
+			if ( only === 'srgb' && ! srgb ) continue;
+			// Compatibility mode has no bgra8unorm-srgb textures at all.
+			if ( format === 'bgra8unorm-srgb' && compatibility( device ) ) { skipped.push( 'bgra8unorm-srgb (no such texture in compatibility mode)' ); continue; }
 			if ( only?.startsWith( 'packed' ) && ( ! packed || only !== 'packed' ) ) continue;
+			const int = isIntQuantization( quantization );
+			if ( only?.startsWith( 'integer' ) && ( ! int || only !== 'integer' ) ) continue;
+			// 'format:<name>': one format's main matrix alone (for debugging and mutation checks).
+			if ( only?.startsWith( 'format:' ) && format !== only.slice( 7 ) ) continue;
 			const compatNoStorage = coreStorage === true && compatibility( device );
 			const storagePath = storageWritable( format, device.features ) && ! compatNoStorage;
-			// Without storage, packed formats (and rg32float in compatibility mode) fall back to the
-			// buffer path, with output 'buffer'; the rest are skipped.
-			const fallback = packed || compatNoStorage;
+			// Without storage, packed and sRGB formats, rgb10a2unorm (tier1) and rg32float in compatibility mode
+			// fall back to the buffer path ('auto' takes it for them); the rest are skipped.
+			const fallback = packed || srgb || compatNoStorage || ( ( format === 'rgb10a2unorm' || int ) && bufferWritable( format ) );
 			if ( compatNoStorage ) {
 
 				skipped.push( `${ format } storage path (no storage in compatibility mode)` );
@@ -284,21 +308,25 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 			}
 
+			// Integer formats have their own matrix and exact oracle (validate-integer.js; --only=integer), which
+			// takes the buffer path where they have no storage. Missing paths are reported as skipped above.
+			if ( int ) continue;
+
 			// --quick (CI, SwiftShader) runs the 'spd' variants on the family formats and
 			// the tail on rgba8unorm and rgba16float (integer and float16 paths), with two
 			// patterns. SwiftShader takes 30 s or more to compile a 32×32-tile pipeline.
 			const odd = variant => variant.oddSizes !== undefined || variant.tail === true;
 			const quickOdd = variant => quick && odd( variant );
-			const quickFormats = variant => variant.tail ? [ 'rgba8unorm', 'rgba16float' ] : familyFormats;
+			const quickFormats = variant => variant.tail ? [ 'rgba8unorm', 'rgba16float' ] : [ ...familyFormats, 'rgba8unorm-srgb' ];
 			const formatVariants = variants.filter( variant => ( filterable || ! variant.filterableOnly ) && ( only !== 'odd' || odd( variant ) ) && ! ( quickOdd( variant ) && ! quickFormats( variant ).includes( format ) ) && ( ! variant.box || boxFormats.includes( format ) ) && ( only !== 'box' || variant.box ) );
-			const family = familyFormats.includes( format ) || packed;
+			const family = familyFormats.includes( format ) || packed || format === 'rgba8unorm-srgb';
 			const storageShapes = ! storagePath ? [] : family ? cases : subset;
 			// The buffer path runs every shape when it is a packed format's only path (rgb9e5ufloat;
 			// rg11b10ufloat without tier1), else the subset, for each family format plus a few
 			// others with a distinct word layout (bgra byte order, two 16-bit channels, 1–2 float words).
 			// --quick (CI, SwiftShader, where the packed encoders are slow): the buffer path runs
 			// the subset shapes at widths 1, 4 and 6, for the fallback formats only.
-			const bufferShapes = packed && ! storagePath && ! quick ? cases : fallback || ( bufferFormats.includes( format ) && ! quick ) ? subset : [];
+			const bufferShapes = ( packed || srgb ) && ! storagePath && ! quick ? cases : fallback || ( bufferFormats.includes( format ) && ! quick ) ? subset : [];
 			const formatBufferSets = quick ? bufferSets.filter( set => set.levels !== 5 ) : bufferSets;
 			const formatCases = storageShapes === cases || bufferShapes === cases ? cases : subset;
 			for ( const [ shapeIndex, shape ] of formatCases.entries() ) {
@@ -378,7 +406,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 							// formats are exact there too, against an oracle that sums in
 							// float32 in the kernel's order (their sums aren't always exact).
 							// A tail's odd steps get the tolerance too (toleratedLevels).
-							const firstOutputs = toleratedLevels( downsampler.prepare( texture, options ), width, height, packed );
+							const firstOutputs = toleratedLevels( downsampler.prepare( texture, options ), width, height, packed || srgb );
 							let previous = input.floats, w = width, h = height;
 
 							for ( let level = 1; level < texture.mipLevelCount; level ++ ) {
@@ -386,10 +414,10 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 								const key = `${ variant.name }:${ pattern }`;
 								const inTile = ! firstOutputs.has( level );
 								let expected = level === 1 ? firstLevels.get( key ) : undefined;
-								if ( expected === undefined ) expected = ( variant.oddSizes === 'box' ? boxReference : reduceReference )( previous, w, h, layers, quantization, reference, { ...( packed && inTile ? { pairing: 'float32' } : {} ), weights: sampledLevels.has( level ) ? 'sampler' : 'shader' } );
+								if ( expected === undefined ) expected = ( variant.oddSizes === 'box' ? boxReference : reduceReference )( previous, w, h, layers, quantization, reference, { ...( ( packed || srgb ) && inTile ? { pairing: 'float32' } : {} ), weights: sampledLevels.has( level ) ? 'sampler' : 'shader' } );
 								if ( level === 1 ) firstLevels.set( key, expected );
 								const actual = mips[ level - 1 ];
-								result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ label } mip ${ level }`, reference, channels, 0, ( isIntegerDomain( quantization ) || packed ) && inTile ) );
+								result.maxError = Math.max( result.maxError, check( actual, expected, quantization, `${ label } mip ${ level }`, reference, channels, 0, ( isIntegerDomain( quantization ) || packed || srgb ) && inTile ) );
 								previous = actual; w = expected.width; h = expected.height;
 
 							}
@@ -427,6 +455,24 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 			results.push( ...await validateRegion( device, { quick, onProgress, select } ) );
 
+		} else if ( only === 'mipmap' ) {
+
+			results.push( ...await select.run( 'downsampler/mipmap', () => validateMipmap( device, { quick } ) ) );
+
+		} else if ( only === 'srgb' ) {
+
+			// The main matrix's sRGB formats (above), sRGB separate sources and validate-srgb.js.
+			results.push( ...await validateSource( device, { quick, onProgress, select, srgbOnly: true } ) );
+			results.push( ...await validateSrgb( device, { quick, onProgress, select } ) );
+
+		} else if ( only?.startsWith( 'format:' ) ) {
+
+			// The main matrix of one format (above).
+
+		} else if ( only?.startsWith( 'integer' ) ) {
+
+			results.push( ...await validateInteger( device, { quick, onProgress, select, part: only } ) );
+
 		} else if ( only?.startsWith( 'packed' ) ) {
 
 			// 'packed-source' and 'packed-api' run one part (for debugging).
@@ -439,9 +485,12 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 				results.push( ...await validateSource( device, { quick, onProgress, select } ) );
 				results.push( ...await select.run( 'downsampler/options', () => validateOptions( device ) ) );
+				results.push( ...await select.run( 'downsampler/mipmap', () => validateMipmap( device, { quick } ) ) );
 				results.push( ...await validateRegion( device, { quick, onProgress, select } ) );
 				results.push( ...await validatePacked( device, { quick, onProgress, part: 'downsampler', select } ) );
 				results.push( ...await validateBox( device, { quick, onProgress, select } ) );
+				results.push( ...await validateSrgb( device, { quick, onProgress, select } ) );
+				results.push( ...await validateInteger( device, { quick, onProgress, select } ) );
 
 			}
 
@@ -516,7 +565,13 @@ export const sourceCases = [
 	// HDR into the GI formats, on the buffer path (rg11b10ufloat: storage when tier1 is available).
 	{ source: 'rgba16float', destination: 'rgb9e5ufloat', relation: 'half', reductions: [ 'average', 'max' ] },
 	{ source: 'rgba32float', destination: 'rgb9e5ufloat', relation: 'same', reductions: [ 'average' ] },
-	{ source: 'rgba16float', destination: 'rg11b10ufloat', relation: 'half', reductions: [ 'average', 'min' ] }
+	{ source: 'rgba16float', destination: 'rg11b10ufloat', relation: 'half', reductions: [ 'average', 'min' ] },
+	// sRGB (M2.3.5): decoded (and snapped to the exact table on loads), reduced in linear,
+	// encoded as stored; HDR clamps into it, and an sRGB source converts to linear float.
+	{ source: 'rgba8unorm-srgb', destination: 'rgba8unorm-srgb', relation: 'same', reductions: [ 'average', 'max' ] },
+	{ source: 'bgra8unorm-srgb', destination: 'bgra8unorm-srgb', relation: 'half', reductions: [ 'average', 'min' ] },
+	{ source: 'rgba16float', destination: 'rgba8unorm-srgb', relation: 'half', reductions: [ 'average', 'max' ] },
+	{ source: 'rgba8unorm-srgb', destination: 'rgba16float', relation: 'half', reductions: [ 'average' ] }
 ];
 
 // After the source batch, every batch is the in-place code the main matrix covers
@@ -545,13 +600,14 @@ export async function makeSource( device, format, width, height, layers, pattern
 /** Single-channel sources are splatted by the kernel; the oracle sees the same. */
 export function splat( floats ) {
 
-	const output = new Float32Array( floats.length );
+	// The input's array type: integer sources come as Float64Arrays (a Float32Array can't hold every u32).
+	const output = new floats.constructor( floats.length );
 	for ( let i = 0; i < floats.length; i += 4 ) output.fill( floats[ i ], i, i + 4 );
 	return output;
 
 }
 
-async function validateSource( device, { quick, onProgress, select, packedOnly = false } ) {
+async function validateSource( device, { quick, onProgress, select, packedOnly = false, srgbOnly = false } ) {
 
 	const results = [];
 	const shapes = quick ? sourceShapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : sourceShapes;
@@ -571,7 +627,9 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 	for ( const { source: sourceFormat, destination: format, relation, reductions } of sourceCases ) {
 
 		if ( packedOnly && ! isPackedQuantization( formats[ format ].quantization ) ) continue;
+		if ( srgbOnly && ! [ format, sourceFormat ].some( f => f.endsWith( '-srgb' ) ) ) continue;
 		if ( formats[ format ].coreStorage && compatibility( device ) ) continue;
+		if ( [ format, sourceFormat ].includes( 'bgra8unorm-srgb' ) && compatibility( device ) ) continue;
 
 		const { quantization, channels } = formats[ format ];
 
@@ -760,7 +818,8 @@ async function validateOptions( device ) {
 	for ( const seed of [ 7, 8 ] ) {
 
 		const depth = await createDepthSource( device, { width: 64, height: 64 }, makeData( 64, 64, 1, 'r32float', 'random', seed, { unit: true } ) );
-		downsampler.generate( destination, { source: { texture: depth.texture }, reduction: 'max' } );
+		// A bare texture is a source at its level 0.
+		downsampler.generate( destination, { source: seed === 7 ? depth.texture : { texture: depth.texture }, reduction: 'max' } );
 		check( await readMip( device, destination, 0 ), reduceReference( splat( depth.floats ), 64, 64, 1, 'float32', 'max' ), 'float32', `replaced source ${ seed }`, 'max', 1 );
 		depth.texture.destroy();
 
@@ -1210,7 +1269,7 @@ async function validateReducer( device, { quick, onProgress, select } ) {
 							const tool = tools.get( edges );
 							device.queue.writeBuffer( tool.input, 0, data );
 							device.queue.writeBuffer( tool.atlas, 0, new Float32Array( tool.layout.texels * 4 ).fill( poisonValue ) );
-							reducer.encode( encoder, { width, height, layers, bindGroup: tool.bindGroup } );
+							reducer.encode( encoder, { width, height, layerCount: layers, bindGroup: tool.bindGroup } );
 							device.queue.submit( [ encoder.finish() ] );
 							const levels = atlasLevels( await readBuffer( device, tool.atlas ), tool.layout, layers );
 
@@ -1567,7 +1626,7 @@ async function validateReducerOptions( device ) {
 		device.queue.writeBuffer( tool.input, 0, data );
 		device.queue.writeBuffer( tool.atlas, 0, new Float32Array( tool.layout.texels * 4 ).fill( poisonValue ) );
 		const encoder = device.createCommandEncoder();
-		const dispatch = { width, height, layers, bindGroup: tool.bindGroup };
+		const dispatch = { width, height, layerCount: layers, bindGroup: tool.bindGroup };
 		if ( mode === 'encode' || mode === 'size hook' ) target.encode( encoder, dispatch );
 		else {
 
@@ -1596,7 +1655,7 @@ async function validateReducerOptions( device ) {
 	}
 
 	for ( const [ mode, values ] of readbacks.slice( 1 ) ) if ( values.some( ( value, i ) => ! Object.is( value, readbacks[ 0 ][ 1 ][ i ] ) ) ) throw new Error( `reducer ${ mode } differs from encode()` );
-	if ( reducer.bindGroup( { width, height, layers } ) !== reducer.bindGroup( { width, height, layers } ) ) throw new Error( 'reducer: bind groups are not cached' );
+	if ( reducer.bindGroup( { width, height, layerCount: layers } ) !== reducer.bindGroup( { width, height, layerCount: layers } ) ) throw new Error( 'reducer: bind groups are not cached' );
 	results.push( { option: 'reducer encode / encodePass / self-dispatch / size hook' } );
 
 	// One Reducer at two sizes in one submit: each dispatch keeps its own size.
@@ -1614,7 +1673,7 @@ async function validateReducerOptions( device ) {
 		} );
 		const encoder = device.createCommandEncoder();
 		const pass = encoder.beginComputePass();
-		for ( const { tool, w, h } of tools ) reducer.encodePass( pass, { width: w, height: h, layers: 1, bindGroup: tool.bindGroup } );
+		for ( const { tool, w, h } of tools ) reducer.encodePass( pass, { width: w, height: h, layerCount: 1, bindGroup: tool.bindGroup } );
 		pass.end();
 		device.queue.submit( [ encoder.finish() ] );
 
@@ -1642,8 +1701,12 @@ async function validateReducerOptions( device ) {
 	expectThrow( () => textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { source, outputs: mipOutputs.slice( 1 ) } ), 'one output per emitted level', 'output count' );
 	expectThrow( () => textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { outputs: mipOutputs } ), 'pass `source`', 'missing source' );
 	expectThrow( () => new Reducer( device, { reduction: 'average', levels: [ 1, 2 ], format: 'rgba16float' } ).encode( device.createCommandEncoder(), { source, outputs: mipOutputs } ), 'this Reducer writes rgba16float', 'output format' );
-	expectThrow( () => reducer.encode( device.createCommandEncoder(), { width, height, layers } ), 'group-1 bindGroup', 'missing tool bind group' );
-	expectThrow( () => reducer.encode( device.createCommandEncoder(), { layers } ), 'width and height', 'missing size' );
+	expectThrow( () => reducer.encode( device.createCommandEncoder(), { width, height, layerCount: layers } ), 'group-1 bindGroup', 'missing tool bind group' );
+	expectThrow( () => reducer.encode( device.createCommandEncoder(), { layerCount: layers } ), 'width and height', 'missing size' );
+	// One source shape (SPEC §5 Sources): the shared checks, and the renamed layer count.
+	expectThrow( () => textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { source, outputs: mipOutputs, layers: 1 } ), '`layerCount`', 'reducer layers → layerCount' );
+	expectThrow( () => textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { source: { texture: source, mipLevel: 9 }, outputs: mipOutputs } ), 'mipLevel 9 is outside', 'reducer source mipLevel' );
+	expectThrow( () => textureReducer( 'clamp' ).encode( device.createCommandEncoder(), { source: { texture: null }, outputs: mipOutputs } ), 'must be a GPUTexture', 'reducer source shape' );
 	expectThrow( () => new Reducer( device, { levels: [ 3, 2 ], format: 'rgba32float' } ), 'strictly increasing', 'unsorted levels' );
 	expectThrow( () => new Reducer( device, { levels: [ 1 ], format: 'rgba32float', edges: 'exact' } ), 'Downsampler', 'exact edges' );
 	expectThrow( () => new Reducer( device, { levels: [ 1 ], format: 'rgba32float', reduction: [ 'weighted', 'sum', 'sum', 'sum' ] } ), 'need a \'weight\'', 'weighted without weight' );

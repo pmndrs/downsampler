@@ -1,10 +1,13 @@
-import { bufferWritable, formats, isSupportedFormat, type FormatInfo, type SupportedFormat } from '../core/formats.js';
-import { outputBufferLayout, planBatches, tailTile, type Batch, type BatchKernel, type OddSizePolicy } from '../core/plan.js';
+import { bufferWritable, formats, isIntFormat, isSupportedFormat, sampleKind, type FormatInfo, type SupportedFormat } from '../core/formats.js';
+import { outputBufferLayout, planBatches, type Batch, type BatchKernel, type OddSizePolicy } from '../core/plan.js';
 import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
 import { layersProblem, planRegions, rectProblem, type BatchRegion, type Rect } from '../core/region.js';
 import { isCompatibilityTexture } from './compat.js';
 import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, regionBinding, regionBytes, type F16Rounding, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
 import { requiredLimits } from './limits.js';
+import { asTextureLevel, bindingViewDimension, levelSizeOf, sourceShapeReason, sourceTextureReason, sourceView, type TextureLevel } from './source.js';
+import { retireBuffers } from './tool.js';
+import { kernelDefaults } from '../mipmap.js';
 
 /** Options of `new Downsampler( device, options )`. Every option is validated by the constructor. See docs/guide.md. */
 export interface DownsamplerOptions {
@@ -14,7 +17,11 @@ export interface DownsamplerOptions {
 	 * created with a raised limit — see {@link requiredLimits}); on
 	 * the buffer path 6 at any storage texture limit. 5 and 6 levels also need
 	 * 256 invocations per workgroup (compatibility mode defaults to 128). Above
-	 * the storage limit only with output 'buffer'.
+	 * the storage limit only with output 'buffer'. Given, it sets both paths, so
+	 * below 6 storage textures `{ levelsPerDispatch: other.levelsPerDispatch }`
+	 * plans sRGB and the other buffer-path formats unlike `other` (whose
+	 * {@link Downsampler.bufferLevelsPerDispatch} is 6), and their chains differ
+	 * in the last bit where one stores a level the other keeps in the tile.
 	 */
 	levelsPerDispatch?: number;
 	/**
@@ -77,22 +84,29 @@ export interface DownsamplerOptions {
 	 * an M5 Pro (results/render/m5-pro-render-tiles-*.json).
 	 */
 	exactTile?: number;
+	/**
+	 * Largest source ÷ destination size ratio per axis that `source.resample: 'area'`
+	 * accepts. Default {@link maxResampleRatio} (8: at most 9 × 9 taps per texel of
+	 * the first level). Any number ≥ 1; the taps grow with its square, and only the
+	 * validation reads it (the kernel loops over each texel's span at run time).
+	 */
+	maxResampleRatio?: number;
 }
 
-/** A separate source for the first destination level (`EncodeOptions.source`), e.g. a depth buffer for Hi-Z. */
-export interface SourceOptions {
-	/**
-	 * Texture to read the first destination level from: any float-sampleable 2D
-	 * format, including depth (read through its depth aspect). Needs
-	 * TEXTURE_BINDING usage and the destination's array layer count.
-	 */
-	texture: GPUTexture;
-	/** Level to read. Default 0. */
-	mipLevel?: number;
+/**
+ * A separate source for the first destination level (`EncodeOptions.source`),
+ * e.g. a depth buffer for Hi-Z: a {@link TextureLevel} (any float-sampleable 2D
+ * format, including depth, read through its depth aspect; for an integer
+ * destination, an integer format of the same signedness, values clamped to the
+ * destination's range; with TEXTURE_BINDING usage and the destination's array
+ * layer count) and how to resample it.
+ */
+export interface SourceOptions extends TextureLevel {
 	/**
 	 * 'area': the destination's first level may be any size (e.g. a power-of-two
-	 * Hi-Z, 1024×512 or 2048×1024 from 1920×1080), up to {@link maxResampleRatio}
-	 * times smaller per axis. Destination texel x covers [x·S/n, (x+1)·S/n) of the
+	 * Hi-Z, 1024×512 or 2048×1024 from 1920×1080), up to `maxResampleRatio`
+	 * ({@link DownsamplerOptions.maxResampleRatio}, default 8) times smaller per axis.
+	 * Destination texel x covers [x·S/n, (x+1)·S/n) of the
 	 * source (S source texels, n destination texels per axis): 'average' weights
 	 * every source texel by its overlap, and folds combine every texel it overlaps,
 	 * so min/max stay conservative at any ratio, up or down. Later levels follow
@@ -102,8 +116,17 @@ export interface SourceOptions {
 	resample?: 'area';
 }
 
-/** Largest source ÷ destination ratio per axis with `resample: 'area'` (at most 9 taps per axis). */
+/** Default of {@link DownsamplerOptions.maxResampleRatio}: the largest source ÷ destination ratio per axis with `resample: 'area'` (at most 9 taps per axis). */
 export const maxResampleRatio = 8;
+
+/** A separate source with its defaults filled in. */
+interface ResolvedSource {
+	texture: GPUTexture;
+	mipLevel: number;
+	resample: 'area' | undefined;
+}
+
+const resolveSource = ( source: GPUTexture | SourceOptions ): ResolvedSource => ( { ...asTextureLevel( source ), resample: 'texture' in source ? source.resample : undefined } );
 
 /** Options of one chain: `encode`, `encodePass`, `generate` and `prepare`. Plans are cached per texture and option set. */
 export interface EncodeOptions {
@@ -120,12 +143,13 @@ export interface EncodeOptions {
 	mipLevelCount?: number;
 	/**
 	 * A separate source, e.g. a depth buffer for a Hi-Z pyramid (depth formats
-	 * cannot be storage textures). Destination level `baseMipLevel` must be the
-	 * same size as the source level (a converting copy) or half of it (one
-	 * reduction step); every destination level in range is written.
+	 * cannot be storage textures): a texture (its level 0), or `{ texture, mipLevel,
+	 * resample }`. Destination level `baseMipLevel` must be the same size as the
+	 * source level (a converting copy) or half of it (one reduction step), or any
+	 * size with `resample: 'area'`; every destination level in range is written.
 	 * Single-channel sources are splatted, so 'minmax' of depth gives (d, d).
 	 */
-	source?: SourceOptions;
+	source?: GPUTexture | SourceOptions;
 	/**
 	 * 'exact' (default): odd, non-unit sizes end a batch and the next level is
 	 * re-sampled with normalized coordinates, matching render-pass/WebGL mipmaps.
@@ -152,6 +176,9 @@ export interface EncodeOptions {
 	 * `{ wgsl }` defines `fn reduce(a: vec4f, b: vec4f) -> vec4f`, which must be
 	 * associative, commutative and idempotent. Sums, per-channel ops and custom
 	 * sums have no 'exact' meaning and are rejected: use a `Reducer`.
+	 * Integer formats (SPEC.md §6.1): 'average' is the exact mean rounded to nearest,
+	 * ties to even; a custom fold takes and returns `vec4u` (uint formats) or `vec4i`
+	 * (sint formats), e.g. a bitwise or for occupancy pyramids.
 	 */
 	reduction?: Reduction;
 	/**
@@ -168,10 +195,23 @@ export interface EncodeOptions {
 	 * recompute when the old chain was valid and nothing changed outside the rect;
 	 * every other texel is untouched. Works with every odd-size policy, reduction,
 	 * output path, the tail kernel, compatibility mode and separate sources.
+	 * An empty rect (width or height 0) records nothing, as WebGPU's zero-size copies
+	 * do; it must still lie inside the level (x ≤ width, y ≤ height).
 	 * Each distinct rect and layer range costs a small uniform buffer and bind groups
-	 * (the 16 most recent are cached per texture). See SPEC.md §5.
+	 * (the 16 most recent are cached per texture; older ones are destroyed once the
+	 * queue has finished the work submitted so far). See SPEC.md §5.
 	 */
 	rect?: Rect;
+	/**
+	 * Buffer output path (sRGB, rgb9e5ufloat, …; SPEC.md §6.1): write through this buffer
+	 * instead of one the Downsampler allocates and keeps per texture and option set. Share
+	 * one across textures to bound memory (each chain's copies are recorded before the
+	 * next dispatch writes it, and commands run in order; don't interleave batches of
+	 * different chains when dispatching `prepare()` yourself). Needs STORAGE and COPY_SRC
+	 * usage and at least {@link Downsampler.scratchSize} bytes. Never destroyed by the
+	 * Downsampler. Ignored on the storage path.
+	 */
+	scratch?: GPUBuffer;
 }
 
 /** A `copyBufferToTexture` of one level, after a buffer-path batch. */
@@ -181,14 +221,14 @@ export interface BufferCopy {
 	offset: number;
 	bytesPerRow: number;
 	rowsPerImage: number;
-	/** Texture origin of the copy: texel x, y and the first layer (0 for whole levels). */
+	/** Texture origin of the copy in texels (0, 0 for whole levels). */
 	x: number;
 	y: number;
-	layer: number;
-	/** Copy extent: texels and layers. */
+	/** Copy extent in texels. */
 	width: number;
 	height: number;
-	layers: number;
+	/** Array layers copied, `[ first, count ]` (every layer for whole levels). */
+	layers: readonly [ number, number ];
 }
 
 /**
@@ -223,6 +263,8 @@ export interface PreparedBatch extends Batch {
 
 interface CachedPlan {
 	source: GPUTexture | undefined;
+	/** The caller's scratch buffer the plan writes (EncodeOptions.scratch), if any. */
+	scratch: GPUBuffer | undefined;
 	batches: PreparedBatch[];
 	/** Buffer path: the scratch buffer and layout uniforms, destroyed on release. */
 	buffers: GPUBuffer[];
@@ -254,12 +296,13 @@ const regionPlanLimit = 16;
 const slotBytes = 256;
 
 interface PlanParameters {
-	source: SourceOptions | undefined;
+	source: ResolvedSource | undefined;
 	baseMipLevel: number;
 	mipLevelCount: number;
 	oddSizes: OddSizePolicy;
 	reduction: Reduction;
 	sourceMipLevel: number;
+	scratch: GPUBuffer | undefined;
 }
 
 /**
@@ -271,7 +314,7 @@ interface PlanParameters {
  * ```ts
  * const downsampler = new Downsampler( device );
  * downsampler.encode( encoder, texture );
- * downsampler.encode( encoder, hiZ, { source: { texture: depth }, reduction: 'minmax' } );
+ * downsampler.encode( encoder, hiZ, { source: depth, reduction: 'minmax' } );
  * ```
  *
  * Dependent batches are separated by dispatch boundaries. There is deliberately
@@ -298,6 +341,10 @@ export class Downsampler {
 	readonly f16Rounding: F16Rounding;
 	/** Smallest first-output tile of 'exact' batches (resolved `exactTile` option: 8, 16 or 32). */
 	readonly exactTile: number;
+	/** Largest source ÷ destination ratio per axis with `resample: 'area'` (resolved `maxResampleRatio` option, default 8). */
+	readonly maxResampleRatio: number;
+	/** Largest tail tile: 32, or 8 below 256 invocations per workgroup (tail tiles of 16 and 32 take 16 × 16 invocations). */
+	private readonly tailMaxTile: number;
 	private readonly scratch = new WeakMap<GPUTexture, Map<number, GPUTexture>>();
 	private readonly pipelines = new Map<string, GPUComputePipeline>();
 	private readonly layouts = new Map<string, GPUBindGroupLayout>();
@@ -323,9 +370,12 @@ export class Downsampler {
 
 		const output = options.output ?? 'auto';
 		if ( output !== 'auto' && output !== 'storage' && output !== 'buffer' ) throw new Error( 'downsampler: output must be "auto", "storage" or "buffer".' );
-		// 5 and 6 levels take 16 × 16 invocations; compatibility mode defaults to 128.
-		const invocations = device.limits.maxComputeInvocationsPerWorkgroup >= 256 ? 6 : 4;
-		const limit = output === 'buffer' ? invocations : Math.min( invocations, device.limits.maxStorageTexturesPerShaderStage );
+		// The device's defaults (`kernelDefaults`, shared with `downsampler/mipmap`). 5 and 6 levels
+		// take 16 × 16 invocations; compatibility mode defaults to 128. Software adapters
+		// (SwiftShader) keep 8×8 'exact' tiles: they take 30 s or more to compile a 32×32-tile pipeline.
+		const defaults = kernelDefaults( device.limits, ( device as GPUDevice & { adapterInfo?: GPUAdapterInfo } ).adapterInfo );
+		const invocations = defaults.bufferLevelsPerDispatch;
+		const limit = output === 'buffer' ? invocations : defaults.levelsPerDispatch;
 		const levels = options.levelsPerDispatch ?? limit;
 		if ( ! Number.isInteger( levels ) || levels < 1 || levels > limit ) throw new Error( `downsampler: levelsPerDispatch must be an integer from 1 to ${ limit } on this device${ output === 'buffer' || limit === invocations ? '' : ` (up to ${ invocations } with output 'buffer')` }.` );
 		this.device = device;
@@ -337,16 +387,17 @@ export class Downsampler {
 		const compatibility = options.compatibility ?? 'auto';
 		if ( compatibility !== 'auto' && typeof compatibility !== 'boolean' ) throw new Error( 'downsampler: compatibility must be true, false or "auto".' );
 		this.compatibility = compatibility;
-		this.tail = options.tail ?? true;
+		this.tail = options.tail ?? defaults.tail;
 		const f16Rounding = options.f16Rounding ?? 'nearest';
 		if ( f16Rounding !== 'nearest' && f16Rounding !== 'device' ) throw new Error( 'downsampler: f16Rounding must be "nearest" or "device".' );
 		this.f16Rounding = f16Rounding;
-		// Software adapters (SwiftShader) keep 8: they take 30 s or more to compile a 32×32-tile pipeline.
-		const info = ( device as GPUDevice & { adapterInfo?: GPUAdapterInfo } ).adapterInfo;
-		const software = info?.isFallbackAdapter === true;
-		const exactTile = options.exactTile ?? ( invocations === 6 && ! software ? ( info?.vendor === 'apple' ? 16 : 32 ) : 8 );
+		const exactTile = options.exactTile ?? defaults.exactTile;
 		if ( exactTile !== 8 && ( exactTile !== 16 && exactTile !== 32 || invocations < 6 ) ) throw new Error( 'downsampler: exactTile must be 8, or 16 or 32 on devices with 256 invocations per workgroup.' );
 		this.exactTile = exactTile;
+		const ratio = options.maxResampleRatio ?? maxResampleRatio;
+		if ( typeof ratio !== 'number' || ! Number.isFinite( ratio ) || ratio < 1 ) throw new Error( 'downsampler: maxResampleRatio must be a finite number ≥ 1.' );
+		this.maxResampleRatio = ratio;
+		this.tailMaxTile = defaults.tailMaxTile;
 		this.sampler = device.createSampler( { label: 'downsampler', minFilter: 'linear', magFilter: 'linear' } );
 
 	}
@@ -414,23 +465,29 @@ export class Downsampler {
 
 	}
 
-	/** Why `source` cannot feed `destination` with these options, or null if it can. */
-	sourceUnsupportedReason( destination: GPUTexture, source: SourceOptions, baseMipLevel = 0 ): string | null {
+	/**
+	 * Why `source` (a texture, or `{ texture, mipLevel, resample }`) cannot feed
+	 * `destination` from level `baseMipLevel`, or null if it can.
+	 */
+	sourceUnsupportedReason( destination: GPUTexture, source: GPUTexture | SourceOptions, baseMipLevel = 0 ): string | null {
 
-		const { texture } = source, mipLevel = source.mipLevel ?? 0;
+		const shape = sourceShapeReason( source );
+		if ( shape !== null ) return shape;
+		const resolved = resolveSource( source );
+		const { texture, resample } = resolved;
 		if ( texture === destination ) return 'source is the destination: use baseMipLevel to reduce in place';
-		if ( texture.dimension !== '2d' ) return `source dimension ${ texture.dimension } is not supported`;
-		if ( texture.sampleCount !== 1 ) return 'multisampled sources are not supported (resolve first)';
-		if ( ( texture.usage & GPUTextureUsage.TEXTURE_BINDING ) === 0 ) return 'source needs TEXTURE_BINDING usage';
-		if ( source.resample !== undefined && source.resample !== 'area' ) return `source resample ${ JSON.stringify( source.resample ) } is unknown (only 'area')`;
-		if ( /int$/.test( texture.format ) || texture.format === 'stencil8' ) return `source format ${ texture.format } is not float-sampleable`;
-		if ( ! Number.isInteger( mipLevel ) || mipLevel < 0 || mipLevel >= texture.mipLevelCount ) return 'source mipLevel is outside the source texture';
+		if ( resample !== undefined && resample !== 'area' ) return `source resample ${ JSON.stringify( resample ) } is unknown (only 'area')`;
+		// Float destinations read float-sampleable sources; integer ones an integer source of the same signedness.
+		const kind = isSupportedFormat( destination.format ) ? sampleKind( destination.format ) : 'float';
+		const reason = sourceTextureReason( resolved, 'source', kind === 'float' ? {} : { kind, mismatch: format => `destination ${ destination.format } is an integer format, so its source must be a ${ kind } integer format too, not ${ format }` } );
+		if ( reason !== null ) return reason;
 		if ( texture.depthOrArrayLayers !== destination.depthOrArrayLayers ) return `source has ${ texture.depthOrArrayLayers } layers, destination ${ destination.depthOrArrayLayers }`;
-		const sw = mipSize( texture.width, mipLevel ), sh = mipSize( texture.height, mipLevel );
+		const [ sw, sh ] = levelSizeOf( resolved );
 		const dw = mipSize( destination.width, baseMipLevel ), dh = mipSize( destination.height, baseMipLevel );
-		if ( source.resample === 'area' ) {
+		if ( resample === 'area' ) {
 
-			if ( sw > maxResampleRatio * dw || sh > maxResampleRatio * dh ) return `destination level ${ baseMipLevel } (${ dw }×${ dh }) is more than ${ maxResampleRatio }× smaller than the source level (${ sw }×${ sh }) along an axis; reduce into a larger level, or start from a smaller source level`;
+			const ratio = this.maxResampleRatio;
+			if ( sw > ratio * dw || sh > ratio * dh ) return `destination level ${ baseMipLevel } (${ dw }×${ dh }) is more than ${ ratio }× smaller than the source level (${ sw }×${ sh }) along an axis; reduce into a larger level, start from a smaller source level, or raise maxResampleRatio`;
 			return null;
 
 		}
@@ -438,6 +495,23 @@ export class Downsampler {
 		const same = dw === sw && dh === sh, half = dw === Math.max( 1, sw >> 1 ) && dh === Math.max( 1, sh >> 1 );
 		if ( ! same && ! half ) return `destination level ${ baseMipLevel } (${ dw }×${ dh }) must be the source level's size (${ sw }×${ sh }) or half of it; for another size (e.g. a power-of-two Hi-Z) pass source.resample 'area'`;
 		return null;
+
+	}
+
+	/**
+	 * Bytes an {@link EncodeOptions.scratch} buffer needs for `texture` with these options
+	 * (`baseMipLevel`, `mipLevelCount`, `source`): every written level and layer in the
+	 * buffer path's layout, which holds any batch of the chain (about a third of the base
+	 * level in place, 256-byte rows). 0 when `texture` takes the storage path.
+	 */
+	scratchSize( texture: GPUTexture, options: EncodeOptions = {} ): number {
+
+		if ( this.outputPath( texture ) !== 'buffer' ) return 0;
+		const baseMipLevel = options.baseMipLevel ?? 0;
+		const end = options.mipLevelCount === undefined ? texture.mipLevelCount : baseMipLevel + options.mipLevelCount;
+		const first = options.source === undefined ? baseMipLevel + 1 : baseMipLevel;
+		const levels = Array.from( { length: Math.max( 0, end - first ) }, ( _, i ) => [ mipSize( texture.width, first + i ), mipSize( texture.height, first + i ) ] as const );
+		return levels.length === 0 ? 0 : outputBufferLayout( levels, texture.depthOrArrayLayers, formats[ texture.format as SupportedFormat ].bytesPerTexel ).size;
 
 	}
 
@@ -454,7 +528,7 @@ export class Downsampler {
 			// Buffer path: each level into its texture, before the next batch reads it.
 			for ( const copy of batch.copies ?? [] ) {
 
-				encoder.copyBufferToTexture( { buffer: batch.buffer!, offset: copy.offset, bytesPerRow: copy.bytesPerRow, rowsPerImage: copy.rowsPerImage }, { texture, mipLevel: copy.mipLevel, origin: { x: copy.x, y: copy.y, z: copy.layer } }, [ copy.width, copy.height, copy.layers ] );
+				encoder.copyBufferToTexture( { buffer: batch.buffer!, offset: copy.offset, bytesPerRow: copy.bytesPerRow, rowsPerImage: copy.rowsPerImage }, { texture, mipLevel: copy.mipLevel, origin: { x: copy.x, y: copy.y, z: copy.layers[ 0 ] } }, [ copy.width, copy.height, copy.layers[ 1 ] ] );
 
 			}
 
@@ -502,30 +576,34 @@ export class Downsampler {
 	 * separate source only the most recent source texture's plan is kept per
 	 * option set, so recreating a depth buffer on resize does not grow the cache.
 	 * Partial updates (`rect`, `layers`) keep the 16 most recent regions per
-	 * texture; batches that write nothing are left out.
+	 * texture; batches that write nothing are left out, so an empty rect gives none.
+	 * Plans dropped from a cache (an evicted region, a replaced source texture) have
+	 * their buffers destroyed once the queue has finished the work submitted so
+	 * far: submit what you record before awaiting anything.
 	 */
 	prepare( texture: GPUTexture, options: EncodeOptions = {} ): readonly PreparedBatch[] {
 
 		const reason = this.unsupportedReason( texture );
 		if ( reason !== null ) throw new Error( `downsampler: ${ reason }.` );
-		const source = options.source;
 		const baseMipLevel = options.baseMipLevel ?? 0;
 		const mipLevelCount = options.mipLevelCount ?? texture.mipLevelCount - baseMipLevel;
 		if ( baseMipLevel < 0 || mipLevelCount < 1 || baseMipLevel + mipLevelCount > texture.mipLevelCount ) throw new Error( 'downsampler: mip range is outside the texture.' );
-		if ( source !== undefined ) {
+		if ( options.source !== undefined ) {
 
-			const sourceReason = this.sourceUnsupportedReason( texture, source, baseMipLevel );
+			const sourceReason = this.sourceUnsupportedReason( texture, options.source, baseMipLevel );
 			if ( sourceReason !== null ) throw new Error( `downsampler: ${ sourceReason }.` );
 
 		}
 
+		const source = options.source === undefined ? undefined : resolveSource( options.source );
 		const oddSizes = options.oddSizes ?? 'exact';
 		if ( oddSizes !== 'exact' && oddSizes !== 'spd' && oddSizes !== 'box' ) throw new Error( `downsampler: odd size policy ${ JSON.stringify( oddSizes ) } is not implemented ('exact', 'box' or 'spd').` );
 		const reduction = options.reduction ?? 'average';
 		if ( needsTileEdges( reduction ) ) throw new Error( 'downsampler: sums, per-channel reductions and custom sums have no \'exact\' mip-chain meaning; use a Reducer (edges \'zero-weight\' or \'clamp\').' );
+		if ( oddSizes === 'spd' && isIntFormat( texture.format as SupportedFormat ) ) throw new Error( `downsampler: oddSizes 'spd' isn't available for integer formats (${ texture.format }): its batches carry unrounded float sums between levels, which can't hold 32-bit integers exactly. Use oddSizes 'exact' (the default) or 'box', which reduce integers exactly.` );
 		if ( oddSizes === 'spd' && reduction !== 'average' ) throw new Error( 'downsampler: oddSizes \'spd\' is for \'average\' only. It drops the last odd row or column, so min/max/minmax and custom folds would not be a conservative Hi-Z; use oddSizes \'exact\' (the default), or a Reducer with edges \'zero-weight\' (⌈n/2⌉ sizes, every texel counted).' );
 		const sourceMipLevel = source?.mipLevel ?? 0;
-		const parameters: PlanParameters = { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel };
+		const parameters: PlanParameters = { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel, scratch: options.scratch };
 		const key = `${ baseMipLevel }:${ mipLevelCount }:${ oddSizes }:${ reductionKey( reduction ) }:${ source === undefined ? 'self' : `source:${ sourceMipLevel }${ source.resample === 'area' ? ':area' : '' }` }`;
 
 		if ( options.rect === undefined && options.layers === undefined ) {
@@ -533,7 +611,9 @@ export class Downsampler {
 			let cache = this.plans.get( texture );
 			if ( cache === undefined ) this.plans.set( texture, cache = new Map() );
 			const cached = cache.get( key );
-			if ( cached !== undefined && cached.source === source?.texture ) return cached.batches;
+			if ( cached !== undefined && cached.source === source?.texture && cached.scratch === options.scratch ) return cached.batches;
+			// A new source texture (e.g. a depth buffer recreated on resize) or scratch buffer replaces the plan.
+			if ( cached !== undefined ) retireBuffers( this.device, cached.buffers );
 			const plan = this.build( texture, parameters, null );
 			cache.set( key, plan );
 			return plan.batches;
@@ -545,52 +625,54 @@ export class Downsampler {
 		const layersReason = options.layers === undefined ? null : layersProblem( options.layers, layerCount );
 		if ( layersReason !== null ) throw new Error( `downsampler: ${ layersReason }.` );
 		const layers: [ number, number ] = options.layers === undefined ? [ 0, layerCount ] : [ options.layers[ 0 ], options.layers[ 1 ] ];
-		const rw = source === undefined ? mipSize( texture.width, baseMipLevel ) : mipSize( source.texture.width, sourceMipLevel );
-		const rh = source === undefined ? mipSize( texture.height, baseMipLevel ) : mipSize( source.texture.height, sourceMipLevel );
+		const [ rw, rh ] = source === undefined ? [ mipSize( texture.width, baseMipLevel ), mipSize( texture.height, baseMipLevel ) ] : levelSizeOf( source );
 		const rectReason = options.rect === undefined ? null : rectProblem( options.rect, rw, rh );
 		if ( rectReason !== null ) throw new Error( `downsampler: ${ rectReason }${ source === undefined ? ` (level ${ baseMipLevel })` : ' (the source level)' }.` );
 		const { x, y, width, height } = options.rect ?? { x: 0, y: 0, width: rw, height: rh };
+		// An empty rect: nothing depends on it, so nothing is recorded (and nothing cached).
+		if ( width === 0 || height === 0 ) return [];
 		const rect = { x, y, width, height };
 		const regionKey = `${ key }|${ layers.join() }|${ x },${ y },${ width },${ height }`;
 		let cache = this.regionPlans.get( texture );
 		if ( cache === undefined ) this.regionPlans.set( texture, cache = new Map() );
 		const cached = cache.get( regionKey );
 		cache.delete( regionKey );
-		if ( cached !== undefined && cached.source === source?.texture ) {
+		if ( cached !== undefined && cached.source === source?.texture && cached.scratch === options.scratch ) {
 
 			cache.set( regionKey, cached );
 			return cached.batches;
 
 		}
 
+		if ( cached !== undefined ) retireBuffers( this.device, cached.buffers );
 		const plan = this.build( texture, parameters, { rect, layers } );
 		cache.set( regionKey, plan );
-		// Evicted plans aren't destroyed: an encoder not yet submitted may still use their buffers.
-		while ( cache.size > regionPlanLimit ) cache.delete( cache.keys().next().value! );
+		// Evicted plans may still be recorded in an encoder not yet submitted: their
+		// region uniforms are destroyed once the queue has finished the work submitted so far.
+		while ( cache.size > regionPlanLimit ) {
+
+			const oldest = cache.keys().next().value!;
+			retireBuffers( this.device, cache.get( oldest )!.buffers );
+			cache.delete( oldest );
+
+		}
+
 		return plan.batches;
 
 	}
 
 	/** Prepares the batches of one plan; `region` makes it a partial update. */
-	private build( texture: GPUTexture, { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel }: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null ): CachedPlan {
+	private build( texture: GPUTexture, { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel, scratch: scratchBuffer }: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null ): CachedPlan {
 
 		const format = texture.format as SupportedFormat;
-		const viewDimension = ( texture as GPUTexture & { textureBindingViewDimension?: ViewDimension } ).textureBindingViewDimension;
-		const dimension: ViewDimension = viewDimension ?? ( texture.depthOrArrayLayers > 1 ? '2d-array' : '2d' );
+		const dimension = bindingViewDimension( texture );
 		const view = ( level: number ) => texture.createView( { label: `downsampler mip ${ level }`, dimension, baseMipLevel: level, mipLevelCount: 1 } );
-		const sourceView = () => {
-
-			const aspect = source!.texture.format.includes( 'stencil' ) ? 'depth-only' : 'all';
-			return source!.texture.createView( { label: 'downsampler source', dimension, baseMipLevel: sourceMipLevel, mipLevelCount: 1, aspect } );
-
-		};
 
 		const output = this.outputPath( texture )!;
 		const levelsPerDispatch = output === 'buffer' && this.output === 'auto' ? this.bufferLevelsPerDispatch : this.levelsPerDispatch;
 		const sourceWidth = source === undefined ? undefined : mipSize( source.texture.width, sourceMipLevel ), sourceHeight = source === undefined ? undefined : mipSize( source.texture.height, sourceMipLevel );
 		const copySource = source !== undefined && sourceWidth === mipSize( texture.width, baseMipLevel ) && sourceHeight === mipSize( texture.height, baseMipLevel );
-		// Tail tiles of 16 and 32 take 16 × 16 invocations; below 256 (compatibility mode) only 8.
-		const tailMaxTile = this.device.limits.maxComputeInvocationsPerWorkgroup >= 256 ? tailTile : 8;
+		const { tailMaxTile } = this;
 		// Under 'spd', a resampled source is its own 1-level batch, like a copy.
 		const resample = source?.resample === 'area';
 		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch, oddSizes, fromSource: source !== undefined, copySource: copySource || resample, tail: oddSizes !== 'spd' && this.tail, tailMaxTile, exactMinTile: this.exactTile } );
@@ -615,7 +697,15 @@ export class Downsampler {
 			const size = Math.max( ...included.map( ( { index } ) => layouts[ index ].size ) );
 			const limit = Math.min( this.device.limits.maxStorageBufferBindingSize, this.device.limits.maxBufferSize );
 			if ( size > limit ) throw new Error( `downsampler: the buffer output path needs a ${ size }-byte buffer for this texture, above this device's maxStorageBufferBindingSize / maxBufferSize (${ limit }); request higher limits.` );
-			if ( region === null ) buffers.push( scratch = this.device.createBuffer( { label: `downsampler output ${ format }`, size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC } ) );
+			// A caller's scratch buffer (EncodeOptions.scratch): checked, never destroyed here.
+			if ( scratchBuffer !== undefined ) {
+
+				const usage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC;
+				if ( ( scratchBuffer.usage & usage ) !== usage ) throw new Error( 'downsampler: the scratch buffer needs STORAGE and COPY_SRC usage.' );
+				if ( scratchBuffer.size < size ) throw new Error( `downsampler: the scratch buffer has ${ scratchBuffer.size } bytes; this chain needs ${ size } (scratchSize( texture, options ) gives a size that fits).` );
+				scratch = scratchBuffer;
+
+			} else if ( region === null ) buffers.push( scratch = this.device.createBuffer( { label: `downsampler output ${ format }`, size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC } ) );
 			else scratch = this.sharedScratch( texture, size );
 
 		}
@@ -677,7 +767,7 @@ export class Downsampler {
 			const layout = this.layout( kernel );
 			const pipeline = this.pipeline( kernel );
 			const entries: GPUBindGroupEntry[] = access === 'sample' ? [ { binding: 0, resource: this.sampler } ] : [];
-			entries.push( { binding: 1, resource: external ? sourceView() : input( batch.sourceMipLevel! ) } );
+			entries.push( { binding: 1, resource: external ? sourceView( source!, dimension, 'downsampler source' ) : input( batch.sourceMipLevel! ) } );
 			const update = regions?.[ index ];
 			const prepared: PreparedBatch = { ...batch, pipeline, bindGroup: undefined as unknown as GPUBindGroup, output, layers };
 			if ( update !== undefined ) {
@@ -712,10 +802,10 @@ export class Downsampler {
 				prepared.copies = levels.flatMap( ( { offset, bytesPerRow, rowsPerImage, width, height }, i ): BufferCopy[] => {
 
 					const mipLevel = batch.firstMipLevel + i;
-					if ( update === undefined ) return [ { mipLevel, offset, bytesPerRow, rowsPerImage, x: 0, y: 0, layer: 0, width, height, layers: layerCount } ];
+					if ( update === undefined ) return [ { mipLevel, offset, bytesPerRow, rowsPerImage, x: 0, y: 0, width, height, layers: [ 0, layerCount ] } ];
 					const r = update.levels[ i ];
 					if ( r === null ) return [];
-					return [ { mipLevel, offset: offset + ( layers[ 0 ] * rowsPerImage + r.y ) * bytesPerRow + r.x * bytesPerTexel, bytesPerRow, rowsPerImage, x: r.x, y: r.y, layer: layers[ 0 ], width: r.width, height: r.height, layers: layers[ 1 ] } ];
+					return [ { mipLevel, offset: offset + ( layers[ 0 ] * rowsPerImage + r.y ) * bytesPerRow + r.x * bytesPerTexel, bytesPerRow, rowsPerImage, x: r.x, y: r.y, width: r.width, height: r.height, layers } ];
 
 				} );
 
@@ -739,7 +829,7 @@ export class Downsampler {
 		}
 
 		for ( const create of deferred ) create();
-		return { source: source?.texture, batches, buffers };
+		return { source: source?.texture, scratch: scratchBuffer, batches, buffers };
 
 	}
 

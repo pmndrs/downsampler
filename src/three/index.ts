@@ -5,8 +5,9 @@
  * must already be allocated on the GPU (rendered to, uploaded or initialized via
  * `renderer.initTexture`) with STORAGE_BINDING usage — in current three.js that
  * means a `StorageTexture` (or `StorageArrayTexture`) — or, for formats that
- * can't be storage textures (rgb9e5ufloat; rg11b10ufloat without tier1), with
- * COPY_DST usage: they take the buffer output path (SPEC.md §6.1). Native integration for all textures is
+ * can't be storage textures (rgb9e5ufloat; rgba8unorm-srgb and bgra8unorm-srgb, so
+ * regular sRGB colour textures; rg11b10ufloat without tier1), with COPY_DST usage:
+ * they take the buffer output path (SPEC.md §6.1). Native integration for all textures is
  * planned as an in-tree three.js option; see SPEC.md.
  */
 import { Downsampler, type DownsamplerOptions, type EncodeOptions } from '../webgpu/downsampler.js';

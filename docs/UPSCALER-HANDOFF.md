@@ -15,6 +15,8 @@ npm install ../downsampler      # "downsampler": "file:../downsampler"
 
 Imports come from `downsampler/webgpu`: `Reducer`, `ScalarReduction`. The library emits plain WGSL and records into the caller's encoder or compute pass (`encode`, `encodePass`), so the upscaler keeps its own pipeline order.
 
+API shape as of 0.1.0 (one source shape, docs/guide.md#sources-one-shape-everywhere): a `ScalarReduction` run takes `{ width, height, bindGroup }` with a load hook (it was `size: [ w, h ]`) and `source: texture | { texture, mipLevel }` without one (it was `texture` + `mipLevel`); a `Reducer` dispatch's layer count is `layerCount` (it was `layers`). The old keys throw with a message naming the new ones.
+
 ## Pass by pass
 
 Each row has a working version in `test/tools/generator.js`, checked against the upscaler's own pass as its oracle, with timings in `test/tools/README.md`. Timings are from an M5 Pro; Windows numbers come from the `windows-testing` branch.

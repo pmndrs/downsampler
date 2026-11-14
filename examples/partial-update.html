@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Partial updates</title>
+		<link rel="icon" href="data:,">
+		<link rel="stylesheet" href="style.css">
+		<style>
+			#paint { cursor: crosshair; touch-action: none; }
+		</style>
+	</head>
+	<body>
+		<nav><a href="./">Examples</a> · <a href="../docs/guide.md#partial-updates-rect-and-layers">Guide</a></nav>
+		<h1>Partial updates: <code>rect</code> and <code>layers</code></h1>
+		<p>
+			Paint into level 0 (click and drag on the left image; a scripted brush paints first). Each animation frame writes the
+			dirty texels with <code>writeTexture</code> and updates the chain with <code>rect</code>: every later level rewrites
+			only the texels whose footprint touches the previous level's rewritten ones (<code>2x … 2x+2</code> at odd sizes),
+			outlined on the right for the last stroke. A second texture gets a full recompute after every update, and the readout
+			checks that the two chains are equal bit for bit.
+		</p>
+		<p>
+			SPD's <code>rectInfo</code> snaps the rect to 64-texel tiles and recomputes the levels below 64×64 whole; here each
+			level's region is exact, down to the 1×1 (DIVERGES #15). It works with every <code>oddSizes</code> policy.
+		</p>
+		<pre><code>device.queue.writeTexture( { texture, origin: [ x, y ] }, data, { offset, bytesPerRow }, [ width, height ] );
+downsampler.encode( encoder, texture, { rect: { x, y, width, height } } );  // only what depends on the rect
+downsampler.encode( encoder, faces, { layers: [ 2, 1 ] } );                // one face of a 6-layer array
+downsampler.encode( encoder, faces, { layers: [ 4, 1 ], rect } );          // a decal on face 4</code></pre>
+		<p class="muted" id="adapter"></p>
+
+		<h2>Readout</h2>
+		<ul id="readout"></ul>
+
+		<h2>Paint</h2>
+		<div class="controls">
+			<label>Size <select id="size">
+				<option value="1129x635" selected>1129 × 635</option>
+				<option value="1920x1080">1920 × 1080</option>
+				<option value="1024x1024">1024 × 1024</option>
+				<option value="257x255">257 × 255</option>
+			</select></label>
+			<label>Odd sizes <select id="odd">
+				<option value="exact" selected>'exact' (default)</option>
+				<option value="box">'box'</option>
+				<option value="spd">'spd'</option>
+			</select></label>
+			<button id="replay">Replay brush</button>
+		</div>
+		<div class="levels" id="levels"></div>
+		<div class="view">
+			<figure><canvas class="level" id="paint"></canvas><figcaption>Level 0: paint here</figcaption></figure>
+			<figure><canvas class="level" id="level"></canvas><figcaption id="caption"></figcaption></figure>
+		</div>
+		<table id="regions"></table>
+
+		<h2>One face of a 6-layer array</h2>
+		<p>
+			A 255 × 255 × 6 <code>'2d-array'</code> texture (cube faces as layers, since WGSL has no cube storage textures).
+			Face 2 is re-baked with <code>layers: [ 2, 1 ]</code>, then a decal goes onto face 4 with <code>layers: [ 4, 1 ]</code>
+			and a <code>rect</code>. The other faces are untouched, and every face equals a full recompute.
+		</p>
+		<div class="levels" id="faceLevels"></div>
+		<div class="view" id="faces"></div>
+
+		<script type="module">
+			import { Downsampler } from '../dist/webgpu/index.js';
+			import { drawLevel, drawLevelScaled, fail, initDevice, levelButtons, makeImage, mipLevels, outlineRects, readLevels, report, setText } from './common.js';
+
+			const { device } = await initDevice();
+			const downsampler = new Downsampler( device );
+			const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC;
+			const params = new URLSearchParams( location.search );
+			for ( const id of [ 'size', 'odd' ] ) if ( params.has( id ) ) document.getElementById( id ).value = params.get( id );
+			const nextFrame = () => new Promise( resolve => setTimeout( resolve, 16 ) );
+			const area = rect => rect.width * rect.height;
+			const union = ( a, b ) => {
+
+				if ( a === null ) return b;
+				const x = Math.min( a.x, b.x ), y = Math.min( a.y, b.y );
+				return { x, y, width: Math.max( a.x + a.width, b.x + b.width ) - x, height: Math.max( a.y + a.height, b.y + b.height ) - y };
+
+			};
+
+			// --- Painting ---------------------------------------------------------------
+
+			let state = null; // the current size and policy: textures, CPU copy of level 0, dirty rect, stats
+			let updates = 0, levelShown = 1, faceChecks = [];
+
+			function setup() {
+
+				state?.painted.destroy();
+				state?.reference.destroy();
+				const [ width, height ] = document.getElementById( 'size' ).value.split( 'x' ).map( Number );
+				const oddSizes = document.getElementById( 'odd' ).value;
+				const data = makeImage( width, height );
+				const create = label => device.createTexture( { label, format: 'rgba8unorm', size: [ width, height ], mipLevelCount: mipLevels( width, height ), usage } );
+				const painted = create( 'painted (partial updates)' ), reference = create( 'reference (full recompute)' );
+				for ( const texture of [ painted, reference ] ) {
+
+					device.queue.writeTexture( { texture }, data, { bytesPerRow: width * 4 }, [ width, height ] );
+					downsampler.generate( texture, { oddSizes } );
+
+				}
+
+				state = { width, height, oddSizes, data, painted, reference, dirty: null, stroke: [], written: 0, flushes: 0 };
+				drawLevel( document.getElementById( 'paint' ), { width, height, values: Float32Array.from( data, v => v / 255 ) } );
+				levelButtons( document.getElementById( 'levels' ), painted.mipLevelCount - 1, i => { levelShown = i + 1; show(); }, Math.min( 2, painted.mipLevelCount - 2 ) );
+				for ( const button of document.getElementById( 'levels' ).children ) button.textContent = String( Number( button.textContent ) + 1 );
+
+			}
+
+			let hue = 0;
+			function stamp( cx, cy, radius = 9 ) {
+
+				const { width, height, data } = state;
+				const x0 = Math.max( 0, Math.floor( cx - radius ) ), x1 = Math.min( width, Math.ceil( cx + radius ) );
+				const y0 = Math.max( 0, Math.floor( cy - radius ) ), y1 = Math.min( height, Math.ceil( cy + radius ) );
+				if ( x0 >= x1 || y0 >= y1 ) return;
+				hue = ( hue + 7 ) % 360;
+				const colour = [ 0, 8, 4 ].map( n => { const k = ( n + hue / 30 ) % 12; return Math.round( 255 * ( 0.5 - 0.5 * Math.max( - 1, Math.min( k - 3, 9 - k, 1 ) ) ) ); } );
+				for ( let y = y0; y < y1; y ++ ) for ( let x = x0; x < x1; x ++ ) {
+
+					if ( ( x + 0.5 - cx ) ** 2 + ( y + 0.5 - cy ) ** 2 <= radius * radius ) data.set( colour, ( y * width + x ) * 4 );
+
+				}
+
+				state.dirty = union( state.dirty, { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } );
+
+			}
+
+			// Once per frame: upload the dirty texels, then update both chains.
+			function flush() {
+
+				const { width, oddSizes, data, painted, reference, dirty: rect } = state;
+				if ( rect === null ) return;
+				state.dirty = null;
+				for ( const texture of [ painted, reference ] ) {
+
+					device.queue.writeTexture( { texture, origin: [ rect.x, rect.y ] }, data, { offset: ( rect.y * width + rect.x ) * 4, bytesPerRow: width * 4 }, [ rect.width, rect.height ] );
+
+				}
+
+				const encoder = device.createCommandEncoder();
+				downsampler.encode( encoder, painted, { oddSizes, rect } );   // the partial update
+				downsampler.encode( encoder, reference, { oddSizes } );       // what it must equal
+				device.queue.submit( [ encoder.finish() ] );
+				updates ++;
+
+				// What it wrote: per batch, per level, a rect (prepare() returns the cached plan).
+				const regions = [ [ rect ] ];
+				for ( const batch of downsampler.prepare( painted, { oddSizes, rect } ) ) {
+
+					batch.regions.forEach( ( region, i ) => { if ( region ) ( regions[ batch.firstMipLevel + i ] ??= [] ).push( region ); } );
+
+				}
+
+				state.stroke.push( regions );
+				state.written += regions.slice( 1 ).flat().reduce( ( sum, r ) => sum + area( r ), 0 );
+				state.flushes ++;
+
+				// Each new rect creates a small uniform buffer: the 16 most recent are cached, and evicted
+				// ones are destroyed once the queue has finished the work submitted so far. No cleanup needed.
+
+				const context = document.getElementById( 'paint' ).getContext( '2d' );
+				const image = context.createImageData( rect.width, rect.height );
+				for ( let y = 0; y < rect.height; y ++ ) image.data.set( data.subarray( ( ( rect.y + y ) * width + rect.x ) * 4, ( ( rect.y + y ) * width + rect.x + rect.width ) * 4 ), y * rect.width * 4 );
+				context.putImageData( image, rect.x, rect.y );
+				show();
+
+			}
+
+			// Redraw the selected level; calls during a readback coalesce into one more redraw.
+			let showing = false, showAgain = false;
+			async function show() {
+
+				if ( showing ) { showAgain = true; return; }
+				showing = true;
+				do {
+
+					showAgain = false;
+					await drawShown();
+
+				} while ( showAgain );
+				showing = false;
+
+			}
+
+			async function drawShown() {
+
+				const { painted, stroke } = state;
+				const level = Math.min( levelShown, painted.mipLevelCount - 1 );
+				const [ values ] = await readLevels( device, painted, level, level + 1 );
+				const canvas = document.getElementById( 'level' );
+				const scale = drawLevelScaled( canvas, values );
+				outlineRects( canvas, stroke.flatMap( regions => regions[ level ] ?? [] ), scale );
+				setText( 'caption', `Level ${ level }: ${ values.width } × ${ values.height }, the last stroke's regions outlined (scaled ${ scale }×)` );
+				const last = stroke[ stroke.length - 1 ] ?? [];
+				document.getElementById( 'regions' ).innerHTML = '<tr><th>Level</th><th>Size</th><th>Last update rewrote</th><th>Texels</th></tr>' + Array.from( { length: painted.mipLevelCount }, ( _, l ) => {
+
+					const r = last[ l ]?.[ 0 ];
+					return `<tr><td>${ l }</td><td>${ Math.max( 1, painted.width >> l ) } × ${ Math.max( 1, painted.height >> l ) }</td><td>${ r ? `x ${ r.x }–${ r.x + r.width - 1 }, y ${ r.y }–${ r.y + r.height - 1 }` : '—' }</td><td>${ r ? area( r ) : 0 }</td></tr>`;
+
+				} ).join( '' );
+
+			}
+
+			// The check: every level of the partially updated chain equals the full recompute, bit for bit.
+			async function check() {
+
+				const { width, height, oddSizes, painted, reference, written, flushes } = state;
+				const mine = await readLevels( device, painted ), theirs = await readLevels( device, reference );
+				const differing = mine.map( ( level, l ) => level.values.reduce( ( count, v, i ) => count + ( v !== theirs[ l ].values[ i ] ), 0 ) );
+				const bad = differing.map( ( count, l ) => count ? `level ${ l }: ${ count }` : '' ).filter( Boolean );
+				const full = mine.slice( 1 ).reduce( ( sum, level ) => sum + level.width * level.height, 0 );
+				return [
+					{ name: `${ flushes } partial updates (rect) of ${ width } × ${ height }, oddSizes '${ oddSizes }'`, ok: flushes > 0 },
+					{ name: `levels 0–${ mine.length - 1 } equal a full recompute bit for bit`, ok: bad.length === 0, detail: bad.length ? bad.join( ', ' ) : `${ mine.length } levels, 0 differing values` },
+					{ name: 'texels rewritten per update in levels 1 …', ok: true, detail: `${ ( written / Math.max( 1, flushes ) ).toFixed( 0 ) } of ${ full } on average (${ ( 100 * written / Math.max( 1, flushes ) / full ).toFixed( 2 ) } %)` },
+				];
+
+			}
+
+			// A scripted stroke across the image, then one into the bottom-right corner (the odd edges).
+			async function scriptedBrush() {
+
+				state.stroke = [];
+				const current = state, { width, height } = state;
+				const frames = 36;
+				for ( let f = 0; f <= frames && state === current; f ++ ) {
+
+					const t = f / frames;
+					stamp( width * ( 0.08 + 0.84 * t ), height * ( 0.5 + 0.32 * Math.sin( t * Math.PI * 3 ) ) );
+					stamp( width * ( 0.08 + 0.84 * t ) + 4, height * ( 0.5 + 0.32 * Math.sin( t * Math.PI * 3 + 0.05 ) ) );
+					flush();
+					await nextFrame();
+
+				}
+
+				for ( const [ x, y ] of [ [ width - 2, height - 2 ], [ width - 1, height * 0.3 ], [ width * 0.3, height - 1 ] ] ) {
+
+					if ( state !== current ) return;
+					stamp( x, y, 5 );
+					flush();
+					await nextFrame();
+
+				}
+
+			}
+
+			const run = async () => {
+
+				setup();
+				await scriptedBrush();
+				report( [ ...await check(), ...faceChecks ] );
+
+			};
+
+			// Pointer painting: stamps between frames, one update per frame.
+			const paint = document.getElementById( 'paint' );
+			let painting = false;
+			const toTexel = event => {
+
+				const bounds = paint.getBoundingClientRect();
+				// The canvas keeps its aspect (object-fit: contain): find the drawn area.
+				const scale = Math.min( bounds.width / paint.width, bounds.height / paint.height );
+				const left = bounds.left + ( bounds.width - paint.width * scale ) / 2, top = bounds.top + ( bounds.height - paint.height * scale ) / 2;
+				return [ ( event.clientX - left ) / scale, ( event.clientY - top ) / scale ];
+
+			};
+			let frame = 0;
+			const schedule = () => { frame ||= requestAnimationFrame( () => { frame = 0; flush(); } ); };
+			paint.addEventListener( 'pointerdown', event => { painting = true; state.stroke = []; paint.setPointerCapture( event.pointerId ); stamp( ...toTexel( event ) ); schedule(); } );
+			paint.addEventListener( 'pointermove', event => { if ( painting ) { stamp( ...toTexel( event ) ); schedule(); } } );
+			paint.addEventListener( 'pointerup', () => { painting = false; requestAnimationFrame( async () => { flush(); report( [ ...await check(), ...faceChecks ] ); } ); } );
+			document.getElementById( 'replay' ).addEventListener( 'click', () => scriptedBrush().then( check ).then( checks => report( [ ...checks, ...faceChecks ] ) ).catch( fail ) );
+			for ( const id of [ 'size', 'odd' ] ) document.getElementById( id ).addEventListener( 'change', () => run().catch( fail ) );
+
+			// --- One face of a 6-layer array -----------------------------------------
+
+			async function faces() {
+
+				const size = 255, layers = 6;
+				const create = label => device.createTexture( {
+					label, format: 'rgba8unorm', size: [ size, size, layers ], mipLevelCount: mipLevels( size, size ), usage,
+					textureBindingViewDimension: '2d-array', // compatibility mode fixes it at creation
+				} );
+				const cube = create( 'faces (partial updates)' ), reference = create( 'faces (full recompute)' );
+				const face = ( layer, invert = false ) => makeImage( size, size ).map( ( v, i ) => i % 4 === 3 ? 255 : Math.round( ( invert ? 255 - v : v ) * ( 0.45 + 0.55 * ( ( layer + i % 4 ) % 3 ) / 2 ) ) );
+				const write = ( texture, layer, data ) => device.queue.writeTexture( { texture, origin: [ 0, 0, layer ] }, data, { bytesPerRow: size * 4 }, [ size, size ] );
+				for ( const texture of [ cube, reference ] ) {
+
+					for ( let layer = 0; layer < layers; layer ++ ) write( texture, layer, face( layer ) );
+					downsampler.generate( texture );
+
+				}
+
+				const readAll = texture => Promise.all( Array.from( { length: layers }, ( _, layer ) => readLevels( device, texture, 0, texture.mipLevelCount, layer ) ) );
+				const before = await readAll( cube );
+
+				// Re-bake face 2 and update only that layer.
+				for ( const texture of [ cube, reference ] ) write( texture, 2, face( 2, true ) );
+				// A 40 × 40 decal on face 4 at (200, 20): one layer, one rect.
+				const decal = { x: 200, y: 20, width: 40, height: 40 };
+				const pixels = new Uint8Array( decal.width * decal.height * 4 ).map( ( _, i ) => [ 255, 220, 40, 255 ][ i % 4 ] );
+				for ( const texture of [ cube, reference ] ) device.queue.writeTexture( { texture, origin: [ decal.x, decal.y, 4 ] }, pixels, { bytesPerRow: decal.width * 4 }, [ decal.width, decal.height ] );
+
+				const encoder = device.createCommandEncoder();
+				downsampler.encode( encoder, cube, { layers: [ 2, 1 ] } );
+				downsampler.encode( encoder, cube, { layers: [ 4, 1 ], rect: decal } );
+				downsampler.encode( encoder, reference, {} );
+				device.queue.submit( [ encoder.finish() ] );
+
+				const after = await readAll( cube ), full = await readAll( reference );
+				const same = ( a, b ) => a.every( ( level, l ) => level.values.every( ( v, i ) => v === b[ l ].values[ i ] ) );
+				const equal = after.map( ( levels, layer ) => same( levels, full[ layer ] ) );
+				const untouched = [ 0, 1, 3, 5 ].filter( layer => same( after[ layer ], before[ layer ] ) );
+				faceChecks = [
+					{ name: 'faces: every layer equals a full recompute bit for bit (layers: [ 2, 1 ], then [ 4, 1 ] with a rect)', ok: equal.every( Boolean ), detail: equal.map( ( ok, layer ) => ok ? '' : `layer ${ layer } differs` ).filter( Boolean ).join( ', ' ) },
+					{ name: 'faces 0, 1, 3 and 5 untouched; 2 and 4 changed', ok: untouched.length === 4 && ! same( after[ 2 ], before[ 2 ] ) && ! same( after[ 4 ], before[ 4 ] ), detail: `${ untouched.length } of 4 untouched` },
+				];
+
+				const regions = Object.fromEntries( downsampler.prepare( cube, { layers: [ 4, 1 ], rect: decal } ).flatMap( batch => batch.regions.map( ( region, i ) => [ batch.firstMipLevel + i, region ] ) ) );
+				const view = document.getElementById( 'faces' );
+				view.replaceChildren( ...after.map( ( _, layer ) => {
+
+					const figure = document.createElement( 'figure' );
+					figure.style.flexBasis = '140px';
+					figure.innerHTML = `<canvas class="level"></canvas><figcaption>face ${ layer }${ layer === 2 ? ' (layers: [ 2, 1 ])' : layer === 4 ? ' (decal, rect)' : '' }</figcaption>`;
+					return figure;
+
+				} ) );
+				levelButtons( document.getElementById( 'faceLevels' ), cube.mipLevelCount, level => after.forEach( ( levels, layer ) => {
+
+					const canvas = view.children[ layer ].querySelector( 'canvas' );
+					const scale = drawLevelScaled( canvas, levels[ level ], undefined, 256 );
+					if ( layer === 2 ) outlineRects( canvas, [ { x: 0, y: 0, width: levels[ level ].width, height: levels[ level ].height } ], scale );
+					if ( layer === 4 ) outlineRects( canvas, [ level === 0 ? decal : regions[ level ] ].filter( Boolean ), scale );
+
+				} ), 1 );
+
+			}
+
+			try {
+
+				await faces();
+				await run();
+
+			} catch ( error ) {
+
+				fail( error );
+
+			}
+		</script>
+	</body>
+</html>

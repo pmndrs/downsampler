@@ -12,7 +12,7 @@ Each entry says what they do, what we do, why, what it would take to converge, a
 
 Effort: **S** is under a day, **M** a few days including oracle and GPU cases, **L** a week or more.
 
-Last updated: 2026-11-13 (M2.5: `oddSizes: 'box'` and resampled sources, entries 3 and 23. Before that, Windows: RTX 3060 Laptop and Intel UHD, native D3D12/Vulkan baselines; entries 1, 5, 17, 18, 22; results/windows/README.md)
+Last updated: 2026-11-13 (M2.3.3/M2.3.7: rgb10a2unorm and integer formats, entries 22 and 24. M2.3.5: sRGB destinations, entry 16 done. Before that, M2.5: `oddSizes: 'box'` and resampled sources, entries 3 and 23. Before that, Windows: RTX 3060 Laptop and Intel UHD, native D3D12/Vulkan baselines; entries 1, 5, 17, 18, 22; results/windows/README.md)
 
 ## Summary
 
@@ -33,7 +33,7 @@ Last updated: 2026-11-13 (M2.5: `oddSizes: 'box'` and resampled sources, entries
 | 13 | float32 loads instead of sampling | nvpro | Planned (M3) | S | None | nvpro: sampler 26–32 % faster (NVIDIA) |
 | 14 | No `texture_external` source | fiddle | Candidate | M | None | Saves one full-frame copy per frame |
 | 15 | Sub-rectangles rewrite exact per-level regions, not 64-texel tiles | SPD | Done (M2.4), tighter by design | — | None | Fewer texels per partial update; bit-identical to a full recompute |
-| 16 | sRGB via scratch copy or buffer, not a UNORM alias | SPD | Planned (M2.3.5) | M | Same results | Extra copy of levels 1+ |
+| 16 | sRGB through the buffer output path, not a UNORM alias | SPD | Done (M2.3.5), by necessity | — | Linear-light averages, correctly rounded encode; loads snap to the exact decode (SPD trusts the hardware's) | Extra write and copy of levels 1+; scratch texture measured a tie; render passes faster from 1080p up on M5 Pro |
 | 17 | Compute only; no per-device render fallback | `greggman`, `toji` | Risk (M3), reduced | M | None | Windows: with 32×32 exact tiles (2026-11-13) `'exact'` ÷ render is 1.19 / 1.04 in rgba8 (NVIDIA / Intel), the tail kernel 0.98 / 1.02; `'spd'` beats render everywhere |
 | 18 | Needs `STORAGE_BINDING` on the texture | gpuweb#5253 (`Kangz`) | Risk, reduced | — | None | No measurable cost on NVIDIA or Intel (D3D12); Apple, AMD unmeasured |
 | 19 | Timestamp benchmark only | `greggman`, nvpro | Planned (M3) | S–M | — | Credibility of every claim |
@@ -41,6 +41,7 @@ Last updated: 2026-11-13 (M2.5: `oddSizes: 'box'` and resampled sources, entries
 | 21 | No size or level cap | SPD | Keep | — | — | — |
 | 22 | webgpu-spd 3.0.0, measured side by side ([results](results/compare/webgpu-spd.md)) | webgpu-spd | Keep | — | Its default handoff gave stale levels 7+ in up to 77 % of frames; Hi-Z up to 52 % non-conservative | Measured: our `'spd'` 1.2–2.1× faster (M5), 1.6× / 3.5× faster than its default (RTX / Intel, rgba8); no stale frames on Windows |
 | 23 | Power-of-two Hi-Z from a render-size source: area folds, not one 2×2 tap | niagara; SPD (FFX SSSR), Capsaicin | Keep | — | Ours conservative at any ratio; a 2×2 tap misses a texel at 1920 → 1024 | Up to ⌈S/n⌉ + 1 loads per axis; not timed |
+| 24 | Integer averages: exact mean, rounded to nearest (ties to even), no overflow; not a truncating `/ 4` | webgpu-spd | Keep | S | Truncation loses 3/8 of a unit per level on average; its 32-bit sums wrap | A few integer ops per texel; odd sizes split values into 16-bit halves; not timed |
 
 ## Dispatch structure
 
@@ -136,6 +137,15 @@ Last updated: 2026-11-13 (M2.5: `oddSizes: 'box'` and resampled sources, entries
 - **Performance:** unknown; a few ALU ops per texel. Likely noise at bandwidth-bound sizes.
 - **Verdict:** keep as the default; the opt-in is a candidate.
 
+### 24. Integer averages are exact, rounded to nearest
+- **They:** webgpu-spd averages integer formats as `(v0 + v1 + v2 + v3) / 4` in the format's integer type: integer division truncates (toward zero for sint), and 32-bit sums wrap, so averages of values from 2³⁰ (u32) or 2²⁹ (i32) up are garbage. SPD (the FidelityFX sample) has no integer path; render-pass mipmaps can't make integer levels at all (integer formats aren't filterable).
+- **We:** the exact weighted mean, rounded to nearest with ties to even, at every width, 32-bit included: the 2×2 mean at even sizes, render-pass bilinear weights as exact rationals at odd ones (`'exact'`), area weights under `'box'` and for resampled sources. Signed formats are offset by 2³¹, so min, max and tie parity work unchanged (SPEC §6.1 Integer formats).
+- **Why:** the same rule as every normalized format here (§4 Quantization: integer units, ties to even), no drift along a chain, and no overflow. The oracle (`intReference`) is exact, so every level is checked bit for bit.
+- **Effort to converge:** S, a truncating mode would be a different `ds_mean`. Not planned.
+- **Quality:** truncation biases every level down by 3/8 of a unit on average (remainders 0–3 equally likely), compounding along the chain: about 4 units by the 1×1 of a 2048² chain.
+- **Performance:** not timed. The 2×2 step costs a few more integer ops than a sum and a shift; odd steps split each value into 16-bit halves and carry the division as quotient and remainder. Integer chains are rare (IDs and occupancy use folds, which cost the same as for other formats).
+- **Verdict:** keep.
+
 ## Reductions
 
 ### 8. Binary reductions, not a 4-way `SpdReduce4`
@@ -208,18 +218,22 @@ Last updated: 2026-11-13 (M2.5: `oddSizes: 'box'` and resampled sources, entries
 - **They:**
   - SPD-based setups keep Hi-Z level 0 at the depth buffer's size: FidelityFX SSSR (SDK 1.1.4, `ffx_sssr_depth_downsample.h`) copies depth and runs SPD's min, which drops odd rows and columns (entry 4). Capsaicin's HZB (`visibility_buffer.cpp`, `914b915`) copies depth, then `GPUMip` DepthMin: `2x … 2x+2` at odd sizes, SPD once a level is a power of two.
   - zeux's niagara (`567ebe3`) uses a power-of-two pyramid, `previousPow2` of the swapchain size, filled by one min-reduction-sampler tap per texel centre. Its comment calls that conservative because each reduction is "at most by 2x2". At 1920 → 1024 a texel's area spans up to 3 source texels, so the 2×2 tap misses one.
-- **We:** `source: { texture, resample: 'area' }` (M2.5): any destination size, up or down to 8× per axis. Averages are area-weighted; folds combine every source texel the destination texel overlaps, so the pyramid is conservative at every level (GPU-checked against every source texel). A 2048×1024 pyramid takes 2 dispatches for 12 levels.
+- **We:** `source: { texture, resample: 'area' }` (M2.5): any destination size, up, or down to 8× per axis by default (the `maxResampleRatio` option; validation only, so raising it costs no pipeline). Averages are area-weighted; folds combine every source texel the destination texel overlaps, so the pyramid is conservative at every level (GPU-checked against every source texel). A 2048×1024 pyramid takes 2 dispatches for 12 levels.
 - **Why:** Hi-Z must not false-cull, and WebGPU has no reduction sampler, so the fold is ours anyway.
 - **Quality:** a core test counts over 100 non-conservative texels on one 1920-texel row for the 2×2 tap; ours has none.
 - **Performance:** the first batch loads the overlap (3×3 texels at 1920×1080 → 1024×512, 4×4 at 1129×635 → 512×256) instead of a sampler fetch. Not timed.
 - **Verdict:** keep.
 
-### 16. sRGB through a scratch copy or buffer
-- **They:** SPD samples an sRGB view and writes a UNORM alias of the same texture.
-- **We:** can't do that, because WebGPU forbids sRGB storage even through a view. We'll reduce in linear, write to an rgba8unorm scratch texture or buffer, and copy.
-- **Effort:** M (M2.3.5).
-- **Performance (estimate):** one extra copy of levels 1 and up, about a third of the base level's bytes.
-- **Verdict:** planned. Choose between scratch texture and buffer by measurement.
+### 16. sRGB through the buffer output path
+- **They:** SPD samples an sRGB view (hardware decode and linear filtering) and writes a UNORM alias of the same texture, so the encode happens in its store.
+- **We (M2.3.5, 2026-11-13):** WebGPU forbids sRGB storage textures even through a view, and a UNORM view of an sRGB texture needs `viewFormats` at creation, which three.js and most apps don't set. So each batch reads the sRGB view (linear), reduces in linear, encodes each level in the shader and writes the codes through the buffer output path (`copyBufferToTexture` per level, SPEC §6.1 sRGB).
+  - The encode is correctly rounded for the shader's f32 value (a `pow` estimate corrected against the exact thresholds), and in-tile levels read the exact decode table, so a chain equals level-by-level generation (SPD keeps unrounded values between levels, #7).
+  - Loads snap the hardware's decode to the exact table: the M5 Pro decodes sRGB to 12-bit linear values (254 of 256 codes inexact, up to 0.39 of a code step), which SPD would average as is. Samples keep it, as render passes do.
+- **The alternative measured:** the same kernel writing an rgba8unorm scratch texture (the linear alias, as storage) and `copyTextureToTexture` per level, which WebGPU allows between formats that differ only in sRGB-ness. Same bits (GPU-tested). Not faster: scratch ÷ buffer medians 0.95, 1.00 and 1.00 over 8 sizes in three runs, the quietest within 0.96–1.08 (M5 Pro, never idle; SPEC §6.1 sRGB). The buffer path was already built, composes with compatibility mode, `rect`, `layers` and separate sources, writes 6 levels per dispatch at the default storage limit, and needs no `bgra8unorm-storage` for bgra8unorm-srgb, so it won on simplicity.
+- **Effort to converge:** none possible (WebGPU). A scratch-texture variant is a kernel option (`output: 'storage'` writes the alias format) for tools that dispatch it themselves.
+- **Quality:** linear-light averages, as SPD; ours are rounded per level and identical on every GPU with `averageAccess: 'load'`.
+- **Performance:** one extra write and copy of the written levels, as for every buffer-path format. `encodePass` can't record the copies. Against render passes (three.js's path for sRGB textures today), M5 Pro at load average 14: ours is 1.19–1.98× faster up to 1280×720 and at 1024², a tie at 1707×960, and slower from 1080p up (render passes take 0.79× our time at 1920×1080, 0.55–0.65× at 2560×1440 and 4096²), where the copies dominate. That bears on #17 for large sRGB textures; re-measure idle and on other vendors.
+- **Verdict:** done, by necessity.
 
 ## Compute vs render, and measurement
 
@@ -290,8 +304,8 @@ Last updated: 2026-11-13 (M2.5: `oddSizes: 'box'` and resampled sources, entries
     - Our `'spd'`, with the same semantics and dispatch count: 0.50–0.85×, so 1.2–2.1× faster.
     - The handoff costs 1.1–1.25× over 6 mips per pass. Its subgroup path is 1.05–1.36× slower than its own non-subgroup path.
     - Its one dispatch (256²): 0.91×, against 0.90× for our `'spd'` in two.
-- **Where it is ahead:** a simpler API, integer formats and rgb10a2, sub-rectangles, a smaller bundle (8.3 KB gzipped against 13.9 KB for `Downsampler`), and it is released.
-- **Effort to converge:** none planned. Integer formats, rgb10a2 and sub-rectangles are already on our plan (M2.3.3, M2.3.7, M2.4).
+- **Where it is ahead:** a simpler API, a smaller bundle (8.3 KB gzipped against 13.9 KB for `Downsampler`), and it is released. Integer formats, rgb10a2 and sub-rectangles were ahead until we built them (M2.3.3, M2.3.7, M2.4; its integer averages truncate and overflow, entry 24).
+- **Effort to converge:** none planned.
 - **Measured on Windows** (RTX 3060 Laptop and Intel UHD, Chrome 148, D3D12, 2026-11-12; results/windows/timings.md):
   - **Stale levels:** none: 0 of 41,472 frames on each GPU (27 size/format rows × 3 variants × 256 frames, one encoder and one submit per frame). The race is real on Apple, not observed on NVIDIA or Intel.
   - **Speed:** its default ÷ our `'spd'` is 1.64 (rgba8) / 1.07 (rgba16f) on the RTX and 3.52 / 2.68 on Intel, where its subgroup path is the cost (1.78 / 1.35 without). Against native AMD SPD: its default 2.0× / 1.36× on the RTX (locked clocks), ours 1.26× / 1.27×.

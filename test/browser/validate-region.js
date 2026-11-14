@@ -8,7 +8,7 @@
 // as an app would; the source texels change with writeTexture of the rect alone.
 import { areaReference, boxReference, copyReference, formats, reduceReference, sampledChannels, spdReference } from '/dist/index.js';
 import { Downsampler } from '/dist/webgpu/index.js';
-import { createDepthSource, createTexture, makeData, poison, readMips, toFloats, upload } from './gpu.js';
+import { createDepthSource, createTexture, makeData, poison, readMips, toFloats, trackBuffers, upload } from './gpu.js';
 import { check, compatibility } from './validate.js';
 
 const mipSize = ( size, level ) => Math.max( 1, size >> level );
@@ -157,17 +157,26 @@ function checkOracle( batches, mips, sourceFloats, sourceSize, sourceFormat, wid
 }
 
 /**
- * A Downsampler with the same settings (so the same results) but its own caches: first chains
- * come from it, so a partial update never relies on state its own instance left behind (the
- * compatibility path's scratch levels, which a chain made elsewhere doesn't fill).
+ * The `levelsPerDispatch` option that gives a Downsampler `downsampler`'s levels per dispatch on
+ * both paths. Passing the option sets both; left out, the storage path takes the storage limit
+ * and the buffer path 6 (`kernelDefaults`). Below 6 storage textures (SwiftShader: 4) the two
+ * differ, and passing the storage value would also pin sRGB's buffer path to it: a different
+ * plan, so a first chain whose untouched texels a full recompute doesn't reproduce.
+ */
+export const levelsOption = downsampler => downsampler.levelsPerDispatch === downsampler.bufferLevelsPerDispatch ? { levelsPerDispatch: downsampler.levelsPerDispatch } : {};
+
+/**
+ * A Downsampler with the same settings (so the same plans and results) but its own caches: first
+ * chains come from it, so a partial update never relies on state its own instance left behind
+ * (the compatibility path's scratch levels, which a chain made elsewhere doesn't fill).
  */
 const twins = new WeakMap();
 function twin( device, downsampler ) {
 
 	if ( ! twins.has( downsampler ) ) {
 
-		const { levelsPerDispatch, output, averageAccess, compatibility, tail, f16Rounding, exactTile } = downsampler;
-		twins.set( downsampler, new Downsampler( device, { levelsPerDispatch, output, averageAccess, compatibility, tail, f16Rounding, exactTile } ) );
+		const { output, averageAccess, compatibility, tail, f16Rounding, exactTile } = downsampler;
+		twins.set( downsampler, new Downsampler( device, { ...levelsOption( downsampler ), output, averageAccess, compatibility, tail, f16Rounding, exactTile } ) );
 
 	}
 
@@ -202,6 +211,9 @@ async function inPlaceSequence( device, { downsampler, width, height, layers = 1
 
 	try {
 
+		// The first chain's untouched texels stand for the full recompute's only if both plan alike.
+		const shape = owner => owner.prepare( full, options ).map( ( { kernel, firstMipLevel, count, tile, output } ) => `${ kernel }:${ firstMipLevel }:${ count }:${ tile }:${ output }` ).join( ' ' );
+		if ( shape( twin( device, downsampler ) ) !== shape( downsampler ) ) throw new Error( `${ label }: the first chain's Downsampler plans ${ shape( twin( device, downsampler ) ) }, the one under test ${ shape( downsampler ) }` );
 		let data = makeData( width, height, layers, format, 'random', 1 );
 		upload( device, texture, data );
 		poison( device, texture );
@@ -290,7 +302,10 @@ export async function validateRegion( device, { quick, onProgress = () => {}, se
 		{ name: 'custom', format: 'rgba8unorm', options: { reduction: { wgsl: preferHigh.wgsl } } },
 		{ name: 'average', format: 'rgba16float', options: {} },
 		{ name: 'max', format: 'rgba16float', options: { reduction: 'max' } },
-		{ name: 'min', format: 'r32float', options: { reduction: 'min' } }
+		{ name: 'min', format: 'r32float', options: { reduction: 'min' } },
+		// sRGB (M2.3.5, buffer path): under 'exact', the tail, 'spd' and 'box'.
+		{ name: 'average', format: 'rgba8unorm-srgb', options: {} },
+		{ name: 'max', format: 'rgba8unorm-srgb', options: { reduction: 'max' } }
 	];
 	const pick = mode => reductions.filter( r => {
 
@@ -312,7 +327,7 @@ export async function validateRegion( device, { quick, onProgress = () => {}, se
 			let downsampler = owner;
 			if ( variant.access === 'load' ) {
 
-				if ( ! loads.has( key ) ) loads.set( key, new Downsampler( device, { tail: owner.tail, levelsPerDispatch: owner.levelsPerDispatch, averageAccess: 'load', output: owner.output, compatibility: owner.compatibility } ) );
+				if ( ! loads.has( key ) ) loads.set( key, new Downsampler( device, { tail: owner.tail, ...levelsOption( owner ), averageAccess: 'load', output: owner.output, compatibility: owner.compatibility } ) );
 				downsampler = loads.get( key );
 
 			}
@@ -339,6 +354,42 @@ export async function validateRegion( device, { quick, onProgress = () => {}, se
 		} ) );
 
 	}
+
+	// SwiftShader's split on a real GPU: a device with WebGPU's default limits (4 storage textures,
+	// 256 invocations) runs the storage path at 4 levels per dispatch and sRGB's buffer path at 6,
+	// so each Downsampler's twin (above) must plan sRGB at 6 too. Devices at 4 run this above.
+	if ( storageLimit > 4 ) results.push( ...await select.run( 'region/default-limits/rgba8unorm-srgb/average', async () => {
+
+		const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance', ...( compat ? { featureLevel: 'compatibility' } : {} ) } );
+		const plain = await adapter.requestDevice();
+		const out = [];
+		try {
+
+			if ( plain.limits.maxStorageTexturesPerShaderStage !== 4 ) throw new Error( `region default limits: the device has ${ plain.limits.maxStorageTexturesPerShaderStage } storage textures, not WebGPU's default 4` );
+			for ( const [ mode, downsampler, options ] of [ [ 'tail', new Downsampler( plain ), {} ], [ 'exact', new Downsampler( plain, { tail: false } ), {} ], [ 'spd', new Downsampler( plain ), { oddSizes: 'spd' } ] ] ) {
+
+				if ( downsampler.levelsPerDispatch !== 4 || downsampler.bufferLevelsPerDispatch !== 6 ) throw new Error( `region default limits: ${ downsampler.levelsPerDispatch } storage and ${ downsampler.bufferLevelsPerDispatch } buffer levels per dispatch, not 4 and 6` );
+				for ( const [ width, height ] of quick ? quickShapes : smallShapes ) {
+
+					const updates = rectsFor( width, height, width * 7 + height, 9 ).map( rect => ( { rect } ) );
+					const label = `region default limits ${ mode } rgba8unorm-srgb average ${ width }x${ height }`;
+					const count = await inPlaceSequence( plain, { downsampler, width, height, format: 'rgba8unorm-srgb', options, updates, label } );
+					out.push( { region: `default limits ${ mode }`, format: 'rgba8unorm-srgb', reduction: 'average', width, height, updates: count } );
+					onProgress( `validated ${ label }` );
+
+				}
+
+			}
+
+		} finally {
+
+			plain.destroy();
+
+		}
+
+		return out;
+
+	} ) );
 
 	// Layer ranges, alone and with a rect, on both array view dimensions (and a 1-layer array).
 	for ( const { format, options, name } of [ { format: 'rgba8unorm', options: {}, name: 'average' }, { format: 'rgba16float', options: { reduction: 'max' }, name: 'max' } ] ) {
@@ -513,7 +564,8 @@ async function validateRegionOptions( device ) {
 
 	// Rejections name the problem and the level the rect refers to.
 	for ( const [ options, message ] of [
-		[ { rect: { x: 0, y: 0, width: 0, height: 1 } }, 'at least 1×1' ],
+		[ { rect: { x: 0, y: 0, width: - 1, height: 1 } }, 'must not be negative' ],
+		[ { rect: { x: 38, y: 0, width: 0, height: 1 } }, 'outside the 37×21 level' ],
 		[ { rect: { x: 30, y: 0, width: 8, height: 1 } }, 'outside the 37×21 level' ],
 		[ { rect: { x: - 1, y: 0, width: 2, height: 1 } }, 'outside' ],
 		[ { rect: { x: 0.5, y: 0, width: 2, height: 1 } }, 'integers' ],
@@ -557,6 +609,108 @@ async function validateRegionOptions( device ) {
 
 	}
 
+	// An empty rect (width or height 0) is a no-op, as WebGPU's zero-size copies are: no
+	// batches, nothing recorded on either path or in a pass, no buffers, the chain untouched.
+	{
+
+		const tracker = trackBuffers( device );
+		try {
+
+			const empty = [ { x: 5, y: 3, width: 0, height: 4 }, { x: 37, y: 21, width: 0, height: 0 }, { x: 0, y: 7, width: 9, height: 0 } ];
+			const buffer = new Downsampler( device, { output: 'buffer' } );
+			const target = createTexture( device, { width: 37, height: 21, layers: 3, format: 'rgba8unorm' } );
+			upload( device, target, makeData( 37, 21, 3, 'rgba8unorm', 'random', 8 ) );
+			poison( device, target );
+			const before = await readMips( device, target, 0 );
+			for ( const rect of empty ) for ( const owner of [ downsampler, buffer ] ) {
+
+				for ( const options of [ { rect }, { rect, layers: [ 1, 1 ] }, { rect, oddSizes: 'spd' }, { rect, reduction: 'max' } ] ) if ( owner.prepare( target, options ).length !== 0 ) throw new Error( `empty rect ${ JSON.stringify( options ) }: expected no batches` );
+				const encoder = device.createCommandEncoder();
+				let recorded = 0;
+				for ( const method of [ 'beginComputePass', 'copyBufferToTexture' ] ) {
+
+					const original = encoder[ method ].bind( encoder );
+					encoder[ method ] = ( ...args ) => { recorded ++; return original( ...args ); };
+
+				}
+
+				owner.encode( encoder, target, { rect } );
+				if ( owner === downsampler ) {
+
+					const pass = encoder.beginComputePass();
+					recorded --;
+					const setPipeline = pass.setPipeline.bind( pass );
+					pass.setPipeline = pipeline => { recorded ++; setPipeline( pipeline ); };
+					owner.encodePass( pass, target, { rect } );
+					pass.end();
+
+				}
+
+				device.queue.submit( [ encoder.finish() ] );
+				if ( recorded !== 0 ) throw new Error( `empty rect ${ JSON.stringify( rect ) }: recorded ${ recorded } passes, copies or dispatches` );
+
+			}
+
+			// Still validated: the rest of the options, and a source.
+			expectThrow( () => downsampler.prepare( target, { rect: empty[ 0 ], oddSizes: 'fast' } ), 'not implemented', 'empty rect, bad oddSizes' );
+			expectThrow( () => downsampler.prepare( target, { rect: empty[ 0 ], layers: [ 3, 1 ] } ), 'outside', 'empty rect, bad layers' );
+			if ( tracker.labelled( 'downsampler' ).length !== 0 ) throw new Error( `empty rect: created ${ tracker.labelled( 'downsampler' ).length } buffers` );
+			same( await readMips( device, target, 0 ), before, 37, 21, 3, () => true, 'empty rect leaves the chain untouched' );
+			downsampler.release( target ); buffer.release( target );
+			target.destroy();
+
+		} finally {
+
+			tracker.restore();
+
+		}
+
+	}
+
+	// Region uniforms of plans evicted from the 16-entry cache (and of a plan whose source
+	// texture was replaced) are destroyed once the queue is done; a chain recorded before its
+	// plan was evicted still submits; release() destroys the rest.
+	{
+
+		const tracker = trackBuffers( device );
+		try {
+
+			const owner = new Downsampler( device );
+			const target = createTexture( device, { width: 64, height: 32, format: 'rgba16float' } );
+			upload( device, target, makeData( 64, 32, 1, 'rgba16float', 'random', 9 ) );
+			device.pushErrorScope( 'validation' );
+			const early = device.createCommandEncoder();
+			owner.encode( early, target, { rect: { x: 0, y: 0, width: 1, height: 1 } } );
+			for ( let i = 1; i <= 16; i ++ ) owner.prepare( target, { rect: { x: i, y: 0, width: 1, height: 1 } } );
+			device.queue.submit( [ early.finish() ] );
+			const error = await device.popErrorScope();
+			if ( error !== null ) throw new Error( `region eviction: a chain recorded before its plan was evicted failed to submit: ${ error.message }` );
+			await tracker.settle();
+			const uniforms = tracker.labelled( 'downsampler region' );
+			if ( uniforms.length !== 17 ) throw new Error( `region eviction: expected 17 region uniforms, got ${ uniforms.length }` );
+			if ( ! tracker.destroyed.has( uniforms[ 0 ] ) || uniforms.slice( 1 ).some( buffer => tracker.destroyed.has( buffer ) ) ) throw new Error( 'region eviction: must destroy the evicted plan\'s region uniform, and only it' );
+			owner.release( target );
+			if ( uniforms.some( buffer => ! tracker.destroyed.has( buffer ) ) ) throw new Error( 'region eviction: release() must destroy every region uniform' );
+
+			// A new source texture for the same rect replaces the plan; the old uniform is retired.
+			const destination = createTexture( device, { width: 32, height: 16, format: 'rgba8unorm' } );
+			const sources = [ 0, 1 ].map( () => createTexture( device, { width: 64, height: 32, format: 'rgba8unorm', storage: false } ) );
+			const rect = { x: 3, y: 2, width: 5, height: 4 };
+			for ( const texture of sources ) owner.prepare( destination, { source: texture, rect } );
+			await tracker.settle();
+			const replaced = tracker.labelled( 'downsampler region' ).slice( 17 );
+			if ( replaced.length !== 2 || ! tracker.destroyed.has( replaced[ 0 ] ) || tracker.destroyed.has( replaced[ 1 ] ) ) throw new Error( 'region plans: a replaced source must retire the old plan\'s region uniform, and only it' );
+			owner.release( destination );
+			for ( const texture of [ target, destination, ...sources ] ) texture.destroy();
+
+		} finally {
+
+			tracker.restore();
+
+		}
+
+	}
+
 	// Several partial updates recorded in one encoder before a submit, and more than the 16
 	// cached regions: each keeps its own region uniform, so the result equals updates
 	// submitted one at a time.
@@ -585,7 +739,7 @@ async function validateRegionOptions( device ) {
 
 	}
 
-	results.push( { option: 'source rects, encodePass on the buffer path, 1×1, batched updates and cache eviction' } );
+	results.push( { option: 'source rects, encodePass on the buffer path, 1×1, empty rects, batched updates and cache eviction' } );
 	downsampler.release( texture );
 	texture.destroy();
 	return results;

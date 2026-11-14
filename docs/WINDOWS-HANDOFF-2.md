@@ -24,6 +24,7 @@ Read `CLAUDE.md`, `PROGRESS.md` (owner decisions of 2026-11-13), SPEC §2.1, §4
 - **`src/` changes are allowed for M3**, under CLAUDE.md: new features add their CPU oracle and GPU cases first; every kernel or planning change passes the RTX full matrix and the Intel quick suite (`test/parallel.js`) before you push it; performance claims come with bench numbers and the device named; differences under ~5 % are noise. The Mac re-runs its own full matrix when it merges your branch (Metal compiles WGSL with fast math: avoid floating-point tricks that rely on exact `a + b − b` style evaluation).
 - **Avoid conflicts:** the Mac is changing `src/core/formats.ts`, the format parts of `src/webgpu/kernel.ts`, `src/three/`, the `source` option shapes and the docs. Keep your kernel edits to the exact/tail/box kernel bodies and `src/core/plan.ts` where you can. Run `git fetch && git merge origin/m2-reductions` before each new task.
 - Never start a run that can exceed 30 minutes. Timed jobs run alone under the GPU lock. Raw JSON to `results/windows/round2/`, a short `.md` per topic.
+- **Kernel body changes must also go into `src/mipmap.ts`** (the standalone copy for three.js, merged 2026-11-13): `test/core/mipmap.test.js` holds it equal to the full generator and fails until it matches; then `npm run golden:update` and commit the regenerated `test/golden/mipmap/` files.
 - For each task, add a line to `PROGRESS.md` (*Now* while working, *Done* with the commit and verification row when finished). Questions for the owner go under *Waiting on owner*.
 
 ## 1. Correctness of the merged work (first, ~30 min)
@@ -68,7 +69,8 @@ Commands are in `test/bench/README.md` (add `--power=high` / `--power=low`):
 2. **A cheaper exact kernel**: at 1024², where both take 2 dispatches, `'spd'` was 0.81× of `'exact'` on the M5 (integer tie rounding, odd-footprint branches). Profile and trim; same bits.
 3. **Subgroup kernel** only if step 3's `nosync` bound is ≥ 5 % on the RTX. It needs the workgroup-memory fallback (Firefox and devices without subgroups) and a per-device choice (Intel was 2× slower with subgroups in round 1).
 4. **fp16 arithmetic** (`shader-f16`) only if `--compare=f16` shows ≥ 5 % with `f16safe` precision acceptable; opt-in, never default.
-5. **Leftover round-1 jobs:** `sh results/windows/run-benches.sh rtx3060-bench`, then `-tools`, then the `intel-uhd-…` jobs.
+5. **sRGB vs render passes** (new, merged after this brief was written): `npm run bench -- --compare=srgb --skip-validation --power=high|low`, plus `--compare=render` on an sRGB texture if the mode allows it. On the M5 (loaded) render passes were 0.55–0.79× our time from 1080p up, because our sRGB path writes every level through a buffer and copies it. Report where each wins per GPU; it decides whether three.js should use compute for sRGB textures.
+6. **Leftover round-1 jobs:** `sh results/windows/run-benches.sh rtx3060-bench`, then `-tools`, then the `intel-uhd-…` jobs.
 
 ## Report
 

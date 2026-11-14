@@ -23,22 +23,18 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
   - Handoff summary: [results/windows/README.md](results/windows/README.md); library changes are on branch `f16-rounding`
   - [x] `test/parallel.js`: the suite in capped parallel shards, one summary; full matrix 35+ → 17 min, quick 4.6 → 2 min (RTX 3060)
 - [ ] M3 runs: M5 Pro idle (throughput, throughput rAF, storage-usage, subgroups, f16; commands in test/bench/README.md), then RTX 3060 / Intel UHD via `--power=high|low`; decide the subgroup kernel on the `nosync` bound (≥ 5 % at render sizes) and fp16 on speed vs its precision and overflow cost
-- [ ] Windows round 2 (owner + Windows agent): `docs/WINDOWS-HANDOFF-2.md`. Verify the merged milestones on D3D12 before main (RTX full, Intel quick, compat quick, examples), confirm the tile/tail defaults, f16 rounding cost, M3 runs
-- [ ] CI: first GitHub run of the shards (`test/ci/README.md`): real shard times, Linux SwiftShader compat device, artifact collection. Then commit its `gpu-durations` artifact
+- [ ] Windows round 2 + M3 (owner + Windows agent, branch `windows-testing`): `docs/WINDOWS-HANDOFF-2.md`. Verify, set defaults by rule, M3 measurements, then build halo batches / cheaper exact kernel / subgroups / fp16 by the data. Verify the merged milestones on D3D12 before main (RTX full, Intel quick, compat quick, examples), confirm the tile/tail defaults, f16 rounding cost, M3 runs
 
 ## Next (SPEC §11)
 
-- [ ] One source shape after M2.5: `source: GPUTexture | TextureLevel` everywhere (ScalarRun's `texture` + `mipLevel` too), shared source checks in one module, `width`/`height` instead of `size: [ w, h ]`, `layers: [ first, count ]` everywhere (Reducer's count → `layerCount` until it takes a first layer)
-- [ ] Re-record `test/ci/durations.json` (41 new `region/*` groups, plus M2.5's)
+- [ ] Possible three.js issue (outside our PR): in compatibility mode its render-pass mips of a 33² rgba8 cube differ by up to 6 steps from the same faces as a 2d-array (`main_cube` half-texel at odd sizes?); not investigated
 - [ ] Test hardening from the review: oracle `weights` default `'shader'` (fail closed; callers that sample opt into `'sampler'`); tile-equivalence at 16/32 on the buffer path, compat, `baseMipLevel` sub-range, separate source and tail; an f16 tie check through in-tile combine, tail and `'spd'` batches; a same-size copy next to Inf/NaN
 - [ ] Halo batches for `'exact'` and `'box'` together (SPEC §13 item 3): the remaining lever at render sizes, bounded by `'spd'`; own oracle + GPU cases first
 - [ ] Timings for `'box'` / `tailBox` (`--compare=spd`) and partial updates
 
 ## Deferred (three.js-driven)
 
-- [ ] M2.3.3: rgb10a2unorm
-- [ ] M2.3.5: sRGB + transform hooks for colour textures (hooks themselves arrive with M2T.1)
-- [ ] M2.3.7: integer formats
+- [ ] Transform hooks around the average (premultiplied alpha, log luminance): deferred, design sketch in SPEC §5 Planned
 
 ## Later
 
@@ -49,6 +45,18 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Done
 
+- [x] CI green on GitHub (run 43437707211: layout, core, gpu 14/14, gpu-compat 14/14) after test fixes (`476b71c`): region twin planned sRGB's buffer path at 4 levels while the tested Downsampler ran 6 (+ `region/default-limits` group reproducing it on the M5 Pro); `srgb/api` scratch prototype bound 6 storage textures; compat sRGB alpha decode 1 ulp tolerance; per-group GPU error scopes. No library bugs. First run (43431966606) had failed on these. `test/ci/durations.json` replaced by the green run's `gpu-durations` (835 groups, runner times)
+- [x] SwiftShader `packed/buffer-path` fixed (test, not library; branch `fix-swiftshader-buffer`): below 6 storage textures the buffer path's default plan (6 levels per dispatch) differs from the storage path's (4), and since the tail default (`198728a`; `5f97c86` passes) 67×45's level 6 is a tail step on one and a sampled first output on the other, which may differ by a step. Both now use the storage path's `levelsPerDispatch` and the test checks their batches match; with `tail: false` on both the old test passed too, so the paths are bit-identical on the same plan
+- [x] M3 on the M5 Pro (idle-ish, `results/m3/`): timestamps agree with throughput (80/83 pairs, τ 0.81); `STORAGE_BINDING` costs nothing when sampling (0.999–1.006); subgroup bound 1.7 % (rgba8) / 5.5 % (rgba16f) at render sizes → no subgroup kernel for Apple; fp16 arithmetic ~2 % with precision loss → not built; f16 rounding ~3 % (rgba16f); `'box'` 1.23–1.28× of `'exact'` (box tail up to 2.6×); tail 0.90 / 1.00; `'spd'` 0.60 / 0.79
+- [ ] Follow-up: the `'box'` tail kernel is slow (up to 2.6× of `'exact'`): measure on Windows; consider `tail: false` by default under `'box'`
+- [x] Ship prep for 0.1.0 (`b554dcd`, `494dfd9`, merges `23bad62` / `a48d22b` / `fb04a0e`, merged): one source shape (`source: GPUTexture | TextureLevel` everywhere, shared checks in `src/webgpu/source.ts`, ScalarRun `width`/`height`, `layers` always `[ first, count ]`, Reducer `layerCount`; old keys rejected); empty rect a no-op; evicted/replaced region uniforms destroyed after `onSubmittedWorkDone`; `maxResampleRatio` option (validation only, free); `f16Rounding: 'device'` documented (D3D12 truncates; on the M5 `pack2x16float` rounds, only `textureStore` truncates); `ScalarReduction.bindGroupLayouts`; package.json 0.1.0 (exports incl. `./mipmap`, `files`, `prepack`), CHANGELOG, manual `release.yml` with provenance (dry run by default). npm `downsampler` still free (404). Tarball 135.1 kB; gzip per entry: core 28.8 KiB, webgpu 70.3, three 56.0, mipmap 6.3. Consumer tsc clean (bundler, node16, node10; needs `@webgpu/types`)
+- [x] Vendoring for three.js: `downsampler/mipmap` (`dist/mipmap.js`, no imports, 19.5 KB: `createMipmapKernel`, `planMipmapBatches`, `kernelDefaults`, `mipmapFormats` / `mipmapAccess`), Downsampler defaults from `kernelDefaults`, `f16Pack: false` (`ds_round_f16` only; default stays true so existing WGSL is byte-identical), 56 golden kernels + `golden.test.js` (`npm run golden:update`), `scripts/check-vendored.mjs` (three's copy: 18/56 match, 3 cosmetic diff kinds, no result changes) (`5030a9c`, merged). M5 Pro: core 119, WGSL byte-identical over 723,240 option sets, quick downsampler 19,112 cases, `--only=mipmap` 99 chains bit-identical. SPEC §2.1/§7: "matches render passes" = within 1 step per level, up to 2 over independent chains on Apple
+- [x] three.js copy re-vendored from `dist/mipmap.js` @ `da3e609` (three.js `compute-mipmaps` `2ee2404442`, local): check-vendored 54/56 match, 0 differ (2 `'device'`-rounding cases not covered by design); uses `kernelDefaults` / `planMipmapBatches` / `mipmapAccess`; three lint clean, unit 1982/1982, parity 72/72
+- [x] M2.3.3 + M2.3.7: rgb10a2unorm (units (1023, 1023, 1023, 3), tier1 storage or buffer path) and integer formats (all core and tier1 uint/sint plus rgb10a2uint; own `vec4u` kernel; exact mean with ties to even at any width, no overflow; folds, custom `reduce` on vec4u/vec4i; same-signedness sources clamped; `'spd'`/Reducer/ScalarReduction rejected). Oracle `intReference`, 16/16 mutations caught, WGSL of existing formats byte-identical (`f4f89c6`, `d9cc128`, `d1432b7`, `b09a1b2`, `8be6de5`, merged). M5 Pro full matrix 35,517 cases (9 uncapped shards), SwiftShader integer quick 2,886; DIVERGES #24 added
+- [x] M2.3.5: sRGB destinations (rgba8unorm-srgb, bgra8unorm-srgb): sRGB view read, linear reduction, correctly rounded encode in the shader, buffer output path (a scratch texture measured a tie: 0.95 / 1.00 / 1.00); loads snap to the exact decode (the M5 Pro decodes to 12 bits, k/4095); `scratch: GPUBuffer` + `scratchSize()`; 10/10 mutations caught; DIVERGES #16 done (`d2e2857`, `98ce9d1`, `32218d0`, `85b0904`, merged). M5 Pro: full matrix 24,664 cases (9 shards), `--only=srgb` 2,144, compat quick 402, core 103, examples 21. Render passes are faster for sRGB from 1080p up (0.55–0.79× our time, loaded machine): the buffer path writes and copies every level
+- [x] three.js in-tree compute mipmaps (SPEC §10.2): `new WebGPURenderer( { mipmapGeneration: 'compute' } )`, default stays `'render'`. Vendored `'exact'` + tail kernel, planner, f16 rounding (library `488eff6`) into `WebGPUTextureMipmapUtils.js` (611 lines); STORAGE_BINDING added to eligible textures; `maxStorageTexturesPerShaderStage` requested; render-pass fallback for sRGB (until the sRGB path), compressed, MSAA, 3D/depth, packed/integer formats, compatibility mode; cubes as 6-layer 2d-array on core devices. Local worktree `/Users/dex/Developer/three.js-compute-mips`, branch `compute-mipmaps` (`2d0648f1f7`…`dc4bd5e5c1`), base upstream dev `3f7edc3d75`; not pushed; draft PR text in `PR-compute-mipmaps.md` there. M5 Pro: three unit 1982/1982, new parity test 72/72 (≤ 1 step per level vs render passes, ≤ 2 over a chain), e2e 208/209 identical with compute forced on (`webgpu_refraction` 0.1 % of pixels: mip differences used as UV offsets)
+- [x] Examples round 2: partial-update.html (rect + layers, bit-identical to a full recompute), odd-sizes.html ('exact'/'spd'/'box' vs the area-weighted ideal: mean error at 1129×635 is 2.1 / 5.1 / 0.29 in 1/255), hi-z-pow2.html (resample 'area', conservative vs every depth texel; a 2×2-tap pyramid misses 93,859 texels at 1024×512); Recipes in docs/guide.md, snippets type-checked against dist (`4c2f55d`, merged); M5 Pro: 21/21 example pages pass
+- [ ] Follow-up: `ScalarReduction` exposes no `bindGroupLayouts` for hooks (Reducer does)
 - [x] M2.5: `oddSizes: 'box'` (nvpro area weights in the shader, `'exact'` batches, the tail carries odd steps; folds identical to `'exact'`) and `source.resample: 'area'` (any destination size up/down to 8× per axis, e.g. power-of-two Hi-Z; conservative folds; 2048×1024 in 2 dispatches); `rect` composes with both (`areaDependents`); full-update WGSL unchanged (2,704 option sets byte-identical); 9/9 mutations caught (`2ad91a7`, `bb16237`, `ac86eee`, merge `a39022b`); DIVERGES #3 updated, #23 added
 - [x] M2.4: layer ranges + partial updates (`rect`): per-level dependent regions in core (exact footprint inverse, `'spd'` clamped blocks), bit-identical to a full recompute; composes with tail, `'spd'`, buffer path, compat, separate sources, `encodePass`; 11/11 mutations caught (`6ef5aa7`, `f78847b`, `9bc4c7e`, merged); DIVERGES #15 resolved
 - [x] API consistency before publish (`9a49043`, `7e09a59`, merged): ScalarReduction `reduce` → `reduction` (old key rejected), `'minmax'`; `Reducer.release( texture? )` / `ScalarReduction.release( resource? )` destroy owned buffers, evictions after `onSubmittedWorkDone`; `requiredLimits( adapter )` exported; `prepare` = what `encodePass` records on all three; `output.offset` from the device alignment; `averageAccess` reads `'sample'`; three: `getDownsampler( renderer, options )`, `generateMipmaps { encoder, downsampler }`, `unsupportedReason`. Source-shape unification waits for M2.5
@@ -96,10 +104,14 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Waiting on owner
 
+- Publishing (M5): npm `downsampler` is free. `release.yml` needs an `NPM_TOKEN` secret or npm trusted publishing on pmndrs/downsampler; then run it (dry run first). Merge to `main` waits for Windows round 2
+- three.js PR: the local branch `compute-mipmaps` is ready for your review (`/Users/dex/Developer/three.js-compute-mips`, draft text in `PR-compute-mipmaps.md`); nothing is posted
 - Upscaler exposure, every texel vs 1024 taps: agreed to merge the bit-identical `perf/exposure-parallel` first (upscaler project)
 
 ## Decided (owner, 2026-11-13)
 
+- (coordinator) three.js keeps render-pass mipmaps for sRGB textures until Windows/idle numbers say otherwise: our sRGB path wins only up to 1280×720 on the M5 (loaded); measurement added to the Windows brief
+- (coordinator) `test/parallel.js` caps stay fixed; on an overloaded machine re-run shards with `test/run.js --shard=i/N`
 - Empty rect (0×0): a no-op, as WebGPU's zero-size copies are
 - Rect ring buffer (dynamic offsets, no allocation per new rect): not now; documented as a future task (Later)
 - `source.resample: 'area'` stays explicit; the ratio cap stays 8× per axis, as an option if that is free (`maxResampleRatio`), raised later if a tool needs it
@@ -152,12 +164,15 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 | 2026-11-12 | `b6aca67` + harness fixes | RTX 3060 Laptop, D3D12 | quick / compat quick, parallel | ❌ 10444 cases, 2 min, 189 failures / ❌ 10355 cases, 2 min, 187 (same causes) |
 | 2026-11-12 | `b6aca67` + harness fixes | Intel UHD, D3D12, driver 31.0.101.5333 | quick, parallel (12 × 4) | ❌ 10437 cases, 2.4 min, 629 failures (f16 truncation + Intel-only deviations) |
 | 2026-11-13 | `198728a` | Apple M5 Pro, Chrome 148 | quick (unsharded) | ✅ 10477 cases, 731 groups, 40 s (before `5f97c86`: ❌ f16 truncation, separate-source rgba16float) |
+| 2026-11-13 | `fb04a0e` | Apple M5 Pro, Chrome 148 | full GPU matrix (parallel, 9 shards × 3) / core / examples / consumer tsc | ✅ 35518 cases, 79132 pattern runs, 3224/3224 groups, 24 min 34 s / ✅ 119 / ✅ 21 / ✅ (branch `ship-prep`, includes every merge up to vendoring) |
+| 2026-11-13 | `8be6de5` | Apple M5 Pro, Chrome 148, loaded (~500) | full GPU matrix (9 uncapped shards) / core / examples | ✅ 35517 cases, 79132 pattern runs / ✅ 109 / ✅ 21 (branch `formats-rgb10a2-int`, includes sRGB) |
 | 2026-11-13 | `a39022b` | Apple M5 Pro, Chrome 148, loaded | full GPU matrix (parallel, 9 shards × 3) / core / examples | ✅ 22436 cases, 65572 pattern runs, 1980/1980 groups, 0 failures, 22 min 55 s / ✅ 92 / ✅ 10 |
 | 2026-11-13 | `9bc4c7e` | Apple M5 Pro, Chrome 148, loaded | full GPU matrix (6 shards) / region quick on a compat device / core | ✅ 18830 cases / ✅ 267 / ✅ 80 (branch `m2.4-layers-rect`) |
 | 2026-11-13 | `9a49043` | Apple M5 Pro, Chrome 148, loaded | full GPU matrix (parallel, 3 jobs) / quick / core / examples | ✅ 18370 cases, 1674 groups / ✅ 10480 / ✅ 74 / ✅ 10 (branch `api-consistency`) |
 | 2026-11-13 | merge of both | Apple M5 Pro, Chrome 148 | quick / core / examples | ✅ 10797 cases / ✅ 81 / ✅ 10 |
 | 2026-11-13 | `5b137a3` | Apple M5 Pro, Chrome 148, loaded | quick `--only=downsampler` + core | ✅ 7885 cases, 570 groups; 73 core |
 | 2026-11-13 | `198728a` | Apple M5 Pro, Chrome 148 | full GPU matrix, `test/parallel.js` (12 shards × 4) | ✅ 18367 cases, 53600 pattern runs, 1674/1674 groups, 0 failures, 11 min 50 s |
+| 2026-11-13 | `689b252` | SwiftShader / Apple M5 Pro, Chrome 148 | `--only=packed --quick` / shard 12/14 quick (holds `packed/buffer-path`) / `--only=packed-api --quick` on the M5 Pro / core | ✅ 443 cases / ✅ 765 cases, 64 groups / ✅ 15 / ✅ 119 (branch `fix-swiftshader-buffer`; `f5e80c0` and `198728a` ❌ rgba8unorm level 6, `5f97c86` ✅) |
 
 ## Notes
 

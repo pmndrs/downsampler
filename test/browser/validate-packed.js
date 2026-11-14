@@ -12,7 +12,7 @@ const bitsF32 = bits => new Float32Array( new Uint32Array( [ bits ] ).buffer )[ 
 const nextFloat = ( value, direction ) => bitsF32( f32Bits( value ) + direction );
 
 /** Runs `fn ds_test(i: u32)` over `count` invocations: `input` and `output` are u32 arrays. */
-async function runCodec( device, helpers, body, input, outputWords, count ) {
+export async function runCodec( device, helpers, body, input, outputWords, count ) {
 
 	const code = `${ helpers }
 @group(0) @binding(0) var<storage, read> input: array<u32>;
@@ -230,8 +230,15 @@ async function validateBufferPath( device, { quick } ) {
 
 	const results = [];
 
-	// The buffer and storage paths write identical bits (same kernel arithmetic).
-	const storage = new Downsampler( device, { output: 'storage' } ), buffer = new Downsampler( device, { output: 'buffer' } );
+	// The buffer and storage paths write identical bits for the same plan (same kernel
+	// arithmetic). Their default plans differ below 6 storage textures (SwiftShader: 4):
+	// the buffer path then batches 6 levels and the storage path 4, so a level can be a
+	// batch's sampled first output on one path and in-tile (or a tail step) on the other,
+	// which the oracle allows to differ by a step (SPEC §7). So both take the storage
+	// path's levels per dispatch; the buffer path's own 6-level batches at the default
+	// limit are checked against the oracle on the plain device below.
+	const storage = new Downsampler( device, { output: 'storage' } );
+	const buffer = new Downsampler( device, { output: 'buffer', levelsPerDispatch: storage.levelsPerDispatch } );
 	for ( const format of [ 'rgba16float', 'rg11b10ufloat', 'rgba8unorm', 'rgba32float' ] ) {
 
 		if ( storage.unsupportedReason( createTexture( device, { width: 1, height: 1, format } ) ) !== null ) continue;
@@ -244,6 +251,9 @@ async function validateBufferPath( device, { quick } ) {
 			storage.generate( a, { reduction } );
 			buffer.generate( b, { reduction } );
 			if ( storage.outputPath( a ) !== 'storage' || buffer.outputPath( b ) !== 'buffer' ) throw new Error( `${ format }: unexpected output paths` );
+			// (Compatibility mode's storage path adds copy dispatches, which reduce nothing.)
+			const plan = ds => ds.prepare( ds === storage ? a : b, { reduction } ).filter( batch => ! batch.copy ).map( batch => `${ batch.kernel } ${ batch.firstMipLevel }+${ batch.count }` ).join();
+			if ( plan( storage ) !== plan( buffer ) ) throw new Error( `${ format } ${ reduction }: the paths plan different batches (${ plan( storage ) } / ${ plan( buffer ) })` );
 			const [ ma, mb ] = [ await readMips( device, a, 1 ), await readMips( device, b, 1 ) ];
 			ma.forEach( ( level, l ) => { if ( level.some( ( value, i ) => ! Object.is( value, mb[ l ][ i ] ) ) ) throw new Error( `${ format } ${ reduction }: buffer path level ${ l + 1 } differs from storage path` ); } );
 			a.destroy(); b.destroy();
@@ -338,7 +348,7 @@ async function validateBufferPath( device, { quick } ) {
 }
 
 /** Output textures at exactly each level's size; `storage` adds STORAGE_BINDING. */
-function levelTextures( device, reducer, width, height, layers, format, storage ) {
+export function levelTextures( device, reducer, width, height, layers, format, storage ) {
 
 	return reducer.levels.map( level => {
 
@@ -349,7 +359,7 @@ function levelTextures( device, reducer, width, height, layers, format, storage 
 
 }
 
-async function runReducer( device, reducer, source, outputs, mode = 'encode' ) {
+export async function runReducer( device, reducer, source, outputs, mode = 'encode' ) {
 
 	for ( const texture of outputs ) poison( device, texture, 0 );
 	const encoder = device.createCommandEncoder();

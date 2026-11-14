@@ -162,7 +162,7 @@ async function validateWideReducer( device, { quick, select } ) {
 
 				device.queue.writeBuffer( tool.atlas, 0, new Float32Array( tool.layout.texels * 8 ).fill( poisonValue ) );
 				const encoder = device.createCommandEncoder();
-				reducer.encode( encoder, { width, height, layers, bindGroup: tool.bindGroup } );
+				reducer.encode( encoder, { width, height, layerCount: layers, bindGroup: tool.bindGroup } );
 				device.queue.submit( [ encoder.finish() ] );
 				const atlas = await readBuffer( device, tool.atlas );
 				const label = `wide reducer ${ width }x${ height }x${ layers } ${ edges } ${ variant.name } [${ levels }]`;
@@ -234,7 +234,7 @@ async function validateWideScalar( device, { quick } ) {
 		device.queue.writeBuffer( output, 0, new Float32Array( output.size / 4 ).fill( NaN ) );
 		const encoder = device.createCommandEncoder();
 		const pass = encoder.beginComputePass();
-		scalar.encodePass( pass, { size: [ width, height ], layers: [ 0, layers ], bindGroup: tool.bindGroup, output: { buffer: output, offset: 256 } } );
+		scalar.encodePass( pass, { width, height, layers: [ 0, layers ], bindGroup: tool.bindGroup, output: { buffer: output, offset: 256 } } );
 		pass.end();
 		device.queue.submit( [ encoder.finish() ] );
 		checkBound( await readWideResults( device, output, 256, layers ), scalarReference( data, width, height, layers, scalarWideOps ), `wide scalar ${ width }x${ height }x${ layers }` );
@@ -245,7 +245,7 @@ async function validateWideScalar( device, { quick } ) {
 
 	// Combine-only with 8 channels and no load hook (such a reduction only combines), from tool-written partials.
 	const combiner = new ScalarReduction( device, { reduction: scalarWideOps } );
-	if ( combiner.unsupportedReason( { size: [ 4, 4 ], output: { buffer: output } } ) === null ) throw new Error( 'wide scalar: an 8-channel reduction without a load hook must reject image runs' );
+	if ( combiner.unsupportedReason( { width: 4, height: 4, output: { buffer: output } } ) === null ) throw new Error( 'wide scalar: an 8-channel reduction without a load hook must reject image runs' );
 	let state = 5;
 	const next = () => ( state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0 ) / 2 ** 32;
 	for ( const count of [ 1, 255, 257, 2040 ] ) for ( const layers of [ 1, 2 ] ) {

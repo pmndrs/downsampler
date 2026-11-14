@@ -327,6 +327,7 @@ async function validateBoxOptions( device, { quick } ) {
 	const depth = await createDepthSource( device, { width: 120, height: 67 }, makeData( 120, 67, 1, 'r32float', 'random', 23, { unit: true } ) );
 	const reasons = [
 		[ { texture: depth.texture }, 'resample \'area\'' ],
+		[ depth.texture, 'resample \'area\'' ],
 		[ { texture: depth.texture, resample: 'bilinear' }, 'unknown' ],
 		[ { texture: depth.texture, resample: 'area' }, null ],
 		[ { texture: depth.texture, resample: 'area', mipLevel: 0 }, null ]
@@ -343,8 +344,21 @@ async function validateBoxOptions( device, { quick } ) {
 	const wide = await createDepthSource( device, { width: 8 * maxResampleRatio + 1, height: 8 }, makeData( 8 * maxResampleRatio + 1, 8, 1, 'r32float', 'random', 24, { unit: true } ) );
 	expectThrow( () => plain.prepare( tiny, { source: { texture: wide.texture, resample: 'area' }, reduction: 'max' } ), `more than ${ maxResampleRatio }×`, 'resample ratio' );
 	expectThrow( () => plain.prepare( hiZ, { source: { texture: depth.texture, resample: 'area' }, reduction: 'max', oddSizes: 'spd' } ), '\'zero-weight\'', 'resample spd max' );
-	tiny.destroy(); wide.texture.destroy();
-	results.push( { option: 'resample: rejections' } );
+	// The cap is an option (validation only: the kernel loops over each texel's span at run time).
+	if ( plain.maxResampleRatio !== maxResampleRatio ) throw new Error( `resample: expected maxResampleRatio ${ maxResampleRatio } by default, got ${ plain.maxResampleRatio }` );
+	for ( const ratio of [ 0.5, NaN, Infinity, '8' ] ) expectThrow( () => new Downsampler( device, { maxResampleRatio: ratio } ), 'maxResampleRatio', `maxResampleRatio ${ ratio }` );
+	const raised = new Downsampler( device, { maxResampleRatio: 17 } );
+	if ( raised.sourceUnsupportedReason( tiny, { texture: wide.texture, resample: 'area' } ) !== null ) throw new Error( 'resample: maxResampleRatio 17 must accept a 65 → 8 step' );
+	const narrow = createTexture( device, { width: 4, height: 4, format: 'r32float' } );
+	for ( const reduction of [ 'max', 'average' ] ) {
+
+		const levels = await run( raised, narrow, null, { source: { texture: wide.texture, resample: 'area' }, reduction }, 'encode', 0 );
+		check( levels[ 0 ], areaReference( splat( wide.floats ), wide.texture.width, 8, 1, 'float32', reduction, 4, 4 ), 'float32', `resample ${ reduction } at ratio 16.25 (maxResampleRatio 17)`, reduction, 1 );
+
+	}
+
+	tiny.destroy(); wide.texture.destroy(); narrow.destroy();
+	results.push( { option: 'resample: rejections, maxResampleRatio' } );
 
 	// Resample: a power-of-two Hi-Z from a render-size depth buffer takes 2 dispatches at 6 levels
 	// per dispatch, and encodePass / compatibility path / buffer path match encode. A new depth

@@ -170,7 +170,7 @@ footer { color: var(--muted); font-size: 13px; display: grid; gap: 6px; max-widt
 		<p>Features are built and tested on the Apple M5 Pro. What's left before M3 tuning is measurement on other vendors: the two risk entries (17, 18) and every performance claim depend on it.</p>
 		<div class="phases">
 			<div class="phase"><span class="st st-done">done</span><h3>M1 · core</h3><p>Kernel, Downsampler, three.js adapter, GPU suite, device lab, bench.</p></div>
-			<div class="phase"><span class="st st-done">done</span><h3>M2 · features</h3><p>Reductions, separate source (Hi-Z), 21 formats incl. rgb9e5 and rg11b10 via the buffer path, compatibility mode, encodePass.</p></div>
+			<div class="phase"><span class="st st-done">done</span><h3>M2 · features</h3><p>Reductions, separate source (Hi-Z), formats incl. rgb9e5, rg11b10, rgb10a2, sRGB and integers via the buffer path, compatibility mode, encodePass.</p></div>
 			<div class="phase"><span class="st st-done">done</span><h3>M2T · tools first</h3><p>Reducer (hooks, sums, weights, 8 channels, payload folds, level selection), ScalarReduction, FSR 3.1 and upscaler fixtures, 'spd' mode and tail kernel measured.</p></div>
 			<div class="phase"><span class="st st-done">done</span><h3>Windows round 1</h3><p>RTX 3060 + Intel UHD: correctness, native D3D12/Vulkan matches, f16 rounding, sampler oracle, 32×32 exact tiles (docs/WINDOWS-REPORT.md). Round 2 (verify the merged milestones, M3 runs) is handed off in docs/WINDOWS-HANDOFF-2.md.</p></div>
 			<div class="phase"><span class="st st-done">done</span><h3>M2.4 / M2.5</h3><p>Done 2026-11-13: layer range and rect (partial updates), 'box' odd sizes, power-of-two (any-size) destinations from a separate source.</p></div>
@@ -357,14 +357,14 @@ const entries = [
 		converge: 'None needed: tighter by design.',
 		quality: 'None: bit-identical to a full recompute (GPU suite, 11/11 mutations caught).',
 		perfKind: 'estimate', perf: 'Fewer texels per partial update than SPD; not timed yet.', perfShort: 'Fewer texels than SPD (not timed)', qualityShort: 'None', note: 'Resolved.' },
-	{ n: 16, title: 'sRGB through a scratch copy or buffer', src: [ 'spd' ], srcText: 'SPD', verdict: 'planned', effort: 'M',
+	{ n: 16, title: 'sRGB through the buffer output path, not a UNORM alias', src: [ 'spd' ], srcText: 'SPD', verdict: 'keep', effort: '—',
 		they: 'SPD samples an sRGB view and writes a UNORM alias of the same texture.',
-		we: 'WebGPU forbids sRGB storage even through a view, so reduce in linear, write rgba8unorm scratch or a buffer, then copy.',
-		why: 'The alias is not allowed in WebGPU.',
-		converge: 'M (M2.3.5).',
-		quality: 'Same results.',
-		perfKind: 'estimate', perf: 'One extra copy of levels 1+, about a third of the base level\'s bytes.',
-		perfShort: 'Extra copy of levels 1+', qualityShort: 'Same results', note: 'Choose scratch texture vs buffer by measurement.' },
+		we: 'Done (M2.3.5, 2026-11-13): read the sRGB view, reduce in linear light, encode each level in the shader (correctly rounded to the exact sRGB curve), write through the buffer output path and copy into the texture. Loads snap to the exact 256-entry decode, because the M5 Pro decodes to 12 bits (k/4095). Min/max fold decoded values (same result as folding codes).',
+		why: 'WebGPU forbids sRGB storage, even through a view, so the alias is impossible. A scratch rgba8unorm texture + copy measured a tie (0.95 / 1.00 / 1.00 of the buffer path); the buffer path already composes with compatibility mode, rect, layers and separate sources.',
+		converge: 'None possible in WebGPU.',
+		quality: 'Linear-light averages with a correctly rounded encode, the same on every GPU; 10/10 mutations caught (no decode, encoded-space averages, gamma 2.2, truncation …).',
+		perfKind: 'measured', perf: 'Extra write and copy of every level. On the M5 Pro (loaded), render passes take 0.55–0.79× our time from 1920×1080 up; we are 1.19–1.98× faster up to 1280×720 and at 1024². Windows round 2 re-measures.',
+		perfShort: 'Render passes faster from 1080p up (M5)', qualityShort: 'Linear-light, correctly rounded', note: 'Keep; three.js keeps render passes for large sRGB textures until the Windows numbers.' },
 	{ n: 17, title: 'Compute only, no per-device render fallback', src: [ 'community', 'gpuweb' ], srcText: 'greggman, toji', verdict: 'risk', effort: 'M',
 		they: 'greggman found compute generators slower than render passes on NVIDIA/D3D12 (up to 10× for SPD-style ports); toji reported a partner seeing the same. The community default is render passes.',
 		we: 'Compute only. The three.js adapter falls back to render passes only for textures we cannot handle.',
@@ -416,6 +416,14 @@ const entries = [
 		converge: 'None needed.',
 		quality: 'A core test counts over 100 non-conservative texels on one 1920-texel row for the 2×2 tap; ours has none (GPU-checked against every source texel).',
 		perfKind: 'estimate', perf: 'The first batch loads the overlap (3×3 texels at 1920×1080 → 1024×512) instead of one sampler fetch. Not timed.', perfShort: 'Not timed', qualityShort: 'Conservative at any ratio', note: 'Keep.' },
+	{ n: 24, title: 'Integer averages: exact mean, rounded to nearest, no overflow', src: [ 'community' ], srcText: 'webgpu-spd', verdict: 'keep', effort: 'S',
+		they: 'webgpu-spd averages integer formats as (v0 + v1 + v2 + v3) / 4 in the format\'s integer type: integer division truncates, and 32-bit sums wrap. SPD has no integer path; render passes can\'t mip integer formats at all.',
+		we: 'The exact weighted mean, rounded to nearest with ties to even, at every width including 32-bit (M2.3.7): 2×2 means at even sizes, render-pass weights as exact rationals at odd ones, area weights under box and resample. Signed formats are offset by 2³¹ so min/max and tie parity work unchanged. Folds and custom reduce on vec4u/vec4i as for other formats.',
+		why: 'The same rule as every normalized format here, no drift along a chain, no overflow; the oracle is exact, so every level is checked bit for bit.',
+		converge: 'S (a truncating mean); not planned.',
+		quality: 'Truncation biases every level down by 3/8 of a unit on average, about 4 units by the 1×1 of a 2048² chain; ours has no bias.',
+		perfKind: 'estimate', perf: 'A few integer ops per texel more than a sum and shift; odd steps split values into 16-bit halves. Not timed; integer chains are rare (IDs and occupancy use folds).',
+		perfShort: 'A few integer ops; not timed', qualityShort: 'No bias, no overflow', note: 'Keep.' },
 ];
 
 const esc = s => String( s ).replace( /[&<>"]/g, c => ( { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } )[ c ] );
@@ -510,17 +518,17 @@ const decisions = [
 	{ q: 'Tail kernel default?', done: 'Default since 2026-11-13: faster on the RTX 3060 (0.82–0.90×) and M5 Pro (0.81–1.02×), neutral on Intel UHD. exactTile defaults to 16 on Apple (32 was slower there).', meta: '', rec: '' },
 	{ q: 'Upscaler shading change: 8-channel or sign bit?', done: '8-channel, documented; the sign-bit version stays an experiment.', meta: '', rec: '' },
 	{ q: 'Upscaler exposure: every texel or the 1024 taps?', blocking: false, meta: 'Every texel is FSR\'s approach: a steadier estimate, but the exposure values change. The taps version is bit-identical and already 6–10× faster.', rec: '<strong>Agreed:</strong> merge the bit-identical perf/exposure-parallel first. Every texel is a separate decision (pros and cons sent 2026-11-12).' },
-	{ q: 'Payload folds: smaller-payload ties, or position ties?', blocking: false, meta: 'Ties are rare with continuous depth. Examples sent 2026-11-12.', rec: '<strong>Recommend:</strong> keep smaller-payload ties (order-independent, free); put a texel index first when position matters.' },
-	{ q: 'Reducer defaults: zero-weight edges, no rounding between levels, scalar finish layer argument', blocking: false, meta: 'Impact explained 2026-11-12.', rec: '<strong>Recommend:</strong> keep all three.' },
-	{ q: 'webgpu-spd bug reports', blocking: false, meta: 'Six issues drafted in drafts/webgpu-spd-issues.md (local, gitignored, never pushed). We don\'t use the library; the bench vendors a copy for comparison only.', rec: 'Waiting on your review.' },
+	{ q: 'Payload folds: smaller-payload ties, or position ties?', done: 'Smaller payload wins (owner 2026-11-13); put a texel index first for position ties.', meta: '', rec: '' },
+	{ q: 'Reducer defaults: zero-weight edges, no rounding between levels, scalar finish layer argument', done: 'Kept: zero-weight edges, no rounding between in-tile levels, optional layer on scalar finish (owner 2026-11-13).', meta: '', rec: '' },
+	{ q: 'webgpu-spd bug reports', done: 'Done for now (owner 2026-11-13): kept local until the repo is public with solid work and examples to point at.', meta: '', rec: '' },
 	{ q: 'float16 rounding (D3D12 truncates in textureStore and pack2x16float)', done: 'Round to nearest even in the shader by default (f16Rounding: \'nearest\', \'device\' opt-out), branch f16-rounding. Costs noise on the RTX, 14 % on Intel.', meta: '', rec: '' },
 	{ q: 'Sampler vs shader weights (averageAccess)', done: 'Keep \'sample\' the default; \'load\' documented as identical on every GPU (2–31 % slower). The test tolerance models the samplers\' 8-bit weights.', meta: '', rec: '' },
-	{ q: 'Empty rect (0×0): reject, or do nothing?', blocking: false, meta: 'Rejected today. WebGPU treats zero-size copies and writes as valid no-ops. Neither choice changes quality or speed.', rec: '<strong>Recommend:</strong> no-op, matching WebGPU; damage trackers often produce empty rects.' },
-	{ q: 'Rects that change every frame: ring buffer?', blocking: false, meta: 'Each new rect makes a 256-byte uniform buffer and bind groups (CPU cost, not GPU); the last 16 are cached per texture. A ring buffer avoids allocation but breaks if more than N updates are recorded before a submit.', rec: '<strong>Recommend:</strong> not yet. First, destroy evicted rect buffers after onSubmittedWorkDone (as Reducer does), then measure CPU cost if a tool updates rects per frame.' },
-	{ q: 'Any-size destination from a separate source: resample implicitly?', blocking: false, meta: 'source.resample: \'area\' is explicit today, so a destination left at the wrong size after a resize fails loudly instead of being silently resampled (blurred).', rec: '<strong>Recommend:</strong> keep it explicit.' },
-	{ q: 'Resample ratio cap: 8× per axis?', blocking: false, meta: 'Each destination texel reads up to 9 taps per axis (81 loads) in one invocation; the cost grows with the square of the ratio. Larger ratios can resample to a bigger level 0 and let the chain halve.', rec: '<strong>Recommend:</strong> keep 8×; raise it if a tool needs more.' },
-	{ q: 'f16 rounding: default to the device\'s conversion on some GPUs?', blocking: false, meta: 'The rounding was rewritten 2026-11-13 (Metal\'s fast math removed the old version, so Apple truncated). Cost of the new version is unmeasured: the old one cost 14 % on Intel, noise on the RTX. Truncation biases each level low by up to one f16 step (about 0.05 %).', rec: '<strong>Recommend:</strong> keep \'nearest\' everywhere and document \'device\'; revisit only if Windows round 2 shows more than ~10 % on Intel.' },
-	{ q: 'gpuweb#5253 comment', blocking: false, meta: 'Drafted in drafts/gpuweb-5253-comment.md (local only), with placeholders for the Windows numbers.', rec: 'Waiting on your review, after the Windows numbers.' },
+	{ q: 'Empty rect (0×0): reject, or do nothing?', done: 'A no-op, as in WebGPU (owner 2026-11-13).', meta: '', rec: '' },
+	{ q: 'Rects that change every frame: ring buffer?', done: 'Not now; documented as a future task (owner 2026-11-13).', meta: '', rec: '' },
+	{ q: 'Any-size destination from a separate source: resample implicitly?', done: 'Stays explicit (owner 2026-11-13).', meta: '', rec: '' },
+	{ q: 'Resample ratio cap: 8× per axis?', done: 'Keep 8×; an option if that is free; raise later if needed (owner 2026-11-13).', meta: '', rec: '' },
+	{ q: 'f16 rounding: default to the device\'s conversion on some GPUs?', done: 'Keep nearest everywhere and document device; re-test the cost on Windows round 2 (owner 2026-11-13).', meta: '', rec: '' },
+	{ q: 'gpuweb#5253 comment', done: 'Done for now (owner 2026-11-13): kept local until the repo is public, with Windows numbers and examples.', meta: '', rec: '' },
 ];
 const runs = [
 	{ title: '1. Upscaler: parallel exposure (pmndrs/upscaler, branch perf/exposure-parallel)', note: 'Confirms the 6–10× exposure speedup off Apple and that DXC compile time stays at or under 39 ms. Run in the upscaler repo on that branch.',

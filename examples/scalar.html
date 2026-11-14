@@ -30,8 +30,8 @@
 	load: 'fn load( texel: vec2i, layer: u32 ) -&gt; vec4f { let l = max( luma( texel ), 1e-4 ); return vec4f( log( l ), l, l, l ); }',
 	finish: 'fn finish( value: vec4f, weight: f32 ) { result[ 0 ] = value; result[ 1 ] = vec4f( exp( value.x ), 0.18 / exp( value.x ), weight, 0.0 ); }',
 } );
-metering.encode( encoder, { size: [ width, height ], bindGroup } );
-new ScalarReduction( device ).encode( encoder, { texture: hdr, output: { buffer } } );  // { value: vec4f, weight: f32 }</code></pre>
+metering.encode( encoder, { width, height, bindGroup } );
+new ScalarReduction( device ).encode( encoder, { source: hdr, output: { buffer } } );  // { value: vec4f, weight: f32 }</code></pre>
 		<p class="muted" id="adapter"></p>
 
 		<h2>Readout</h2>
@@ -96,12 +96,9 @@ new ScalarReduction( device ).encode( encoder, { texture: hdr, output: { buffer 
 					load: 'fn load( texel: vec2i, layer: u32 ) -> vec4f { let l = max( luma( texel ), 1e-4 ); return vec4f( log( l ), l, l, l ); }',
 					finish: 'fn finish( value: vec4f, weight: f32 ) { result[ 0 ] = value; result[ 1 ] = vec4f( exp( value.x ), 0.18 / exp( value.x ), weight, 0.0 ); }'
 				} );
-				// The tool's group 1 has the layout of its `entries`.
+				// The tool's group 1: index 1 of the reduction's layouts (from `bindings.entries`).
 				const bindGroup = device.createBindGroup( {
-					layout: device.createBindGroupLayout( { entries: [
-						{ binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
-						{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }
-					] } ),
+					layout: metering.bindGroupLayouts[ 1 ],
 					entries: [ { binding: 0, resource: hdr.createView() }, { binding: 1, resource: { buffer: result } } ]
 				} );
 				const average = new ScalarReduction( device ); // 'average' of every channel, read straight from the texture
@@ -127,8 +124,8 @@ new ScalarReduction( device ).encode( encoder, { texture: hdr, output: { buffer 
 					device.queue.writeTexture( { texture: hdr }, halves, { bytesPerRow: width * 8 }, [ width, height ] );
 
 					const encoder = device.createCommandEncoder();
-					metering.encode( encoder, { size: [ width, height ], bindGroup } );
-					average.encode( encoder, { texture: hdr, output: { buffer: averageOutput } } );
+					metering.encode( encoder, { width, height, bindGroup } );
+					average.encode( encoder, { source: hdr, output: { buffer: averageOutput } } );
 					device.queue.submit( [ encoder.finish() ] );
 					const [ measured, colour ] = await Promise.all( [ readBuffer( result ), readBuffer( averageOutput ) ] );
 

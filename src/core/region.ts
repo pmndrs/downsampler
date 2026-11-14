@@ -93,16 +93,20 @@ export function clampDependents( range: Range, level: number, size: number ): Ra
 
 }
 
-const rangesOf = ( rect: Rect | null ): [ Range, Range ] => rect === null ? [ null, null ] : [ [ rect.x, rect.x + rect.width - 1 ], [ rect.y, rect.y + rect.height - 1 ] ];
+const rangesOf = ( rect: Rect | null ): [ Range, Range ] => rect === null || rect.width === 0 || rect.height === 0 ? [ null, null ] : [ [ rect.x, rect.x + rect.width - 1 ], [ rect.y, rect.y + rect.height - 1 ] ];
 const rectOf = ( x: Range, y: Range ): Rect | null => x === null || y === null ? null : { x: x[ 0 ], y: y[ 0 ], width: x[ 1 ] - x[ 0 ] + 1, height: y[ 1 ] - y[ 0 ] + 1 };
 
-/** Why `rect` is not a texel rectangle inside a `width` × `height` level, or null. */
+/**
+ * Why `rect` is not a texel rectangle inside a `width` × `height` level, or null.
+ * An empty rect (width or height 0) is valid, as WebGPU's zero-size copies are:
+ * nothing depends on it. It must still lie inside the level (x ≤ width, y ≤ height).
+ */
 export function rectProblem( rect: Rect, width: number, height: number ): string | null {
 
 	if ( rect === null || typeof rect !== 'object' ) return 'rect must be { x, y, width, height }';
 	const { x, y, width: w, height: h } = rect;
 	if ( ! [ x, y, w, h ].every( Number.isInteger ) ) return 'rect x, y, width and height must be integers';
-	if ( w < 1 || h < 1 ) return `rect must be at least 1×1, got ${ w }×${ h }`;
+	if ( w < 0 || h < 0 ) return `rect width and height must not be negative, got ${ w }×${ h }`;
 	if ( x < 0 || y < 0 || x + w > width || y + h > height ) return `rect ${ w }×${ h } at (${ x }, ${ y }) is outside the ${ width }×${ height } level it marks dirty`;
 	return null;
 
@@ -116,7 +120,8 @@ export function rectProblem( rect: Rect, width: number, height: number ): string
  * `height` are the destination's level-0 size; batches come from `planBatches`.
  *
  * A batch's workgroups span every written texel of every level it writes; they
- * may compute more texels than that, but store only the written ones.
+ * may compute more texels than that, but store only the written ones. An empty
+ * `rect` writes nothing: every level is null and every batch has 0 workgroups.
  */
 export function planRegions( batches: readonly Batch[], rect: Rect, width: number, height: number, sourceWidth?: number, sourceHeight?: number ): BatchRegion[] {
 

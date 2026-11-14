@@ -19,6 +19,9 @@
 		<ul class="cards">
 			<li><a href="mip-chain.html">Mip chain</a><br>Every level of a texture from level 0, with a level viewer; <code>'exact'</code> vs <code>'spd'</code> odd sizes and the tail kernel.</li>
 			<li><a href="hi-z.html">Hi-Z from depth</a><br>A <code>(min, max)</code> pyramid from a depth buffer through a separate source, recorded with <code>encodePass</code>; conservativeness checked.</li>
+			<li><a href="hi-z-pow2.html">Power-of-two Hi-Z</a><br>A 1920 × 1080 depth buffer into a 1024 × 512 (or 2048 × 1024) pyramid with <code>source.resample: 'area'</code>: conservative against every depth texel, next to a 2×2-tap pyramid that misses.</li>
+			<li><a href="odd-sizes.html">Odd sizes</a><br><code>'exact'</code>, <code>'spd'</code> and <code>'box'</code> side by side at 31 × 31, 1129 × 635 and 1477 × 831, against the area-weighted ideal, down to the 1×1.</li>
+			<li><a href="partial-update.html">Partial updates</a><br>Paint into a texture and update only what depends on the brush with <code>rect</code>, outlined per level; one face of a 6-layer array with <code>layers</code>. Bit-identical to a full recompute.</li>
 			<li><a href="reducer.html">Block statistics (<code>Reducer</code>)</a><br>A load hook and per-channel ops: mean, variance, max and count per 8² and 32² block, in one dispatch.</li>
 			<li><a href="scalar.html">Exposure (<code>ScalarReduction</code>)</a><br>Log-average luminance of an HDR frame in two dispatches, with a <code>finish</code> hook that computes the exposure on the GPU.</li>
 			<li><a href="three.html">three.js</a><br><code>downsampler/three</code> mipmaps a <code>StorageTexture</code>, side by side with three's own render-pass mipmaps. Loads three from a CDN.</li>

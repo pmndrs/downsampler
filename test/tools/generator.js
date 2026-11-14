@@ -102,7 +102,7 @@ async function lumaPyramidClamp( device, { scene, tools } ) {
 		finish: 'fn finish(value: vec4f, weight: f32) { updateFrameInfo(value); }'
 	} );
 	const dispatch = { width: scene.width, height: scene.height, bindGroup: tool.group };
-	const run = { size: [ window, window ], bindGroup: tool.group };
+	const run = { width: window, height: window, bindGroup: tool.group };
 	const encodePass = pass => { pyramid.encodePass( pass, dispatch ); exposure.encodePass( pass, run ); };
 	return { name: 'generator/luma-pyramid-clamp', pass: 'exposure', dispatches: 3, encodePass, reset: () => tool.reset(), check: lumaCheck( device, tool, encodePass ), destroy: () => tool.destroy() };
 
@@ -117,7 +117,7 @@ async function lumaPyramid( device, { scene, tools } ) {
 	const depth = await reducer( device, 'generator depth mip 1', { reduction: 'average', levels: [ 1 ], edges: 'zero-weight', bindings: group1, load, store } );
 	const exposure = await scalar( device, 'generator luma scalar', { reduction: 'average', bindings: group1, load, finish } );
 	const dispatch = { width: scene.width, height: scene.height, bindGroup: tool.group };
-	const run = { size: [ scene.width, scene.height ], bindGroup: tool.group };
+	const run = { width: scene.width, height: scene.height, bindGroup: tool.group };
 	const encodePass = pass => { depth.encodePass( pass, dispatch ); exposure.encodePass( pass, run ); };
 	return { name: 'generator/luma-pyramid', pass: 'exposure', dispatches: 3, encodePass, reset: () => tool.reset(), check: lumaCheck( device, tool, encodePass ), destroy: () => tool.destroy() };
 
@@ -172,7 +172,7 @@ ${ fsrFinish }`;
 			load: 'fn load(texel: vec2i, layer: u32) -> vec4f { return lumaPartials[u32(texel.y) * lumaGrid.x + u32(texel.x)]; }',
 			finish: 'fn finish(value: vec4f, weight: f32) { fsrFinish(vec4f(value.xy / value.w, 0.0, 0.0), value.w); }'
 		} );
-		run = { size: grid, bindGroup: group };
+		run = { width: grid[ 0 ], height: grid[ 1 ], bindGroup: group };
 
 	}
 
@@ -231,7 +231,7 @@ async function upscalerExposure( device, { scene, tools }, { taps } ) {
 	const exposure = await scalar( device, `generator upscaler exposure${ taps ? ' (taps)' : '' }`, {
 		reduction: [ 'average', 'sum', 'sum', 'sum' ], bindings: { wgsl: exposureBindings, entries: exposureEntries }, load, finish: exposureFinish, ...( taps ? { block: 2 } : {} )
 	} );
-	const run = { size: taps ? [ 32, 32 ] : [ scene.width, scene.height ], bindGroup: group };
+	const run = { width: taps ? 32 : scene.width, height: taps ? 32 : scene.height, bindGroup: group };
 	return {
 		name: taps ? 'generator/upscaler-exposure-taps' : 'generator/upscaler-exposure', pass: 'exposure', dispatches: 2,
 		encodePass: pass => exposure.encodePass( pass, run ),
