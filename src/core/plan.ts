@@ -99,6 +99,12 @@ export interface PlanOptions {
 	haloMaxTexels?: number;
 	/** Largest extra first-output work a halo may add, as a fraction of the tile's. Default 0.25. */
 	haloMaxExtra?: number;
+	/**
+	 * Largest first output (width × height) a halo batch may start from. Default 16384 (128²):
+	 * halo tiles are 16 texels, which Intel UHD reduces 14–48 % slower than 32-texel tiles at the
+	 * larger levels (results/windows/round2/halo.md), while the dispatch a halo saves costs the same.
+	 */
+	haloMaxOutput?: number;
 }
 
 export interface Batch {
@@ -181,7 +187,7 @@ export function workgroupSide( tile: number ): number {
  */
 export function planBatches( width: number, height: number, options: PlanOptions ): Batch[] {
 
-	const { baseMipLevel = 0, mipLevelCount, levelsPerDispatch, oddSizes = 'exact', fromSource = false, copySource = false, tail = false, tailMaxTile = tailTile, exactMinTile = 8, halo = false, haloMaxTexels = 1024, haloMaxExtra = 0.25 } = options;
+	const { baseMipLevel = 0, mipLevelCount, levelsPerDispatch, oddSizes = 'exact', fromSource = false, copySource = false, tail = false, tailMaxTile = tailTile, exactMinTile = 8, halo = false, haloMaxTexels = 1024, haloMaxExtra = 0.25, haloMaxOutput = 16384 } = options;
 	if ( exactMinTile !== 8 && exactMinTile !== 16 && exactMinTile !== 32 ) throw new Error( 'downsampler: exactMinTile must be 8, 16 or 32.' );
 	if ( oddSizes !== 'exact' && oddSizes !== 'spd' && oddSizes !== 'box' ) throw new Error( `downsampler: odd size policy "${ oddSizes }" is not implemented.` );
 	if ( ! Number.isInteger( levelsPerDispatch ) || levelsPerDispatch < 1 || levelsPerDispatch > 6 ) throw new Error( 'downsampler: levelsPerDispatch must be an integer from 1 to 6.' );
@@ -276,7 +282,7 @@ export function planBatches( width: number, height: number, options: PlanOptions
 
 		const plain = plainAt( level );
 		const options: Batch[] = [ plain ];
-		if ( plain.kernel !== 'tail' && ! ( fromSource && level === firstLevel ) ) {
+		if ( plain.kernel !== 'tail' && ! ( fromSource && level === firstLevel ) && plain.outputWidth * plain.outputHeight <= haloMaxOutput ) {
 
 			const { outputWidth, outputHeight } = plain;
 			for ( let c = plain.count + 1; c <= Math.min( levelsPerDispatch, lastLevel - level + 1 ); c ++ ) {

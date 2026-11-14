@@ -19,7 +19,7 @@ Last updated: 2026-11-13 (M2.3.3/M2.3.7: rgb10a2unorm and integer formats, entri
 | # | Divergence | Source | Verdict | Effort to converge | Quality | Performance |
 |---|---|---|---|---|---|---|
 | 1 | No single dispatch / atomic handoff | SPD, webgpu-spd | Keep | S (probe exists) | Converging risks missing mips | Measured: 2 dispatches beat the atomic probe, 1.1–2.2× at render sizes up to 1440p; tie at 4096² |
-| 2 | Batch ends at every odd size | SPD, nvpro | Tail kernel built, default since 2026-11-13; halo batches candidate | — / M–L | None | Measured, idle: tail 0.82–0.90× (RTX 3060), 0.81–1.02× (M5 Pro), 0.97× (Intel UHD); `'spd'` structure 0.47–0.73× |
+| 2 | Batch ends at every odd size | SPD, nvpro | Tail kernel built, default since 2026-11-13; halo batches built, opt-in (`halo`, 2026-11-14) | — / M–L | None | Measured, idle: tail 0.82–0.90× (RTX 3060), 0.81–1.02× (M5 Pro), 0.97× (Intel UHD); halo 0.85–1.00× of the tail (RTX), neutral (Intel); `'spd'` structure 0.47–0.73× |
 | 3 | Odd sizes match render passes, not area-weighted or dropped | SPD, nvpro | Keep default; `'spd'` and `'box'` opt-ins | Done for both (M2T.4, M2.5) | `'spd'`: drifting footprints, non-conservative Hi-Z | `'spd'` 1.4–2.1× faster at render sizes (rgba8); `'box'` same dispatches as `'exact'`, not timed |
 | 4 | Conservative min/max footprint at odd edges | SPD | Keep | S (but wrong) | SPD's Hi-Z can false-cull | One extra load per odd edge texel |
 | 5 | Clamp at edges, no zero reads | SPD | Keep | S | Ours: no dark or zero borders | ~None |
@@ -73,7 +73,7 @@ Last updated: 2026-11-13 (M2.3.3/M2.3.7: rgb10a2unorm and integer formats, entri
 - **Why:** it is the simplest structure that keeps `'exact'` results identical to render passes.
 - **Effort to converge:**
   - **Tail kernel: built (M2T.4), the default since 2026-11-13** (`tail: false` turns it off). Once a first output fits one 32×32 workgroup, that workgroup finishes the chain with exact weights. Render sizes drop to 3–6 dispatches (1920×1080: 4; 1477×831: 6, since 46×25 doesn't fit).
-  - **Halo batches, M–L (candidate):** our odd taps fall in `2x … 2x+2`, the same support as nvpro's, so their halo structure would work without changing results. This is what's left: the breaks at the large levels.
+  - **Halo batches, built (opt-in `halo`, 2026-11-14):** our odd taps fall in `2x … 2x+2`, the same support as nvpro's, so their halo structure carries odd steps without changing results (bit-identical with shader weights; within one step with the sampler, as the tail). The planner takes a halo only where it saves a dispatch, on first outputs up to 128²: RTX 3060 0.85–1.00× of the default chain (8–15 % at 960×540, 1129×635, 1477×831, 1920×1080), Intel UHD neutral; on large levels Intel lost 24–52 % (16-texel tiles), hence the cap. Not the default: the rule is ≥ 5 % on both GPUs; the M5 decides ([results/windows/round2/halo.md](results/windows/round2/halo.md)).
 - **Quality:** none. The tail matches `'exact'` within one 8-bit step (its shader bilinear weights replace the sampler's 8-bit ones). It passed the full GPU matrix against the `'exact'` oracle.
 - **Performance (measured, M5 Pro, loaded; SPEC §2.1):**
   - The tail is 0.83–1.07× of `'exact'` on a loaded M5 Pro (2026-11-11). Idle re-runs (2026-11-13): RTX 3060 0.82 / 0.90 (rgba8 / rgba16f), Intel UHD 0.97 / 0.97, M5 Pro 0.81–1.02 with 16×16 exact tiles (`results/render/m5-pro-render-tiles-*.json`). Owner rule: default if faster on most devices, so it became the default.

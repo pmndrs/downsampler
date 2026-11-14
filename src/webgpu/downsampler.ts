@@ -84,6 +84,8 @@ export interface DownsamplerOptions {
 	 * of its tile (default 0.25). For tuning; see `planBatches`' `haloMaxExtra`.
 	 */
 	haloMaxExtra?: number;
+	/** With `halo`: the largest first output (texels) a halo batch may start from (default 16384, 128²). For tuning; see `planBatches`' `haloMaxOutput`. */
+	haloMaxOutput?: number;
 	/**
 	 * float16 formats: how each level is rounded to a half, before it is stored and
 	 * before the next level reads it. 'nearest' (default): round to nearest even in the
@@ -359,6 +361,7 @@ export class Downsampler {
 	/** Whether 'exact' and 'box' chains carry odd steps in halo batches (resolved `halo` option; false where workgroups have fewer than 256 invocations). */
 	readonly halo: boolean;
 	private readonly haloMaxExtra: number;
+	private readonly haloMaxOutput: number;
 	/** How float16 levels are rounded (resolved `f16Rounding` option). */
 	readonly f16Rounding: F16Rounding;
 	/** Smallest first-output tile of 'exact' batches (resolved `exactTile` option: 8, 16 or 32). */
@@ -415,6 +418,9 @@ export class Downsampler {
 		const haloMaxExtra = options.haloMaxExtra ?? 0.25;
 		if ( typeof haloMaxExtra !== 'number' || ! ( haloMaxExtra >= 0 ) ) throw new Error( 'downsampler: haloMaxExtra must be a number ≥ 0.' );
 		this.haloMaxExtra = haloMaxExtra;
+		const haloMaxOutput = options.haloMaxOutput ?? 16384;
+		if ( typeof haloMaxOutput !== 'number' || ! ( haloMaxOutput >= 0 ) ) throw new Error( 'downsampler: haloMaxOutput must be a number ≥ 0.' );
+		this.haloMaxOutput = haloMaxOutput;
 		const f16Rounding = options.f16Rounding ?? 'nearest';
 		if ( f16Rounding !== 'nearest' && f16Rounding !== 'device' ) throw new Error( 'downsampler: f16Rounding must be "nearest" or "device".' );
 		this.f16Rounding = f16Rounding;
@@ -984,10 +990,10 @@ export class Downsampler {
 	 * Reducer's 'clamp' tile kernel emitting every level.
 	 */
 	/** Halo planning for a texture of `format` (none for integer formats, whose kernel has no halo, or 'spd'). */
-	private haloPlan( format: SupportedFormat, oddSizes: OddSizePolicy ): { halo?: boolean; haloMaxTexels?: number; haloMaxExtra?: number } {
+	private haloPlan( format: SupportedFormat, oddSizes: OddSizePolicy ): { halo?: boolean; haloMaxTexels?: number; haloMaxExtra?: number; haloMaxOutput?: number } {
 
 		if ( ! this.halo || oddSizes === 'spd' || ! isSupportedFormat( format ) || isIntFormat( format ) ) return {};
-		return { halo: true, haloMaxTexels: Math.floor( this.device.limits.maxComputeWorkgroupStorageSize / 16 ), haloMaxExtra: this.haloMaxExtra };
+		return { halo: true, haloMaxTexels: Math.floor( this.device.limits.maxComputeWorkgroupStorageSize / 16 ), haloMaxExtra: this.haloMaxExtra, haloMaxOutput: this.haloMaxOutput };
 
 	}
 

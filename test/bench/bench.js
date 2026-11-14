@@ -120,6 +120,7 @@ function renderStrategies( device ) {
 	strategies.tail16 = { ...run( new Downsampler( device, { tail: true, exactTile: 16 } ), {} ), parity: true };
 	// Halo batches (SPEC §13 item 3): the default chain (tail on) with odd steps carried inside batches.
 	strategies.halo = { ...run( new Downsampler( device, { tail: true, halo: true } ), {} ), parity: true };
+	strategies.haloAny = { ...run( new Downsampler( device, { tail: true, halo: true, haloMaxOutput: Infinity } ), {} ), parity: true };
 	return { strategies, reference: () => 'render' };
 
 }

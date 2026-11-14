@@ -9,7 +9,7 @@ same-run ratios are trustworthy on a loaded machine.
 |---|---|---|
 | (default) | `bench.js` | render passes vs the library at 4 and 6 levels per dispatch, `'load'`, `'max'`, buffer output |
 | `--compare=spd` | `bench.js`, `atomic-spd.js` | odd-size strategies: `'exact'`, tail, `'spd'`, the atomic probe, render (M2T.4) |
-| `--compare=render` | `bench.js` | render passes vs `'exact'`, hybrids, level 1 alone, tile sweep (DIVERGES #17) |
+| `--compare=render` | `bench.js` | render passes vs `'exact'`, hybrids, level 1 alone, tile sweep (DIVERGES #17), `halo` and `haloAny` (halo batches, capped and uncapped; DIVERGES #2) |
 | `--compare=webgpu-spd` | `webgpu-spd.js` | webgpu-spd 3.0.0 vs ours (results/compare/webgpu-spd.md) |
 | `--compare=throughput` | `throughput.js`, `bench.js` | chains per second without timestamps (M3) |
 | `--compare=storage-usage` | `storage-usage.js` | does STORAGE_BINDING make sampling slower? (M3) |

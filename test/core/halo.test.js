@@ -20,7 +20,7 @@ test( 'halo plans: same levels in order, fewer or equal dispatches, tiles with h
 
 	for ( const [ width, height ] of [ ...renderSizes, [ 255, 257 ], [ 191, 107 ], [ 31, 33 ], [ 1, 300 ], [ 4096, 4096 ] ] ) {
 
-		const plain = plan( width, height ), halo = plan( width, height, { halo: true } );
+		const plain = plan( width, height ), halo = plan( width, height, { halo: true, haloMaxOutput: Infinity } );
 		assert.ok( halo.length <= plain.length, `${ width }×${ height }: ${ halo.length } > ${ plain.length }` );
 		let level = 1;
 		for ( const batch of halo ) {
@@ -47,7 +47,11 @@ test( 'halo plans: same levels in order, fewer or equal dispatches, tiles with h
 test( 'halo plans save dispatches at render sizes', () => {
 
 	const saved = renderSizes.map( ( [ w, h ] ) => plan( w, h ).length - plan( w, h, { halo: true } ).length );
-	assert.deepEqual( saved, [ 1, 2, 0, 3, 1, 1, 0, 1 ] );
+	// Halo batches start from first outputs of at most 128² (haloMaxOutput); without the cap more.
+	assert.deepEqual( saved, [ 1, 1, 0, 1, 0, 1, 0, 1 ] );
+	const uncapped = renderSizes.map( ( [ w, h ] ) => plan( w, h ).length - plan( w, h, { halo: true, haloMaxOutput: Infinity } ).length );
+	assert.deepEqual( uncapped, [ 1, 2, 0, 3, 1, 1, 0, 1 ] );
+	for ( const [ w, h ] of renderSizes ) for ( const batch of plan( w, h, { halo: true } ) ) if ( batch.halo ) assert.ok( batch.outputWidth * batch.outputHeight <= 16384 );
 
 } );
 

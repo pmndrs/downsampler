@@ -13,6 +13,7 @@ The first release.
 - Reductions: `'average'`, `'min'`, `'max'`, `'minmax'` and custom idempotent folds; folds are conservative at odd sizes, so min/max pyramids are a valid Hi-Z.
 - Separate sources (depth → Hi-Z, format conversion, any float-sampleable 2D texture): same size, half size, or any size with `resample: 'area'` (power-of-two Hi-Z; ratio cap `maxResampleRatio`, default 8).
 - Partial updates: `layers: [ first, count ]` and `rect`, bit-identical to a full recompute; an empty rect is a no-op.
+- `halo` (opt-in): `'exact'` and `'box'` chains carry odd steps inside a batch, one dispatch fewer at many render sizes (`planBatches` `halo`, `batchHalo` in core).
 - `encode`, `encodePass` (into your compute pass), `generate`, `prepare` (the planned dispatches, for self-dispatch) and `release`.
 - Two output paths (storage textures, or a buffer and copies for formats that can't be storage textures) and a compatibility-mode path, all bit-identical.
 - Identical results on every GPU where it matters: `f16Rounding: 'nearest'` (default) rounds float16 levels in the shader; `averageAccess: 'load'` replaces the sampler's vendor-specific weights.

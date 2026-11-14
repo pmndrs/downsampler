@@ -254,7 +254,7 @@ const entries = [
 		they: 'SPD carries every level through odd sizes by dropping the last row or column. nvpro carries 2 levels per dispatch through odd sizes with a 1-texel halo.',
 		we: 'End the batch where the next reduction is inexact: 5–9 dispatches at render sizes (7 for 1920×1080). The exact tail kernel (M2T.4, default since 2026-11-13; tail: false turns it off) finishes the chain in one workgroup once a level fits 32×32: 3–6 dispatches.',
 		why: 'The simplest structure that keeps results identical to render passes.',
-		converge: 'Tail kernel: built, default since 2026-11-13. Halo batches, M–L (candidate): our odd taps share nvpro\'s 2x…2x+2 support. They are what\'s left, because the time goes to the breaks at the large levels.',
+		converge: 'Tail kernel: built, default since 2026-11-13. Halo batches: built, opt-in (halo: true, 2026-11-14). Our odd taps share nvpro\'s 2x…2x+2 support, so a halo carries odd steps without changing results; the planner takes one only where it saves a dispatch, on levels up to 128². Not the default: RTX 3060 0.85–1.00×, Intel UHD neutral; the rule is ≥ 5 % on both.',
 		quality: 'None. The tail matches \'exact\' within one 8-bit step (shader instead of sampler bilinear weights) and passed the full GPU matrix.',
 		perfKind: 'measured', perf: 'Tail 0.83–1.07× of \'exact\' (a gain at 960×540, otherwise mostly within noise): the trailing dispatches it removes are cheap. The \'spd\' structure, 2 dispatches with no batch ends, is 0.47–0.73× (rgba8) at render sizes, which bounds what halo batches could win. One compute pass for all batches measured 0.94–1.03×, so it isn\'t pass overhead.',
 		perfShort: 'Tail 0.83–1.07×; 2-dispatch bound 0.47–0.73×', qualityShort: 'None',
