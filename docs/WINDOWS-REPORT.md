@@ -251,14 +251,18 @@ halo; the planner takes one only where it saves a dispatch, on first outputs up 
 large levels). The rule for a default is ≥ 5 % on both GPUs, so the M5 decides.
 [round2/halo.md](../results/windows/round2/halo.md)
 
+**M3 measurements (handoff §3).** STORAGE_BINDING costs nothing when sampling (both GPUs). No subgroup kernel: the
+bound is 8 % on RTX rgba8 (3 % rgba16f), but the shuffle prototype loses 8–20 % on the RTX and 47–84 % on Intel. No fp16
+kernel: `f16safe` gains under 5 %, except Intel rgba16float (9 %) at up to 512 steps of error. Throughput orders the
+strategies like the timestamps on Intel (τ 0.83); weaker on the RTX, which ran hot. [round2/m3.md](../results/windows/round2/m3.md)
+
 **sRGB vs render passes (M3 build 5).** Even after the table fix, render passes are 2.6–3.3× faster than our sRGB
 path on the RTX at every size (they write sRGB levels directly; we write a buffer and copy). three.js should
 keep render-pass mipmaps for sRGB textures.
 
 ### Not done this round
 
-- M3 measurements on Windows (handoff §3: throughput, storage-usage, subgroups, f16) and builds 2–4 (cheaper
-  exact kernel, subgroup kernel, fp16), and the round-1 leftover `bench` / `tools` jobs.
+- Build 2 (a cheaper exact kernel) and the round-1 leftover `bench` / `tools` jobs.
 - The Intel full matrix (only quick runs; the full matrix needs ~2.5 h of shard time on the RTX already).
 - M5 runs: halo default, `'box'` tail per size.
 
