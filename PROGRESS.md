@@ -6,7 +6,7 @@ Live status board. SPEC.md holds the design and the reasons behind it; this file
 
 **For agents:** read this after SPEC.md. When you start a task, move it to *Now* with your branch. When you finish, tick it, add the commit, and log the verification run. Keep entries to one line and link SPEC sections instead of restating them. Anything that needs the owner goes under *Waiting on owner*.
 
-Last updated: 2026-11-13 · Branch: `m2-reductions`
+Last updated: 2026-11-14 · Branch: `main` (the Mac's work merged; the Windows agent continues from `main`)
 
 ## Now
 
@@ -40,7 +40,6 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 - Rect updates without allocation: one ring buffer of region uniforms with dynamic offsets, for tools that change rects every frame (owner 2026-11-13: not now). Caveat to design around: more than N updates recorded before a submit would overwrite slots
 - **M3, dial in:** per-frame throughput benchmark; cross-vendor device lab runs (NVIDIA/D3D12 first); `STORAGE_BINDING` sampling cost; float32 sampler vs load; subgroup kernel with fallback (upper-bound test first); fp16
-- **M4, examples and docs:** usage docs, notes for SPD users, examples (mip chain, Hi-Z from depth, custom reduction, three.js)
 - **M5, ship:** npm publish, the upscaler and other tools as consumers, three.js in-tree PR, the gpuweb#5253 comment
 
 ## Done
@@ -104,9 +103,13 @@ Last updated: 2026-11-13 · Branch: `m2-reductions`
 
 ## Waiting on owner
 
-- Publishing (M5): npm `downsampler` is free. `release.yml` needs an `NPM_TOKEN` secret or npm trusted publishing on pmndrs/downsampler; then run it (dry run first). Merge to `main` waits for Windows round 2
+- Publishing (M5): npm `downsampler` is free. `release.yml` needs an `NPM_TOKEN` secret or npm trusted publishing on pmndrs/downsampler; then run it (dry run first). `m2-reductions` merged to `main` 2026-11-14 (owner) before Windows round 2 finished; round 2 continues on top of `main`
 - three.js PR: the local branch `compute-mipmaps` is ready for your review (`/Users/dex/Developer/three.js-compute-mips`, draft text in `PR-compute-mipmaps.md`); nothing is posted
 - Upscaler exposure, every texel vs 1024 taps: agreed to merge the bit-identical `perf/exposure-parallel` first (upscaler project)
+
+## Decided (owner, 2026-11-14)
+
+- The Mac's work goes to `main` now (`m2-reductions` fast-forwarded) and this machine leaves the project. The Windows agent pulls `main` and finishes the remaining work: round 2 + M3 (`docs/WINDOWS-HANDOFF-2.md`), including running `examples/` on both GPUs. M4 (docs, examples incl. `examples/three.html`) is done, not pending
 
 ## Decided (owner, 2026-11-13)
 
