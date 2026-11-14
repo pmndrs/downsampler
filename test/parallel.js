@@ -3,13 +3,17 @@
 //   node test/parallel.js [--jobs=6] [--shards=18] [--cap=10] [--budget=30] [--out=results/local/<name>] -- <test/run.js flags>
 //   node test/parallel.js -- --quick --power=high
 //   node test/parallel.js --cap=8 -- --power=low --durations=results/windows/durations-intel-uhd.json
+//   node test/parallel.js --shards=48 --part=1/3 -- --power=high    a third of the shards (a suite too big for one budget)
 //
 // The suite is CPU-bound (each case's oracle is computed in JavaScript on the page), so one page
 // uses one core while the GPU idles. This runs `--shards` disjoint shards (test/ci/shard.js),
 // `--jobs` at a time, each in its own headless Chrome with --keep-going, and kills any shard that
 // runs past `--cap` minutes (it is reported as timed out, with the groups it didn't finish).
 // `--budget` minutes bounds the whole run: past it, running shards are killed and queued ones
-// skipped, all reported. Measured on a laptop RTX 3060 (6 jobs): --quick 2 min, full 17 min.
+// skipped, all reported. Measured on a laptop RTX 3060 (6 jobs): --quick 2 min, full 17 min (round 1;
+// the full matrix has since outgrown one 30 min budget there: run it in parts).
+// `--part=i/n` runs the i-th of n contiguous blocks of the `--shards` shards, so a suite that doesn't
+// fit one budget runs as n invocations that together cover every shard once (same --shards in each).
 //
 // Writes to --out: shard-<i>.log, report-<i>.json, timing-<i>.json, and
 //   summary.md / summary.json   failures, timeouts, crashes, cases, wall time, slowest groups
@@ -22,6 +26,7 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync }
 import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gpuChoiceArgs } from './gpu-choice.js';
 
 const argv = process.argv.slice( 2 );
 const split = argv.indexOf( '--' );
@@ -31,6 +36,8 @@ const value = name => own.find( arg => arg.startsWith( `--${ name }=` ) )?.split
 const jobs = Number( value( 'jobs' ) ?? Math.max( 1, Math.min( 6, availableParallelism() - 2 ) ) );
 // More shards than jobs: a queue evens out shards whose recorded durations are off on this device.
 const total = Number( value( 'shards' ) ?? jobs * 3 );
+const [ part, parts ] = ( value( 'part' ) ?? '1/1' ).split( '/' ).map( Number );
+if ( ! ( Number.isInteger( part ) && Number.isInteger( parts ) && part >= 1 && part <= parts && parts <= total ) ) throw new Error( `test/parallel.js: --part=i/n needs 1 ≤ i ≤ n ≤ --shards (${ total })` );
 const capMs = Number( value( 'cap' ) ?? 10 ) * 60000;
 const budgetMs = Number( value( 'budget' ) ?? 30 ) * 60000;
 const stamp = new Date().toISOString().slice( 0, 16 ).replace( /[:T]/g, '-' );
@@ -38,10 +45,13 @@ const out = value( 'out' ) ?? join( 'results', 'local', stamp );
 const runner = fileURLToPath( new URL( './run.js', import.meta.url ) );
 for ( const flag of [ '--shard=', '--output=', '--timing=', '--list', '--bench' ] ) if ( passed.some( arg => arg.startsWith( flag ) ) ) throw new Error( `test/parallel.js sets ${ flag } itself (or doesn't support it)` );
 mkdirSync( out, { recursive: true } );
+// Look the GPUs up once here (Windows: a slow PowerShell query); the shards inherit the result.
+gpuChoiceArgs( passed.find( arg => arg.startsWith( '--power=' ) )?.split( '=' )[ 1 ] );
 
 const started = Date.now();
-const shards = Array.from( { length: total }, ( _, i ) => ( { index: i + 1 } ) );
-console.log( `${ total } shards, ${ jobs } at a time, ${ capMs / 60000 } min cap each, ${ budgetMs / 60000 } min budget → ${ out }` );
+const perPart = Math.ceil( total / parts );
+const shards = Array.from( { length: total }, ( _, i ) => ( { index: i + 1 } ) ).slice( ( part - 1 ) * perPart, part * perPart );
+console.log( `${ parts > 1 ? `part ${ part }/${ parts }: shards ${ shards[ 0 ].index }–${ shards[ shards.length - 1 ].index } of ` : '' }${ total } shards, ${ jobs } at a time, ${ capMs / 60000 } min cap each, ${ budgetMs / 60000 } min budget → ${ out }` );
 const running = new Set();
 let overBudget = false;
 const budgetTimer = setTimeout( () => {
@@ -91,7 +101,7 @@ function runShard( shard ) {
 
 // A queue of shards, `jobs` running at once.
 const queue = [ ...shards ];
-await Promise.all( Array.from( { length: Math.min( jobs, total ) }, async () => {
+await Promise.all( Array.from( { length: Math.min( jobs, shards.length ) }, async () => {
 
 	while ( queue.length && ! overBudget ) await runShard( queue.shift() );
 
@@ -137,7 +147,7 @@ const seconds = Math.round( ( Date.now() - started ) / 1000 );
 const slowest = Object.entries( groups ).sort( ( a, b ) => b[ 1 ].ms - a[ 1 ].ms ).slice( 0, 10 );
 const device = adapter ? [ adapter.vendor, adapter.architecture, adapter.description ].filter( Boolean ).join( ' ' ) : 'unknown';
 const summary = {
-	date: new Date().toISOString(), flags: passed, jobs, shards: total, capMinutes: capMs / 60000, seconds, adapter,
+	date: new Date().toISOString(), flags: passed, jobs, shards: total, part: parts > 1 ? `${ part }/${ parts }` : null, capMinutes: capMs / 60000, seconds, adapter,
 	ok: failures.length === 0 && problems.length === 0,
 	cases, checks, groups: { ran, listed: listing?.groups ?? null },
 	failures, problems, skipped: [ ...skipped ],
@@ -155,7 +165,7 @@ const md = [
 	`# GPU suite, ${ summary.ok ? 'passed' : 'FAILED' }`,
 	'',
 	`- Device: ${ device }`,
-	`- Flags: \`${ passed.join( ' ' ) || '(full)' }\`; ${ total } shards, ${ jobs } at a time, cap ${ capMs / 60000 } min`,
+	`- Flags: \`${ passed.join( ' ' ) || '(full)' }\`; ${ parts > 1 ? `part ${ part }/${ parts } (shards ${ shards[ 0 ].index }–${ shards[ shards.length - 1 ].index }) of ` : '' }${ total } shards, ${ jobs } at a time, cap ${ capMs / 60000 } min`,
 	`- ${ cases } cases, ${ checks } pattern runs, ${ ran }${ listing ? ` of ${ listing.groups }` : '' } case groups; wall ${ Math.floor( seconds / 60 ) } min ${ seconds % 60 } s`,
 	'',
 	...( problems.length ? [ '## Shards that did not finish', '', ...problems.map( line => `- ${ line }` ), '' ] : [] ),

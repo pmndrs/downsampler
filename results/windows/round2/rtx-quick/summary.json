@@ -1,0 +1,282 @@
+{
+	"date": "2026-11-14T07:51:43.475Z",
+	"flags": [
+		"--quick",
+		"--power=high"
+	],
+	"jobs": 6,
+	"shards": 18,
+	"capMinutes": 10,
+	"seconds": 841,
+	"adapter": {
+		"vendor": "nvidia",
+		"architecture": "ampere",
+		"device": "",
+		"description": "",
+		"isFallbackAdapter": false,
+		"timestamps": true,
+		"features": [
+			"texture-formats-tier1",
+			"bgra8unorm-storage"
+		],
+		"compatibility": false,
+		"maxStorageTexturesPerShaderStage": 6,
+		"subgroupMinSize": 32,
+		"subgroupMaxSize": 128,
+		"adapterFeatures": [
+			"bgra8unorm-storage",
+			"chromium-experimental-multi-draw-indirect",
+			"chromium-experimental-timestamp-query-inside-passes",
+			"clip-distances",
+			"core-features-and-limits",
+			"depth-clip-control",
+			"depth32float-stencil8",
+			"dual-source-blending",
+			"float32-blendable",
+			"float32-filterable",
+			"indirect-first-instance",
+			"primitive-index",
+			"rg11b10ufloat-renderable",
+			"shader-f16",
+			"subgroups",
+			"texture-component-swizzle",
+			"texture-compression-bc",
+			"texture-compression-bc-sliced-3d",
+			"texture-formats-tier1",
+			"texture-formats-tier2",
+			"timestamp-query"
+		],
+		"maxTextureDimension2D": 8192
+	},
+	"ok": false,
+	"cases": 10599,
+	"checks": 16755,
+	"groups": {
+		"ran": 920,
+		"listed": 1850
+	},
+	"failures": [
+		{
+			"shard": 4,
+			"label": "fixtures/1129x635",
+			"first": "fixtures/1129x635 threw: tool fixtures 1129x635: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp",
+			"thrown": true
+		},
+		{
+			"shard": 6,
+			"label": "fixtures/960x540",
+			"first": "fixtures/960x540 threw: tool fixtures 960x540: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp",
+			"thrown": true
+		}
+	],
+	"problems": [
+		"shard 10: exit 1, no report:   stderr: '' | } | Node.js v24.13.1",
+		"shard 11: exit 1, no report:   stderr: '' | } | Node.js v24.13.1",
+		"shard 12: exit 1, no report:   stderr: '' | } | Node.js v24.13.1",
+		"shard 13: exit 1, no report:   stderr: '' | } | Node.js v24.13.1",
+		"shard 14: exit 1, no report:   stderr: '' | } | Node.js v24.13.1",
+		"shard 15: exit 1, no report:   stderr: '' | } | Node.js v24.13.1",
+		"shard 16: exit 1, no report:   stderr: '' | } | Node.js v24.13.1",
+		"shard 17: exit 1, no report:   stderr: '' | } | Node.js v24.13.1",
+		"shard 18: exit 1, no report:   stderr: '' | } | Node.js v24.13.1"
+	],
+	"skipped": [],
+	"perShard": [
+		{
+			"index": 1,
+			"ran": true,
+			"code": 0,
+			"seconds": 414,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 2,
+			"ran": true,
+			"code": 0,
+			"seconds": 497,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 3,
+			"ran": true,
+			"code": 0,
+			"seconds": 453,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 4,
+			"ran": true,
+			"code": 1,
+			"seconds": 452,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 5,
+			"ran": true,
+			"code": 0,
+			"seconds": 498,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 6,
+			"ran": true,
+			"code": 1,
+			"seconds": 462,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 7,
+			"ran": true,
+			"code": 0,
+			"seconds": 427,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 8,
+			"ran": true,
+			"code": 0,
+			"seconds": 371,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 9,
+			"ran": true,
+			"code": 0,
+			"seconds": 385,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 10,
+			"ran": true,
+			"code": 1,
+			"seconds": 68,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 11,
+			"ran": true,
+			"code": 1,
+			"seconds": 84,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 12,
+			"ran": true,
+			"code": 1,
+			"seconds": 85,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 13,
+			"ran": true,
+			"code": 1,
+			"seconds": 95,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 14,
+			"ran": true,
+			"code": 1,
+			"seconds": 99,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 15,
+			"ran": true,
+			"code": 1,
+			"seconds": 92,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 16,
+			"ran": true,
+			"code": 1,
+			"seconds": 109,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 17,
+			"ran": true,
+			"code": 1,
+			"seconds": 90,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 18,
+			"ran": true,
+			"code": 1,
+			"seconds": 109,
+			"timedOut": false,
+			"overBudget": false
+		}
+	],
+	"slowest": [
+		{
+			"id": "region/box/rgba8unorm/average",
+			"ms": 81337,
+			"cases": 8
+		},
+		{
+			"id": "source/depth32float/rg32float/half",
+			"ms": 45472,
+			"cases": 11
+		},
+		{
+			"id": "fixtures/1129x635",
+			"ms": 45225,
+			"cases": 0
+		},
+		{
+			"id": "source/rgba16float/rgb9e5ufloat/half",
+			"ms": 35549,
+			"cases": 11
+		},
+		{
+			"id": "region/box/rgba8unorm-srgb/average",
+			"ms": 31173,
+			"cases": 8
+		},
+		{
+			"id": "integer/sources",
+			"ms": 28108,
+			"cases": 10
+		},
+		{
+			"id": "srgb/near-exact",
+			"ms": 27588,
+			"cases": 1
+		},
+		{
+			"id": "fixtures/960x540",
+			"ms": 25761,
+			"cases": 0
+		},
+		{
+			"id": "region/spd/rgba8unorm/average",
+			"ms": 24371,
+			"cases": 8
+		},
+		{
+			"id": "source/rgba16float/rg11b10ufloat/half",
+			"ms": 21962,
+			"cases": 11
+		}
+	]
+}
