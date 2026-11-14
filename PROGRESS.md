@@ -188,6 +188,8 @@ Last updated: 2026-11-14 · Branch: `main` (the Mac's work merged; the Windows a
 | 2026-11-14 | `e0bd535` | RTX 3060 Laptop, Chrome 148, D3D12 | `--only=halo` (full shapes) | ✅ 356 cases: halo chains bit-identical to plain (float32 within 2⁻²⁰), sample path vs oracle, rect/layers vs full recompute |
 | 2026-11-14 | `e0bd535` | Intel UHD, Chrome 148, D3D12 | `--only=halo --quick` | ✅ 156 cases |
 | 2026-11-14 | `e0bd535` | core (node) | `npm run test:core` | ✅ 125/125 (5 new halo plan tests; WGSL without a halo byte-identical) |
+| 2026-11-14 | `35f4543` (`halo-batches`) | RTX 3060 Laptop, Chrome 148, D3D12 | quick, `test/parallel.js` | ✅ 21,777 cases, 1857/1857 groups (7 halo groups new); only the FSR fixtures and the sampled sRGB-source group fail (known) |
+| 2026-11-14 | `35f4543` (`halo-batches`) | Intel UHD, Chrome 148, D3D12 | quick, `test/parallel.js`, then shard 1 without `packed/buffer-path` and that group alone | ✅ 21,777 cases, 1857/1857 groups; only the FSR fixtures fail |
 
 ## Notes
 
