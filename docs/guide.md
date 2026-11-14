@@ -576,7 +576,7 @@ The texture must have `STORAGE_BINDING` usage (in current three.js a `StorageTex
 | `formats`, `quantize`, `quantizeTexel`, `toHalf`, `fromHalf`, `packRgb9e5`, … | Format table and encoders. |
 | `srgbCode`, `srgbDecodeTable`, `quantizeSrgb`, `srgbThresholds`, `srgbBounds`, `srgbDecode`, `srgbEncode` | sRGB: the correctly rounded encoder, the exact decode table, the rounding thresholds and the f32 bounds the shader compares against. The oracles take the quantization `'srgb8'`. |
 
-The WGSL generators are exported from `downsampler/webgpu` for vendoring: `createKernel`, `kernelLayoutEntries`, `float16Wgsl`, `packedFloatWgsl`, `srgbWgsl`, `bufferOutputWgsl`, `createIntKernel`, `intMeanWgsl`, `createScalarKernel`. An exact kernel for an sRGB format with `output: 'storage'` writes the encoded bytes to storage textures of the linear alias format (`srgbScratchFormat`: `rgba8unorm` or `bgra8unorm`), for a self-dispatching tool that copies them into the sRGB level with `copyTextureToTexture`.
+The WGSL generators are exported from `downsampler/webgpu` for vendoring: `createKernel`, `kernelLayoutEntries`, `float16Wgsl`, `packedFloatWgsl`, `srgbWgsl`, `bufferOutputWgsl`, `createIntKernel`, `intMeanWgsl`, `createScalarKernel`. Kernels that read or write sRGB (`usesSrgbTable( options )`) take the exact tables from a storage buffer: bind `srgbTable( device )` at `srgbTableBinding` (12); `kernelLayoutEntries` declares it. An exact kernel for an sRGB format with `output: 'storage'` writes the encoded bytes to storage textures of the linear alias format (`srgbScratchFormat`: `rgba8unorm` or `bgra8unorm`), for a self-dispatching tool that copies them into the sRGB level with `copyTextureToTexture`.
 
 ## Vendoring: `downsampler/mipmap`
 

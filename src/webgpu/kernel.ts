@@ -245,17 +245,6 @@ fn ds_unpack11_11_10(bits: u32) -> vec3f { return vec3f(ds_from_ufloat(bits & 0x
 
 }
 
-/** An f32 as an exact WGSL hexadecimal literal (a decimal literal may round either way when converted to f32). */
-function f32Literal( value: number ): string {
-
-	if ( value === 0 ) return '0.0f';
-	const bits = new Uint32Array( new Float32Array( [ value ] ).buffer )[ 0 ];
-	const exponent = ( bits >>> 23 ) & 0xff;
-	if ( exponent === 0 || exponent === 0xff || bits >>> 31 ) throw new Error( `downsampler: ${ value } needs a normal positive f32 literal.` );
-	return `0x1.${ ( ( bits & 0x7fffff ) << 1 ).toString( 16 ).padStart( 6, '0' ) }p${ exponent - 127 }f`;
-
-}
-
 /**
  * WGSL for sRGB colour (`src/core/srgb.ts`), shared by every kernel that reads or writes it:
  * - `ds_srgb_code(v: f32) -> u32`: the 8-bit code of a linear value, rounded to nearest: a
@@ -266,24 +255,82 @@ function f32Literal( value: number ): string {
  *   decode(encode(v)), with the exact decode table (`srgbDecodeTable`).
  * Hardware decoding isn't exact everywhere (Apple M5: 12-bit linear values, up to 0.39 of a
  * code step off; results/probes/srgb-probe.mjs), so loads snap through `ds_srgb_quantize`.
+ *
+ * The two tables are read from a storage buffer at {@link srgbTableBinding} ({@link srgbTable},
+ * {@link srgbTableData}), not declared in the shader. As WGSL `const` or `var<private>` arrays
+ * indexed at run time they sit in per-invocation memory: on an RTX 3060 (D3D12) that made the
+ * chain 5× slower (1920×1080 rgba8unorm-srgb: 0.90 ms against 0.17 ms without lookups) and each
+ * pipeline took 0.5–5 s to compile (results/windows/round2/srgb.md).
  */
 export function srgbWgsl(): string {
 
-	const list = ( values: ArrayLike<number> ) => Array.from( values, f32Literal ).join( ', ' );
-	return `const DS_SRGB_DECODE = array<f32, 256>(${ list( srgbDecodeTable ) });
-const DS_SRGB_BOUND = array<f32, 255>(${ list( srgbBounds ) });
+	return `@group(0) @binding(${ srgbTableBinding }) var<storage, read> ds_srgb_table: array<f32, 512>;
 fn ds_srgb_code(v: f32) -> u32 {
 	if ((bitcast<u32>(v) & 0x7fffffffu) > 0x7f800000u) { return 0u; }
 	let c = clamp(v, 0.0, 1.0);
 	let e = select(1.055 * pow(c, 1.0 / 2.4) - 0.055, 12.92 * c, c <= 0.0031308);
 	var k = u32(clamp(round(e * 255.0), 0.0, 255.0));
-	if (k < 255u && c >= DS_SRGB_BOUND[k]) { k += 1u; } else if (k > 0u && c < DS_SRGB_BOUND[k - 1u]) { k -= 1u; }
+	if (k < 255u && c >= ds_srgb_table[256u + k]) { k += 1u; } else if (k > 0u && c < ds_srgb_table[255u + k]) { k -= 1u; }
 	return k;
 }
 fn ds_srgb_quantize(v: vec3f) -> vec3f {
-	return vec3f(DS_SRGB_DECODE[ds_srgb_code(v.x)], DS_SRGB_DECODE[ds_srgb_code(v.y)], DS_SRGB_DECODE[ds_srgb_code(v.z)]);
+	return vec3f(ds_srgb_table[ds_srgb_code(v.x)], ds_srgb_table[ds_srgb_code(v.y)], ds_srgb_table[ds_srgb_code(v.z)]);
 }
 `;
+
+}
+
+/** Group 0 binding of the sRGB tables ({@link srgbWgsl}): a read-only storage buffer of {@link srgbTableBytes} bytes. */
+export const srgbTableBinding = 12;
+/** Bytes of the sRGB table buffer: 512 f32, the decode table (256) then the code bounds (255, one unused). */
+export const srgbTableBytes = 2048;
+
+/** The contents of the sRGB table buffer: `srgbDecodeTable` at 0, `srgbBounds` at 256. */
+export function srgbTableData(): Float32Array<ArrayBuffer> {
+
+	const data = new Float32Array( srgbTableBytes / 4 );
+	data.set( srgbDecodeTable, 0 );
+	data.set( srgbBounds, 256 );
+	return data;
+
+}
+
+const srgbTables = new WeakMap<GPUDevice, GPUBuffer>();
+
+/**
+ * The sRGB table buffer for `device`, created and filled on first use and shared by every
+ * kernel on that device (2 KiB, never destroyed: it lives as long as the device).
+ */
+export function srgbTable( device: GPUDevice ): GPUBuffer {
+
+	let buffer = srgbTables.get( device );
+	if ( buffer === undefined ) {
+
+		buffer = device.createBuffer( { label: 'downsampler sRGB tables', size: srgbTableBytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST } );
+		device.queue.writeBuffer( buffer, 0, srgbTableData() );
+		srgbTables.set( device, buffer );
+
+	}
+
+	return buffer;
+
+}
+
+const isSrgb = ( format: string | undefined ) => format !== undefined && isSupportedFormat( format ) && formats[ format ].quantization === 'srgb8';
+
+/** Whether a kernel reads the sRGB tables, so its bind group needs {@link srgbTable} at {@link srgbTableBinding}. */
+export function usesSrgbTable( options: KernelOptions ): boolean {
+
+	if ( ( options.edges ?? 'exact' ) !== 'exact' ) {
+
+		const { format, load, store, output, sourceFormat } = tileOptions( options );
+		return ( load === undefined && isSrgb( sourceFormat ) ) || ( store === undefined && output === 'buffer' && isSrgb( format ) );
+
+	}
+
+	const { format, sourceFormat = format } = options;
+	if ( format !== undefined && isSupportedFormat( format ) && isIntQuantization( formats[ format ].quantization ) ) return false;
+	return isSrgb( format ) || isSrgb( sourceFormat );
 
 }
 
@@ -506,6 +553,7 @@ export function kernelLayoutEntries( options: KernelOptions ): GPUBindGroupLayou
 		else if ( store === undefined ) levels.forEach( ( _, i ) => entries.push( { binding: i + 2, visibility, storageTexture: { access: 'write-only', format: format!, viewDimension: dimension } } ) );
 		if ( load !== undefined && size === undefined ) entries.push( { binding: sizeBinding, visibility, buffer: { type: 'uniform', minBindingSize: 8 } } );
 		if ( options.region === true ) entries.push( { binding: regionBinding, visibility, buffer: { type: 'uniform', minBindingSize: regionBytes } } );
+		if ( usesSrgbTable( options ) ) entries.push( srgbTableEntry( visibility ) );
 		return entries;
 
 	}
@@ -523,7 +571,14 @@ export function kernelLayoutEntries( options: KernelOptions ): GPUBindGroupLayou
 
 	} else for ( let i = 0; i < count!; i ++ ) entries.push( { binding: i + 2, visibility, storageTexture: { access: 'write-only', format: srgbScratchFormat( format! ), viewDimension: dimension } } );
 	if ( options.region === true ) entries.push( { binding: regionBinding, visibility, buffer: { type: 'uniform', minBindingSize: regionBytes } } );
+	if ( usesSrgbTable( options ) ) entries.push( srgbTableEntry( visibility ) );
 	return entries;
+
+}
+
+function srgbTableEntry( visibility: number ): GPUBindGroupLayoutEntry {
+
+	return { binding: srgbTableBinding, visibility, buffer: { type: 'read-only-storage', minBindingSize: srgbTableBytes } };
 
 }
 

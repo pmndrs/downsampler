@@ -12,7 +12,8 @@ const bitsF32 = bits => new Float32Array( new Uint32Array( [ bits ] ).buffer )[ 
 const nextFloat = ( value, direction ) => bitsF32( f32Bits( value ) + direction );
 
 /** Runs `fn ds_test(i: u32)` over `count` invocations: `input` and `output` are u32 arrays. */
-export async function runCodec( device, helpers, body, input, outputWords, count ) {
+// `entries`: further group-0 entries the helpers bind (the sRGB tables).
+export async function runCodec( device, helpers, body, input, outputWords, count, entries = [] ) {
 
 	const code = `${ helpers }
 @group(0) @binding(0) var<storage, read> input: array<u32>;
@@ -30,7 +31,7 @@ ${ body }
 	const encoder = device.createCommandEncoder();
 	const pass = encoder.beginComputePass();
 	pass.setPipeline( pipeline );
-	pass.setBindGroup( 0, device.createBindGroup( { layout: pipeline.getBindGroupLayout( 0 ), entries: [ { binding: 0, resource: { buffer: inBuffer } }, { binding: 1, resource: { buffer: outBuffer } } ] } ) );
+	pass.setBindGroup( 0, device.createBindGroup( { layout: pipeline.getBindGroupLayout( 0 ), entries: [ { binding: 0, resource: { buffer: inBuffer } }, { binding: 1, resource: { buffer: outBuffer } }, ...entries ] } ) );
 	const groups = Math.ceil( count / 64 );
 	pass.dispatchWorkgroups( Math.min( groups, 1024 ), Math.ceil( groups / 1024 ) );
 	pass.end();

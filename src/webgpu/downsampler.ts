@@ -3,7 +3,7 @@ import { outputBufferLayout, planBatches, type Batch, type BatchKernel, type Odd
 import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
 import { layersProblem, planRegions, rectProblem, type BatchRegion, type Rect } from '../core/region.js';
 import { isCompatibilityTexture } from './compat.js';
-import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, regionBinding, regionBytes, type F16Rounding, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
+import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, regionBinding, regionBytes, srgbTable, srgbTableBinding, usesSrgbTable, type F16Rounding, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
 import { requiredLimits } from './limits.js';
 import { asTextureLevel, bindingViewDimension, levelSizeOf, sourceShapeReason, sourceTextureReason, sourceView, type TextureLevel } from './source.js';
 import { retireBuffers } from './tool.js';
@@ -768,6 +768,7 @@ export class Downsampler {
 			const pipeline = this.pipeline( kernel );
 			const entries: GPUBindGroupEntry[] = access === 'sample' ? [ { binding: 0, resource: this.sampler } ] : [];
 			entries.push( { binding: 1, resource: external ? sourceView( source!, dimension, 'downsampler source' ) : input( batch.sourceMipLevel! ) } );
+			if ( usesSrgbTable( this.kernelOptions( kernel ) ) ) entries.push( { binding: srgbTableBinding, resource: { buffer: srgbTable( this.device ) } } );
 			const update = regions?.[ index ];
 			const prepared: PreparedBatch = { ...batch, pipeline, bindGroup: undefined as unknown as GPUBindGroup, output, layers };
 			if ( update !== undefined ) {
@@ -899,6 +900,7 @@ export class Downsampler {
 			const level = batch.firstMipLevel + i;
 			const outputWidth = mipSize( texture.width, level ), outputHeight = mipSize( texture.height, level );
 			const entries: GPUBindGroupEntry[] = [ { binding: 1, resource: this.scratchView( texture, level, dimension ) }, { binding: 2, resource: view( level ) } ];
+			if ( usesSrgbTable( this.kernelOptions( kernel ) ) ) entries.push( { binding: srgbTableBinding, resource: { buffer: srgbTable( this.device ) } } );
 			const copy: PreparedBatch = {
 				kernel: 'exact', sourceMipLevel: level, firstMipLevel: level, count: 1, outputWidth, outputHeight, tile, groupsX: Math.ceil( outputWidth / tile ), groupsY: Math.ceil( outputHeight / tile ), copy: true, output: 'storage',
 				layers: batch.layers, pipeline, bindGroup: undefined as unknown as GPUBindGroup
@@ -965,7 +967,9 @@ export class Downsampler {
 
 		const { format, dimension, count, access, output, kind, region } = key;
 		// Exact and tail kernels share layouts; 'clamp' ones differ (no sampler under 'load').
-		const id = `${ format }:${ dimension }:${ count }:${ access }:${ output }${ kind === 'clamp' ? ':clamp' : '' }${ region ? ':region' : '' }`;
+		// An sRGB source or destination adds the table binding.
+		const srgb = usesSrgbTable( this.kernelOptions( key ) );
+		const id = `${ format }:${ dimension }:${ count }:${ access }:${ output }${ kind === 'clamp' ? ':clamp' : '' }${ region ? ':region' : '' }${ srgb ? ':srgb' : '' }`;
 		let layout = this.layouts.get( id );
 		if ( layout === undefined ) this.layouts.set( id, layout = this.device.createBindGroupLayout( { label: `downsampler ${ id }`, entries: kernelLayoutEntries( this.kernelOptions( key ) ) } ) );
 		return layout;

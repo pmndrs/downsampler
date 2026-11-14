@@ -1,0 +1,126 @@
+{
+	"adapter": "nvidia ampere ",
+	"browser": "Chrome/148.0.0.0",
+	"rows": [
+		{
+			"label": "rgba8unorm count 1",
+			"bytes": 1154,
+			"ms": 32
+		},
+		{
+			"label": "rgba8unorm-srgb count 1 tables const",
+			"bytes": 10648,
+			"ms": 551
+		},
+		{
+			"label": "rgba8unorm-srgb count 1 tables private",
+			"bytes": 10662,
+			"ms": 54
+		},
+		{
+			"label": "rgba8unorm-srgb count 1 tables storage",
+			"bytes": 2539,
+			"ms": 58
+		},
+		{
+			"label": "rgba8unorm count 1 tail",
+			"bytes": 2474,
+			"ms": 46
+		},
+		{
+			"label": "rgba8unorm-srgb count 1 tail tables const",
+			"bytes": 11926,
+			"ms": 2272
+		},
+		{
+			"label": "rgba8unorm-srgb count 1 tail tables private",
+			"bytes": 11940,
+			"ms": 172
+		},
+		{
+			"label": "rgba8unorm-srgb count 1 tail tables storage",
+			"bytes": 3817,
+			"ms": 205
+		},
+		{
+			"label": "rgba8unorm count 4",
+			"bytes": 3309,
+			"ms": 74
+		},
+		{
+			"label": "rgba8unorm-srgb count 4 tables const",
+			"bytes": 12457,
+			"ms": 2334
+		},
+		{
+			"label": "rgba8unorm-srgb count 4 tables private",
+			"bytes": 12471,
+			"ms": 140
+		},
+		{
+			"label": "rgba8unorm-srgb count 4 tables storage",
+			"bytes": 4348,
+			"ms": 162
+		},
+		{
+			"label": "rgba8unorm count 4 tail",
+			"bytes": 3951,
+			"ms": 84
+		},
+		{
+			"label": "rgba8unorm-srgb count 4 tail tables const",
+			"bytes": 13006,
+			"ms": 3996
+		},
+		{
+			"label": "rgba8unorm-srgb count 4 tail tables private",
+			"bytes": 13020,
+			"ms": 248
+		},
+		{
+			"label": "rgba8unorm-srgb count 4 tail tables storage",
+			"bytes": 4897,
+			"ms": 317
+		},
+		{
+			"label": "rgba8unorm count 6",
+			"bytes": 5539,
+			"ms": 105
+		},
+		{
+			"label": "rgba8unorm-srgb count 6 tables const",
+			"bytes": 14407,
+			"ms": 4949
+		},
+		{
+			"label": "rgba8unorm-srgb count 6 tables private",
+			"bytes": 14421,
+			"ms": 311
+		},
+		{
+			"label": "rgba8unorm-srgb count 6 tables storage",
+			"bytes": 6298,
+			"ms": 397
+		},
+		{
+			"label": "rgba8unorm count 6 tail",
+			"bytes": 4943,
+			"ms": 125
+		},
+		{
+			"label": "rgba8unorm-srgb count 6 tail tables const",
+			"bytes": 13726,
+			"ms": 5338
+		},
+		{
+			"label": "rgba8unorm-srgb count 6 tail tables private",
+			"bytes": 13740,
+			"ms": 492
+		},
+		{
+			"label": "rgba8unorm-srgb count 6 tail tables storage",
+			"bytes": 5617,
+			"ms": 869
+		}
+	]
+}

@@ -1,0 +1,187 @@
+{
+	"date": "2026-11-14T06:16:13.466Z",
+	"flags": [
+		"--power=high"
+	],
+	"jobs": 6,
+	"shards": 18,
+	"capMinutes": 10,
+	"seconds": 1809,
+	"adapter": null,
+	"ok": false,
+	"cases": 0,
+	"checks": 0,
+	"groups": {
+		"ran": 0,
+		"listed": null
+	},
+	"failures": [],
+	"problems": [
+		"shard 1: timed out after 10 min (log results\\windows\\round2\\rtx-full\\shard-1.log)",
+		"shard 2: timed out after 10 min (log results\\windows\\round2\\rtx-full\\shard-2.log)",
+		"shard 3: timed out after 10 min (log results\\windows\\round2\\rtx-full\\shard-3.log)",
+		"shard 4: timed out after 10 min (log results\\windows\\round2\\rtx-full\\shard-4.log)",
+		"shard 5: timed out after 10 min (log results\\windows\\round2\\rtx-full\\shard-5.log)",
+		"shard 6: timed out after 10 min (log results\\windows\\round2\\rtx-full\\shard-6.log)",
+		"shard 7: timed out after 10 min (log results\\windows\\round2\\rtx-full\\shard-7.log)",
+		"shard 8: timed out after 10 min (log results\\windows\\round2\\rtx-full\\shard-8.log)",
+		"shard 9: timed out after 10 min (log results\\windows\\round2\\rtx-full\\shard-9.log)",
+		"shard 10: timed out after 10 min (log results\\windows\\round2\\rtx-full\\shard-10.log)",
+		"shard 11: timed out after 10 min (log results\\windows\\round2\\rtx-full\\shard-11.log)",
+		"shard 12: timed out after 10 min (log results\\windows\\round2\\rtx-full\\shard-12.log)",
+		"shard 13: killed when the 30 min budget ran out (log results\\windows\\round2\\rtx-full\\shard-13.log)",
+		"shard 14: killed when the 30 min budget ran out (log results\\windows\\round2\\rtx-full\\shard-14.log)",
+		"shard 15: killed when the 30 min budget ran out (log results\\windows\\round2\\rtx-full\\shard-15.log)",
+		"shard 16: killed when the 30 min budget ran out (log results\\windows\\round2\\rtx-full\\shard-16.log)",
+		"shard 17: killed when the 30 min budget ran out (log results\\windows\\round2\\rtx-full\\shard-17.log)",
+		"shard 18: killed when the 30 min budget ran out (log results\\windows\\round2\\rtx-full\\shard-18.log)"
+	],
+	"skipped": [],
+	"perShard": [
+		{
+			"index": 1,
+			"ran": true,
+			"code": 1,
+			"seconds": 601,
+			"timedOut": true,
+			"overBudget": false
+		},
+		{
+			"index": 2,
+			"ran": true,
+			"code": 1,
+			"seconds": 601,
+			"timedOut": true,
+			"overBudget": false
+		},
+		{
+			"index": 3,
+			"ran": true,
+			"code": 1,
+			"seconds": 603,
+			"timedOut": true,
+			"overBudget": false
+		},
+		{
+			"index": 4,
+			"ran": true,
+			"code": 1,
+			"seconds": 603,
+			"timedOut": true,
+			"overBudget": false
+		},
+		{
+			"index": 5,
+			"ran": true,
+			"code": 1,
+			"seconds": 603,
+			"timedOut": true,
+			"overBudget": false
+		},
+		{
+			"index": 6,
+			"ran": true,
+			"code": 1,
+			"seconds": 603,
+			"timedOut": true,
+			"overBudget": false
+		},
+		{
+			"index": 7,
+			"ran": true,
+			"code": 1,
+			"seconds": 606,
+			"timedOut": true,
+			"overBudget": false
+		},
+		{
+			"index": 8,
+			"ran": true,
+			"code": 1,
+			"seconds": 611,
+			"timedOut": true,
+			"overBudget": false
+		},
+		{
+			"index": 9,
+			"ran": true,
+			"code": 1,
+			"seconds": 609,
+			"timedOut": true,
+			"overBudget": false
+		},
+		{
+			"index": 10,
+			"ran": true,
+			"code": 1,
+			"seconds": 609,
+			"timedOut": true,
+			"overBudget": false
+		},
+		{
+			"index": 11,
+			"ran": true,
+			"code": 1,
+			"seconds": 609,
+			"timedOut": true,
+			"overBudget": false
+		},
+		{
+			"index": 12,
+			"ran": true,
+			"code": 1,
+			"seconds": 609,
+			"timedOut": true,
+			"overBudget": false
+		},
+		{
+			"index": 13,
+			"ran": true,
+			"code": 1,
+			"seconds": 601,
+			"timedOut": false,
+			"overBudget": true
+		},
+		{
+			"index": 14,
+			"ran": true,
+			"code": 1,
+			"seconds": 597,
+			"timedOut": false,
+			"overBudget": true
+		},
+		{
+			"index": 15,
+			"ran": true,
+			"code": 1,
+			"seconds": 597,
+			"timedOut": false,
+			"overBudget": true
+		},
+		{
+			"index": 16,
+			"ran": true,
+			"code": 1,
+			"seconds": 597,
+			"timedOut": false,
+			"overBudget": true
+		},
+		{
+			"index": 17,
+			"ran": true,
+			"code": 1,
+			"seconds": 597,
+			"timedOut": false,
+			"overBudget": true
+		},
+		{
+			"index": 18,
+			"ran": true,
+			"code": 1,
+			"seconds": 597,
+			"timedOut": false,
+			"overBudget": true
+		}
+	],
+	"slowest": []
+}

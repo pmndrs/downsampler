@@ -6,7 +6,7 @@ export { Reducer } from './reducer.js';
 export type { PreparedReducer, ReducerCopy, ReducerDispatch, ReducerOptions } from './reducer.js';
 export type { TextureLevel, TextureSource } from './source.js';
 export type { ToolBindings } from './tool.js';
-export { bufferOutputWgsl, createKernel, float16Wgsl, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, packedFloatWgsl, regionBinding, regionBytes, sizeBinding, srgbScratchFormat, srgbWgsl } from './kernel.js';
+export { bufferOutputWgsl, createKernel, float16Wgsl, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, packedFloatWgsl, regionBinding, regionBytes, sizeBinding, srgbScratchFormat, srgbTable, srgbTableBinding, srgbTableBytes, srgbTableData, srgbWgsl, usesSrgbTable } from './kernel.js';
 export type { F16Rounding, KernelOptions, OutputPath, SourceAccess, ViewDimension } from './kernel.js';
 export { createIntKernel, intMeanWgsl } from './integer.js';
 export type { Reduction, CustomReduction, BuiltinReduction, ChannelOp, ChannelOps, Channels, EdgePolicy, TileEdgePolicy } from '../core/reduction.js';
