@@ -104,7 +104,7 @@ Last updated: 2026-11-14 · Branch: `main` (the Mac's work merged; the Windows a
 ## Waiting on owner
 
 - Publishing (M5): npm `downsampler` is free. `release.yml` needs an `NPM_TOKEN` secret or npm trusted publishing on pmndrs/downsampler; then run it (dry run first). `m2-reductions` merged to `main` 2026-11-14 (owner) before Windows round 2 finished; round 2 continues on top of `main`
-- three.js PR: the local branch `compute-mipmaps` is ready for your review (`/Users/dex/Developer/three.js-compute-mips`, draft text in `PR-compute-mipmaps.md`); nothing is posted
+- three.js PR: branch `compute-mipmaps` (`2ee2404442`, base upstream dev `3f7edc3d75`) is ready for your review on the fork DennisSmolek/three.js; the draft PR text is `PR-compute-mipmaps.md` on branch `compute-mipmaps-pr-draft` (one commit on top, not for merge). No PR is open
 - Upscaler exposure, every texel vs 1024 taps: agreed to merge the bit-identical `perf/exposure-parallel` first (upscaler project)
 
 ## Decided (owner, 2026-11-14)
