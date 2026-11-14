@@ -206,21 +206,33 @@ export const compatibility = device => ! device.features.has( 'core-features-and
  * `durations` (group id → ms; test/ci/README.md). `list` runs nothing and returns the group ids
  * (`ids`). The result carries `groups` (id → { ms, cases } for the groups that ran) and the
  * listing's size and digest, so the shards of one suite can be checked against each other.
+ * `groups` (ids) runs exactly those case groups, in suite order (debugging, bisection).
  */
-export async function validate( device, { onProgress = () => {}, quick = false, only, shard, durations = {}, list = false, keepGoing = false } = {} ) {
+export async function validate( device, { onProgress = () => {}, quick = false, only, shard, durations = {}, list = false, keepGoing = false, groups } = {} ) {
 
 	failures = keepGoing ? [] : null;
 	let select = new Selection();
 	let shards = null;
 
-	if ( shard || list ) {
+	if ( shard || list || groups ) {
 
 		// A first pass registers every group id and runs nothing (no textures, pipelines or oracles).
 		const listing = new Selection( { list: true } );
 		await suite( device, { quick, only, select: listing } );
 		if ( list ) return { listed: true, ids: listing.ids, digest: digest( listing.ids ) };
-		shards = assignShards( listing.ids, shard.total, durations );
-		select = new Selection( { assigned: shards[ shard.index - 1 ] } );
+		if ( groups ) {
+
+			const unknown = groups.filter( id => ! listing.ids.includes( id ) );
+			if ( unknown.length ) throw new Error( `--groups: not in this listing: ${ unknown.join( ', ' ) }` );
+			select = new Selection( { assigned: groups } );
+
+		} else {
+
+			shards = assignShards( listing.ids, shard.total, durations );
+			select = new Selection( { assigned: shards[ shard.index - 1 ] } );
+
+		}
+
 		select.listing = listing.ids;
 
 	}

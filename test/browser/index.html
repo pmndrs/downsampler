@@ -40,7 +40,7 @@
 			// M3 measurement modes (test/bench/README.md): `compare: 'throughput' | 'storage-usage' | 'subgroups' | 'f16'`,
 			// `strategies` (a subset to time), `throughput` (add per-frame throughput), `bench` throughput options,
 			// `timestampQuery: false` (a device without timestamp-query, as on devices that lack it).
-			window.runSuite = async ( { bench = false, quick = false, only, sizes, formats, rounds, repeats, compat = false, compare, quality: measureQuality = false, skipValidation = false, webgpuSpdCheck = false, frames, shard, durations, list = false, keepGoing = false, strategies, throughput = false, noTimestamps = false, timestampQuery = true, windowMs, pacing, inFlight, batchMs, maxBatch, textures } = {} ) => {
+			window.runSuite = async ( { bench = false, quick = false, only, sizes, formats, rounds, repeats, compat = false, compare, quality: measureQuality = false, skipValidation = false, webgpuSpdCheck = false, frames, shard, durations, list = false, keepGoing = false, groups, strategies, throughput = false, noTimestamps = false, timestampQuery = true, windowMs, pacing, inFlight, batchMs, maxBatch, textures } = {} ) => {
 
 				// webgpu-spd (results/compare/webgpu-spd.md) runs with the features and limits it uses: subgroups, shader-f16, the adapter's storage texture limit.
 				const webgpuSpd = compare === 'webgpu-spd' || webgpuSpdCheck;
@@ -48,12 +48,13 @@
 				const { device, adapter, userAgent } = await requestDevice( { compat, maxStorageTextures: compare === 'spd' || webgpuSpd, features, timestamps: timestampQuery } );
 				const errors = [];
 				device.addEventListener( 'uncapturederror', event => errors.push( event.error.message ) );
-				device.lost.then( info => { if ( info.reason !== 'destroyed' ) errors.push( `device lost: ${ info.message }` ); } );
+				// Logged when it happens (the suite keeps going, so the error alone doesn't say which case lost the device).
+				device.lost.then( info => { if ( info.reason !== 'destroyed' ) { errors.push( `device lost: ${ info.message }` ); console.log( `PROGRESS device lost after: ${ status.textContent }` ); } } );
 				const progress = message => { status.textContent = typeof message === 'string' ? message : `${ message.width }x${ message.height }x${ message.layers } ${ message.format } done`; console.log( 'PROGRESS ' + status.textContent ); };
 
 				try {
 
-					const validation = skipValidation ? { passed: true, cases: 0, checks: 0, skipped: [], ms: 0, results: [] } : await validate( device, { onProgress: progress, quick, only, shard, durations, list, keepGoing } );
+					const validation = skipValidation ? { passed: true, cases: 0, checks: 0, skipped: [], ms: 0, results: [] } : await validate( device, { onProgress: progress, quick, only, shard, durations, list, keepGoing, groups } );
 					const timing = bench ? await benchmark( device, { sizes, formats, rounds, repeats, compare, strategies, throughput, noTimestamps, windowMs, pacing, inFlight, batchMs, maxBatch, textures, onProgress: progress } ) : null;
 					const qualityResults = measureQuality ? await quality( device, { sizes, formats, onProgress: progress } ) : null;
 					const webgpuSpdResults = webgpuSpdCheck ? await checkWebgpuSpd( device, { sizes, formats, frames, onProgress: progress } ) : null;

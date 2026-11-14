@@ -17,6 +17,7 @@
 //   node test/run.js --compat            on a compatibility-mode device (featureLevel 'compatibility')
 //   node test/run.js --power=low         force the low-power GPU (default high); for laptops with two GPUs
 //   node test/run.js --keep-going        report every failing check instead of stopping at the first
+//   node test/run.js --groups=@ids.txt   exactly these case groups (one id per line, from --list --verbose), e.g. to bisect
 //   node test/run.js --bench --compare=webgpu-spd --formats=rgba8unorm,rgba16float,r32float --skip-validation
 //                                        webgpu-spd 3.0.0 vs exact / tail / spd / render (results/compare/webgpu-spd.md)
 //   node test/run.js --webgpu-spd-check --skip-validation [--frames=64]   its correctness against our oracles
@@ -36,10 +37,10 @@
 //   node test/run.js --quick --adapter=swiftshader --list --shard=2/8    the case groups of one shard
 //   node test/run.js --quick --adapter=swiftshader --record-durations    rewrite test/ci/durations.json (sharded: merge)
 //   node test/run.js ... --timing=ci-timing.json                         per-group timing and the listing, for the CI aggregate
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { loadavg } from 'node:os';
-import { dirname } from 'node:path';
+import { loadavg, tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer';
 import { gpuChoiceArgs } from './gpu-choice.js';
@@ -59,6 +60,8 @@ if ( args.includes( '--quality' ) ) options.quality = true;
 if ( args.includes( '--skip-validation' ) ) options.skipValidation = true;
 if ( args.includes( '--webgpu-spd-check' ) ) options.webgpuSpdCheck = true;
 if ( args.includes( '--keep-going' ) ) options.keepGoing = true;
+// --groups=a,b or --groups=@file (one id per line): run exactly those case groups (ids from --list --verbose).
+if ( value( 'groups' ) ) options.groups = ( value( 'groups' ).startsWith( '@' ) ? readFileSync( value( 'groups' ).slice( 1 ), 'utf8' ).split( /\r?\n/ ) : value( 'groups' ).split( ',' ) ).map( id => id.trim() ).filter( Boolean );
 if ( value( 'frames' ) ) options.frames = Number( value( 'frames' ) );
 if ( value( 'strategies' ) ) options.strategies = value( 'strategies' ).split( ',' );
 if ( args.includes( '--throughput' ) ) {
@@ -95,13 +98,16 @@ browserArgs.push( ...gpuChoiceArgs( value( 'power' ) ) );
 if ( value( 'dawn-features' ) ) browserArgs.push( `--enable-dawn-features=${ value( 'dawn-features' ) }` );
 
 const server = createServer();
-let browser;
+let browser, profile;
 
 try {
 
 	await new Promise( resolve => server.listen( 0, '127.0.0.1', resolve ) );
 	// The full matrix takes minutes (over 30 on a laptop RTX 3060); the default 180 s protocol timeout would cut it off.
-	browser = await puppeteer.launch( { headless: ! args.includes( '--headful' ), args: browserArgs, protocolTimeout: 120 * 60 * 1000 } );
+	// Our own profile directory and a longer launch timeout: with six shards starting at once
+	// (test/parallel.js) two Chromes once got the same puppeteer profile, and one took over 30 s to start.
+	profile = mkdtempSync( join( tmpdir(), 'downsampler-suite-' ) );
+	browser = await puppeteer.launch( { headless: ! args.includes( '--headful' ), args: browserArgs, protocolTimeout: 120 * 60 * 1000, timeout: 120000, userDataDir: profile } );
 	const page = await browser.newPage();
 	const errors = [];
 	page.on( 'pageerror', error => errors.push( error.message ) );
@@ -281,6 +287,7 @@ try {
 
 	if ( browser ) await browser.close();
 	server.close();
+	if ( profile ) try { rmSync( profile, { recursive: true, force: true, maxRetries: 5 } ); } catch { /* Chrome may still hold a file; the OS cleans temp */ }
 
 }
 
