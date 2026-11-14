@@ -1,0 +1,2178 @@
+{
+	"about": "Per-group ms on nvidia ampere (--power=high), from test/parallel.js; pass with --durations= to balance shards on this device. Shards ran 7 at a time, so times include contention.",
+	"recorded": {
+		"date": "2026-11-14",
+		"run": "--power=high",
+		"adapter": "nvidia ampere"
+	},
+	"groups": {
+		"box/shapes/rgba8unorm": {
+			"ms": 19182,
+			"cases": 9
+		},
+		"downsampler/bgra8unorm-srgb/buffer/L1/average": {
+			"ms": 28317,
+			"cases": 24
+		},
+		"downsampler/bgra8unorm-srgb/buffer/L1/minmax": {
+			"ms": 20245,
+			"cases": 24
+		},
+		"downsampler/bgra8unorm-srgb/buffer/L4/minmax": {
+			"ms": 27711,
+			"cases": 24
+		},
+		"downsampler/bgra8unorm-srgb/buffer/L5/average-load": {
+			"ms": 30067,
+			"cases": 24
+		},
+		"downsampler/bgra8unorm-srgb/buffer/L5/min": {
+			"ms": 20060,
+			"cases": 24
+		},
+		"downsampler/bgra8unorm-srgb/buffer/L5/minmax": {
+			"ms": 27704,
+			"cases": 24
+		},
+		"downsampler/bgra8unorm-srgb/buffer/L5/tail-max": {
+			"ms": 17012,
+			"cases": 8
+		},
+		"downsampler/bgra8unorm-srgb/buffer/L6/minmax": {
+			"ms": 22803,
+			"cases": 24
+		},
+		"downsampler/bgra8unorm-srgb/buffer/L6/tail-max": {
+			"ms": 17225,
+			"cases": 8
+		},
+		"downsampler/bgra8unorm-srgb/buffer/L6/tail-minmax": {
+			"ms": 18238,
+			"cases": 8
+		},
+		"downsampler/bgra8unorm/buffer/L4/min": {
+			"ms": 1143,
+			"cases": 11
+		},
+		"downsampler/bgra8unorm/buffer/L4/spd-average-load": {
+			"ms": 677,
+			"cases": 11
+		},
+		"downsampler/bgra8unorm/buffer/L4/tail-average": {
+			"ms": 968,
+			"cases": 4
+		},
+		"downsampler/bgra8unorm/buffer/L5/average-load": {
+			"ms": 1176,
+			"cases": 11
+		},
+		"downsampler/bgra8unorm/buffer/L5/tail-average": {
+			"ms": 1020,
+			"cases": 4
+		},
+		"downsampler/bgra8unorm/buffer/L5/tail-average-load": {
+			"ms": 1332,
+			"cases": 4
+		},
+		"downsampler/bgra8unorm/storage/L1/max": {
+			"ms": 653,
+			"cases": 11
+		},
+		"downsampler/bgra8unorm/storage/L1/spd-average-load": {
+			"ms": 384,
+			"cases": 11
+		},
+		"downsampler/bgra8unorm/storage/L1/tail-custom": {
+			"ms": 443,
+			"cases": 0
+		},
+		"downsampler/bgra8unorm/storage/L1/tail-max": {
+			"ms": 278,
+			"cases": 0
+		},
+		"downsampler/bgra8unorm/storage/L4/average": {
+			"ms": 721,
+			"cases": 11
+		},
+		"downsampler/bgra8unorm/storage/L4/tail-custom": {
+			"ms": 2049,
+			"cases": 4
+		},
+		"downsampler/bgra8unorm/storage/L5/min": {
+			"ms": 1183,
+			"cases": 11
+		},
+		"downsampler/bgra8unorm/storage/L5/minmax": {
+			"ms": 1126,
+			"cases": 11
+		},
+		"downsampler/bgra8unorm/storage/L6/tail-custom": {
+			"ms": 2013,
+			"cases": 4
+		},
+		"downsampler/r16float/storage/L1/average": {
+			"ms": 306,
+			"cases": 11
+		},
+		"downsampler/r16float/storage/L1/average-load": {
+			"ms": 470,
+			"cases": 11
+		},
+		"downsampler/r16float/storage/L1/spd-average-load": {
+			"ms": 293,
+			"cases": 11
+		},
+		"downsampler/r16float/storage/L4/average-load": {
+			"ms": 993,
+			"cases": 11
+		},
+		"downsampler/r16float/storage/L4/custom": {
+			"ms": 1499,
+			"cases": 11
+		},
+		"downsampler/r16float/storage/L5/spd-average-load": {
+			"ms": 703,
+			"cases": 11
+		},
+		"downsampler/r16float/storage/L5/tail-custom": {
+			"ms": 1602,
+			"cases": 4
+		},
+		"downsampler/r16float/storage/L5/tail-max": {
+			"ms": 1006,
+			"cases": 4
+		},
+		"downsampler/r16float/storage/L6/min": {
+			"ms": 1127,
+			"cases": 11
+		},
+		"downsampler/r16float/storage/L6/tail-max": {
+			"ms": 1305,
+			"cases": 4
+		},
+		"downsampler/r16float/storage/L6/tail-minmax": {
+			"ms": 1355,
+			"cases": 4
+		},
+		"downsampler/r16snorm/storage/L4/tail-custom": {
+			"ms": 1955,
+			"cases": 4
+		},
+		"downsampler/r16snorm/storage/L5/average": {
+			"ms": 912,
+			"cases": 11
+		},
+		"downsampler/r16snorm/storage/L5/custom": {
+			"ms": 1489,
+			"cases": 11
+		},
+		"downsampler/r16snorm/storage/L5/tail-custom": {
+			"ms": 1972,
+			"cases": 4
+		},
+		"downsampler/r16snorm/storage/L6/minmax": {
+			"ms": 1134,
+			"cases": 11
+		},
+		"downsampler/r16snorm/storage/L6/spd-average": {
+			"ms": 714,
+			"cases": 11
+		},
+		"downsampler/r16unorm/storage/L4/min": {
+			"ms": 978,
+			"cases": 11
+		},
+		"downsampler/r16unorm/storage/L4/tail-average": {
+			"ms": 941,
+			"cases": 4
+		},
+		"downsampler/r16unorm/storage/L4/tail-custom": {
+			"ms": 1937,
+			"cases": 4
+		},
+		"downsampler/r16unorm/storage/L5/min": {
+			"ms": 1016,
+			"cases": 11
+		},
+		"downsampler/r16unorm/storage/L6/average": {
+			"ms": 1200,
+			"cases": 11
+		},
+		"downsampler/r16unorm/storage/L6/custom": {
+			"ms": 1818,
+			"cases": 11
+		},
+		"downsampler/r32float/buffer/L1/tail-box-average": {
+			"ms": 422,
+			"cases": 0
+		},
+		"downsampler/r32float/buffer/L1/tail-minmax": {
+			"ms": 193,
+			"cases": 0
+		},
+		"downsampler/r32float/buffer/L4/average": {
+			"ms": 703,
+			"cases": 11
+		},
+		"downsampler/r32float/buffer/L4/minmax": {
+			"ms": 899,
+			"cases": 11
+		},
+		"downsampler/r32float/buffer/L5/average": {
+			"ms": 836,
+			"cases": 11
+		},
+		"downsampler/r32float/buffer/L5/box-average": {
+			"ms": 1287,
+			"cases": 11
+		},
+		"downsampler/r32float/buffer/L6/minmax": {
+			"ms": 1220,
+			"cases": 11
+		},
+		"downsampler/r32float/buffer/L6/tail-box-average": {
+			"ms": 1430,
+			"cases": 4
+		},
+		"downsampler/r32float/buffer/L6/tail-custom": {
+			"ms": 2096,
+			"cases": 4
+		},
+		"downsampler/r32float/storage/L1/tail-average": {
+			"ms": 131,
+			"cases": 0
+		},
+		"downsampler/r32float/storage/L4/spd-average": {
+			"ms": 545,
+			"cases": 11
+		},
+		"downsampler/r32float/storage/L4/tail-average": {
+			"ms": 806,
+			"cases": 4
+		},
+		"downsampler/r32float/storage/L6/average": {
+			"ms": 1086,
+			"cases": 11
+		},
+		"downsampler/r32float/storage/L6/custom": {
+			"ms": 1576,
+			"cases": 11
+		},
+		"downsampler/r32float/storage/L6/max": {
+			"ms": 875,
+			"cases": 11
+		},
+		"downsampler/r32float/storage/L6/tail-custom": {
+			"ms": 1919,
+			"cases": 4
+		},
+		"downsampler/r8snorm/storage/L1/min": {
+			"ms": 386,
+			"cases": 11
+		},
+		"downsampler/r8snorm/storage/L1/minmax": {
+			"ms": 482,
+			"cases": 11
+		},
+		"downsampler/r8snorm/storage/L4/tail-custom": {
+			"ms": 2035,
+			"cases": 4
+		},
+		"downsampler/r8snorm/storage/L5/average": {
+			"ms": 759,
+			"cases": 11
+		},
+		"downsampler/r8snorm/storage/L5/average-load": {
+			"ms": 1031,
+			"cases": 11
+		},
+		"downsampler/r8snorm/storage/L5/spd-average-load": {
+			"ms": 527,
+			"cases": 11
+		},
+		"downsampler/r8snorm/storage/L6/average-load": {
+			"ms": 1114,
+			"cases": 11
+		},
+		"downsampler/r8snorm/storage/L6/custom": {
+			"ms": 1854,
+			"cases": 11
+		},
+		"downsampler/r8unorm/storage/L1/spd-average-load": {
+			"ms": 382,
+			"cases": 11
+		},
+		"downsampler/r8unorm/storage/L1/tail-custom": {
+			"ms": 356,
+			"cases": 0
+		},
+		"downsampler/r8unorm/storage/L1/tail-max": {
+			"ms": 254,
+			"cases": 0
+		},
+		"downsampler/r8unorm/storage/L4/min": {
+			"ms": 834,
+			"cases": 11
+		},
+		"downsampler/r8unorm/storage/L4/tail-max": {
+			"ms": 1176,
+			"cases": 4
+		},
+		"downsampler/r8unorm/storage/L4/tail-minmax": {
+			"ms": 1039,
+			"cases": 4
+		},
+		"downsampler/r8unorm/storage/L6/min": {
+			"ms": 1113,
+			"cases": 11
+		},
+		"downsampler/r8unorm/storage/L6/spd-average-load": {
+			"ms": 735,
+			"cases": 11
+		},
+		"downsampler/r8unorm/storage/L6/tail-average": {
+			"ms": 864,
+			"cases": 4
+		},
+		"downsampler/rg11b10ufloat/buffer/L1/average-load": {
+			"ms": 1069,
+			"cases": 11
+		},
+		"downsampler/rg11b10ufloat/buffer/L1/box-average-load": {
+			"ms": 1675,
+			"cases": 11
+		},
+		"downsampler/rg11b10ufloat/buffer/L1/tail-custom": {
+			"ms": 745,
+			"cases": 0
+		},
+		"downsampler/rg11b10ufloat/buffer/L1/tail-max": {
+			"ms": 543,
+			"cases": 0
+		},
+		"downsampler/rg11b10ufloat/buffer/L4/min": {
+			"ms": 2486,
+			"cases": 11
+		},
+		"downsampler/rg11b10ufloat/buffer/L5/custom": {
+			"ms": 3287,
+			"cases": 11
+		},
+		"downsampler/rg11b10ufloat/buffer/L5/minmax": {
+			"ms": 2587,
+			"cases": 11
+		},
+		"downsampler/rg11b10ufloat/buffer/L5/spd-average": {
+			"ms": 1018,
+			"cases": 11
+		},
+		"downsampler/rg11b10ufloat/buffer/L5/tail-max": {
+			"ms": 2932,
+			"cases": 4
+		},
+		"downsampler/rg11b10ufloat/buffer/L6/tail-average": {
+			"ms": 3176,
+			"cases": 4
+		},
+		"downsampler/rg11b10ufloat/buffer/L6/tail-average-load": {
+			"ms": 4355,
+			"cases": 4
+		},
+		"downsampler/rg11b10ufloat/storage/L1/tail-box-average": {
+			"ms": 726,
+			"cases": 0
+		},
+		"downsampler/rg11b10ufloat/storage/L1/tail-minmax": {
+			"ms": 407,
+			"cases": 0
+		},
+		"downsampler/rg11b10ufloat/storage/L4/average": {
+			"ms": 27876,
+			"cases": 24
+		},
+		"downsampler/rg11b10ufloat/storage/L4/max": {
+			"ms": 23353,
+			"cases": 24
+		},
+		"downsampler/rg11b10ufloat/storage/L4/tail-box-average": {
+			"ms": 12263,
+			"cases": 8
+		},
+		"downsampler/rg11b10ufloat/storage/L4/tail-custom": {
+			"ms": 10826,
+			"cases": 8
+		},
+		"downsampler/rg11b10ufloat/storage/L5/tail-max": {
+			"ms": 9974,
+			"cases": 8
+		},
+		"downsampler/rg11b10ufloat/storage/L6/average-load": {
+			"ms": 30923,
+			"cases": 24
+		},
+		"downsampler/rg11b10ufloat/storage/L6/box-average": {
+			"ms": 10643,
+			"cases": 24
+		},
+		"downsampler/rg11b10ufloat/storage/L6/minmax": {
+			"ms": 8891,
+			"cases": 24
+		},
+		"downsampler/rg11b10ufloat/storage/L6/tail-max": {
+			"ms": 5884,
+			"cases": 8
+		},
+		"downsampler/rg11b10ufloat/storage/L6/tail-minmax": {
+			"ms": 6160,
+			"cases": 8
+		},
+		"downsampler/rg16float/buffer/L4/min": {
+			"ms": 1600,
+			"cases": 11
+		},
+		"downsampler/rg16float/buffer/L4/spd-average-load": {
+			"ms": 648,
+			"cases": 11
+		},
+		"downsampler/rg16float/buffer/L4/tail-average": {
+			"ms": 1229,
+			"cases": 4
+		},
+		"downsampler/rg16float/buffer/L5/average-load": {
+			"ms": 1455,
+			"cases": 11
+		},
+		"downsampler/rg16float/buffer/L5/tail-average": {
+			"ms": 1606,
+			"cases": 4
+		},
+		"downsampler/rg16float/buffer/L5/tail-average-load": {
+			"ms": 1522,
+			"cases": 4
+		},
+		"downsampler/rg16float/storage/L1/average-load": {
+			"ms": 482,
+			"cases": 11
+		},
+		"downsampler/rg16float/storage/L1/min": {
+			"ms": 437,
+			"cases": 11
+		},
+		"downsampler/rg16float/storage/L1/minmax": {
+			"ms": 453,
+			"cases": 11
+		},
+		"downsampler/rg16float/storage/L1/tail-max": {
+			"ms": 153,
+			"cases": 0
+		},
+		"downsampler/rg16float/storage/L4/minmax": {
+			"ms": 1049,
+			"cases": 11
+		},
+		"downsampler/rg16float/storage/L4/spd-average": {
+			"ms": 697,
+			"cases": 11
+		},
+		"downsampler/rg16float/storage/L5/tail-max": {
+			"ms": 1056,
+			"cases": 4
+		},
+		"downsampler/rg16float/storage/L6/average-load": {
+			"ms": 1295,
+			"cases": 11
+		},
+		"downsampler/rg16float/storage/L6/custom": {
+			"ms": 1960,
+			"cases": 11
+		},
+		"downsampler/rg16float/storage/L6/tail-average": {
+			"ms": 994,
+			"cases": 4
+		},
+		"downsampler/rg16snorm/storage/L1/max": {
+			"ms": 463,
+			"cases": 11
+		},
+		"downsampler/rg16snorm/storage/L1/min": {
+			"ms": 456,
+			"cases": 11
+		},
+		"downsampler/rg16snorm/storage/L5/custom": {
+			"ms": 2147,
+			"cases": 11
+		},
+		"downsampler/rg16snorm/storage/L5/minmax": {
+			"ms": 1089,
+			"cases": 11
+		},
+		"downsampler/rg16snorm/storage/L5/spd-average": {
+			"ms": 415,
+			"cases": 11
+		},
+		"downsampler/rg16snorm/storage/L6/custom": {
+			"ms": 2463,
+			"cases": 11
+		},
+		"downsampler/rg16snorm/storage/L6/tail-max": {
+			"ms": 1223,
+			"cases": 4
+		},
+		"downsampler/rg16snorm/storage/L6/tail-minmax": {
+			"ms": 1432,
+			"cases": 4
+		},
+		"downsampler/rg16unorm/storage/L4/tail-custom": {
+			"ms": 2601,
+			"cases": 4
+		},
+		"downsampler/rg16unorm/storage/L5/average": {
+			"ms": 1056,
+			"cases": 11
+		},
+		"downsampler/rg16unorm/storage/L5/custom": {
+			"ms": 2001,
+			"cases": 11
+		},
+		"downsampler/rg16unorm/storage/L5/tail-custom": {
+			"ms": 2186,
+			"cases": 4
+		},
+		"downsampler/rg16unorm/storage/L6/minmax": {
+			"ms": 1237,
+			"cases": 11
+		},
+		"downsampler/rg16unorm/storage/L6/spd-average": {
+			"ms": 674,
+			"cases": 11
+		},
+		"downsampler/rg32float/buffer/L4/min": {
+			"ms": 898,
+			"cases": 11
+		},
+		"downsampler/rg32float/buffer/L4/tail-average": {
+			"ms": 931,
+			"cases": 4
+		},
+		"downsampler/rg32float/buffer/L4/tail-custom": {
+			"ms": 2011,
+			"cases": 4
+		},
+		"downsampler/rg32float/buffer/L5/min": {
+			"ms": 1003,
+			"cases": 11
+		},
+		"downsampler/rg32float/buffer/L6/average": {
+			"ms": 1020,
+			"cases": 11
+		},
+		"downsampler/rg32float/buffer/L6/custom": {
+			"ms": 2047,
+			"cases": 11
+		},
+		"downsampler/rg32float/storage/L4/minmax": {
+			"ms": 805,
+			"cases": 11
+		},
+		"downsampler/rg32float/storage/L4/tail-minmax": {
+			"ms": 925,
+			"cases": 4
+		},
+		"downsampler/rg32float/storage/L5/max": {
+			"ms": 860,
+			"cases": 11
+		},
+		"downsampler/rg32float/storage/L5/min": {
+			"ms": 858,
+			"cases": 11
+		},
+		"downsampler/rg32float/storage/L5/tail-minmax": {
+			"ms": 903,
+			"cases": 4
+		},
+		"downsampler/rg32float/storage/L6/tail-average": {
+			"ms": 932,
+			"cases": 4
+		},
+		"downsampler/rg32float/storage/L6/tail-custom": {
+			"ms": 2113,
+			"cases": 4
+		},
+		"downsampler/rg8snorm/storage/L4/custom": {
+			"ms": 2147,
+			"cases": 11
+		},
+		"downsampler/rg8snorm/storage/L4/minmax": {
+			"ms": 1093,
+			"cases": 11
+		},
+		"downsampler/rg8snorm/storage/L4/spd-average": {
+			"ms": 523,
+			"cases": 11
+		},
+		"downsampler/rg8snorm/storage/L4/tail-minmax": {
+			"ms": 1127,
+			"cases": 4
+		},
+		"downsampler/rg8snorm/storage/L5/spd-average": {
+			"ms": 719,
+			"cases": 11
+		},
+		"downsampler/rg8snorm/storage/L5/spd-average-load": {
+			"ms": 485,
+			"cases": 11
+		},
+		"downsampler/rg8snorm/storage/L6/tail-minmax": {
+			"ms": 1184,
+			"cases": 4
+		},
+		"downsampler/rg8unorm/storage/L1/custom": {
+			"ms": 602,
+			"cases": 11
+		},
+		"downsampler/rg8unorm/storage/L1/max": {
+			"ms": 280,
+			"cases": 11
+		},
+		"downsampler/rg8unorm/storage/L1/tail-average-load": {
+			"ms": 307,
+			"cases": 0
+		},
+		"downsampler/rg8unorm/storage/L4/max": {
+			"ms": 734,
+			"cases": 11
+		},
+		"downsampler/rg8unorm/storage/L4/min": {
+			"ms": 715,
+			"cases": 11
+		},
+		"downsampler/rg8unorm/storage/L5/tail-average-load": {
+			"ms": 1110,
+			"cases": 4
+		},
+		"downsampler/rg8unorm/storage/L5/tail-minmax": {
+			"ms": 1092,
+			"cases": 4
+		},
+		"downsampler/rg8unorm/storage/L6/average": {
+			"ms": 607,
+			"cases": 11
+		},
+		"downsampler/rg8unorm/storage/L6/spd-average": {
+			"ms": 606,
+			"cases": 11
+		},
+		"downsampler/rgb10a2unorm/buffer/L1/custom": {
+			"ms": 686,
+			"cases": 11
+		},
+		"downsampler/rgb10a2unorm/buffer/L1/tail-average": {
+			"ms": 144,
+			"cases": 0
+		},
+		"downsampler/rgb10a2unorm/buffer/L1/tail-average-load": {
+			"ms": 318,
+			"cases": 0
+		},
+		"downsampler/rgb10a2unorm/buffer/L4/spd-average-load": {
+			"ms": 733,
+			"cases": 11
+		},
+		"downsampler/rgb10a2unorm/buffer/L5/min": {
+			"ms": 1537,
+			"cases": 11
+		},
+		"downsampler/rgb10a2unorm/buffer/L5/spd-average-load": {
+			"ms": 658,
+			"cases": 11
+		},
+		"downsampler/rgb10a2unorm/buffer/L5/tail-average": {
+			"ms": 991,
+			"cases": 4
+		},
+		"downsampler/rgb10a2unorm/buffer/L6/tail-average": {
+			"ms": 1020,
+			"cases": 4
+		},
+		"downsampler/rgb10a2unorm/storage/L1/average-load": {
+			"ms": 24320,
+			"cases": 24
+		},
+		"downsampler/rgb10a2unorm/storage/L1/box-average": {
+			"ms": 26106,
+			"cases": 24
+		},
+		"downsampler/rgb10a2unorm/storage/L4/box-average-load": {
+			"ms": 24984,
+			"cases": 24
+		},
+		"downsampler/rgb10a2unorm/storage/L4/max": {
+			"ms": 16235,
+			"cases": 24
+		},
+		"downsampler/rgb10a2unorm/storage/L4/min": {
+			"ms": 17740,
+			"cases": 24
+		},
+		"downsampler/rgb10a2unorm/storage/L4/tail-box-average": {
+			"ms": 8248,
+			"cases": 8
+		},
+		"downsampler/rgb10a2unorm/storage/L5/box-average-load": {
+			"ms": 12024,
+			"cases": 24
+		},
+		"downsampler/rgb10a2unorm/storage/L5/box-max": {
+			"ms": 8651,
+			"cases": 24
+		},
+		"downsampler/rgb10a2unorm/storage/L6/custom": {
+			"ms": 10943,
+			"cases": 24
+		},
+		"downsampler/rgb10a2unorm/storage/L6/minmax": {
+			"ms": 8721,
+			"cases": 24
+		},
+		"downsampler/rgb10a2unorm/storage/L6/spd-average": {
+			"ms": 27352,
+			"cases": 24
+		},
+		"downsampler/rgb10a2unorm/storage/L6/tail-max": {
+			"ms": 4506,
+			"cases": 8
+		},
+		"downsampler/rgb9e5ufloat/buffer/L1/tail-average": {
+			"ms": 317,
+			"cases": 0
+		},
+		"downsampler/rgb9e5ufloat/buffer/L1/tail-average-load": {
+			"ms": 446,
+			"cases": 0
+		},
+		"downsampler/rgb9e5ufloat/buffer/L4/min": {
+			"ms": 22525,
+			"cases": 24
+		},
+		"downsampler/rgb9e5ufloat/buffer/L5/box-average": {
+			"ms": 32769,
+			"cases": 24
+		},
+		"downsampler/rgb9e5ufloat/buffer/L5/custom": {
+			"ms": 24468,
+			"cases": 24
+		},
+		"downsampler/rgb9e5ufloat/buffer/L5/max": {
+			"ms": 8118,
+			"cases": 24
+		},
+		"downsampler/rgb9e5ufloat/buffer/L5/tail-average-load": {
+			"ms": 11517,
+			"cases": 8
+		},
+		"downsampler/rgb9e5ufloat/buffer/L6/box-max": {
+			"ms": 22727,
+			"cases": 24
+		},
+		"downsampler/rgb9e5ufloat/buffer/L6/spd-average": {
+			"ms": 48459,
+			"cases": 24
+		},
+		"downsampler/rgba16float/buffer/L1/spd-average-load": {
+			"ms": 477,
+			"cases": 11
+		},
+		"downsampler/rgba16float/buffer/L1/tail-box-average": {
+			"ms": 764,
+			"cases": 0
+		},
+		"downsampler/rgba16float/buffer/L1/tail-custom": {
+			"ms": 708,
+			"cases": 0
+		},
+		"downsampler/rgba16float/buffer/L4/box-average-load": {
+			"ms": 2959,
+			"cases": 11
+		},
+		"downsampler/rgba16float/buffer/L4/spd-average-load": {
+			"ms": 1018,
+			"cases": 11
+		},
+		"downsampler/rgba16float/buffer/L4/tail-average": {
+			"ms": 1979,
+			"cases": 4
+		},
+		"downsampler/rgba16float/buffer/L5/tail-average-load": {
+			"ms": 1978,
+			"cases": 4
+		},
+		"downsampler/rgba16float/buffer/L5/tail-max": {
+			"ms": 2184,
+			"cases": 4
+		},
+		"downsampler/rgba16float/buffer/L5/tail-minmax": {
+			"ms": 2120,
+			"cases": 4
+		},
+		"downsampler/rgba16float/buffer/L6/custom": {
+			"ms": 3162,
+			"cases": 11
+		},
+		"downsampler/rgba16float/buffer/L6/tail-average-load": {
+			"ms": 2939,
+			"cases": 4
+		},
+		"downsampler/rgba16float/buffer/L6/tail-box-average": {
+			"ms": 2762,
+			"cases": 4
+		},
+		"downsampler/rgba16float/storage/L1/box-max": {
+			"ms": 7754,
+			"cases": 24
+		},
+		"downsampler/rgba16float/storage/L1/custom": {
+			"ms": 15663,
+			"cases": 24
+		},
+		"downsampler/rgba16float/storage/L1/tail-average": {
+			"ms": 167,
+			"cases": 0
+		},
+		"downsampler/rgba16float/storage/L1/tail-custom": {
+			"ms": 430,
+			"cases": 0
+		},
+		"downsampler/rgba16float/storage/L1/tail-max": {
+			"ms": 251,
+			"cases": 0
+		},
+		"downsampler/rgba16float/storage/L4/custom": {
+			"ms": 15826,
+			"cases": 24
+		},
+		"downsampler/rgba16float/storage/L4/max": {
+			"ms": 14050,
+			"cases": 24
+		},
+		"downsampler/rgba16float/storage/L4/tail-average": {
+			"ms": 7200,
+			"cases": 8
+		},
+		"downsampler/rgba16float/storage/L4/tail-minmax": {
+			"ms": 3777,
+			"cases": 8
+		},
+		"downsampler/rgba16float/storage/L5/tail-custom": {
+			"ms": 7225,
+			"cases": 8
+		},
+		"downsampler/rgba16float/storage/L6/average": {
+			"ms": 19473,
+			"cases": 24
+		},
+		"downsampler/rgba16float/storage/L6/average-load": {
+			"ms": 12994,
+			"cases": 24
+		},
+		"downsampler/rgba16float/storage/L6/min": {
+			"ms": 8293,
+			"cases": 24
+		},
+		"downsampler/rgba16float/storage/L6/tail-custom": {
+			"ms": 6370,
+			"cases": 8
+		},
+		"downsampler/rgba16float/storage/L6/tail-max": {
+			"ms": 4355,
+			"cases": 8
+		},
+		"downsampler/rgba16snorm/buffer/L4/custom": {
+			"ms": 1985,
+			"cases": 11
+		},
+		"downsampler/rgba16snorm/buffer/L4/minmax": {
+			"ms": 1185,
+			"cases": 11
+		},
+		"downsampler/rgba16snorm/buffer/L4/spd-average": {
+			"ms": 611,
+			"cases": 11
+		},
+		"downsampler/rgba16snorm/buffer/L5/average": {
+			"ms": 1332,
+			"cases": 11
+		},
+		"downsampler/rgba16snorm/buffer/L5/spd-average": {
+			"ms": 712,
+			"cases": 11
+		},
+		"downsampler/rgba16snorm/buffer/L5/tail-average": {
+			"ms": 1249,
+			"cases": 4
+		},
+		"downsampler/rgba16snorm/storage/L1/average": {
+			"ms": 17127,
+			"cases": 24
+		},
+		"downsampler/rgba16snorm/storage/L1/custom": {
+			"ms": 12705,
+			"cases": 24
+		},
+		"downsampler/rgba16snorm/storage/L1/max": {
+			"ms": 13305,
+			"cases": 24
+		},
+		"downsampler/rgba16snorm/storage/L1/tail-custom": {
+			"ms": 404,
+			"cases": 0
+		},
+		"downsampler/rgba16snorm/storage/L4/max": {
+			"ms": 13282,
+			"cases": 24
+		},
+		"downsampler/rgba16snorm/storage/L4/min": {
+			"ms": 13633,
+			"cases": 24
+		},
+		"downsampler/rgba16snorm/storage/L5/tail-custom": {
+			"ms": 5746,
+			"cases": 8
+		},
+		"downsampler/rgba16snorm/storage/L6/average": {
+			"ms": 11504,
+			"cases": 24
+		},
+		"downsampler/rgba16snorm/storage/L6/box-average": {
+			"ms": 12008,
+			"cases": 24
+		},
+		"downsampler/rgba16snorm/storage/L6/spd-average": {
+			"ms": 34870,
+			"cases": 24
+		},
+		"downsampler/rgba16unorm/buffer/L1/box-average": {
+			"ms": 732,
+			"cases": 11
+		},
+		"downsampler/rgba16unorm/buffer/L1/box-max": {
+			"ms": 434,
+			"cases": 11
+		},
+		"downsampler/rgba16unorm/buffer/L4/spd-average": {
+			"ms": 736,
+			"cases": 11
+		},
+		"downsampler/rgba16unorm/buffer/L4/tail-custom": {
+			"ms": 2703,
+			"cases": 4
+		},
+		"downsampler/rgba16unorm/buffer/L4/tail-max": {
+			"ms": 2713,
+			"cases": 4
+		},
+		"downsampler/rgba16unorm/buffer/L5/max": {
+			"ms": 1298,
+			"cases": 11
+		},
+		"downsampler/rgba16unorm/buffer/L5/tail-max": {
+			"ms": 1378,
+			"cases": 4
+		},
+		"downsampler/rgba16unorm/buffer/L5/tail-minmax": {
+			"ms": 1266,
+			"cases": 4
+		},
+		"downsampler/rgba16unorm/storage/L1/max": {
+			"ms": 12134,
+			"cases": 24
+		},
+		"downsampler/rgba16unorm/storage/L1/spd-average": {
+			"ms": 23659,
+			"cases": 24
+		},
+		"downsampler/rgba16unorm/storage/L1/tail-average": {
+			"ms": 271,
+			"cases": 0
+		},
+		"downsampler/rgba16unorm/storage/L4/box-average": {
+			"ms": 17805,
+			"cases": 24
+		},
+		"downsampler/rgba16unorm/storage/L4/tail-average": {
+			"ms": 6470,
+			"cases": 8
+		},
+		"downsampler/rgba16unorm/storage/L4/tail-box-average": {
+			"ms": 7069,
+			"cases": 8
+		},
+		"downsampler/rgba16unorm/storage/L6/box-average": {
+			"ms": 12259,
+			"cases": 24
+		},
+		"downsampler/rgba16unorm/storage/L6/max": {
+			"ms": 7390,
+			"cases": 24
+		},
+		"downsampler/rgba16unorm/storage/L6/min": {
+			"ms": 13649,
+			"cases": 24
+		},
+		"downsampler/rgba16unorm/storage/L6/tail-max": {
+			"ms": 4094,
+			"cases": 8
+		},
+		"downsampler/rgba32float/buffer/L1/min": {
+			"ms": 503,
+			"cases": 11
+		},
+		"downsampler/rgba32float/buffer/L1/minmax": {
+			"ms": 417,
+			"cases": 11
+		},
+		"downsampler/rgba32float/buffer/L4/tail-max": {
+			"ms": 1067,
+			"cases": 4
+		},
+		"downsampler/rgba32float/buffer/L5/box-average": {
+			"ms": 1443,
+			"cases": 11
+		},
+		"downsampler/rgba32float/buffer/L5/box-max": {
+			"ms": 1217,
+			"cases": 11
+		},
+		"downsampler/rgba32float/buffer/L5/tail-average": {
+			"ms": 1011,
+			"cases": 4
+		},
+		"downsampler/rgba32float/buffer/L6/box-max": {
+			"ms": 1292,
+			"cases": 11
+		},
+		"downsampler/rgba32float/buffer/L6/custom": {
+			"ms": 1832,
+			"cases": 11
+		},
+		"downsampler/rgba32float/storage/L1/max": {
+			"ms": 18366,
+			"cases": 24
+		},
+		"downsampler/rgba32float/storage/L1/spd-average": {
+			"ms": 22134,
+			"cases": 24
+		},
+		"downsampler/rgba32float/storage/L4/custom": {
+			"ms": 19979,
+			"cases": 24
+		},
+		"downsampler/rgba32float/storage/L4/max": {
+			"ms": 6197,
+			"cases": 24
+		},
+		"downsampler/rgba32float/storage/L4/min": {
+			"ms": 19179,
+			"cases": 24
+		},
+		"downsampler/rgba32float/storage/L4/spd-average": {
+			"ms": 37988,
+			"cases": 24
+		},
+		"downsampler/rgba32float/storage/L4/tail-max": {
+			"ms": 3793,
+			"cases": 8
+		},
+		"downsampler/rgba32float/storage/L5/box-average": {
+			"ms": 11238,
+			"cases": 24
+		},
+		"downsampler/rgba32float/storage/L5/box-max": {
+			"ms": 9022,
+			"cases": 24
+		},
+		"downsampler/rgba32float/storage/L5/tail-average": {
+			"ms": 9058,
+			"cases": 8
+		},
+		"downsampler/rgba32float/storage/L6/box-max": {
+			"ms": 9419,
+			"cases": 24
+		},
+		"downsampler/rgba32float/storage/L6/custom": {
+			"ms": 20497,
+			"cases": 24
+		},
+		"downsampler/rgba8snorm/buffer/L1/minmax": {
+			"ms": 529,
+			"cases": 11
+		},
+		"downsampler/rgba8snorm/buffer/L1/tail-average": {
+			"ms": 166,
+			"cases": 0
+		},
+		"downsampler/rgba8snorm/buffer/L1/tail-average-load": {
+			"ms": 302,
+			"cases": 0
+		},
+		"downsampler/rgba8snorm/buffer/L4/average-load": {
+			"ms": 1094,
+			"cases": 11
+		},
+		"downsampler/rgba8snorm/buffer/L4/minmax": {
+			"ms": 1136,
+			"cases": 11
+		},
+		"downsampler/rgba8snorm/buffer/L4/spd-average": {
+			"ms": 619,
+			"cases": 11
+		},
+		"downsampler/rgba8snorm/buffer/L5/spd-average-load": {
+			"ms": 677,
+			"cases": 11
+		},
+		"downsampler/rgba8snorm/buffer/L5/tail-box-average": {
+			"ms": 1797,
+			"cases": 4
+		},
+		"downsampler/rgba8snorm/buffer/L5/tail-custom": {
+			"ms": 2265,
+			"cases": 4
+		},
+		"downsampler/rgba8snorm/buffer/L6/box-average-load": {
+			"ms": 1398,
+			"cases": 11
+		},
+		"downsampler/rgba8snorm/buffer/L6/spd-average-load": {
+			"ms": 862,
+			"cases": 11
+		},
+		"downsampler/rgba8snorm/buffer/L6/tail-average": {
+			"ms": 1077,
+			"cases": 4
+		},
+		"downsampler/rgba8snorm/storage/L1/average-load": {
+			"ms": 16582,
+			"cases": 24
+		},
+		"downsampler/rgba8snorm/storage/L1/box-average": {
+			"ms": 19574,
+			"cases": 24
+		},
+		"downsampler/rgba8snorm/storage/L1/box-average-load": {
+			"ms": 18065,
+			"cases": 24
+		},
+		"downsampler/rgba8snorm/storage/L4/tail-minmax": {
+			"ms": 5380,
+			"cases": 8
+		},
+		"downsampler/rgba8snorm/storage/L5/box-average": {
+			"ms": 20587,
+			"cases": 24
+		},
+		"downsampler/rgba8snorm/storage/L5/box-average-load": {
+			"ms": 9654,
+			"cases": 24
+		},
+		"downsampler/rgba8snorm/storage/L5/spd-average": {
+			"ms": 24715,
+			"cases": 24
+		},
+		"downsampler/rgba8snorm/storage/L5/tail-minmax": {
+			"ms": 3811,
+			"cases": 8
+		},
+		"downsampler/rgba8snorm/storage/L6/average": {
+			"ms": 20659,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm-srgb/buffer/L1/box-average-load": {
+			"ms": 14014,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm-srgb/buffer/L1/box-max": {
+			"ms": 14959,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm-srgb/buffer/L1/min": {
+			"ms": 20911,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm-srgb/buffer/L1/spd-average-load": {
+			"ms": 29601,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm-srgb/buffer/L1/tail-average-load": {
+			"ms": 1551,
+			"cases": 0
+		},
+		"downsampler/rgba8unorm-srgb/buffer/L1/tail-max": {
+			"ms": 2623,
+			"cases": 0
+		},
+		"downsampler/rgba8unorm-srgb/buffer/L1/tail-minmax": {
+			"ms": 2240,
+			"cases": 0
+		},
+		"downsampler/rgba8unorm-srgb/buffer/L4/max": {
+			"ms": 20308,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm-srgb/buffer/L4/min": {
+			"ms": 27961,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm-srgb/buffer/L4/tail-minmax": {
+			"ms": 14704,
+			"cases": 8
+		},
+		"downsampler/rgba8unorm-srgb/buffer/L5/max": {
+			"ms": 30380,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm-srgb/buffer/L5/min": {
+			"ms": 29792,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm-srgb/buffer/L6/average": {
+			"ms": 26886,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm-srgb/buffer/L6/box-max": {
+			"ms": 21039,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm/buffer/L1/box-average": {
+			"ms": 716,
+			"cases": 11
+		},
+		"downsampler/rgba8unorm/buffer/L1/custom": {
+			"ms": 824,
+			"cases": 11
+		},
+		"downsampler/rgba8unorm/buffer/L1/max": {
+			"ms": 547,
+			"cases": 11
+		},
+		"downsampler/rgba8unorm/buffer/L1/tail-average-load": {
+			"ms": 348,
+			"cases": 0
+		},
+		"downsampler/rgba8unorm/buffer/L4/box-average": {
+			"ms": 1954,
+			"cases": 11
+		},
+		"downsampler/rgba8unorm/buffer/L4/box-average-load": {
+			"ms": 2133,
+			"cases": 11
+		},
+		"downsampler/rgba8unorm/buffer/L5/box-max": {
+			"ms": 1451,
+			"cases": 11
+		},
+		"downsampler/rgba8unorm/buffer/L5/min": {
+			"ms": 1603,
+			"cases": 11
+		},
+		"downsampler/rgba8unorm/buffer/L5/minmax": {
+			"ms": 1554,
+			"cases": 11
+		},
+		"downsampler/rgba8unorm/buffer/L5/tail-custom": {
+			"ms": 2987,
+			"cases": 4
+		},
+		"downsampler/rgba8unorm/buffer/L6/box-max": {
+			"ms": 1674,
+			"cases": 11
+		},
+		"downsampler/rgba8unorm/buffer/L6/custom": {
+			"ms": 3282,
+			"cases": 11
+		},
+		"downsampler/rgba8unorm/storage/L1/average": {
+			"ms": 13798,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm/storage/L1/box-average": {
+			"ms": 14698,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm/storage/L1/spd-average-load": {
+			"ms": 18614,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm/storage/L1/tail-average": {
+			"ms": 205,
+			"cases": 0
+		},
+		"downsampler/rgba8unorm/storage/L1/tail-custom": {
+			"ms": 660,
+			"cases": 0
+		},
+		"downsampler/rgba8unorm/storage/L4/spd-average": {
+			"ms": 21447,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm/storage/L4/tail-custom": {
+			"ms": 5563,
+			"cases": 8
+		},
+		"downsampler/rgba8unorm/storage/L5/max": {
+			"ms": 6576,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm/storage/L5/spd-average": {
+			"ms": 29960,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm/storage/L5/spd-average-load": {
+			"ms": 18289,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm/storage/L5/tail-minmax": {
+			"ms": 3431,
+			"cases": 8
+		},
+		"downsampler/rgba8unorm/storage/L6/max": {
+			"ms": 9990,
+			"cases": 24
+		},
+		"downsampler/rgba8unorm/storage/L6/min": {
+			"ms": 11380,
+			"cases": 24
+		},
+		"integer/r16sint/storage/L1/min": {
+			"ms": 346,
+			"cases": 11
+		},
+		"integer/r16sint/storage/L1/tail-box-average": {
+			"ms": 1203,
+			"cases": 0
+		},
+		"integer/r16sint/storage/L1/tail-custom": {
+			"ms": 332,
+			"cases": 0
+		},
+		"integer/r16sint/storage/L4/max": {
+			"ms": 696,
+			"cases": 11
+		},
+		"integer/r16sint/storage/L5/average": {
+			"ms": 1933,
+			"cases": 11
+		},
+		"integer/r16sint/storage/L5/box-average": {
+			"ms": 3550,
+			"cases": 11
+		},
+		"integer/r16sint/storage/L6/tail-box-average": {
+			"ms": 4334,
+			"cases": 4
+		},
+		"integer/r16uint/storage/L1/average": {
+			"ms": 844,
+			"cases": 11
+		},
+		"integer/r16uint/storage/L1/box-average": {
+			"ms": 1859,
+			"cases": 11
+		},
+		"integer/r16uint/storage/L1/tail-average": {
+			"ms": 468,
+			"cases": 0
+		},
+		"integer/r16uint/storage/L4/custom": {
+			"ms": 615,
+			"cases": 11
+		},
+		"integer/r16uint/storage/L4/max": {
+			"ms": 610,
+			"cases": 11
+		},
+		"integer/r16uint/storage/L6/average": {
+			"ms": 2276,
+			"cases": 11
+		},
+		"integer/r16uint/storage/L6/custom": {
+			"ms": 695,
+			"cases": 11
+		},
+		"integer/r16uint/storage/L6/max": {
+			"ms": 797,
+			"cases": 11
+		},
+		"integer/r16uint/storage/L6/tail-max": {
+			"ms": 873,
+			"cases": 4
+		},
+		"integer/r32sint/storage/L1/average": {
+			"ms": 984,
+			"cases": 11
+		},
+		"integer/r32sint/storage/L1/box-max": {
+			"ms": 302,
+			"cases": 11
+		},
+		"integer/r32sint/storage/L1/min": {
+			"ms": 314,
+			"cases": 11
+		},
+		"integer/r32sint/storage/L1/minmax": {
+			"ms": 382,
+			"cases": 11
+		},
+		"integer/r32sint/storage/L4/max": {
+			"ms": 916,
+			"cases": 11
+		},
+		"integer/r32sint/storage/L5/minmax": {
+			"ms": 1011,
+			"cases": 11
+		},
+		"integer/r32sint/storage/L5/tail-average": {
+			"ms": 3260,
+			"cases": 4
+		},
+		"integer/r32uint/storage/L1/average": {
+			"ms": 932,
+			"cases": 11
+		},
+		"integer/r32uint/storage/L1/box-max": {
+			"ms": 275,
+			"cases": 11
+		},
+		"integer/r32uint/storage/L1/min": {
+			"ms": 262,
+			"cases": 11
+		},
+		"integer/r32uint/storage/L1/minmax": {
+			"ms": 376,
+			"cases": 11
+		},
+		"integer/r32uint/storage/L1/tail-box-average": {
+			"ms": 1368,
+			"cases": 0
+		},
+		"integer/r32uint/storage/L4/max": {
+			"ms": 697,
+			"cases": 11
+		},
+		"integer/r32uint/storage/L4/tail-average": {
+			"ms": 2659,
+			"cases": 4
+		},
+		"integer/r32uint/storage/L5/custom": {
+			"ms": 681,
+			"cases": 11
+		},
+		"integer/r32uint/storage/L5/minmax": {
+			"ms": 687,
+			"cases": 11
+		},
+		"integer/r32uint/storage/L5/tail-average": {
+			"ms": 3135,
+			"cases": 4
+		},
+		"integer/r32uint/storage/L6/box-max": {
+			"ms": 793,
+			"cases": 11
+		},
+		"integer/r32uint/storage/L6/tail-custom": {
+			"ms": 849,
+			"cases": 4
+		},
+		"integer/r32uint/storage/L6/tail-max": {
+			"ms": 794,
+			"cases": 4
+		},
+		"integer/r8sint/storage/L4/minmax": {
+			"ms": 735,
+			"cases": 11
+		},
+		"integer/r8sint/storage/L4/tail-custom": {
+			"ms": 1552,
+			"cases": 4
+		},
+		"integer/r8sint/storage/L4/tail-max": {
+			"ms": 738,
+			"cases": 4
+		},
+		"integer/r8sint/storage/L5/min": {
+			"ms": 702,
+			"cases": 11
+		},
+		"integer/r8sint/storage/L6/box-average": {
+			"ms": 3705,
+			"cases": 11
+		},
+		"integer/r8sint/storage/L6/box-max": {
+			"ms": 771,
+			"cases": 11
+		},
+		"integer/r8uint/storage/L1/tail-custom": {
+			"ms": 167,
+			"cases": 0
+		},
+		"integer/r8uint/storage/L4/box-average": {
+			"ms": 3384,
+			"cases": 11
+		},
+		"integer/r8uint/storage/L4/box-max": {
+			"ms": 650,
+			"cases": 11
+		},
+		"integer/r8uint/storage/L4/tail-box-average": {
+			"ms": 3472,
+			"cases": 4
+		},
+		"integer/r8uint/storage/L5/max": {
+			"ms": 666,
+			"cases": 11
+		},
+		"integer/r8uint/storage/L5/min": {
+			"ms": 628,
+			"cases": 11
+		},
+		"integer/rg16sint/storage/L1/box-average": {
+			"ms": 2676,
+			"cases": 11
+		},
+		"integer/rg16sint/storage/L1/max": {
+			"ms": 383,
+			"cases": 11
+		},
+		"integer/rg16sint/storage/L1/min": {
+			"ms": 438,
+			"cases": 11
+		},
+		"integer/rg16sint/storage/L4/average": {
+			"ms": 2720,
+			"cases": 11
+		},
+		"integer/rg16sint/storage/L4/tail-average": {
+			"ms": 2866,
+			"cases": 4
+		},
+		"integer/rg16sint/storage/L4/tail-box-average": {
+			"ms": 3946,
+			"cases": 4
+		},
+		"integer/rg16sint/storage/L6/max": {
+			"ms": 962,
+			"cases": 11
+		},
+		"integer/rg16sint/storage/L6/tail-average": {
+			"ms": 5438,
+			"cases": 4
+		},
+		"integer/rg16sint/storage/L6/tail-box-average": {
+			"ms": 5949,
+			"cases": 4
+		},
+		"integer/rg16uint/storage/L1/custom": {
+			"ms": 331,
+			"cases": 11
+		},
+		"integer/rg16uint/storage/L1/tail-max": {
+			"ms": 139,
+			"cases": 0
+		},
+		"integer/rg16uint/storage/L4/average": {
+			"ms": 3231,
+			"cases": 11
+		},
+		"integer/rg16uint/storage/L5/tail-average": {
+			"ms": 4206,
+			"cases": 4
+		},
+		"integer/rg16uint/storage/L5/tail-max": {
+			"ms": 751,
+			"cases": 4
+		},
+		"integer/rg16uint/storage/L6/average": {
+			"ms": 3778,
+			"cases": 11
+		},
+		"integer/rg16uint/storage/L6/minmax": {
+			"ms": 764,
+			"cases": 11
+		},
+		"integer/rg32sint/storage/L1/average": {
+			"ms": 1424,
+			"cases": 11
+		},
+		"integer/rg32sint/storage/L1/custom": {
+			"ms": 1097,
+			"cases": 11
+		},
+		"integer/rg32sint/storage/L1/minmax": {
+			"ms": 395,
+			"cases": 11
+		},
+		"integer/rg32sint/storage/L1/tail-average": {
+			"ms": 2061,
+			"cases": 0
+		},
+		"integer/rg32sint/storage/L1/tail-box-average": {
+			"ms": 796,
+			"cases": 0
+		},
+		"integer/rg32sint/storage/L4/box-max": {
+			"ms": 848,
+			"cases": 11
+		},
+		"integer/rg32sint/storage/L4/minmax": {
+			"ms": 562,
+			"cases": 11
+		},
+		"integer/rg32sint/storage/L5/box-max": {
+			"ms": 1470,
+			"cases": 11
+		},
+		"integer/rg32sint/storage/L5/custom": {
+			"ms": 1415,
+			"cases": 11
+		},
+		"integer/rg32sint/storage/L6/tail-max": {
+			"ms": 671,
+			"cases": 4
+		},
+		"integer/rg32uint/storage/L1/tail-average": {
+			"ms": 1042,
+			"cases": 0
+		},
+		"integer/rg32uint/storage/L5/box-max": {
+			"ms": 742,
+			"cases": 11
+		},
+		"integer/rg32uint/storage/L5/custom": {
+			"ms": 754,
+			"cases": 11
+		},
+		"integer/rg32uint/storage/L5/tail-custom": {
+			"ms": 801,
+			"cases": 4
+		},
+		"integer/rg32uint/storage/L6/min": {
+			"ms": 1354,
+			"cases": 11
+		},
+		"integer/rg32uint/storage/L6/minmax": {
+			"ms": 817,
+			"cases": 11
+		},
+		"integer/rg8sint/storage/L4/box-max": {
+			"ms": 838,
+			"cases": 11
+		},
+		"integer/rg8sint/storage/L4/min": {
+			"ms": 814,
+			"cases": 11
+		},
+		"integer/rg8sint/storage/L4/minmax": {
+			"ms": 824,
+			"cases": 11
+		},
+		"integer/rg8sint/storage/L5/box-average": {
+			"ms": 4749,
+			"cases": 11
+		},
+		"integer/rg8sint/storage/L5/tail-box-average": {
+			"ms": 4267,
+			"cases": 4
+		},
+		"integer/rg8sint/storage/L5/tail-custom": {
+			"ms": 1667,
+			"cases": 4
+		},
+		"integer/rg8uint/storage/L1/min": {
+			"ms": 336,
+			"cases": 11
+		},
+		"integer/rg8uint/storage/L1/tail-box-average": {
+			"ms": 1065,
+			"cases": 0
+		},
+		"integer/rg8uint/storage/L1/tail-custom": {
+			"ms": 97,
+			"cases": 0
+		},
+		"integer/rg8uint/storage/L4/max": {
+			"ms": 706,
+			"cases": 11
+		},
+		"integer/rg8uint/storage/L5/average": {
+			"ms": 3248,
+			"cases": 11
+		},
+		"integer/rg8uint/storage/L5/box-average": {
+			"ms": 4139,
+			"cases": 11
+		},
+		"integer/rg8uint/storage/L6/tail-box-average": {
+			"ms": 5036,
+			"cases": 4
+		},
+		"integer/rgb10a2uint/storage/L1/average": {
+			"ms": 1373,
+			"cases": 11
+		},
+		"integer/rgb10a2uint/storage/L1/box-average": {
+			"ms": 2363,
+			"cases": 11
+		},
+		"integer/rgb10a2uint/storage/L1/tail-average": {
+			"ms": 1102,
+			"cases": 0
+		},
+		"integer/rgb10a2uint/storage/L4/custom": {
+			"ms": 655,
+			"cases": 11
+		},
+		"integer/rgb10a2uint/storage/L4/max": {
+			"ms": 648,
+			"cases": 11
+		},
+		"integer/rgb10a2uint/storage/L6/average": {
+			"ms": 8464,
+			"cases": 11
+		},
+		"integer/rgb10a2uint/storage/L6/custom": {
+			"ms": 777,
+			"cases": 11
+		},
+		"integer/rgb10a2uint/storage/L6/max": {
+			"ms": 886,
+			"cases": 11
+		},
+		"integer/rgb10a2uint/storage/L6/tail-max": {
+			"ms": 992,
+			"cases": 4
+		},
+		"integer/rgba16sint/storage/L1/box-max": {
+			"ms": 429,
+			"cases": 11
+		},
+		"integer/rgba16sint/storage/L4/box-average": {
+			"ms": 4930,
+			"cases": 11
+		},
+		"integer/rgba16sint/storage/L4/tail-box-average": {
+			"ms": 4877,
+			"cases": 4
+		},
+		"integer/rgba16sint/storage/L5/minmax": {
+			"ms": 769,
+			"cases": 11
+		},
+		"integer/rgba16sint/storage/L5/tail-average": {
+			"ms": 4167,
+			"cases": 4
+		},
+		"integer/rgba16uint/storage/L5/custom": {
+			"ms": 830,
+			"cases": 11
+		},
+		"integer/rgba16uint/storage/L5/minmax": {
+			"ms": 847,
+			"cases": 11
+		},
+		"integer/rgba16uint/storage/L5/tail-average": {
+			"ms": 4942,
+			"cases": 4
+		},
+		"integer/rgba16uint/storage/L6/box-max": {
+			"ms": 940,
+			"cases": 11
+		},
+		"integer/rgba16uint/storage/L6/tail-custom": {
+			"ms": 921,
+			"cases": 4
+		},
+		"integer/rgba16uint/storage/L6/tail-max": {
+			"ms": 992,
+			"cases": 4
+		},
+		"integer/rgba32sint/buffer/L4/minmax": {
+			"ms": 1125,
+			"cases": 11
+		},
+		"integer/rgba32sint/buffer/L4/tail-custom": {
+			"ms": 1924,
+			"cases": 4
+		},
+		"integer/rgba32sint/buffer/L4/tail-max": {
+			"ms": 1098,
+			"cases": 4
+		},
+		"integer/rgba32sint/buffer/L5/min": {
+			"ms": 994,
+			"cases": 11
+		},
+		"integer/rgba32sint/buffer/L6/box-average": {
+			"ms": 10772,
+			"cases": 11
+		},
+		"integer/rgba32sint/buffer/L6/box-max": {
+			"ms": 1227,
+			"cases": 11
+		},
+		"integer/rgba32sint/storage/L1/average": {
+			"ms": 52080,
+			"cases": 24
+		},
+		"integer/rgba32sint/storage/L4/minmax": {
+			"ms": 19350,
+			"cases": 24
+		},
+		"integer/rgba32sint/storage/L4/tail-box-average": {
+			"ms": 17628,
+			"cases": 8
+		},
+		"integer/rgba32sint/storage/L5/tail-custom": {
+			"ms": 5463,
+			"cases": 8
+		},
+		"integer/rgba32sint/storage/L6/box-average": {
+			"ms": 47647,
+			"cases": 24
+		},
+		"integer/rgba32sint/storage/L6/box-max": {
+			"ms": 16489,
+			"cases": 24
+		},
+		"integer/rgba32sint/storage/L6/tail-box-average": {
+			"ms": 22450,
+			"cases": 8
+		},
+		"integer/rgba32uint/buffer/L1/max": {
+			"ms": 884,
+			"cases": 11
+		},
+		"integer/rgba32uint/buffer/L1/min": {
+			"ms": 381,
+			"cases": 11
+		},
+		"integer/rgba32uint/buffer/L5/box-average": {
+			"ms": 4843,
+			"cases": 11
+		},
+		"integer/rgba32uint/buffer/L5/max": {
+			"ms": 889,
+			"cases": 11
+		},
+		"integer/rgba32uint/buffer/L5/min": {
+			"ms": 877,
+			"cases": 11
+		},
+		"integer/rgba32uint/buffer/L6/average": {
+			"ms": 4819,
+			"cases": 11
+		},
+		"integer/rgba32uint/buffer/L6/tail-average": {
+			"ms": 12848,
+			"cases": 4
+		},
+		"integer/rgba32uint/buffer/L6/tail-box-average": {
+			"ms": 6016,
+			"cases": 4
+		},
+		"integer/rgba32uint/storage/L1/average": {
+			"ms": 39688,
+			"cases": 24
+		},
+		"integer/rgba32uint/storage/L1/custom": {
+			"ms": 15782,
+			"cases": 24
+		},
+		"integer/rgba32uint/storage/L1/min": {
+			"ms": 16300,
+			"cases": 24
+		},
+		"integer/rgba32uint/storage/L1/tail-average": {
+			"ms": 2253,
+			"cases": 0
+		},
+		"integer/rgba32uint/storage/L4/box-max": {
+			"ms": 8781,
+			"cases": 24
+		},
+		"integer/rgba32uint/storage/L4/custom": {
+			"ms": 7640,
+			"cases": 24
+		},
+		"integer/rgba32uint/storage/L4/min": {
+			"ms": 20496,
+			"cases": 24
+		},
+		"integer/rgba32uint/storage/L6/max": {
+			"ms": 8525,
+			"cases": 24
+		},
+		"integer/rgba32uint/storage/L6/tail-average": {
+			"ms": 16698,
+			"cases": 8
+		},
+		"integer/rgba32uint/storage/L6/tail-box-average": {
+			"ms": 17225,
+			"cases": 8
+		},
+		"integer/rgba8sint/storage/L1/custom": {
+			"ms": 638,
+			"cases": 11
+		},
+		"integer/rgba8sint/storage/L4/average": {
+			"ms": 3907,
+			"cases": 11
+		},
+		"integer/rgba8sint/storage/L4/max": {
+			"ms": 842,
+			"cases": 11
+		},
+		"integer/rgba8sint/storage/L4/tail-max": {
+			"ms": 460,
+			"cases": 4
+		},
+		"integer/rgba8sint/storage/L5/custom": {
+			"ms": 1710,
+			"cases": 11
+		},
+		"integer/rgba8sint/storage/L5/tail-max": {
+			"ms": 795,
+			"cases": 4
+		},
+		"integer/rgba8sint/storage/L6/average": {
+			"ms": 4765,
+			"cases": 11
+		},
+		"integer/rgba8uint/buffer/L1/tail-average": {
+			"ms": 1153,
+			"cases": 0
+		},
+		"integer/rgba8uint/buffer/L1/tail-max": {
+			"ms": 213,
+			"cases": 0
+		},
+		"integer/rgba8uint/buffer/L4/average": {
+			"ms": 4502,
+			"cases": 11
+		},
+		"integer/rgba8uint/buffer/L4/minmax": {
+			"ms": 872,
+			"cases": 11
+		},
+		"integer/rgba8uint/buffer/L5/box-max": {
+			"ms": 906,
+			"cases": 11
+		},
+		"integer/rgba8uint/buffer/L5/custom": {
+			"ms": 882,
+			"cases": 11
+		},
+		"integer/rgba8uint/buffer/L6/tail-max": {
+			"ms": 1295,
+			"cases": 4
+		},
+		"integer/rgba8uint/storage/L4/box-average": {
+			"ms": 42061,
+			"cases": 24
+		},
+		"integer/rgba8uint/storage/L4/tail-custom": {
+			"ms": 6348,
+			"cases": 8
+		},
+		"integer/rgba8uint/storage/L5/box-max": {
+			"ms": 7500,
+			"cases": 24
+		},
+		"integer/rgba8uint/storage/L5/custom": {
+			"ms": 11965,
+			"cases": 24
+		},
+		"integer/rgba8uint/storage/L5/tail-custom": {
+			"ms": 5278,
+			"cases": 8
+		},
+		"integer/rgba8uint/storage/L6/min": {
+			"ms": 12331,
+			"cases": 24
+		},
+		"integer/rgba8uint/storage/L6/minmax": {
+			"ms": 14563,
+			"cases": 24
+		},
+		"packed/reducer-half-rounding": {
+			"ms": 956,
+			"cases": 1
+		},
+		"payload/reducer/clamp/argmin-payload-argmax-payload/L1346": {
+			"ms": 1462,
+			"cases": 13
+		},
+		"payload/reducer/zero-weight/argmin-payload-argmax-payload/L1": {
+			"ms": 1779,
+			"cases": 13
+		},
+		"payload/reducer/zero-weight/argmin-payload-argmax-payload/L124": {
+			"ms": 3111,
+			"cases": 13
+		},
+		"reducer/clamp/custom-fold/L4/texture": {
+			"ms": 1581,
+			"cases": 17
+		},
+		"reducer/clamp/custom-sum/L6/texture": {
+			"ms": 1108,
+			"cases": 17
+		},
+		"reducer/clamp/sum-average-min-max/L5/texture": {
+			"ms": 1547,
+			"cases": 34
+		},
+		"reducer/zero-weight/custom-fold/L5/texture": {
+			"ms": 1789,
+			"cases": 17
+		},
+		"reducer/zero-weight/custom-sum/L5/texture": {
+			"ms": 1397,
+			"cases": 17
+		},
+		"region/buffer/rgba16float/average": {
+			"ms": 12045,
+			"cases": 10
+		},
+		"region/exact-L1/rgba8unorm/max": {
+			"ms": 8000,
+			"cases": 10
+		},
+		"region/exact/rgba8unorm/average": {
+			"ms": 33337,
+			"cases": 12
+		},
+		"region/exact/rgba8unorm/custom": {
+			"ms": 12708,
+			"cases": 10
+		},
+		"region/layers/rgba8unorm/average": {
+			"ms": 4070,
+			"cases": 16
+		},
+		"region/source/rgba16float/rgba8unorm/pow2-down": {
+			"ms": 37626,
+			"cases": 15
+		},
+		"region/spd/rgba16float/average": {
+			"ms": 44446,
+			"cases": 12
+		},
+		"region/spd/rgba8unorm-srgb/average": {
+			"ms": 39227,
+			"cases": 12
+		},
+		"region/tail-box/rgba16float/average": {
+			"ms": 12736,
+			"cases": 10
+		},
+		"region/tail-box/rgba8unorm/average-load": {
+			"ms": 13115,
+			"cases": 10
+		},
+		"region/tail-box/rgba8unorm/max": {
+			"ms": 9525,
+			"cases": 10
+		},
+		"region/tail/r32float/min": {
+			"ms": 18895,
+			"cases": 12
+		},
+		"region/tail/rgba16float/max": {
+			"ms": 53289,
+			"cases": 12
+		},
+		"region/tail/rgba8unorm/max": {
+			"ms": 41884,
+			"cases": 12
+		},
+		"region/tail/rgba8unorm/minmax": {
+			"ms": 12421,
+			"cases": 10
+		},
+		"scalar/exposure": {
+			"ms": 28397,
+			"cases": 21
+		},
+		"scalar/options": {
+			"ms": 114,
+			"cases": 2
+		},
+		"scalar/texture": {
+			"ms": 27062,
+			"cases": 168
+		},
+		"source/depth16unorm/r32float/half": {
+			"ms": 72671,
+			"cases": 13
+		},
+		"source/depth32float/r32float/same": {
+			"ms": 114268,
+			"cases": 13
+		},
+		"source/rgba16float/rg11b10ufloat/half": {
+			"ms": 105023,
+			"cases": 13
+		},
+		"source/rgba16float/rgb9e5ufloat/half": {
+			"ms": 113830,
+			"cases": 13
+		},
+		"source/rgba16float/rgba8unorm/same": {
+			"ms": 184228,
+			"cases": 13
+		},
+		"source/rgba32float/rgb9e5ufloat/same": {
+			"ms": 174997,
+			"cases": 13
+		},
+		"source/rgba8unorm-srgb/rgba16float/half": {
+			"ms": 73692,
+			"cases": 13
+		},
+		"source/rgba8unorm/rgba16float/half": {
+			"ms": 117389,
+			"cases": 13
+		},
+		"srgb/decode": {
+			"ms": 40,
+			"cases": 1
+		},
+		"wide/reducer/clamp/wide-channel-ops/L24": {
+			"ms": 2371,
+			"cases": 13
+		},
+		"wide/reducer/clamp/wide-channel-ops/L35": {
+			"ms": 4594,
+			"cases": 13
+		},
+		"wide/reducer/clamp/wide-custom-fold/L35": {
+			"ms": 2433,
+			"cases": 13
+		},
+		"wide/reducer/clamp/wide-minmax/L1": {
+			"ms": 3387,
+			"cases": 13
+		},
+		"wide/reducer/zero-weight/wide-channel-ops/L24": {
+			"ms": 3098,
+			"cases": 13
+		},
+		"wide/reducer/zero-weight/wide-channel-ops/L35": {
+			"ms": 3495,
+			"cases": 13
+		},
+		"wide/reducer/zero-weight/wide-minmax/L24": {
+			"ms": 1614,
+			"cases": 13
+		}
+	}
+}
