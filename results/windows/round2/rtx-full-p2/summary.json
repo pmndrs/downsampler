@@ -1,0 +1,218 @@
+{
+	"date": "2026-11-14T09:58:27.360Z",
+	"flags": [
+		"--power=high"
+	],
+	"jobs": 6,
+	"shards": 36,
+	"part": "2/3",
+	"capMinutes": 10,
+	"seconds": 1202,
+	"adapter": {
+		"vendor": "nvidia",
+		"architecture": "ampere",
+		"device": "",
+		"description": "",
+		"isFallbackAdapter": false,
+		"timestamps": true,
+		"features": [
+			"texture-formats-tier1",
+			"bgra8unorm-storage"
+		],
+		"compatibility": false,
+		"maxStorageTexturesPerShaderStage": 6,
+		"subgroupMinSize": 32,
+		"subgroupMaxSize": 128,
+		"adapterFeatures": [
+			"bgra8unorm-storage",
+			"chromium-experimental-multi-draw-indirect",
+			"chromium-experimental-timestamp-query-inside-passes",
+			"clip-distances",
+			"core-features-and-limits",
+			"depth-clip-control",
+			"depth32float-stencil8",
+			"dual-source-blending",
+			"float32-blendable",
+			"float32-filterable",
+			"indirect-first-instance",
+			"primitive-index",
+			"rg11b10ufloat-renderable",
+			"shader-f16",
+			"subgroups",
+			"texture-component-swizzle",
+			"texture-compression-bc",
+			"texture-compression-bc-sliced-3d",
+			"texture-formats-tier1",
+			"texture-formats-tier2",
+			"timestamp-query"
+		],
+		"maxTextureDimension2D": 8192
+	},
+	"ok": false,
+	"cases": 6137,
+	"checks": 13598,
+	"groups": {
+		"ran": 544,
+		"listed": 3225
+	},
+	"failures": [],
+	"problems": [
+		"shard 13: timed out after 10 min (log results\\windows\\round2\\rtx-full-p2\\shard-13.log)",
+		"shard 15: timed out after 10 min (log results\\windows\\round2\\rtx-full-p2\\shard-15.log)",
+		"shard 16: timed out after 10 min (log results\\windows\\round2\\rtx-full-p2\\shard-16.log)",
+		"shard 17: timed out after 10 min (log results\\windows\\round2\\rtx-full-p2\\shard-17.log)",
+		"shard 20: timed out after 10 min (log results\\windows\\round2\\rtx-full-p2\\shard-20.log)",
+		"shard 24: timed out after 10 min (log results\\windows\\round2\\rtx-full-p2\\shard-24.log)"
+	],
+	"skipped": [],
+	"perShard": [
+		{
+			"index": 13,
+			"ran": true,
+			"code": 1,
+			"seconds": 602,
+			"timedOut": true,
+			"overBudget": false
+		},
+		{
+			"index": 14,
+			"ran": true,
+			"code": 0,
+			"seconds": 565,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 15,
+			"ran": true,
+			"code": 1,
+			"seconds": 602,
+			"timedOut": true,
+			"overBudget": false
+		},
+		{
+			"index": 16,
+			"ran": true,
+			"code": 1,
+			"seconds": 602,
+			"timedOut": true,
+			"overBudget": false
+		},
+		{
+			"index": 17,
+			"ran": true,
+			"code": 1,
+			"seconds": 602,
+			"timedOut": true,
+			"overBudget": false
+		},
+		{
+			"index": 18,
+			"ran": true,
+			"code": 0,
+			"seconds": 579,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 19,
+			"ran": true,
+			"code": 0,
+			"seconds": 415,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 20,
+			"ran": true,
+			"code": 1,
+			"seconds": 600,
+			"timedOut": true,
+			"overBudget": false
+		},
+		{
+			"index": 21,
+			"ran": true,
+			"code": 0,
+			"seconds": 589,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 22,
+			"ran": true,
+			"code": 0,
+			"seconds": 572,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 23,
+			"ran": true,
+			"code": 0,
+			"seconds": 569,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 24,
+			"ran": true,
+			"code": 1,
+			"seconds": 600,
+			"timedOut": true,
+			"overBudget": false
+		}
+	],
+	"slowest": [
+		{
+			"id": "box/resample/rgba16float/rgba8unorm",
+			"ms": 76872,
+			"cases": 16
+		},
+		{
+			"id": "integer/rgba32uint/storage/L1/box-average",
+			"ms": 66737,
+			"cases": 24
+		},
+		{
+			"id": "region/exact/rgba16float/max",
+			"ms": 57175,
+			"cases": 12
+		},
+		{
+			"id": "downsampler/rgb9e5ufloat/buffer/L5/box-average-load",
+			"ms": 53030,
+			"cases": 24
+		},
+		{
+			"id": "region/box/rgba8unorm/average",
+			"ms": 51204,
+			"cases": 12
+		},
+		{
+			"id": "integer/rgba32uint/storage/L6/average",
+			"ms": 45502,
+			"cases": 24
+		},
+		{
+			"id": "downsampler/rg11b10ufloat/storage/L1/spd-average",
+			"ms": 42865,
+			"cases": 24
+		},
+		{
+			"id": "integer/rgba8uint/storage/L1/average",
+			"ms": 42640,
+			"cases": 24
+		},
+		{
+			"id": "downsampler/rgba16float/storage/L5/spd-average-load",
+			"ms": 39903,
+			"cases": 24
+		},
+		{
+			"id": "downsampler/rgb9e5ufloat/buffer/L5/spd-average-load",
+			"ms": 39340,
+			"cases": 24
+		}
+	]
+}

@@ -1,0 +1,892 @@
+{
+	"date": "2026-11-14T10:55:27.879Z",
+	"flags": [
+		"--power=high"
+	],
+	"jobs": 7,
+	"shards": 36,
+	"part": null,
+	"capMinutes": 25,
+	"seconds": 756,
+	"adapter": {
+		"vendor": "nvidia",
+		"architecture": "ampere",
+		"device": "",
+		"description": "",
+		"isFallbackAdapter": false,
+		"timestamps": true,
+		"features": [
+			"texture-formats-tier1",
+			"bgra8unorm-storage"
+		],
+		"compatibility": false,
+		"maxStorageTexturesPerShaderStage": 6,
+		"subgroupMinSize": 32,
+		"subgroupMaxSize": 128,
+		"adapterFeatures": [
+			"bgra8unorm-storage",
+			"chromium-experimental-multi-draw-indirect",
+			"chromium-experimental-timestamp-query-inside-passes",
+			"clip-distances",
+			"core-features-and-limits",
+			"depth-clip-control",
+			"depth32float-stencil8",
+			"dual-source-blending",
+			"float32-blendable",
+			"float32-filterable",
+			"indirect-first-instance",
+			"primitive-index",
+			"rg11b10ufloat-renderable",
+			"shader-f16",
+			"subgroups",
+			"texture-component-swizzle",
+			"texture-compression-bc",
+			"texture-compression-bc-sliced-3d",
+			"texture-formats-tier1",
+			"texture-formats-tier2",
+			"timestamp-query"
+		],
+		"maxTextureDimension2D": 8192
+	},
+	"ok": false,
+	"cases": 6211,
+	"checks": 13574,
+	"groups": {
+		"ran": 542,
+		"listed": 3225
+	},
+	"failures": [
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 255x257x1 -> rgba16float half average random L1 spd mip 0",
+			"first": "rgba8unorm-srgb 255x257x1 -> rgba16float half average random L1 spd mip 0: value 12494, actual 0.912109375, expected 0.91552734375, error 0.00341796875 > 0.0033509372733533382",
+			"failing": 2,
+			"values": 65024,
+			"maxError": 0.005859375
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 255x257x1 -> rgba16float half average random L4 spd mip 0",
+			"first": "rgba8unorm-srgb 255x257x1 -> rgba16float half average random L4 spd mip 0: value 12494, actual 0.912109375, expected 0.91552734375, error 0.00341796875 > 0.0033509372733533382",
+			"failing": 2,
+			"values": 65024,
+			"maxError": 0.005859375
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 255x257x1 -> rgba16float half average random L5 spd mip 0",
+			"first": "rgba8unorm-srgb 255x257x1 -> rgba16float half average random L5 spd mip 0: value 12494, actual 0.912109375, expected 0.91552734375, error 0.00341796875 > 0.0033509372733533382",
+			"failing": 2,
+			"values": 65024,
+			"maxError": 0.005859375
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 255x257x1 -> rgba16float half average random L6 spd mip 0",
+			"first": "rgba8unorm-srgb 255x257x1 -> rgba16float half average random L6 spd mip 0: value 12494, actual 0.912109375, expected 0.91552734375, error 0.00341796875 > 0.0033509372733533382",
+			"failing": 2,
+			"values": 65024,
+			"maxError": 0.005859375
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L1 exact mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L1 exact mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446",
+			"failing": 651,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L1 spd mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L1 spd mip 0: value 12546, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215",
+			"failing": 704,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L1 box mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L1 box mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446",
+			"failing": 651,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 exact mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 exact mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446",
+			"failing": 651,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 spd mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 spd mip 0: value 12546, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215",
+			"failing": 704,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 spd mip 1",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 spd mip 1: value 3202, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215",
+			"failing": 176,
+			"values": 5184,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 spd mip 2",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 spd mip 2: value 834, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215",
+			"failing": 40,
+			"values": 1248,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 spd mip 3",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 spd mip 3: value 226, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215",
+			"failing": 8,
+			"values": 288,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 box mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 box mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446",
+			"failing": 651,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 tail mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 tail mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446",
+			"failing": 651,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 tail box mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 tail box mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446",
+			"failing": 651,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 exact mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 exact mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446",
+			"failing": 651,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 spd mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 spd mip 0: value 12546, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215",
+			"failing": 704,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 spd mip 1",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 spd mip 1: value 3202, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215",
+			"failing": 176,
+			"values": 5184,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 spd mip 2",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 spd mip 2: value 834, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215",
+			"failing": 40,
+			"values": 1248,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 spd mip 3",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 spd mip 3: value 226, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215",
+			"failing": 8,
+			"values": 288,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 spd mip 4",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 spd mip 4: value 66, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215",
+			"failing": 2,
+			"values": 72,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 box mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 box mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446",
+			"failing": 651,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 tail mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 tail mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446",
+			"failing": 651,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 tail box mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 tail box mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446",
+			"failing": 651,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 exact mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 exact mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446",
+			"failing": 651,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 spd mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 spd mip 0: value 12546, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215",
+			"failing": 704,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 spd mip 1",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 spd mip 1: value 3202, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215",
+			"failing": 176,
+			"values": 5184,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 spd mip 2",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 spd mip 2: value 834, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215",
+			"failing": 40,
+			"values": 1248,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 spd mip 3",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 spd mip 3: value 226, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215",
+			"failing": 8,
+			"values": 288,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 spd mip 4",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 spd mip 4: value 66, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215",
+			"failing": 2,
+			"values": 72,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 box mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 box mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446",
+			"failing": 651,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 tail mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 tail mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446",
+			"failing": 651,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 tail box mip 0",
+			"first": "rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 tail box mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446",
+			"failing": 651,
+			"values": 20736,
+			"maxError": 0.0029296875
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L1 exact mip 0",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L1 exact mip 0: value 34053, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 2914,
+			"values": 262144,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L1 spd mip 0",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L1 spd mip 0: value 33025, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 3072,
+			"values": 262144,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L1 box mip 0",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L1 box mip 0: value 34053, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 2914,
+			"values": 262144,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 exact mip 0",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 exact mip 0: value 34053, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 2914,
+			"values": 262144,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 spd mip 0",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 spd mip 0: value 33025, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 3072,
+			"values": 262144,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 spd mip 1",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 spd mip 1: value 8321, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 768,
+			"values": 65536,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 spd mip 2",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 spd mip 2: value 2113, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 192,
+			"values": 16384,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 spd mip 3",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 spd mip 3: value 545, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 48,
+			"values": 4096,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 box mip 0",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 box mip 0: value 34053, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 2914,
+			"values": 262144,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 exact mip 0",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 exact mip 0: value 34053, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 2914,
+			"values": 262144,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 spd mip 0",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 spd mip 0: value 33025, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 3072,
+			"values": 262144,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 spd mip 1",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 spd mip 1: value 8321, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 768,
+			"values": 65536,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 spd mip 2",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 spd mip 2: value 2113, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 192,
+			"values": 16384,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 spd mip 3",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 spd mip 3: value 545, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 48,
+			"values": 4096,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 spd mip 4",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 spd mip 4: value 145, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 12,
+			"values": 1024,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 box mip 0",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 box mip 0: value 34053, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 2914,
+			"values": 262144,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 exact mip 0",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 exact mip 0: value 34053, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 2914,
+			"values": 262144,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 0",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 0: value 33025, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 3072,
+			"values": 262144,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 1",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 1: value 8321, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 768,
+			"values": 65536,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 2",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 2: value 2113, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 192,
+			"values": 16384,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 3",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 3: value 545, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 48,
+			"values": 4096,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 4",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 4: value 145, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 12,
+			"values": 1024,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 5",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 5: value 41, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 3,
+			"values": 256,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 box mip 0",
+			"first": "rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 box mip 0: value 34053, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 2914,
+			"values": 262144,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average random L1 spd mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average random L1 spd mip 0: value 201484, actual 0.822265625, expected 0.82666015625, error 0.00439453125 > 0.004174153322353959",
+			"failing": 6,
+			"values": 2073600,
+			"maxError": 0.00634765625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average random L4 spd mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average random L4 spd mip 0: value 201484, actual 0.822265625, expected 0.82666015625, error 0.00439453125 > 0.004174153322353959",
+			"failing": 6,
+			"values": 2073600,
+			"maxError": 0.00634765625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average random L5 spd mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average random L5 spd mip 0: value 201484, actual 0.822265625, expected 0.82666015625, error 0.00439453125 > 0.004174153322353959",
+			"failing": 6,
+			"values": 2073600,
+			"maxError": 0.00634765625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average random L6 spd mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average random L6 spd mip 0: value 201484, actual 0.822265625, expected 0.82666015625, error 0.00439453125 > 0.004174153322353959",
+			"failing": 6,
+			"values": 2073600,
+			"maxError": 0.00634765625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L1 exact mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L1 exact mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 17205,
+			"values": 2073600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L1 spd mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L1 spd mip 0: value 3714, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 18304,
+			"values": 2073600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L1 box mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L1 box mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 17205,
+			"values": 2073600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 exact mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 exact mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 17205,
+			"values": 2073600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 spd mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 spd mip 0: value 3714, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 18304,
+			"values": 2073600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 spd mip 1",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 spd mip 1: value 1858, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 4576,
+			"values": 518400,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 spd mip 2",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 spd mip 2: value 930, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 1144,
+			"values": 129600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 spd mip 3",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 spd mip 3: value 466, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 284,
+			"values": 32160,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 box mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 box mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 17205,
+			"values": 2073600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 tail mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 tail mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 17205,
+			"values": 2073600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 tail box mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 tail box mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 17205,
+			"values": 2073600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 exact mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 exact mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 17205,
+			"values": 2073600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 spd mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 spd mip 0: value 3714, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 18304,
+			"values": 2073600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 spd mip 1",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 spd mip 1: value 1858, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 4576,
+			"values": 518400,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 spd mip 2",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 spd mip 2: value 930, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 1144,
+			"values": 129600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 spd mip 3",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 spd mip 3: value 466, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 284,
+			"values": 32160,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 spd mip 4",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 spd mip 4: value 234, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 70,
+			"values": 7920,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 box mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 box mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 17205,
+			"values": 2073600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 tail mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 tail mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 17205,
+			"values": 2073600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 tail box mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 tail box mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 17205,
+			"values": 2073600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 exact mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 exact mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 17205,
+			"values": 2073600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 0: value 3714, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 18304,
+			"values": 2073600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 1",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 1: value 1858, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 4576,
+			"values": 518400,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 2",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 2: value 930, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 1144,
+			"values": 129600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 3",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 3: value 466, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 284,
+			"values": 32160,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 4",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 4: value 234, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 70,
+			"values": 7920,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 5",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 5: value 118, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829",
+			"failing": 17,
+			"values": 1920,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 box mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 box mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 17205,
+			"values": 2073600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 tail mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 tail mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 17205,
+			"values": 2073600,
+			"maxError": 0.00390625
+		},
+		{
+			"shard": 28,
+			"label": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 tail box mip 0",
+			"first": "rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 tail box mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745",
+			"failing": 17205,
+			"values": 2073600,
+			"maxError": 0.00390625
+		}
+	],
+	"problems": [],
+	"skipped": [],
+	"perShard": [
+		{
+			"index": 24,
+			"ran": true,
+			"code": 0,
+			"seconds": 638,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 25,
+			"ran": true,
+			"code": 0,
+			"seconds": 715,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 26,
+			"ran": true,
+			"code": 0,
+			"seconds": 671,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 28,
+			"ran": true,
+			"code": 1,
+			"seconds": 755,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 32,
+			"ran": true,
+			"code": 0,
+			"seconds": 705,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 33,
+			"ran": true,
+			"code": 0,
+			"seconds": 756,
+			"timedOut": false,
+			"overBudget": false
+		}
+	],
+	"slowest": [
+		{
+			"id": "source/rgba16float/rgba8unorm/same",
+			"ms": 184228,
+			"cases": 13
+		},
+		{
+			"id": "source/rgba32float/rgb9e5ufloat/same",
+			"ms": 174997,
+			"cases": 13
+		},
+		{
+			"id": "source/rgba8unorm/rgba16float/half",
+			"ms": 117389,
+			"cases": 13
+		},
+		{
+			"id": "source/depth32float/r32float/same",
+			"ms": 114268,
+			"cases": 13
+		},
+		{
+			"id": "source/rgba16float/rgb9e5ufloat/half",
+			"ms": 113830,
+			"cases": 13
+		},
+		{
+			"id": "source/rgba16float/rg11b10ufloat/half",
+			"ms": 105023,
+			"cases": 13
+		},
+		{
+			"id": "source/rgba8unorm-srgb/rgba16float/half",
+			"ms": 73692,
+			"cases": 13
+		},
+		{
+			"id": "source/depth16unorm/r32float/half",
+			"ms": 72671,
+			"cases": 13
+		},
+		{
+			"id": "region/tail/rgba16float/max",
+			"ms": 53289,
+			"cases": 12
+		},
+		{
+			"id": "integer/rgba32sint/storage/L1/average",
+			"ms": 52080,
+			"cases": 24
+		}
+	]
+}
