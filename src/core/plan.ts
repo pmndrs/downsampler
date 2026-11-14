@@ -16,6 +16,13 @@
  * that the 'exact' folds read, which a tile of the previous level doesn't hold
  * at its far edge without a halo, so an odd size ends the batch the same way.
  *
+ * With `halo`, an 'exact' or 'box' batch may carry odd steps (SPEC §13 item 3, nvpro's
+ * structure): each workgroup computes a halo of extra texels past its tile's far edge,
+ * so the three taps of an odd step are in workgroup memory. The halo of level i is
+ * e_i = 2·e_(i+1) + (1 if step i → i+1 is odd), per axis, so it grows 1, 3, 7 … texels
+ * per further odd step; a batch extends while its first-output tile with halo fits
+ * `haloMaxTexels` and adds at most `haloMaxExtra` of the first level's work.
+ *
  * Under 'spd', every batch is a 'clamp' tile reduction (SPD semantics): clamped
  * loads, ⌊n/2⌋ sizes, the last odd row or column dropped, so batches never end
  * at odd sizes and a chain takes ⌈levels / levelsPerDispatch⌉ dispatches.
@@ -83,6 +90,15 @@ export interface PlanOptions {
 	tailMaxTile?: number;
 	/** 'exact' batches: the smallest tile (8, 16 or 32), above what the level count needs. Default 8. */
 	exactMinTile?: number;
+	/**
+	 * 'exact' and 'box' only: carry odd steps inside a batch with a halo (see above). Halo
+	 * batches take tiles of at least 16 (16 × 16 invocations). Default false.
+	 */
+	halo?: boolean;
+	/** Largest first-output tile of a halo batch, halo included, in texels: workgroup memory / 16 bytes. Default 1024 (16 KiB). */
+	haloMaxTexels?: number;
+	/** Largest extra first-output work a halo may add, as a fraction of the tile's. Default 0.25. */
+	haloMaxExtra?: number;
 }
 
 export interface Batch {
@@ -101,6 +117,31 @@ export interface Batch {
 	tile: number;
 	groupsX: number;
 	groupsY: number;
+	/**
+	 * Halo batches only: per output level of the batch (0 = the first), the texels each workgroup
+	 * computes past its tile's far edge, per axis; the last level's are 0. A step i → i + 1 is odd
+	 * along an axis where `halo[ i ] - 2 · halo[ i + 1 ]` is 1.
+	 */
+	halo?: { x: number[]; y: number[] };
+}
+
+/**
+ * Halo of a batch of `count` levels from `level` (per axis, per level; see {@link Batch.halo}),
+ * for a level-0 size `width` × `height`.
+ */
+export function batchHalo( width: number, height: number, level: number, count: number ): { x: number[]; y: number[] } {
+
+	const x = new Array<number>( count ).fill( 0 ), y = new Array<number>( count ).fill( 0 );
+	const odd = ( n: number ) => n > 1 && n % 2 === 1 ? 1 : 0;
+	for ( let i = count - 2; i >= 0; i -- ) {
+
+		x[ i ] = 2 * x[ i + 1 ] + odd( mipSize( width, level + i ) );
+		y[ i ] = 2 * y[ i + 1 ] + odd( mipSize( height, level + i ) );
+
+	}
+
+	return { x, y };
+
 }
 
 /** Size of a mip level, following the WebGPU/Vulkan/D3D floor convention. */
@@ -140,10 +181,11 @@ export function workgroupSide( tile: number ): number {
  */
 export function planBatches( width: number, height: number, options: PlanOptions ): Batch[] {
 
-	const { baseMipLevel = 0, mipLevelCount, levelsPerDispatch, oddSizes = 'exact', fromSource = false, copySource = false, tail = false, tailMaxTile = tailTile, exactMinTile = 8 } = options;
+	const { baseMipLevel = 0, mipLevelCount, levelsPerDispatch, oddSizes = 'exact', fromSource = false, copySource = false, tail = false, tailMaxTile = tailTile, exactMinTile = 8, halo = false, haloMaxTexels = 1024, haloMaxExtra = 0.25 } = options;
 	if ( exactMinTile !== 8 && exactMinTile !== 16 && exactMinTile !== 32 ) throw new Error( 'downsampler: exactMinTile must be 8, 16 or 32.' );
 	if ( oddSizes !== 'exact' && oddSizes !== 'spd' && oddSizes !== 'box' ) throw new Error( `downsampler: odd size policy "${ oddSizes }" is not implemented.` );
 	if ( ! Number.isInteger( levelsPerDispatch ) || levelsPerDispatch < 1 || levelsPerDispatch > 6 ) throw new Error( 'downsampler: levelsPerDispatch must be an integer from 1 to 6.' );
+	if ( oddSizes === 'spd' && halo ) throw new Error( 'downsampler: halo batches are an \'exact\' or \'box\' plan; \'spd\' chains never end a batch at odd sizes.' );
 	if ( oddSizes === 'spd' && tail ) throw new Error( 'downsampler: the tail kernel is an \'exact\' or \'box\' plan; \'spd\' chains never end a batch at odd sizes.' );
 
 	const firstLevel = fromSource ? baseMipLevel : baseMipLevel + 1;
@@ -197,6 +239,36 @@ export function planBatches( width: number, height: number, options: PlanOptions
 
 			batches.push( { kernel: 'tail', sourceMipLevel: sourceOf( level ), firstMipLevel: level, count: tailCount, outputWidth, outputHeight, tile: tailTileFor( outputWidth, outputHeight ), groupsX: 1, groupsY: 1 } );
 			level += tailCount;
+			continue;
+
+		}
+
+		// Halo: extend the batch through odd steps while the tile with its halo fits and the
+		// extra first-output work stays small. A separate source's first batch isn't extended
+		// (its first output may be a copy or a resample, whose taps aren't the 2x … 2x+2 of a level).
+		let haloed: { count: number; tile: number; halo: { x: number[]; y: number[] } } | null = null;
+		if ( halo && ! ( fromSource && level === firstLevel ) ) {
+
+			for ( let c = count + 1; c <= Math.min( levelsPerDispatch, lastLevel - level + 1 ); c ++ ) {
+
+				const t = Math.max( 16, tileSize( c ) );
+				const h = batchHalo( width, height, level, c );
+				const texels = ( t + h.x[ 0 ] ) * ( t + h.y[ 0 ] );
+				if ( texels > haloMaxTexels || texels / ( t * t ) - 1 > haloMaxExtra ) break;
+				haloed = { count: c, tile: t, halo: h };
+
+			}
+
+		}
+
+		if ( haloed !== null ) {
+
+			const { tile, halo: h } = haloed;
+			batches.push( {
+				kernel: 'exact', sourceMipLevel: sourceOf( level ), firstMipLevel: level, count: haloed.count, outputWidth, outputHeight, tile,
+				groupsX: Math.ceil( outputWidth / tile ), groupsY: Math.ceil( outputHeight / tile ), halo: h
+			} );
+			level += haloed.count;
 			continue;
 
 		}
