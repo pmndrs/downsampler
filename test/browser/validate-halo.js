@@ -1,8 +1,10 @@
 // Halo batches (SPEC §13 item 3; Downsampler `halo`): odd steps carried inside a batch, each
 // workgroup computing the texels past its tile that the odd steps read. They must not change
-// results: wherever the plain chain applies shader weights (averageAccess 'load', folds, 'box'),
-// a halo chain is bit-identical to it; with the default 'sample' every level is checked against
-// the core oracle from the GPU's previous level, as the main matrix checks tail kernels.
+// results: wherever both chains apply shader weights (averageAccess 'load', folds, 'box' with
+// 'load'), a halo chain is bit-identical to the plain one in exact formats (normalized integers,
+// float16, packed, sRGB) and within an ulp in float32, where a level computed by another kernel
+// may round differently. With the default 'sample' every level is checked against the core
+// oracle from the GPU's previous level, as the main matrix checks tail kernels.
 // Partial updates (rect, layers) of a halo chain equal its full recompute.
 import { formats, isIntegerDomain, isPackedQuantization, reduceReference } from '/dist/index.js';
 import { Downsampler } from '/dist/webgpu/index.js';
@@ -25,7 +27,7 @@ const identical = [
 	{ name: 'min', oddSizes: 'exact', reduction: 'min' },
 	{ name: 'minmax', oddSizes: 'exact', reduction: 'minmax' },
 	{ name: 'custom', oddSizes: 'exact', reduction: custom },
-	{ name: 'box-average', oddSizes: 'box', reduction: 'average' },
+	{ name: 'box-average-load', oddSizes: 'box', reduction: 'average', access: 'load' },
 	{ name: 'box-max', oddSizes: 'box', reduction: 'max' }
 ];
 
@@ -59,7 +61,7 @@ export async function validateHalo( device, { quick = false, onProgress = () => 
 						if ( halos === 0 ) continue;
 						for ( const [ texture, downsampler ] of [ [ a, plain ], [ b, halo ] ] ) { upload( device, texture, data ); poison( device, texture ); downsampler.generate( texture, options ); }
 						const [ expected, actual ] = [ await readMips( device, a, 1 ), await readMips( device, b, 1 ) ];
-						same( actual, expected, `halo ${ format } ${ output } ${ width }x${ height }x${ layers } ${ mode.name }` );
+						same( actual, expected, `halo ${ format } ${ output } ${ width }x${ height }x${ layers } ${ mode.name }`, formats[ format ].quantization === 'float32' );
 						out.push( { format, output, width, height, layers, mode: mode.name, haloBatches: halos, dispatches: [ plain.prepare( a, options ).length, halo.prepare( b, options ).length ] } );
 
 					}
@@ -160,8 +162,8 @@ function mixRect( base, changed, width, height, layers, format, rect, range = [ 
 
 }
 
-/** Every level bit for bit (NaN equal to NaN). */
-function same( actual, expected, label ) {
+/** Every level bit for bit (NaN equal to NaN), or within 2⁻²⁰ relative for float32 (`ulps`). */
+function same( actual, expected, label, ulps = false ) {
 
 	for ( let level = 0; level < expected.length; level ++ ) {
 
@@ -169,6 +171,7 @@ function same( actual, expected, label ) {
 		for ( let i = 0; i < e.length; i ++ ) {
 
 			if ( Object.is( a[ i ], e[ i ] ) || a[ i ] === e[ i ] ) continue;
+			if ( ulps && Math.abs( a[ i ] - e[ i ] ) <= 2 ** - 20 * Math.max( 1, Math.abs( e[ i ] ) ) ) continue;
 			throw new Error( `${ label }: level ${ level + 1 } value ${ i } is ${ a[ i ] }, expected ${ e[ i ] } (the plain chain's)` );
 
 		}

@@ -268,7 +268,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 	const results = [];
 	const started = performance.now();
-	const cases = only === 'scalar' || only === 'reducer' || only === 'fixtures' || only === 'region' || only === 'mipmap' || only?.startsWith( 'integer' ) ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
+	const cases = only === 'scalar' || only === 'reducer' || only === 'fixtures' || only === 'region' || only === 'mipmap' || only === 'halo' || only?.startsWith( 'integer' ) ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
 	let scalarPrecision = null;
 	let runs = 0;
 	const skipped = [];

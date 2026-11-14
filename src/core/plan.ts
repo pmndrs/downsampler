@@ -218,7 +218,8 @@ export function planBatches( width: number, height: number, options: PlanOptions
 
 	}
 
-	for ( let level = firstLevel; level <= lastLevel; ) {
+	// The plain choice at a level: a tail batch, or an 'exact' batch up to the next odd step.
+	const plainAt = ( level: number ): Batch => {
 
 		const outputWidth = mipSize( width, level ), outputHeight = mipSize( height, level );
 		let count = 1, cw = outputWidth, ch = outputHeight;
@@ -237,49 +238,81 @@ export function planBatches( width: number, height: number, options: PlanOptions
 		const tailCount = Math.min( levelsPerDispatch, lastLevel - level + 1 );
 		if ( tail && count < tailCount && outputWidth <= tailMaxTile && outputHeight <= tailMaxTile ) {
 
-			batches.push( { kernel: 'tail', sourceMipLevel: sourceOf( level ), firstMipLevel: level, count: tailCount, outputWidth, outputHeight, tile: tailTileFor( outputWidth, outputHeight ), groupsX: 1, groupsY: 1 } );
-			level += tailCount;
-			continue;
+			return { kernel: 'tail', sourceMipLevel: sourceOf( level ), firstMipLevel: level, count: tailCount, outputWidth, outputHeight, tile: tailTileFor( outputWidth, outputHeight ), groupsX: 1, groupsY: 1 };
 
 		}
 
-		// Halo: extend the batch through odd steps while the tile with its halo fits and the
-		// extra first-output work stays small. A separate source's first batch isn't extended
-		// (its first output may be a copy or a resample, whose taps aren't the 2x … 2x+2 of a level).
-		let haloed: { count: number; tile: number; halo: { x: number[]; y: number[] } } | null = null;
-		if ( halo && ! ( fromSource && level === firstLevel ) ) {
+		const tile = Math.max( exactMinTile, tileSize( count ) );
+		return {
+			kernel: 'exact', sourceMipLevel: sourceOf( level ), firstMipLevel: level, count, outputWidth, outputHeight, tile,
+			groupsX: Math.ceil( outputWidth / tile ), groupsY: Math.ceil( outputHeight / tile )
+		};
 
-			for ( let c = count + 1; c <= Math.min( levelsPerDispatch, lastLevel - level + 1 ); c ++ ) {
+	};
 
-				const t = Math.max( 16, tileSize( c ) );
+	if ( ! halo ) {
+
+		for ( let level = firstLevel; level <= lastLevel; ) {
+
+			const batch = plainAt( level );
+			batches.push( batch );
+			level += batch.count;
+
+		}
+
+		return batches;
+
+	}
+
+	// Halo plans: at each level, the plain batch or a halo batch through further odd steps (while
+	// the tile with its halo fits `haloMaxTexels` and adds at most `haloMaxExtra` of its work).
+	// The plan with the fewest dispatches wins; among those, the one computing the fewest extra
+	// texels, then the one with fewer halo batches, so a halo is only taken where it saves a
+	// dispatch, and on the smallest levels that do. A separate source's first batch isn't extended
+	// (its first output may be a copy or a resample, whose taps aren't the 2x … 2x+2 of a level).
+	type Choice = { dispatches: number; extra: number; halos: number; batch: Batch | null };
+	const best = new Map<number, Choice>( [ [ lastLevel + 1, { dispatches: 0, extra: 0, halos: 0, batch: null } ] ] );
+	for ( let level = lastLevel; level >= firstLevel; level -- ) {
+
+		const plain = plainAt( level );
+		const options: Batch[] = [ plain ];
+		if ( plain.kernel !== 'tail' && ! ( fromSource && level === firstLevel ) ) {
+
+			const { outputWidth, outputHeight } = plain;
+			for ( let c = plain.count + 1; c <= Math.min( levelsPerDispatch, lastLevel - level + 1 ); c ++ ) {
+
+				const tile = Math.max( 16, tileSize( c ) );
 				const h = batchHalo( width, height, level, c );
-				const texels = ( t + h.x[ 0 ] ) * ( t + h.y[ 0 ] );
-				if ( texels > haloMaxTexels || texels / ( t * t ) - 1 > haloMaxExtra ) break;
-				haloed = { count: c, tile: t, halo: h };
+				const texels = ( tile + h.x[ 0 ] ) * ( tile + h.y[ 0 ] );
+				if ( texels > haloMaxTexels || texels / ( tile * tile ) - 1 > haloMaxExtra ) break;
+				options.push( {
+					kernel: 'exact', sourceMipLevel: sourceOf( level ), firstMipLevel: level, count: c, outputWidth, outputHeight, tile,
+					groupsX: Math.ceil( outputWidth / tile ), groupsY: Math.ceil( outputHeight / tile ), halo: h
+				} );
 
 			}
 
 		}
 
-		if ( haloed !== null ) {
+		let choice: Choice | null = null;
+		for ( const batch of options ) {
 
-			const { tile, halo: h } = haloed;
-			batches.push( {
-				kernel: 'exact', sourceMipLevel: sourceOf( level ), firstMipLevel: level, count: haloed.count, outputWidth, outputHeight, tile,
-				groupsX: Math.ceil( outputWidth / tile ), groupsY: Math.ceil( outputHeight / tile ), halo: h
-			} );
-			level += haloed.count;
-			continue;
+			const rest = best.get( level + batch.count )!;
+			const extra = rest.extra + ( batch.halo ? batch.groupsX * batch.groupsY * ( ( batch.tile + batch.halo.x[ 0 ] ) * ( batch.tile + batch.halo.y[ 0 ] ) - batch.tile * batch.tile ) : 0 );
+			const candidate = { dispatches: rest.dispatches + 1, extra, halos: rest.halos + ( batch.halo ? 1 : 0 ), batch };
+			if ( choice === null || candidate.dispatches < choice.dispatches || ( candidate.dispatches === choice.dispatches && ( candidate.extra < choice.extra || ( candidate.extra === choice.extra && candidate.halos < choice.halos ) ) ) ) choice = candidate;
 
 		}
 
-		const tile = Math.max( exactMinTile, tileSize( count ) );
-		batches.push( {
-			kernel: 'exact', sourceMipLevel: sourceOf( level ), firstMipLevel: level, count, outputWidth, outputHeight, tile,
-			groupsX: Math.ceil( outputWidth / tile ), groupsY: Math.ceil( outputHeight / tile )
-		} );
+		best.set( level, choice! );
 
-		level += count;
+	}
+
+	for ( let level = firstLevel; level <= lastLevel; ) {
+
+		const batch = best.get( level )!.batch!;
+		batches.push( batch );
+		level += batch.count;
 
 	}
 

@@ -41,6 +41,7 @@ function compareStrategies( device ) {
 		// M2.5: area-weighted odd sizes, the 'exact' batches (odd-level batches load), with and without the tail.
 		strategies.box = { ...run( new Downsampler( device, { tail: false } ), { reduction, oddSizes: 'box' } ), parity: false };
 		strategies.tailBox = { ...run( tail, { reduction, oddSizes: 'box' } ), parity: false };
+		strategies.haloBox = { ...run( new Downsampler( device, { tail: true, halo: true } ), { reduction, oddSizes: 'box' } ), parity: false };
 		// Windows decisions (2026-11-12, results/windows/correctness.md): shader weights instead of
 		// the sampler ('load', identical on every GPU), and the device's own f16 conversion
 		// ('device', the cost of rounding to nearest even; the same as exact for non-f16 formats).
@@ -117,6 +118,8 @@ function renderStrategies( device ) {
 	strategies.exact16 = { ...run( new Downsampler( device, { exactTile: 16, tail: false } ), {} ), parity: true };
 	strategies.tail8 = { ...run( new Downsampler( device, { tail: true, exactTile: 8 } ), {} ), parity: true };
 	strategies.tail16 = { ...run( new Downsampler( device, { tail: true, exactTile: 16 } ), {} ), parity: true };
+	// Halo batches (SPEC §13 item 3): the default chain (tail on) with odd steps carried inside batches.
+	strategies.halo = { ...run( new Downsampler( device, { tail: true, halo: true } ), {} ), parity: true };
 	return { strategies, reference: () => 'render' };
 
 }
