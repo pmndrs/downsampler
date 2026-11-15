@@ -95,7 +95,7 @@ GPU time for a full chain, against one render pass per level:
 | 1920×1080 | 3× faster | |
 
 On an NVIDIA RTX 3060 Laptop, at screen sizes from 960×540 to 2560×1440, it's about as fast as render passes in rgba8
-and 10 % faster in rgba16float.
+and 10 % faster in rgba16float; a 512² cube map is 3–4× faster.
 
 The big wins are small textures and cube maps, where the cost of starting many render passes dominates. Very large
 textures (4096²) are limited by memory bandwidth, so every method takes about the same time there. If you can accept

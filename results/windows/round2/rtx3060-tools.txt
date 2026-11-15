@@ -1,0 +1,210 @@
+took the bench lock (C:\Users\denni\AppData\Local\Temp\ddgi-gpu-bench.lock) for "downsampler: rtx3060-tools"
+GPU at 49 C, below 70 C: starting
+{"vendor":"nvidia","architecture":"ampere","device":"","description":"","isFallbackAdapter":false,"features":["timestamp-query","texture-formats-tier1"],"maxStorageTexturesPerShaderStage":8}
+load average (1/5/15 min): before 0.00 0.00 0.00, after 0.00 0.00 0.00
+
+960×540  (scene 326 ms, oracles 1354 ms; moving 7.6 %, disoccluded 0.07 %)
+┌───────────────────────────────────┬────────────┬──────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ (index)                           │ dispatches │ gpu ms   │ check                                                                                                                │
+├───────────────────────────────────┼────────────┼──────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ upscaler/exposure                 │ 1          │ '0.0666' │ 'ok'                                                                                                                 │
+│ fsr/luma-pyramid                  │ 2          │ '0.0402' │ 'FAILED: FrameInfo.exposure, FrameInfo.logLuma, FrameInfo.sceneAverageLuma, FrameInfo.sceneAverageLuma (from reset)' │
+│ fsr/luma-pyramid-correct          │ 2          │ '0.0365' │ 'ok'                                                                                                                 │
+│ upscaler/shading-change           │ 1          │ '0.3066' │ 'ok'                                                                                                                 │
+│ fsr/shading-change-pyramid        │ 1          │ '0.2421' │ 'ok'                                                                                                                 │
+│ fsr/shading-change-pyramid-amd    │ 1          │ '0.2729' │ 'ok'                                                                                                                 │
+│ fsr/shading-change                │ 1          │ '0.0303' │ 'ok'                                                                                                                 │
+│ fsr/shading-change-total          │ 2          │ '0.3124' │ 'ok'                                                                                                                 │
+│ generator/luma-pyramid            │ 3          │ '0.0648' │ 'ok'                                                                                                                 │
+│ generator/luma-pyramid-fused      │ 2          │ '0.0518' │ 'ok'                                                                                                                 │
+│ generator/luma-pyramid-clamp      │ 3          │ '0.0653' │ 'FAILED: FrameInfo.exposure, FrameInfo.logLuma, FrameInfo.sceneAverageLuma, FrameInfo.sceneAverageLuma (from reset)' │
+│ generator/upscaler-exposure       │ 2          │ '0.0358' │ 'ok'                                                                                                                 │
+│ generator/upscaler-exposure-taps  │ 2          │ '0.0218' │ 'ok'                                                                                                                 │
+│ generator/shading-change-pyramid  │ 1          │ '0.2334' │ 'ok'                                                                                                                 │
+│ generator/upscaler-shading-change │ 1          │ '0.3093' │ 'ok'                                                                                                                 │
+│ floor                             │ 1          │ '0.0035' │ '-'                                                                                                                  │
+└───────────────────────────────────┴────────────┴──────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+  fsr/luma-pyramid ÷ upscaler/exposure: 0.60×
+  fsr/luma-pyramid-correct ÷ upscaler/exposure: 0.55×
+  fsr/luma-pyramid-correct ÷ fsr/luma-pyramid: 0.91×
+  fsr/shading-change-total ÷ upscaler/shading-change: 1.02×
+  fsr/shading-change-pyramid ÷ upscaler/shading-change: 0.79×
+  fsr/shading-change-pyramid-amd ÷ fsr/shading-change-pyramid: 1.13×
+  generator/luma-pyramid ÷ fsr/luma-pyramid-correct: 1.78×
+  generator/luma-pyramid ÷ upscaler/exposure: 0.97×
+  generator/luma-pyramid-fused ÷ fsr/luma-pyramid-correct: 1.42×
+  generator/luma-pyramid-fused ÷ upscaler/exposure: 0.78×
+  generator/luma-pyramid-clamp ÷ fsr/luma-pyramid: 1.62×
+  generator/upscaler-exposure ÷ upscaler/exposure: 0.54×
+  generator/upscaler-exposure ÷ fsr/luma-pyramid-correct: 0.98×
+  generator/upscaler-exposure-taps ÷ upscaler/exposure: 0.33×
+  generator/shading-change-pyramid ÷ fsr/shading-change-pyramid: 0.96×
+  generator/shading-change-pyramid ÷ upscaler/shading-change: 0.76×
+  generator/upscaler-shading-change ÷ upscaler/shading-change: 1.01×
+  generator/upscaler-shading-change ÷ fsr/shading-change-total: 0.99×
+
+1280×720  (scene 497 ms, oracles 1941 ms; moving 7.6 %, disoccluded 0.06 %)
+┌───────────────────────────────────┬────────────┬──────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ (index)                           │ dispatches │ gpu ms   │ check                                                                                                                │
+├───────────────────────────────────┼────────────┼──────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ upscaler/exposure                 │ 1          │ '0.0290' │ 'ok'                                                                                                                 │
+│ fsr/luma-pyramid                  │ 2          │ '0.0316' │ 'FAILED: FrameInfo.exposure, FrameInfo.logLuma, FrameInfo.sceneAverageLuma, FrameInfo.sceneAverageLuma (from reset)' │
+│ fsr/luma-pyramid-correct          │ 2          │ '0.0293' │ 'ok'                                                                                                                 │
+│ upscaler/shading-change           │ 1          │ '0.0705' │ 'ok'                                                                                                                 │
+│ fsr/shading-change-pyramid        │ 1          │ '0.1217' │ 'ok'                                                                                                                 │
+│ fsr/shading-change-pyramid-amd    │ 1          │ '0.1229' │ 'ok'                                                                                                                 │
+│ fsr/shading-change                │ 1          │ '0.0152' │ 'ok'                                                                                                                 │
+│ fsr/shading-change-total          │ 2          │ '0.1383' │ 'ok'                                                                                                                 │
+│ generator/luma-pyramid            │ 3          │ '0.0390' │ 'ok'                                                                                                                 │
+│ generator/luma-pyramid-fused      │ 2          │ '0.0299' │ 'ok'                                                                                                                 │
+│ generator/luma-pyramid-clamp      │ 3          │ '0.0345' │ 'FAILED: FrameInfo.exposure, FrameInfo.logLuma, FrameInfo.sceneAverageLuma, FrameInfo.sceneAverageLuma (from reset)' │
+│ generator/upscaler-exposure       │ 2          │ '0.0195' │ 'ok'                                                                                                                 │
+│ generator/upscaler-exposure-taps  │ 2          │ '0.0093' │ 'ok'                                                                                                                 │
+│ generator/shading-change-pyramid  │ 1          │ '0.1147' │ 'ok'                                                                                                                 │
+│ generator/upscaler-shading-change │ 1          │ '0.0730' │ 'ok'                                                                                                                 │
+│ floor                             │ 1          │ '0.0017' │ '-'                                                                                                                  │
+└───────────────────────────────────┴────────────┴──────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+  fsr/luma-pyramid ÷ upscaler/exposure: 1.09×
+  fsr/luma-pyramid-correct ÷ upscaler/exposure: 1.01×
+  fsr/luma-pyramid-correct ÷ fsr/luma-pyramid: 0.93×
+  fsr/shading-change-total ÷ upscaler/shading-change: 1.96×
+  fsr/shading-change-pyramid ÷ upscaler/shading-change: 1.73×
+  fsr/shading-change-pyramid-amd ÷ fsr/shading-change-pyramid: 1.01×
+  generator/luma-pyramid ÷ fsr/luma-pyramid-correct: 1.33×
+  generator/luma-pyramid ÷ upscaler/exposure: 1.35×
+  generator/luma-pyramid-fused ÷ fsr/luma-pyramid-correct: 1.02×
+  generator/luma-pyramid-fused ÷ upscaler/exposure: 1.03×
+  generator/luma-pyramid-clamp ÷ fsr/luma-pyramid: 1.09×
+  generator/upscaler-exposure ÷ upscaler/exposure: 0.67×
+  generator/upscaler-exposure ÷ fsr/luma-pyramid-correct: 0.67×
+  generator/upscaler-exposure-taps ÷ upscaler/exposure: 0.32×
+  generator/shading-change-pyramid ÷ fsr/shading-change-pyramid: 0.94×
+  generator/shading-change-pyramid ÷ upscaler/shading-change: 1.63×
+  generator/upscaler-shading-change ÷ upscaler/shading-change: 1.04×
+  generator/upscaler-shading-change ÷ fsr/shading-change-total: 0.53×
+
+1129×635  (scene 403 ms, oracles 1528 ms; moving 7.6 %, disoccluded 0.07 %)
+┌───────────────────────────────────┬────────────┬──────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ (index)                           │ dispatches │ gpu ms   │ check                                                                                                                │
+├───────────────────────────────────┼────────────┼──────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ upscaler/exposure                 │ 1          │ '0.0604' │ 'ok'                                                                                                                 │
+│ fsr/luma-pyramid                  │ 2          │ '0.0453' │ 'FAILED: FrameInfo.exposure, FrameInfo.logLuma, FrameInfo.sceneAverageLuma, FrameInfo.sceneAverageLuma (from reset)' │
+│ fsr/luma-pyramid-correct          │ 2          │ '0.0333' │ 'ok'                                                                                                                 │
+│ upscaler/shading-change           │ 1          │ '0.1283' │ 'ok'                                                                                                                 │
+│ fsr/shading-change-pyramid        │ 1          │ '0.2138' │ 'ok'                                                                                                                 │
+│ fsr/shading-change-pyramid-amd    │ 1          │ '0.2410' │ 'ok'                                                                                                                 │
+│ fsr/shading-change                │ 1          │ '0.0280' │ 'ok'                                                                                                                 │
+│ fsr/shading-change-total          │ 2          │ '0.2689' │ 'ok'                                                                                                                 │
+│ generator/luma-pyramid            │ 3          │ '0.0612' │ 'ok'                                                                                                                 │
+│ generator/luma-pyramid-fused      │ 2          │ '0.0510' │ 'ok'                                                                                                                 │
+│ generator/luma-pyramid-clamp      │ 3          │ '0.0614' │ 'FAILED: FrameInfo.exposure, FrameInfo.logLuma, FrameInfo.sceneAverageLuma, FrameInfo.sceneAverageLuma (from reset)' │
+│ generator/upscaler-exposure       │ 2          │ '0.0316' │ 'ok'                                                                                                                 │
+│ generator/upscaler-exposure-taps  │ 2          │ '0.0197' │ 'ok'                                                                                                                 │
+│ generator/shading-change-pyramid  │ 1          │ '0.2334' │ 'ok'                                                                                                                 │
+│ generator/upscaler-shading-change │ 1          │ '0.1330' │ 'ok'                                                                                                                 │
+│ floor                             │ 1          │ '0.0028' │ '-'                                                                                                                  │
+└───────────────────────────────────┴────────────┴──────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+  fsr/luma-pyramid ÷ upscaler/exposure: 0.75×
+  fsr/luma-pyramid-correct ÷ upscaler/exposure: 0.55×
+  fsr/luma-pyramid-correct ÷ fsr/luma-pyramid: 0.74×
+  fsr/shading-change-total ÷ upscaler/shading-change: 2.10×
+  fsr/shading-change-pyramid ÷ upscaler/shading-change: 1.67×
+  fsr/shading-change-pyramid-amd ÷ fsr/shading-change-pyramid: 1.13×
+  generator/luma-pyramid ÷ fsr/luma-pyramid-correct: 1.83×
+  generator/luma-pyramid ÷ upscaler/exposure: 1.01×
+  generator/luma-pyramid-fused ÷ fsr/luma-pyramid-correct: 1.53×
+  generator/luma-pyramid-fused ÷ upscaler/exposure: 0.84×
+  generator/luma-pyramid-clamp ÷ fsr/luma-pyramid: 1.35×
+  generator/upscaler-exposure ÷ upscaler/exposure: 0.52×
+  generator/upscaler-exposure ÷ fsr/luma-pyramid-correct: 0.95×
+  generator/upscaler-exposure-taps ÷ upscaler/exposure: 0.33×
+  generator/shading-change-pyramid ÷ fsr/shading-change-pyramid: 1.09×
+  generator/shading-change-pyramid ÷ upscaler/shading-change: 1.82×
+  generator/upscaler-shading-change ÷ upscaler/shading-change: 1.04×
+  generator/upscaler-shading-change ÷ fsr/shading-change-total: 0.49×
+
+1707×960  (scene 1002 ms, oracles 3334 ms; moving 7.6 %, disoccluded 0.03 %)
+┌───────────────────────────────────┬────────────┬──────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ (index)                           │ dispatches │ gpu ms   │ check                                                                                                                │
+├───────────────────────────────────┼────────────┼──────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ upscaler/exposure                 │ 1          │ '0.0295' │ 'ok'                                                                                                                 │
+│ fsr/luma-pyramid                  │ 2          │ '0.0401' │ 'FAILED: FrameInfo.exposure, FrameInfo.logLuma, FrameInfo.sceneAverageLuma, FrameInfo.sceneAverageLuma (from reset)' │
+│ fsr/luma-pyramid-correct          │ 2          │ '0.0398' │ 'ok'                                                                                                                 │
+│ upscaler/shading-change           │ 1          │ '0.1164' │ 'ok'                                                                                                                 │
+│ fsr/shading-change-pyramid        │ 1          │ '0.2016' │ 'ok (6 outside, in budget)'                                                                                          │
+│ fsr/shading-change-pyramid-amd    │ 1          │ '0.2032' │ 'ok (11 outside, in budget)'                                                                                         │
+│ fsr/shading-change                │ 1          │ '0.0201' │ 'ok'                                                                                                                 │
+│ fsr/shading-change-total          │ 2          │ '0.2243' │ 'ok'                                                                                                                 │
+│ generator/luma-pyramid            │ 3          │ '0.0609' │ 'ok'                                                                                                                 │
+│ generator/luma-pyramid-fused      │ 2          │ '0.0405' │ 'ok'                                                                                                                 │
+│ generator/luma-pyramid-clamp      │ 3          │ '0.0453' │ 'FAILED: FrameInfo.exposure, FrameInfo.logLuma, FrameInfo.sceneAverageLuma, FrameInfo.sceneAverageLuma (from reset)' │
+│ generator/upscaler-exposure       │ 2          │ '0.0287' │ 'ok'                                                                                                                 │
+│ generator/upscaler-exposure-taps  │ 2          │ '0.0086' │ 'ok'                                                                                                                 │
+│ generator/shading-change-pyramid  │ 1          │ '0.1969' │ 'ok (6 outside, in budget)'                                                                                          │
+│ generator/upscaler-shading-change │ 1          │ '0.1200' │ 'ok'                                                                                                                 │
+│ floor                             │ 1          │ '0.0017' │ '-'                                                                                                                  │
+└───────────────────────────────────┴────────────┴──────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+  fsr/luma-pyramid ÷ upscaler/exposure: 1.36×
+  fsr/luma-pyramid-correct ÷ upscaler/exposure: 1.35×
+  fsr/luma-pyramid-correct ÷ fsr/luma-pyramid: 0.99×
+  fsr/shading-change-total ÷ upscaler/shading-change: 1.93×
+  fsr/shading-change-pyramid ÷ upscaler/shading-change: 1.73×
+  fsr/shading-change-pyramid-amd ÷ fsr/shading-change-pyramid: 1.01×
+  generator/luma-pyramid ÷ fsr/luma-pyramid-correct: 1.53×
+  generator/luma-pyramid ÷ upscaler/exposure: 2.06×
+  generator/luma-pyramid-fused ÷ fsr/luma-pyramid-correct: 1.02×
+  generator/luma-pyramid-fused ÷ upscaler/exposure: 1.37×
+  generator/luma-pyramid-clamp ÷ fsr/luma-pyramid: 1.13×
+  generator/upscaler-exposure ÷ upscaler/exposure: 0.97×
+  generator/upscaler-exposure ÷ fsr/luma-pyramid-correct: 0.72×
+  generator/upscaler-exposure-taps ÷ upscaler/exposure: 0.29×
+  generator/shading-change-pyramid ÷ fsr/shading-change-pyramid: 0.98×
+  generator/shading-change-pyramid ÷ upscaler/shading-change: 1.69×
+  generator/upscaler-shading-change ÷ upscaler/shading-change: 1.03×
+  generator/upscaler-shading-change ÷ fsr/shading-change-total: 0.53×
+
+1920×1080  (scene 1067 ms, oracles 3806 ms; moving 7.6 %, disoccluded 0.02 %)
+┌───────────────────────────────────┬────────────┬──────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ (index)                           │ dispatches │ gpu ms   │ check                                                                                                                │
+├───────────────────────────────────┼────────────┼──────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ upscaler/exposure                 │ 1          │ '0.0264' │ 'ok'                                                                                                                 │
+│ fsr/luma-pyramid                  │ 2          │ '0.0445' │ 'FAILED: FrameInfo.exposure, FrameInfo.logLuma, FrameInfo.sceneAverageLuma, FrameInfo.sceneAverageLuma (from reset)' │
+│ fsr/luma-pyramid-correct          │ 2          │ '0.0436' │ 'ok'                                                                                                                 │
+│ upscaler/shading-change           │ 1          │ '0.1301' │ 'ok'                                                                                                                 │
+│ fsr/shading-change-pyramid        │ 1          │ '0.2142' │ 'ok'                                                                                                                 │
+│ fsr/shading-change-pyramid-amd    │ 1          │ '0.2157' │ 'ok'                                                                                                                 │
+│ fsr/shading-change                │ 1          │ '0.0231' │ 'ok'                                                                                                                 │
+│ fsr/shading-change-total          │ 2          │ '0.2390' │ 'ok'                                                                                                                 │
+│ generator/luma-pyramid            │ 3          │ '0.0698' │ 'ok'                                                                                                                 │
+│ generator/luma-pyramid-fused      │ 2          │ '0.0443' │ 'ok'                                                                                                                 │
+│ generator/luma-pyramid-clamp      │ 3          │ '0.0488' │ 'FAILED: FrameInfo.exposure, FrameInfo.logLuma, FrameInfo.sceneAverageLuma, FrameInfo.sceneAverageLuma (from reset)' │
+│ generator/upscaler-exposure       │ 2          │ '0.0330' │ 'ok'                                                                                                                 │
+│ generator/upscaler-exposure-taps  │ 2          │ '0.0085' │ 'ok'                                                                                                                 │
+│ generator/shading-change-pyramid  │ 1          │ '0.2190' │ 'ok'                                                                                                                 │
+│ generator/upscaler-shading-change │ 1          │ '0.1324' │ 'ok'                                                                                                                 │
+│ floor                             │ 1          │ '0.0015' │ '-'                                                                                                                  │
+└───────────────────────────────────┴────────────┴──────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+  fsr/luma-pyramid ÷ upscaler/exposure: 1.68×
+  fsr/luma-pyramid-correct ÷ upscaler/exposure: 1.65×
+  fsr/luma-pyramid-correct ÷ fsr/luma-pyramid: 0.98×
+  fsr/shading-change-total ÷ upscaler/shading-change: 1.84×
+  fsr/shading-change-pyramid ÷ upscaler/shading-change: 1.65×
+  fsr/shading-change-pyramid-amd ÷ fsr/shading-change-pyramid: 1.01×
+  generator/luma-pyramid ÷ fsr/luma-pyramid-correct: 1.60×
+  generator/luma-pyramid ÷ upscaler/exposure: 2.64×
+  generator/luma-pyramid-fused ÷ fsr/luma-pyramid-correct: 1.02×
+  generator/luma-pyramid-fused ÷ upscaler/exposure: 1.68×
+  generator/luma-pyramid-clamp ÷ fsr/luma-pyramid: 1.10×
+  generator/upscaler-exposure ÷ upscaler/exposure: 1.25×
+  generator/upscaler-exposure ÷ fsr/luma-pyramid-correct: 0.76×
+  generator/upscaler-exposure-taps ÷ upscaler/exposure: 0.32×
+  generator/shading-change-pyramid ÷ fsr/shading-change-pyramid: 1.02×
+  generator/shading-change-pyramid ÷ upscaler/shading-change: 1.68×
+  generator/upscaler-shading-change ÷ upscaler/shading-change: 1.02×
+  generator/upscaler-shading-change ÷ fsr/shading-change-total: 0.55×
+
+wrote results/windows/round2/rtx3060-tools.json
+some oracle checks FAILED
+GPU clock over 139 samples: SM min 210 / median 315 / max 1627 MHz, memory min 405 / median 810 / max 7151 MHz; under load (7 samples at 70%+ use): SM min 232 / median 277 / max 315 MHz, memory min 405 / median 405 / max 405 MHz
+Timing VALID: started at 49 C, thermal throttling in 0% of 7 loaded samples. SM clock median under load 277 MHz (information only). Power limit in 0% of loaded samples.
+released the bench lock (C:\Users\denni\AppData\Local\Temp\ddgi-gpu-bench.lock)

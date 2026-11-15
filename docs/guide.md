@@ -449,7 +449,7 @@ The texture must have `STORAGE_BINDING` usage (in current three.js a `StorageTex
 
 | Export | What it is |
 |---|---|
-| `reduceReference( values, width, height, layers, quantization, reduction?, options? )` | One `'exact'` step on the CPU: the oracle every backend is tested against. `values` are RGBA floats; it returns the next level and a per-value `filterTolerance`. |
+| `reduceReference( values, width, height, layers, quantization, reduction?, options? )` | One `'exact'` step on the CPU: the oracle every backend is tested against. `values` are RGBA floats; it returns the next level and a per-value `filterTolerance`. That tolerance assumes weights computed in the shader; pass `{ weights: 'sampler' }` for a level a hardware sampler filtered (the default `averageAccess: 'sample'`, a batch's first output), which allows the samplers' 8-bit weights. |
 | `tolerance( expected, quantization, filterTolerance?, reduction? )` | The test tolerance for one value (folds: 0). |
 | `spdReference(…)`, `spdChainReference(…)` | `oddSizes: 'spd'` batches and chains. |
 | `boxReference(…)`, `boxChainReference(…)`, `areaReference( values, width, height, layers, quantization, reduction, outWidth, outHeight, options? )` | `oddSizes: 'box'` steps and chains, and an area step to any size (a resampled source). `areaSpan`, `areaOverlap`: the taps and their integer weights. |

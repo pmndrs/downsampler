@@ -696,7 +696,7 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 
 										const from = external ? input : mips[ batch.sourceMipLevel ];
 										const sw = external ? width : mipSize( dw, batch.sourceMipLevel ), sh = external ? height : mipSize( dh, batch.sourceMipLevel );
-										spdReference( from, sw, sh, layers, quantization, reduction, batch.count ).forEach( ( level, i ) => {
+										spdReference( from, sw, sh, layers, quantization, reduction, batch.count, { weights: 'sampler' } ).forEach( ( level, i ) => {
 
 											const mip = batch.firstMipLevel + i;
 											check( mips[ mip ], level, quantization, `${ label } mip ${ mip }`, reduction, channels, external ? unormSource : 0 );
@@ -710,11 +710,13 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 								}
 
 								let previous = input, w = width, h = height;
+								// A batch's first output may be sampler-filtered; in-tile levels use shader weights.
+								const firstOutputs = new Set( downsampler.prepare( destination, options ).map( batch => batch.firstMipLevel ) );
 
 								for ( let level = 0; level < destination.mipLevelCount; level ++ ) {
 
 									const quantizedInput = level > 0 || formats[ sourceFormat ]?.quantization === quantization;
-									const expected = level === 0 && dw === width && dh === height ? copyReference( previous, w, h, layers, quantization ) : ( box ? boxReference : reduceReference )( previous, w, h, layers, quantization, reduction, { quantizedInput } );
+									const expected = level === 0 && dw === width && dh === height ? copyReference( previous, w, h, layers, quantization ) : ( box ? boxReference : reduceReference )( previous, w, h, layers, quantization, reduction, { quantizedInput, weights: firstOutputs.has( level ) ? 'sampler' : 'shader' } );
 									const slack = level === 0 && /unorm/.test( sourceFormat ) ? 2 ** - 21 : 0;
 									check( mips[ level ], expected, quantization, `${ label } mip ${ level }`, reduction, channels, slack );
 									previous = mips[ level ]; w = expected.width; h = expected.height;
@@ -770,7 +772,7 @@ async function validateOptions( device ) {
 	let previous = kept;
 	for ( let level = 3; level <= 5; level ++ ) {
 
-		const expected = reduceReference( previous, 256 >> ( level - 1 ), 256 >> ( level - 1 ), 1, 'unorm8' );
+		const expected = reduceReference( previous, 256 >> ( level - 1 ), 256 >> ( level - 1 ), 1, 'unorm8', 'average', { weights: level === 3 ? 'sampler' : 'shader' } );
 		previous = await readMip( device, texture, level );
 		check( previous, expected, 'unorm8', `sub-range mip ${ level }` );
 
@@ -918,6 +920,64 @@ async function validateOptions( device ) {
 		}
 
 		results.push( { option: `exactTile ${ tiles.map( ( [ tile ] ) => tile ).join( '/' ) } match the default (${ untailed.exactTile }); default tail ${ downsampler.tail }` } );
+
+		// The same on every other path the tile reaches: the tail kernel after 'exact' batches,
+		// the buffer output path, the compatibility path (scratch levels), a baseMipLevel
+		// sub-range and a separate source of another format. Each path's default-tile chain
+		// is the expectation for its own 8/16/32 chains.
+		const paths = [
+			[ 'tail', { tail: true } ],
+			[ 'buffer', { output: 'buffer', tail: false } ],
+			[ 'buffer + tail', { output: 'buffer', tail: true } ],
+			...( compatibility( device ) ? [] : [ [ 'compat', { compatibility: true, tail: false } ], [ 'compat + tail', { compatibility: true, tail: true } ] ] ),
+		];
+		const runs = [
+			[ 333, 200, 3, 'rgba16float', {}, 'average, 3 layers' ],
+			[ 1917, 1079, 1, 'rgba8unorm', {}, 'average 1917×1079' ],
+			[ 255, 257, 1, 'r32float', { reduction: 'minmax' }, 'minmax' ],
+			[ 1129, 635, 1, 'rgba8unorm', { baseMipLevel: 2 }, 'sub-range from level 2' ],
+			[ 1129, 635, 1, 'rgba8unorm', { separate: 'rgba16float' }, 'separate rgba16float source' ],
+		];
+		const checked = [];
+		for ( const [ name, pathOptions ] of [ [ 'direct', { tail: false } ], ...paths ] ) {
+
+			const owners = [ 8, ...( big ? [ 16, 32 ] : [] ) ].map( tile => [ tile, new Downsampler( device, { ...pathOptions, exactTile: tile } ) ] );
+			const reference = new Downsampler( device, pathOptions );
+			for ( const [ width, height, layers, format, { separate, ...options }, label ] of runs ) {
+
+				// A path that cannot take a format skips that run (unsupportedReason).
+				const data = makeData( width, height, layers, format, 'random', 21 );
+				const source = separate ? createTexture( device, { width, height, layers, format: separate } ) : null;
+				if ( source ) upload( device, source, makeData( width, height, layers, separate, 'random', 22 ) );
+				const run = { ...options, ...( source ? { source: { texture: source } } : {} ) };
+				const chain = async owner => {
+
+					const texture = createTexture( device, { width, height, layers, format } );
+					upload( device, texture, data );
+					// A sub-range reads a level the full chain wrote first (by the default owner, so every tile starts equal).
+					if ( options.baseMipLevel ) untailed.generate( texture );
+					if ( owner.unsupportedReason( texture ) ) { texture.destroy(); return null; }
+					owner.generate( texture, run );
+					const mips = await readMips( device, texture, 0 );
+					texture.destroy();
+					return mips;
+
+				};
+				const expected = await chain( reference );
+				if ( expected === null ) { source?.destroy(); continue; }
+				for ( const [ tile, owner ] of owners ) {
+
+					const actual = await chain( owner );
+					actual.forEach( ( level, l ) => { if ( level.some( ( value, i ) => ! Object.is( value, expected[ l ][ i ] ) ) ) throw new Error( `exactTile ${ tile } on the ${ name } path, ${ label }: level ${ l } differs from tile ${ reference.exactTile }` ); } );
+
+				}
+				source?.destroy();
+				checked.push( `${ name }: ${ label }` );
+
+			}
+
+		}
+		results.push( { option: `exactTile ${ tiles.map( ( [ tile ] ) => tile ).join( '/' ) } match the default on every path (${ checked.length } runs: ${ [ ...new Set( checked.map( run => run.split( ':' )[ 0 ] ) ) ].join( ', ' ) })` } );
 
 	}
 

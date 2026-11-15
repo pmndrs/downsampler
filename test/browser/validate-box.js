@@ -206,7 +206,7 @@ async function validateResample( device, { quick, onProgress, select } ) {
 
 									for ( const batch of downsampler.prepare( destination, options ).filter( batch => batch.sourceMipLevel !== null && ! batch.copy ) ) {
 
-										spdReference( mips[ batch.sourceMipLevel ], mipSize( dw, batch.sourceMipLevel ), mipSize( dh, batch.sourceMipLevel ), layers, quantization, reduction, batch.count ).forEach( ( level, i ) => {
+										spdReference( mips[ batch.sourceMipLevel ], mipSize( dw, batch.sourceMipLevel ), mipSize( dh, batch.sourceMipLevel ), layers, quantization, reduction, batch.count, { weights: 'sampler' } ).forEach( ( level, i ) => {
 
 											check( mips[ batch.firstMipLevel + i ], level, quantization, `${ label } mip ${ batch.firstMipLevel + i }`, reduction, channels );
 

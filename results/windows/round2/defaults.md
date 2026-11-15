@@ -28,3 +28,10 @@ over the render sizes are quoted.
   and weight in the shader. `tailBox` is 0.49–2.82× of `tail` by size, so PROGRESS's follow-up ("the box
   tail kernel is slow: consider `tail: false` under `'box'`") needs a per-size look, not a blanket switch:
   `box` (tail off) ÷ `tailBox` is in the JSON for that.
+
+  **Per-size look (2026-11-15, same JSONs `rtx-spd.json`, `intel-spd.json`):** turning the tail off under
+  `'box'` never helps where it matters. RTX: `box ÷ tailBox` is 1.06–2.25 at every render size (both
+  formats; 1707×960 rgba8 worst), 0.92–1.00 at the squares (the same two dispatches). Intel: 0.95–1.24,
+  within noise except 960×540 (1.19–1.24, tail better). So the tail stays on under `'box'`; the extra cost
+  is the odd levels' loads, not the tail kernel. `haloBox ÷ tailBox` on the RTX is 0.61–1.08 (the opt-in
+  `halo` helps `'box'` most at 1129×635 and 1477×831 rgba16float).

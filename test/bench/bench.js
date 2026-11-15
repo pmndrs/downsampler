@@ -15,6 +15,7 @@ import { compareSpdSizes, firstUnitStep, webgpuSpdVariants } from './webgpu-spd.
 import { storageUsage } from './storage-usage.js';
 import { kernelVariants } from './kernel-variants.js';
 import { srgbFormats, srgbStrategies } from './srgb.js';
+import { partialSizes, partialStrategies } from './partial.js';
 
 export const defaultSizes = [ [ 256, 256 ], [ 512, 512 ], [ 1024, 1024 ], [ 2048, 2048 ], [ 4096, 4096 ], [ 1920, 1080 ], [ 512, 512, 6 ] ];
 
@@ -299,6 +300,8 @@ export async function benchmark( device, { sizes, formats: benchFormats, rounds,
 	if ( compare === 'subgroups' || compare === 'f16' ) return kernelVariants( device, { probe: compare, sizes, formats: benchFormats, rounds: rounds ?? 11, repeats, variants: only, throughput: throughput || ! timestamps ? tp : null, onProgress } );
 	// sRGB output paths (test/bench/srgb.js): ratios paired against the buffer path.
 	if ( compare === 'srgb' ) return timestamps ? measure( device, pickStrategies( srgbStrategies( device ), only, [ 'buffer' ] ), { sizes: sizes ?? renderCompareSizes, benchFormats: benchFormats ?? srgbFormats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
+	// Partial updates (test/bench/partial.js): rect and layer updates paired against the full chain.
+	if ( compare === 'partial' ) return timestamps ? measure( device, pickStrategies( partialStrategies( device ), only, [ 'full' ] ), { sizes: sizes ?? partialSizes, benchFormats: benchFormats ?? defaultFormats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
 	benchFormats ??= defaultFormats;
 	if ( compare === 'throughput' ) {
 

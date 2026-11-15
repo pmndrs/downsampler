@@ -6,7 +6,7 @@ const rgba = values => Float32Array.from( values.flatMap( value => [ value, valu
 
 test( 'even sizes are an exact 2x2 box', () => {
 
-	const level = reduceReference( rgba( [ 0, 1 / 255, 2 / 255, 5 / 255 ] ), 2, 2, 1, 'unorm8' );
+	const level = reduceReference( rgba( [ 0, 1 / 255, 2 / 255, 5 / 255 ] ), 2, 2, 1, 'unorm8', 'average', { weights: 'sampler' } );
 	assert.equal( level.width, 1 );
 	assert.equal( Math.round( level.values[ 0 ] * 255 ), 2 ); // 8 / 4
 	// Shader weights of exactly 1/2 need no allowance; a hardware sampler may be a weight step

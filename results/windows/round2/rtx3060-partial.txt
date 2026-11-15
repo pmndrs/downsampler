@@ -1,0 +1,24 @@
+took the bench lock (C:\Users\denni\AppData\Local\Temp\ddgi-gpu-bench.lock) for "downsampler: rtx3060-partial"
+GPU at 46 C, below 70 C: starting
+{"vendor":"nvidia","architecture":"ampere","device":"","description":"","isFallbackAdapter":false,"timestamps":true,"features":["texture-formats-tier1","bgra8unorm-storage"],"compatibility":false,"maxStorageTexturesPerShaderStage":6,"subgroupMinSize":32,"subgroupMaxSize":128,"adapterFeatures":["bgra8unorm-storage","chromium-experimental-multi-draw-indirect","chromium-experimental-timestamp-query-inside-passes","clip-distances","core-features-and-limits","depth-clip-control","depth32float-stencil8","dual-source-blending","float32-blendable","float32-filterable","indirect-first-instance","primitive-index","rg11b10ufloat-renderable","shader-f16","subgroups","texture-component-swizzle","texture-compression-bc","texture-compression-bc-sliced-3d","texture-formats-tier1","texture-formats-tier2","timestamp-query"],"maxTextureDimension2D":8192}
+load average (1, 5, 15 min): before 0.0 0.0 0.0, after 0.0 0.0 0.0
+validation passed: 0 cases, 0 pattern runs, 0 ms
+┌─────────┬─────────────┬───────────────┬────────────────────┬────────────────────┬────────────────────┬────────────────────┬────────────────────┐
+│ (index) │ size        │ format        │ full               │ rect32             │ rect256            │ layer              │ layerRect32        │
+├─────────┼─────────────┼───────────────┼────────────────────┼────────────────────┼────────────────────┼────────────────────┼────────────────────┤
+│ 0       │ '1920x1080' │ 'rgba8unorm'  │ '0.0575 ×1.00 [4]' │ '0.0181 ×0.32 [4]' │ '0.0186 ×0.32 [4]' │ '0.0575 ×1.00 [4]' │ '0.0180 ×0.32 [4]' │
+│ 1       │ '2560x1440' │ 'rgba8unorm'  │ '0.0796 ×1.00 [3]' │ '0.0145 ×0.18 [3]' │ '0.0148 ×0.19 [3]' │ '0.0796 ×1.00 [3]' │ '0.0145 ×0.18 [3]' │
+│ 2       │ '1024x1024' │ 'rgba8unorm'  │ '0.0349 ×1.00 [2]' │ '0.0108 ×0.31 [2]' │ '0.0111 ×0.32 [2]' │ '0.0349 ×1.00 [2]' │ '0.0108 ×0.31 [2]' │
+│ 3       │ '4096x4096' │ 'rgba8unorm'  │ '0.2875 ×1.00 [2]' │ '0.0110 ×0.04 [2]' │ '0.0116 ×0.04 [2]' │ '0.2875 ×1.00 [2]' │ '0.0113 ×0.04 [2]' │
+│ 4       │ '512x512'   │ 'rgba8unorm'  │ '0.0399 ×1.00 [2]' │ '0.0100 ×0.25 [2]' │ '0.0223 ×0.56 [2]' │ '0.0125 ×0.32 [2]' │ '0.0095 ×0.24 [2]' │
+│ 5       │ '1024x1024' │ 'rgba8unorm'  │ '0.2035 ×1.00 [2]' │ '0.0254 ×0.13 [2]' │ '0.0525 ×0.26 [2]' │ '0.0668 ×0.33 [2]' │ '0.0243 ×0.12 [2]' │
+│ 6       │ '1920x1080' │ 'rgba16float' │ '0.1667 ×1.00 [4]' │ '0.0560 ×0.34 [4]' │ '0.0584 ×0.35 [4]' │ '0.1671 ×1.00 [4]' │ '0.0561 ×0.34 [4]' │
+│ 7       │ '2560x1440' │ 'rgba16float' │ '0.2157 ×1.00 [3]' │ '0.0441 ×0.20 [3]' │ '0.0452 ×0.21 [3]' │ '0.2160 ×1.00 [3]' │ '0.0440 ×0.20 [3]' │
+│ 8       │ '1024x1024' │ 'rgba16float' │ '0.1172 ×1.00 [2]' │ '0.0415 ×0.35 [2]' │ '0.0439 ×0.38 [2]' │ '0.1173 ×1.00 [2]' │ '0.0415 ×0.35 [2]' │
+│ 9       │ '4096x4096' │ 'rgba16float' │ '0.5556 ×1.00 [2]' │ '0.0096 ×0.02 [2]' │ '0.0094 ×0.02 [2]' │ '0.5521 ×1.00 [2]' │ '0.0112 ×0.02 [2]' │
+│ 10      │ '512x512'   │ 'rgba16float' │ '0.0601 ×1.00 [2]' │ '0.0079 ×0.13 [2]' │ '0.0267 ×0.44 [2]' │ '0.0113 ×0.19 [2]' │ '0.0074 ×0.12 [2]' │
+│ 11      │ '1024x1024' │ 'rgba16float' │ '0.2652 ×1.00 [2]' │ '0.0182 ×0.07 [2]' │ '0.0431 ×0.16 [2]' │ '0.0696 ×0.26 [2]' │ '0.0174 ×0.07 [2]' │
+└─────────┴─────────────┴───────────────┴────────────────────┴────────────────────┴────────────────────┴────────────────────┴────────────────────┘
+GPU clock over 111 samples: SM min 210 / median 397 / max 2092 MHz, memory min 405 / median 6001 / max 7151 MHz; under load (2 samples at 70%+ use): SM min 210 / median 210 / max 210 MHz, memory min 405 / median 405 / max 405 MHz
+Timing NO VERDICT: only 2 samples under load (5 needed). SM clock median under load 210 MHz (information only). Power limit in 0% of loaded samples.
+released the bench lock (C:\Users\denni\AppData\Local\Temp\ddgi-gpu-bench.lock)

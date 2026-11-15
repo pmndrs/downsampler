@@ -135,6 +135,10 @@ downsampler.encode( encoder, cubeFaces, { layers: [ 4, 1 ], rect: decal } ); // 
 
 An empty rectangle does nothing, so you can pass this frame's dirty region without checking it first.
 
+It pays off most on big textures and cube maps. The dispatches still run, so a small change costs about the same
+whatever its size: on an RTX 3060, a 32 × 32 rectangle costs 3 % of a full chain at 4096², a fifth to a third at 1080p, and
+one cube face a fifth to a third of the cube.
+
 ## Statistics and single values
 
 ([reducer.html](../examples/reducer.html), [scalar.html](../examples/scalar.html))
