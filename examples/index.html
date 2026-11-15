@@ -10,11 +10,9 @@
 	<body>
 		<h1>downsampler examples</h1>
 		<p>
-			Small, dependency-free pages (plain ES modules that import the built library from <code>../dist/</code>). Each one
-			explains what it does and checks its own output on the page: a readout of <span style="color: var( --pass )">PASS</span>
-			lines compares the GPU's results with the library's CPU oracles. Run them with <code>npm run examples</code>, which
-			builds and serves the repository at <code>http://localhost:8080/examples/</code>. WebGPU needs a secure context:
-			localhost, or HTTPS on other devices.
+			Small pages, one job each. Every page runs on your GPU and checks its own output against a CPU reference:
+			look for the <span style="color: var( --pass )">PASS</span> lines in its readout. Start them with <code>npm run examples</code>
+			and open <code>http://localhost:8080/examples/</code>. (WebGPU needs localhost, or HTTPS on another device.)
 		</p>
 		<ul class="cards">
 			<li><a href="mip-chain.html">Mip chain</a><br>Every level of a texture from level 0, with a level viewer; <code>'exact'</code> vs <code>'spd'</code> odd sizes and the tail kernel.</li>
@@ -26,6 +24,6 @@
 			<li><a href="scalar.html">Exposure (<code>ScalarReduction</code>)</a><br>Log-average luminance of an HDR frame in two dispatches, with a <code>finish</code> hook that computes the exposure on the GPU.</li>
 			<li><a href="three.html">three.js</a><br><code>downsampler/three</code> mipmaps a <code>StorageTexture</code>, side by side with three's own render-pass mipmaps. Loads three from a CDN.</li>
 		</ul>
-		<p class="muted">Usage guide: <a href="../docs/guide.md">docs/guide.md</a>. Coming from SPD: <a href="../docs/spd-users.md">docs/spd-users.md</a>.</p>
+		<p class="muted">New here: <a href="../docs/getting-started.md">Getting started</a>. Every option: <a href="../docs/guide.md">Reference</a>. Coming from SPD: <a href="../docs/spd-users.md">notes for SPD users</a>.</p>
 	</body>
 </html>

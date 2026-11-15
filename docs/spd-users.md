@@ -21,9 +21,9 @@ The kernel is SPD's idea, implemented independently in WGSL: a 64 × 64 source t
 | Separate source SRV and destination UAV | `source: texture` or `{ texture, mipLevel }`. Destination level `baseMipLevel` may be the **same size** as the source (a converting copy, e.g. depth → `r32float`) or half, or any size with `resample: 'area'`; SPD always halves. |
 | Texture arrays (`slice` in the dispatch z) | All layers of a `'2d-array'` texture in the same dispatches (workgroup z), or a range with `layers: [ first, count ]`. |
 | `rectInfo` (sub-rectangle) | `rect: { x, y, width, height }` on `encode`. It rewrites exact per-level regions instead of snapping to 64-texel tiles, bit-identical to a full recompute (DIVERGES #15; [examples/partial-update.html](../examples/partial-update.html)); an empty rect records nothing. |
-| sRGB: sample an sRGB view, write a UNORM alias | Not yet. WebGPU forbids sRGB storage even through a view; planned via a scratch copy (M2.3.5). |
-| Packed fp16 (`A_HALF`, `SPD_PACKED_ONLY`) | Not offered: f32 math. Under review in M3, kept only if measurably faster. |
-| Wave/quad ops (`SpdReduceQuad`, `WaveReadLaneAt`) | Workgroup memory only: WGSL defines quads only in fragment shaders and no lane-to-index mapping in compute. A subgroup kernel is gated on measurement (M3). |
+| sRGB: sample an sRGB view, write a UNORM alias | Supported (`rgba8unorm-srgb`, `bgra8unorm-srgb`): reduced in linear light, encoded in the shader and copied in through a buffer, since WebGPU forbids sRGB storage even through a view. Render passes are faster for large sRGB textures. |
+| Packed fp16 (`A_HALF`, `SPD_PACKED_ONLY`) | Not offered: f32 math. An fp16 kernel was measured: under 5 % faster on most GPUs, and it changed rgba16float results, so it wasn't built. |
+| Wave/quad ops (`SpdReduceQuad`, `WaveReadLaneAt`) | Workgroup memory only: WGSL defines quads only in fragment shaders and no lane-to-index mapping in compute. A subgroup prototype was measured slower than workgroup memory on an RTX 3060 and Intel UHD, so there is none. |
 | 4096² and 12-level limit | Any size, by chaining batches. |
 
 ## What is different, and why
@@ -99,7 +99,7 @@ AMD's exposure covers only the top-left `2^mips` square, and part of that window
 | Custom 4-way filter | a binary `{ wgsl }` fold, or a `Reducer` |
 | Separate target | `source: texture` or `{ texture, mipLevel }` (also same-size converting copies) |
 | `maxMipsPerPass` (above 6 uses the atomic handoff) | `levelsPerDispatch` (at most 6; there is no handoff) |
-| Integer formats, `rgb10a2unorm` | Not yet (M2.3.7, M2.3.3) |
+| Integer formats, `rgb10a2unorm` | Supported: integer formats reduce exactly (averages round to nearest even); `rgb10a2unorm` as a storage or buffer-path format |
 | Sub-rectangles | `rect: { x, y, width, height }`, exact per-level regions |
 
 If you stay on webgpu-spd: set `maxMipsPerPass: 6` (its handoff returned stale levels on Apple), and don't use its min/max for Hi-Z at odd sizes. Measured with the same semantics, our `'spd'` was 1.2–2.1× faster than webgpu-spd on the M5 Pro, and 1.6× / 3.5× faster than its default on an RTX 3060 / Intel UHD in rgba8 ([results/compare/webgpu-spd.md](../results/compare/webgpu-spd.md)).
