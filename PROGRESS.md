@@ -2,7 +2,7 @@
 
 Live status board. SPEC.md holds the design and the reasons behind it; this file holds where things stand.
 
-**For the owner:** open decisions are under *Waiting on owner*. Where we differ from SPD, nvpro and render passes: [DIVERGES.md](DIVERGES.md) (the record, with every open item marked **Open**) and [docs/differences.md](docs/differences.md) (the plain-language version).
+**For the owner:** open decisions are under *Waiting on owner*; the status board artifact (https://claude.ai/artifact/R28rz8nJVbzRShRj8e5YRM, private to the owner) summarises them with milestones, performance and divergences; update it in place, from its URL, after major changes. Where we differ from SPD, nvpro and render passes: [DIVERGES.md](DIVERGES.md) (the record, with every open item marked **Open**) and [docs/differences.md](docs/differences.md) (the plain-language version).
 
 **For agents:** read this after SPEC.md. When you start a task, move it to *Now* with your branch. When you finish, tick it, add the commit, and log the verification run. Keep entries to one line and link SPEC sections instead of restating them. Anything that needs the owner goes under *Waiting on owner*.
 
