@@ -1,0 +1,5 @@
+# Golden files are compared byte for byte; keep LF on Windows checkouts (core.autocrlf)
+test/golden/** text eol=lf
+
+# Test and benchmark output: collapsed in GitHub diffs and left out of language stats
+results/** linguist-generated=true

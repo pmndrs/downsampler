@@ -17,6 +17,7 @@
 //   node test/run.js --compat            on a compatibility-mode device (featureLevel 'compatibility')
 //   node test/run.js --power=low         force the low-power GPU (default high); for laptops with two GPUs
 //   node test/run.js --keep-going        report every failing check instead of stopping at the first
+//   node test/run.js --groups=@ids.txt   exactly these case groups (one id per line, from --list --verbose), e.g. to bisect
 //   node test/run.js --bench --compare=webgpu-spd --formats=rgba8unorm,rgba16float,r32float --skip-validation
 //                                        webgpu-spd 3.0.0 vs exact / tail / spd / render (results/compare/webgpu-spd.md)
 //   node test/run.js --webgpu-spd-check --skip-validation [--frames=64]   its correctness against our oracles
@@ -28,7 +29,10 @@
 //   --compare=storage-usage              sampling a texture with vs without STORAGE_BINDING (--strategies=fullscreen,material,write)
 //   --compare=subgroups                  upper bound for a subgroup kernel (--strategies=lds,slot,shuffle,nosync)
 //   --compare=f16                        averaging in f16 vs f32, with the precision cost (--strategies=f32,f16,f16safe)
+//   --compare=trim                       the 'exact' kernel with cheaper per-value arithmetic, same bits (--strategies=round,mul,trim)
 //   --throughput with --compare=storage-usage|subgroups|f16 adds per-frame throughput to the timestamps
+//   --compare=partial                    rect and one-layer updates against the full chain (test/bench/partial.js)
+//   --compare=dispatch                   the cost of one dependent compute dispatch (test/bench/dispatch.js)
 //   --strategies=a,b,c                   time a subset (any --compare mode; the ratios' reference is always kept)
 // Shards (test/ci/README.md):
 //   node test/run.js --quick --adapter=swiftshader --shard=2/8   one of 8 disjoint shards, balanced by test/ci/durations.json
@@ -36,10 +40,10 @@
 //   node test/run.js --quick --adapter=swiftshader --list --shard=2/8    the case groups of one shard
 //   node test/run.js --quick --adapter=swiftshader --record-durations    rewrite test/ci/durations.json (sharded: merge)
 //   node test/run.js ... --timing=ci-timing.json                         per-group timing and the listing, for the CI aggregate
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { loadavg } from 'node:os';
-import { dirname } from 'node:path';
+import { loadavg, tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer';
 import { gpuChoiceArgs } from './gpu-choice.js';
@@ -59,6 +63,8 @@ if ( args.includes( '--quality' ) ) options.quality = true;
 if ( args.includes( '--skip-validation' ) ) options.skipValidation = true;
 if ( args.includes( '--webgpu-spd-check' ) ) options.webgpuSpdCheck = true;
 if ( args.includes( '--keep-going' ) ) options.keepGoing = true;
+// --groups=a,b or --groups=@file (one id per line): run exactly those case groups (ids from --list --verbose).
+if ( value( 'groups' ) ) options.groups = ( value( 'groups' ).startsWith( '@' ) ? readFileSync( value( 'groups' ).slice( 1 ), 'utf8' ).split( /\r?\n/ ) : value( 'groups' ).split( ',' ) ).map( id => id.trim() ).filter( Boolean );
 if ( value( 'frames' ) ) options.frames = Number( value( 'frames' ) );
 if ( value( 'strategies' ) ) options.strategies = value( 'strategies' ).split( ',' );
 if ( args.includes( '--throughput' ) ) {
@@ -95,13 +101,16 @@ browserArgs.push( ...gpuChoiceArgs( value( 'power' ) ) );
 if ( value( 'dawn-features' ) ) browserArgs.push( `--enable-dawn-features=${ value( 'dawn-features' ) }` );
 
 const server = createServer();
-let browser;
+let browser, profile;
 
 try {
 
 	await new Promise( resolve => server.listen( 0, '127.0.0.1', resolve ) );
 	// The full matrix takes minutes (over 30 on a laptop RTX 3060); the default 180 s protocol timeout would cut it off.
-	browser = await puppeteer.launch( { headless: ! args.includes( '--headful' ), args: browserArgs, protocolTimeout: 120 * 60 * 1000 } );
+	// Our own profile directory and a longer launch timeout: with six shards starting at once
+	// (test/parallel.js) two Chromes once got the same puppeteer profile, and one took over 30 s to start.
+	profile = mkdtempSync( join( tmpdir(), 'downsampler-suite-' ) );
+	browser = await puppeteer.launch( { headless: ! args.includes( '--headful' ), args: browserArgs, protocolTimeout: 120 * 60 * 1000, timeout: 120000, userDataDir: profile } );
 	const page = await browser.newPage();
 	const errors = [];
 	page.on( 'pageerror', error => errors.push( error.message ) );
@@ -193,7 +202,7 @@ try {
 		console.log( 'median storage ÷ plain over sizes (min–max):' );
 		console.table( Object.entries( timing.summary ).map( ( [ key, v ] ) => ( { case: key, median: fixed( v.median, 3 ), range: `${ fixed( v.min, 3 ) }–${ fixed( v.max, 3 ) }` } ) ) );
 
-	} else if ( timing?.mode === 'subgroups' || timing?.mode === 'f16' ) {
+	} else if ( timing?.mode === 'subgroups' || timing?.mode === 'f16' || timing?.mode === 'trim' ) {
 
 		if ( timing.skipped.length ) console.log( `skipped (feature unavailable): ${ timing.skipped.join( ', ' ) }` );
 		console.log( `plan: exactTile ${ timing.exactTile }, tail ${ timing.tail }` );
@@ -215,13 +224,19 @@ try {
 			...Object.fromEntries( names.map( name => [ name, `${ row.gpuMs[ name ].toFixed( 4 ) } (${ ( row.gpuMs[ name ] / row.gpuMs[ name.endsWith( 'Max' ) ? 'exactMax' : 'exact' ] ).toFixed( 2 ) })` ] ) )
 		} ) ) );
 
-	} else if ( timing?.results.length && ( options.compare === 'webgpu-spd' || options.compare === 'render' || options.compare === 'srgb' ) ) {
+	} else if ( timing?.results.length && ( options.compare === 'webgpu-spd' || options.compare === 'render' || options.compare === 'srgb' || options.compare === 'partial' || options.compare === 'dispatch' ) ) {
 
 		// Paired per-round ratios to 'exact' (averages) and 'exactMax' (max); 'render': to render passes.
 		console.table( timing.results.map( row => ( {
 			size: `${ row.width }x${ row.height }`, format: row.format,
 			...Object.fromEntries( Object.keys( row.gpuMs ).map( name => [ name, `${ row.gpuMs[ name ].toFixed( 4 ) } ×${ row.ratios[ name ].toFixed( 2 ) } [${ row.passes[ name ] }]` ] ) )
 		} ) ) );
+		if ( options.compare === 'dispatch' ) {
+
+			console.log( 'fit of gpu time against dependent dispatches (time = work + dispatches × per dispatch):' );
+			console.table( timing.results.map( row => ( { size: `${ row.width }x${ row.height }`, format: row.format, 'per dispatch µs': row.fit.perDispatchUs.toFixed( 2 ), 'work µs': row.fit.workUs.toFixed( 1 ), dispatches: row.fit.dispatches.join( ' / ' ) } ) ) );
+
+		}
 
 	} else if ( timing?.results.length ) {
 
@@ -273,7 +288,7 @@ try {
 	if ( value( 'output' ) ) {
 
 		await mkdir( dirname( value( 'output' ) ), { recursive: true } );
-		await writeFile( value( 'output' ), JSON.stringify( { ...report, browserArgs }, null, 2 ) + '\n' );
+		await writeFile( value( 'output' ), JSON.stringify( { ...report, browserArgs } ) + '\n' );
 
 	}
 
@@ -281,6 +296,7 @@ try {
 
 	if ( browser ) await browser.close();
 	server.close();
+	if ( profile ) try { rmSync( profile, { recursive: true, force: true, maxRetries: 5 } ); } catch { /* Chrome may still hold a file; the OS cleans temp */ }
 
 }
 

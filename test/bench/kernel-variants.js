@@ -32,6 +32,16 @@
 //   overflowed just the same on the M5 Pro: Metal's fast math refactors it to `(a + b …) * 0.25`.
 // Nothing here relies on `(x + c) − c`-style rounding, which fast math also folds away.
 //
+// `probe: 'trim'` (handoff-2 §4.2, a cheaper 'exact' kernel with the same bits): the library's
+// whole kernel with its per-value arithmetic edited, structure unchanged.
+// - 'library': the library's kernel.
+// - 'round': normalized formats' `quantize` as `round(clamp(v, min, max))`. WGSL's round() is
+//   ties to even (Metal rint, HLSL round_ne, SPIR-V RoundEven), the library's rule, in one
+//   instruction instead of floor, compare and two selects.
+// - 'mul': every store's `value / SCALE` as `value * (1.0 / SCALE)`. The stored unorm8 code
+//   is round(v · 255) either way, and both are within an ulp of k / 255.
+// - 'trim': both.
+//
 // Check: every variant except 'nosync' runs on the timed input and on a second pattern
 // ('tiles' for unorm8; 'large', halves in [16384, 65504], for float16) and is compared level by
 // level with the library's chain on the same input: values that differ, the worst difference in
@@ -49,7 +59,8 @@ export const variantSizes = [ [ 256, 256 ], [ 512, 512 ], [ 1024, 1024 ], [ 2048
 export const variantFormats = [ 'rgba8unorm', 'rgba16float' ];
 export const probes = {
 	subgroups: { baseline: 'lds', variants: [ 'lds', 'slot', 'shuffle', 'nosync' ], feature: 'subgroups', needs: { shuffle: 'subgroups' } },
-	f16: { baseline: 'f32', variants: [ 'f32', 'f16', 'f16safe' ], feature: 'shader-f16', needs: { f16: 'shader-f16', f16safe: 'shader-f16' } }
+	f16: { baseline: 'f32', variants: [ 'f32', 'f16', 'f16safe' ], feature: 'shader-f16', needs: { f16: 'shader-f16', f16safe: 'shader-f16' } },
+	trim: { baseline: 'library', variants: [ 'library', 'round', 'mul', 'trim' ], feature: null, needs: {} }
 };
 const timingOnly = new Set( [ 'nosync' ] );
 
@@ -69,6 +80,22 @@ function quantize16( quantization ) {
 
 }
 
+/** The 'trim' probe's edits of the library's kernel (`round`, `mul` or both). */
+function trimmed( code, variant ) {
+
+	let out = code;
+	if ( variant !== 'mul' ) {
+
+		const quantize = /fn quantize\(value: vec4f\) -> vec4f \{\r?\n\tlet scaled = clamp\(value, ([^;]+)\);\r?\n\tlet lower = floor\(scaled\);\r?\n\tlet fraction = scaled - lower;\r?\n\tlet nearest = [^\n]+\n\treturn select\(nearest, [^\n]+\n\}/;
+		if ( quantize.test( out ) ) out = out.replace( quantize, 'fn quantize(value: vec4f) -> vec4f { return round(clamp(value, $1)); }' );
+
+	}
+
+	if ( variant !== 'round' ) out = out.replaceAll( ' / SCALE)', ' * (1.0 / SCALE))' );
+	return out;
+
+}
+
 /**
  * WGSL for `variant` of an 'exact' batch (`options`: format, count, tile). The library's
  * helpers (everything before its entry point) are kept; main() is the variant's.
@@ -76,7 +103,8 @@ function quantize16( quantization ) {
 export function variantCode( variant, options ) {
 
 	const real = createKernel( options );
-	if ( variant === 'lds' || variant === 'f32' ) return real;
+	if ( variant === 'lds' || variant === 'f32' || variant === 'library' ) return real;
+	if ( variant === 'round' || variant === 'mul' || variant === 'trim' ) return trimmed( real, variant );
 	const { tile, count, format } = options;
 	const side = Math.min( tile, 16 ), samples = tile / side;
 	const half = variant === 'f16' || variant === 'f16safe';
@@ -206,7 +234,7 @@ function variantChain( device, downsampler, texture, variant, cache ) {
 	const steps = batches.map( batch => {
 
 		if ( batch.copies?.length ) throw new Error( 'kernel variants: storage output only' );
-		if ( batch.kernel !== 'exact' || batch.count < 2 || variant === 'lds' || variant === 'f32' ) return { pipeline: batch.pipeline, batch };
+		if ( batch.kernel !== 'exact' || batch.count < 2 || variant === 'lds' || variant === 'f32' || variant === 'library' ) return { pipeline: batch.pipeline, batch };
 		const options = { format: texture.format, dimension: '2d', count: batch.count, tile: batch.tile, f16Rounding: downsampler.f16Rounding };
 		const code = variantCode( variant, options );
 		let pipeline = cache.get( code );

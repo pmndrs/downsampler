@@ -21,7 +21,7 @@ const mutations = [
 	// (SPD's sRGB path in WebGPU terms): loads read codes, levels are quantized and stored as codes.
 	[ 'no decode (codes averaged as UNORM)', [
 		[ 'let v = vec4f(ds_srgb_quantize(t.xyz), t.w) * SCALE;', 'let v = vec4f(vec3f(f32(ds_srgb_code(t.x)), f32(ds_srgb_code(t.y)), f32(ds_srgb_code(t.z))) / 255.0, t.w) * SCALE;' ],
-		[ 'return vec3f(DS_SRGB_DECODE[ds_srgb_code(v.x)], DS_SRGB_DECODE[ds_srgb_code(v.y)], DS_SRGB_DECODE[ds_srgb_code(v.z)]);', 'return round(clamp(v, vec3f(0.0), vec3f(1.0)) * 255.0) / 255.0;' ],
+		[ 'return vec3f(ds_srgb_table[ds_srgb_code(v.x)], ds_srgb_table[ds_srgb_code(v.y)], ds_srgb_table[ds_srgb_code(v.z)]);', 'return round(clamp(v, vec3f(0.0), vec3f(1.0)) * 255.0) / 255.0;' ],
 		[ 'return [`ds_srgb_code(v.${r}) | (ds_srgb_code(v.${g}) << 8u) | (ds_srgb_code(v.${b}) << 16u) | (${alpha} << 24u)`];', 'return [`u32(round(clamp(v.${r}, 0.0, 1.0) * 255.0)) | (u32(round(clamp(v.${g}, 0.0, 1.0) * 255.0)) << 8u) | (u32(round(clamp(v.${b}, 0.0, 1.0) * 255.0)) << 16u) | (${alpha} << 24u)`];' ]
 	] ],
 	// Linear-space filtering skipped in the tile: each 2×2 average is taken of encoded values.
@@ -33,13 +33,13 @@ const mutations = [
 		[ 'let v = vec4f(ds_srgb_quantize(t.xyz), t.w) * SCALE;', 'let v = t * SCALE;' ]
 	] ],
 	[ 'encode truncates (floor, no correction)', [
-		[ 'var k = u32(clamp(round(e * 255.0), 0.0, 255.0));\n\tif (k < 255u && c >= DS_SRGB_BOUND[k]) { k += 1u; } else if (k > 0u && c < DS_SRGB_BOUND[k - 1u]) { k -= 1u; }', 'var k = u32(clamp(floor(e * 255.0), 0.0, 255.0));' ]
+		[ 'var k = u32(clamp(round(e * 255.0), 0.0, 255.0));\n\tif (k < 255u && c >= ds_srgb_table[256u + k]) { k += 1u; } else if (k > 0u && c < ds_srgb_table[255u + k]) { k -= 1u; }', 'var k = u32(clamp(floor(e * 255.0), 0.0, 255.0));' ]
 	] ],
 	[ 'encode by pow alone (no threshold correction)', [
-		[ 'if (k < 255u && c >= DS_SRGB_BOUND[k]) { k += 1u; } else if (k > 0u && c < DS_SRGB_BOUND[k - 1u]) { k -= 1u; }', '' ]
+		[ 'if (k < 255u && c >= ds_srgb_table[256u + k]) { k += 1u; } else if (k > 0u && c < ds_srgb_table[255u + k]) { k -= 1u; }', '' ]
 	] ],
 	[ 'encode with gamma 2.2 instead of the sRGB curve', [
-		[ 'let e = select(1.055 * pow(c, 1.0 / 2.4) - 0.055, 12.92 * c, c <= 0.0031308);\n\tvar k = u32(clamp(round(e * 255.0), 0.0, 255.0));\n\tif (k < 255u && c >= DS_SRGB_BOUND[k]) { k += 1u; } else if (k > 0u && c < DS_SRGB_BOUND[k - 1u]) { k -= 1u; }', 'let e = pow(c, 1.0 / 2.2);\n\tvar k = u32(clamp(round(e * 255.0), 0.0, 255.0));' ]
+		[ 'let e = select(1.055 * pow(c, 1.0 / 2.4) - 0.055, 12.92 * c, c <= 0.0031308);\n\tvar k = u32(clamp(round(e * 255.0), 0.0, 255.0));\n\tif (k < 255u && c >= ds_srgb_table[256u + k]) { k += 1u; } else if (k > 0u && c < ds_srgb_table[255u + k]) { k -= 1u; }', 'let e = pow(c, 1.0 / 2.2);\n\tvar k = u32(clamp(round(e * 255.0), 0.0, 255.0));' ]
 	] ],
 	[ 'no intermediate quantization (sRGB)', [
 		[ 'return vec4f(ds_srgb_quantize(value.xyz), alpha);', 'return vec4f(value.xyz, alpha);' ]

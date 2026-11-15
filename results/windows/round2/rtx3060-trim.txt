@@ -1,0 +1,46 @@
+took the bench lock (C:\Users\denni\AppData\Local\Temp\ddgi-gpu-bench.lock) for "downsampler: rtx3060-trim"
+GPU at 49 C, below 70 C: starting
+{"vendor":"nvidia","architecture":"ampere","device":"","description":"","isFallbackAdapter":false,"timestamps":true,"features":["texture-formats-tier1","bgra8unorm-storage"],"compatibility":false,"maxStorageTexturesPerShaderStage":6,"subgroupMinSize":32,"subgroupMaxSize":128,"adapterFeatures":["bgra8unorm-storage","chromium-experimental-multi-draw-indirect","chromium-experimental-timestamp-query-inside-passes","clip-distances","core-features-and-limits","depth-clip-control","depth32float-stencil8","dual-source-blending","float32-blendable","float32-filterable","indirect-first-instance","primitive-index","rg11b10ufloat-renderable","shader-f16","subgroups","texture-component-swizzle","texture-compression-bc","texture-compression-bc-sliced-3d","texture-formats-tier1","texture-formats-tier2","timestamp-query"],"maxTextureDimension2D":8192}
+load average (1, 5, 15 min): before 0.0 0.0 0.0, after 0.0 0.0 0.0
+validation passed: 0 cases, 0 pattern runs, 0 ms
+plan: exactTile 32, tail true
+┌─────────┬─────────────┬───────────────┬─────────────────────────────────────────────────────────────┬──────────────────┬───────────────────────────────────────────────────┬───────────────────────────────────────────────────┬───────────────────────────────────────────────────┐
+│ (index) │ size        │ format        │ batches                                                     │ library          │ round                                             │ mul                                               │ trim                                              │
+├─────────┼─────────────┼───────────────┼─────────────────────────────────────────────────────────────┼──────────────────┼───────────────────────────────────────────────────┼───────────────────────────────────────────────────┼───────────────────────────────────────────────────┤
+│ 0       │ '256x256'   │ 'rgba8unorm'  │ 'exact 6×32, exact 2×32'                                    │ '0.0098 ×1.000 ' │ '0.0089 ×0.912 tiles identical; random identical' │ '0.0098 ×0.997 tiles identical; random identical' │ '0.0089 ×0.912 tiles identical; random identical' │
+│ 1       │ '512x512'   │ 'rgba8unorm'  │ 'exact 6×32, exact 3×32'                                    │ '0.0132 ×1.000 ' │ '0.0120 ×0.906 tiles identical; random identical' │ '0.0133 ×1.002 tiles identical; random identical' │ '0.0120 ×0.906 tiles identical; random identical' │
+│ 2       │ '1024x1024' │ 'rgba8unorm'  │ 'exact 6×32, exact 4×32'                                    │ '0.2010 ×1.000 ' │ '0.1992 ×0.975 tiles identical; random identical' │ '0.2013 ×1.001 tiles identical; random identical' │ '0.1993 ×0.977 tiles identical; random identical' │
+│ 3       │ '2048x2048' │ 'rgba8unorm'  │ 'exact 6×32, exact 5×32'                                    │ '0.1564 ×1.000 ' │ '0.1076 ×0.858 tiles identical; random identical' │ '0.1115 ×0.999 tiles identical; random identical' │ '0.1078 ×0.859 tiles identical; random identical' │
+│ 4       │ '4096x4096' │ 'rgba8unorm'  │ 'exact 6×32, exact 6×32'                                    │ '0.2839 ×1.000 ' │ '0.2828 ×0.996 tiles identical; random identical' │ '0.2838 ×1.001 tiles identical; random identical' │ '0.2825 ×0.995 tiles identical; random identical' │
+│ 5       │ '960x540'   │ 'rgba8unorm'  │ 'exact 2×32, exact 1×32, exact 1×32, tail 5×32'             │ '0.0169 ×1.000 ' │ '0.0164 ×0.962 tiles identical; random identical' │ '0.0170 ×1.002 tiles identical; random identical' │ '0.0163 ×0.964 tiles identical; random identical' │
+│ 6       │ '1129x635'  │ 'rgba8unorm'  │ 'exact 1×32, exact 2×32, exact 1×32, exact 1×32, tail 5×32' │ '0.0280 ×1.000 ' │ '0.0276 ×0.985 tiles identical; random identical' │ '0.0281 ×1.001 tiles identical; random identical' │ '0.0277 ×0.986 tiles identical; random identical' │
+│ 7       │ '1280x720'  │ 'rgba8unorm'  │ 'exact 4×32, exact 2×32, tail 4×16'                         │ '0.0436 ×1.000 ' │ '0.0403 ×0.926 tiles identical; random identical' │ '0.0437 ×1.001 tiles identical; random identical' │ '0.0403 ×0.926 tiles identical; random identical' │
+│ 8       │ '1920x1080' │ 'rgba8unorm'  │ 'exact 3×32, exact 1×32, exact 1×32, tail 5×32'             │ '0.0572 ×1.000 ' │ '0.0563 ×0.987 tiles identical; random identical' │ '0.0572 ×1.001 tiles identical; random identical' │ '0.0562 ×0.985 tiles identical; random identical' │
+│ 9       │ '2560x1440' │ 'rgba8unorm'  │ 'exact 5×32, exact 2×32, tail 4×16'                         │ '0.1176 ×1.000 ' │ '0.1092 ×0.930 tiles identical; random identical' │ '0.1176 ×0.999 tiles identical; random identical' │ '0.1092 ×0.928 tiles identical; random identical' │
+│ 10      │ '256x256'   │ 'rgba16float' │ 'exact 6×32, exact 2×32'                                    │ '0.0116 ×1.000 ' │ '0.0116 ×1.003 large identical; random identical' │ '0.0116 ×1.006 large identical; random identical' │ '0.0117 ×1.006 large identical; random identical' │
+│ 11      │ '512x512'   │ 'rgba16float' │ 'exact 6×32, exact 3×32'                                    │ '0.0171 ×1.000 ' │ '0.0171 ×1.000 large identical; random identical' │ '0.0171 ×1.002 large identical; random identical' │ '0.0171 ×1.002 large identical; random identical' │
+│ 12      │ '1024x1024' │ 'rgba16float' │ 'exact 6×32, exact 4×32'                                    │ '0.0880 ×1.000 ' │ '0.0881 ×1.001 large identical; random identical' │ '0.0883 ×1.000 large identical; random identical' │ '0.0882 ×1.001 large identical; random identical' │
+│ 13      │ '2048x2048' │ 'rgba16float' │ 'exact 6×32, exact 5×32'                                    │ '0.1453 ×1.000 ' │ '0.1453 ×1.000 large identical; random identical' │ '0.1453 ×1.000 large identical; random identical' │ '0.1454 ×0.999 large identical; random identical' │
+│ 14      │ '4096x4096' │ 'rgba16float' │ 'exact 6×32, exact 6×32'                                    │ '0.5525 ×1.000 ' │ '0.5526 ×1.000 large identical; random identical' │ '0.5526 ×1.000 large identical; random identical' │ '0.5528 ×1.000 large identical; random identical' │
+│ 15      │ '960x540'   │ 'rgba16float' │ 'exact 2×32, exact 1×32, exact 1×32, tail 5×32'             │ '0.0292 ×1.000 ' │ '0.0292 ×1.000 large identical; random identical' │ '0.0292 ×0.999 large identical; random identical' │ '0.0292 ×0.999 large identical; random identical' │
+│ 16      │ '1129x635'  │ 'rgba16float' │ 'exact 1×32, exact 2×32, exact 1×32, exact 1×32, tail 5×32' │ '0.0428 ×1.000 ' │ '0.0428 ×0.999 large identical; random identical' │ '0.0428 ×1.000 large identical; random identical' │ '0.0428 ×0.999 large identical; random identical' │
+│ 17      │ '1280x720'  │ 'rgba16float' │ 'exact 4×32, exact 2×32, tail 4×16'                         │ '0.0568 ×1.000 ' │ '0.0569 ×1.002 large identical; random identical' │ '0.0567 ×0.998 large identical; random identical' │ '0.0568 ×0.999 large identical; random identical' │
+│ 18      │ '1920x1080' │ 'rgba16float' │ 'exact 3×32, exact 1×32, exact 1×32, tail 5×32'             │ '0.0898 ×1.000 ' │ '0.0898 ×1.001 large identical; random identical' │ '0.0897 ×1.000 large identical; random identical' │ '0.0899 ×1.000 large identical; random identical' │
+│ 19      │ '2560x1440' │ 'rgba16float' │ 'exact 5×32, exact 2×32, tail 4×16'                         │ '0.1683 ×1.000 ' │ '0.1682 ×0.999 large identical; random identical' │ '0.1683 ×1.000 large identical; random identical' │ '0.1680 ×0.999 large identical; random identical' │
+└─────────┴─────────────┴───────────────┴─────────────────────────────────────────────────────────────┴──────────────────┴───────────────────────────────────────────────────┴───────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
+median ratio to the library kernel (render sizes / squares), and the check over every size and pattern:
+┌─────────┬───────────────────────┬──────────────┬─────────┬─────────────┐
+│ (index) │ case                  │ render sizes │ squares │ check       │
+├─────────┼───────────────────────┼──────────────┼─────────┼─────────────┤
+│ 0       │ 'rgba8unorm library'  │ '1.000'      │ '1.000' │             │
+│ 1       │ 'rgba8unorm round'    │ '0.962'      │ '0.912' │ 'identical' │
+│ 2       │ 'rgba8unorm mul'      │ '1.001'      │ '1.001' │ 'identical' │
+│ 3       │ 'rgba8unorm trim'     │ '0.964'      │ '0.912' │ 'identical' │
+│ 4       │ 'rgba16float library' │ '1.000'      │ '1.000' │             │
+│ 5       │ 'rgba16float round'   │ '1.000'      │ '1.000' │ 'identical' │
+│ 6       │ 'rgba16float mul'     │ '1.000'      │ '1.000' │ 'identical' │
+│ 7       │ 'rgba16float trim'    │ '0.999'      │ '1.001' │ 'identical' │
+└─────────┴───────────────────────┴──────────────┴─────────┴─────────────┘
+GPU clock over 275 samples: SM min 210 / median 825 / max 2085 MHz, memory min 405 / median 6001 / max 7151 MHz; under load (19 samples at 70%+ use): SM min 240 / median 1762 / max 1777 MHz, memory min 405 / median 7151 / max 7151 MHz
+Timing VALID: started at 49 C, thermal throttling in 0% of 19 loaded samples. SM clock median under load 1762 MHz (information only). Power limit in 57.9% of loaded samples.
+released the bench lock (C:\Users\denni\AppData\Local\Temp\ddgi-gpu-bench.lock)

@@ -6,6 +6,9 @@
 // instead: --use-adapter-luid=<high>,<low>, after which Dawn sees only that adapter. LUIDs change
 // on every boot, so they are read from the Windows device properties (DEVPKEY_Gpu_Luid) each run.
 // 'low' is the Intel GPU (PCI vendor 8086); 'high' is the first other display adapter.
+// The PowerShell query takes seconds and timed out under load (six suite shards at once,
+// 2026-11-14), so its output is kept in DS_GPU_ADAPTERS: the first call in a process sets it,
+// and child processes (test/parallel.js's shards) inherit it instead of querying again.
 import { execFileSync } from 'node:child_process';
 
 const listLuids = `
@@ -20,7 +23,8 @@ export function gpuChoiceArgs( power ) {
 	if ( ! power ) return [];
 	if ( process.platform !== 'win32' ) return [ `--use-webgpu-power-preference=${ power === 'low' ? 'force-low-power' : 'force-high-performance' }` ];
 
-	const output = execFileSync( 'powershell.exe', [ '-NoProfile', '-NonInteractive', '-Command', listLuids ], { encoding: 'utf8', timeout: 30000, windowsHide: true } );
+	const output = process.env.DS_GPU_ADAPTERS ?? execFileSync( 'powershell.exe', [ '-NoProfile', '-NonInteractive', '-Command', listLuids ], { encoding: 'utf8', timeout: 120000, windowsHide: true } );
+	process.env.DS_GPU_ADAPTERS = output;
 	const adapters = output.split( /\r?\n/ ).map( line => line.trim().split( '|' ) ).filter( ( [ id, luid ] ) => id && /^\d+$/.test( luid ?? '' ) )
 		.map( ( [ id, luid ] ) => ( { id, intel: id.toUpperCase().includes( 'VEN_8086' ), luid: BigInt( luid ) } ) );
 	const adapter = adapters.find( candidate => candidate.intel === ( power === 'low' ) );

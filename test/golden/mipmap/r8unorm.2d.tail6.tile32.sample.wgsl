@@ -9,13 +9,7 @@ var<workgroup> tile: array<vec4f, 1024>;
 @group(0) @binding(7) var mip5: texture_storage_2d<r8unorm, write>;
 
 const SCALE = 255.0;
-fn quantize(value: vec4f) -> vec4f {
-	let scaled = clamp(value, vec4f(0.0), vec4f(255.0));
-	let lower = floor(scaled);
-	let fraction = scaled - lower;
-	let nearest = select(lower, lower + vec4f(1), fraction > vec4f(0.5));
-	return select(nearest, lower + vec4f(vec4i(lower) & vec4i(1)), fraction == vec4f(0.5));
-}
+fn quantize(value: vec4f) -> vec4f { return round(clamp(value, vec4f(0.0), vec4f(255.0))); }
 
 fn first(pos: vec2u, size: vec2u, layer: u32) -> vec4f {
 	let uv = (vec2f(pos) + 0.5) / vec2f(size);

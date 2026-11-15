@@ -6,6 +6,7 @@ import { Downsampler, Reducer, requiredLimits } from '/dist/webgpu/index.js';
 import * as three from '/dist/three/index.js';
 import { createDepthSource, createTexture, makeData, poison, readMip, readMips, toFloats, trackBuffers, upload } from './gpu.js';
 import { validateBox } from './validate-box.js';
+import { validateHalo } from './validate-halo.js';
 import { validateMipmap } from './validate-mipmap.js';
 import { validateInteger } from './validate-integer.js';
 import { validatePacked } from './validate-packed.js';
@@ -197,6 +198,7 @@ export const compatibility = device => ! device.features.has( 'core-features-and
  * 'odd' runs only the 'spd' and tail variants of the main matrix (part of 'downsampler', for debugging),
  * 'box' the main matrix's 'box' variants and validate-box.js (M2.5; also part of 'downsampler').
  * 'region' runs only the partial updates (`rect`, `layers`; validate-region.js; part of 'downsampler').
+ * 'halo' runs only the halo-batch groups (validate-halo.js; part of 'downsampler').
  * 'mipmap' runs only the `downsampler/mipmap` entry's chains against a Downsampler's (validate-mipmap.js; part of 'downsampler').
  * 'srgb' runs the sRGB formats of the main matrix, sRGB separate sources and validate-srgb.js (M2.3.5; part of 'downsampler').
  * 'integer' runs only the integer formats (validate-integer.js; part of 'downsampler'), and 'format:<name>'
@@ -206,21 +208,33 @@ export const compatibility = device => ! device.features.has( 'core-features-and
  * `durations` (group id → ms; test/ci/README.md). `list` runs nothing and returns the group ids
  * (`ids`). The result carries `groups` (id → { ms, cases } for the groups that ran) and the
  * listing's size and digest, so the shards of one suite can be checked against each other.
+ * `groups` (ids) runs exactly those case groups, in suite order (debugging, bisection).
  */
-export async function validate( device, { onProgress = () => {}, quick = false, only, shard, durations = {}, list = false, keepGoing = false } = {} ) {
+export async function validate( device, { onProgress = () => {}, quick = false, only, shard, durations = {}, list = false, keepGoing = false, groups } = {} ) {
 
 	failures = keepGoing ? [] : null;
 	let select = new Selection();
 	let shards = null;
 
-	if ( shard || list ) {
+	if ( shard || list || groups ) {
 
 		// A first pass registers every group id and runs nothing (no textures, pipelines or oracles).
 		const listing = new Selection( { list: true } );
 		await suite( device, { quick, only, select: listing } );
 		if ( list ) return { listed: true, ids: listing.ids, digest: digest( listing.ids ) };
-		shards = assignShards( listing.ids, shard.total, durations );
-		select = new Selection( { assigned: shards[ shard.index - 1 ] } );
+		if ( groups ) {
+
+			const unknown = groups.filter( id => ! listing.ids.includes( id ) );
+			if ( unknown.length ) throw new Error( `--groups: not in this listing: ${ unknown.join( ', ' ) }` );
+			select = new Selection( { assigned: groups } );
+
+		} else {
+
+			shards = assignShards( listing.ids, shard.total, durations );
+			select = new Selection( { assigned: shards[ shard.index - 1 ] } );
+
+		}
+
 		select.listing = listing.ids;
 
 	}
@@ -254,7 +268,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 	const results = [];
 	const started = performance.now();
-	const cases = only === 'scalar' || only === 'reducer' || only === 'fixtures' || only === 'region' || only === 'mipmap' || only?.startsWith( 'integer' ) ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
+	const cases = only === 'scalar' || only === 'reducer' || only === 'fixtures' || only === 'region' || only === 'mipmap' || only === 'halo' || only?.startsWith( 'integer' ) ? [] : quick ? shapes.filter( ( [ w, h ] ) => w * h <= 65536 ) : shapes;
 	let scalarPrecision = null;
 	let runs = 0;
 	const skipped = [];
@@ -451,6 +465,10 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 			results.push( ...await validateBox( device, { quick, onProgress, select } ) );
 
+		} else if ( only === 'halo' ) {
+
+			results.push( ...await validateHalo( device, { quick, onProgress, select } ) );
+
 		} else if ( only === 'region' ) {
 
 			results.push( ...await validateRegion( device, { quick, onProgress, select } ) );
@@ -489,6 +507,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 				results.push( ...await validateRegion( device, { quick, onProgress, select } ) );
 				results.push( ...await validatePacked( device, { quick, onProgress, part: 'downsampler', select } ) );
 				results.push( ...await validateBox( device, { quick, onProgress, select } ) );
+				results.push( ...await validateHalo( device, { quick, onProgress, select } ) );
 				results.push( ...await validateSrgb( device, { quick, onProgress, select } ) );
 				results.push( ...await validateInteger( device, { quick, onProgress, select } ) );
 
@@ -677,7 +696,7 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 
 										const from = external ? input : mips[ batch.sourceMipLevel ];
 										const sw = external ? width : mipSize( dw, batch.sourceMipLevel ), sh = external ? height : mipSize( dh, batch.sourceMipLevel );
-										spdReference( from, sw, sh, layers, quantization, reduction, batch.count ).forEach( ( level, i ) => {
+										spdReference( from, sw, sh, layers, quantization, reduction, batch.count, { weights: 'sampler' } ).forEach( ( level, i ) => {
 
 											const mip = batch.firstMipLevel + i;
 											check( mips[ mip ], level, quantization, `${ label } mip ${ mip }`, reduction, channels, external ? unormSource : 0 );
@@ -691,11 +710,13 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 								}
 
 								let previous = input, w = width, h = height;
+								// A batch's first output may be sampler-filtered; in-tile levels use shader weights.
+								const firstOutputs = new Set( downsampler.prepare( destination, options ).map( batch => batch.firstMipLevel ) );
 
 								for ( let level = 0; level < destination.mipLevelCount; level ++ ) {
 
 									const quantizedInput = level > 0 || formats[ sourceFormat ]?.quantization === quantization;
-									const expected = level === 0 && dw === width && dh === height ? copyReference( previous, w, h, layers, quantization ) : ( box ? boxReference : reduceReference )( previous, w, h, layers, quantization, reduction, { quantizedInput } );
+									const expected = level === 0 && dw === width && dh === height ? copyReference( previous, w, h, layers, quantization ) : ( box ? boxReference : reduceReference )( previous, w, h, layers, quantization, reduction, { quantizedInput, weights: firstOutputs.has( level ) ? 'sampler' : 'shader' } );
 									const slack = level === 0 && /unorm/.test( sourceFormat ) ? 2 ** - 21 : 0;
 									check( mips[ level ], expected, quantization, `${ label } mip ${ level }`, reduction, channels, slack );
 									previous = mips[ level ]; w = expected.width; h = expected.height;
@@ -751,7 +772,7 @@ async function validateOptions( device ) {
 	let previous = kept;
 	for ( let level = 3; level <= 5; level ++ ) {
 
-		const expected = reduceReference( previous, 256 >> ( level - 1 ), 256 >> ( level - 1 ), 1, 'unorm8' );
+		const expected = reduceReference( previous, 256 >> ( level - 1 ), 256 >> ( level - 1 ), 1, 'unorm8', 'average', { weights: level === 3 ? 'sampler' : 'shader' } );
 		previous = await readMip( device, texture, level );
 		check( previous, expected, 'unorm8', `sub-range mip ${ level }` );
 
@@ -899,6 +920,64 @@ async function validateOptions( device ) {
 		}
 
 		results.push( { option: `exactTile ${ tiles.map( ( [ tile ] ) => tile ).join( '/' ) } match the default (${ untailed.exactTile }); default tail ${ downsampler.tail }` } );
+
+		// The same on every other path the tile reaches: the tail kernel after 'exact' batches,
+		// the buffer output path, the compatibility path (scratch levels), a baseMipLevel
+		// sub-range and a separate source of another format. Each path's default-tile chain
+		// is the expectation for its own 8/16/32 chains.
+		const paths = [
+			[ 'tail', { tail: true } ],
+			[ 'buffer', { output: 'buffer', tail: false } ],
+			[ 'buffer + tail', { output: 'buffer', tail: true } ],
+			...( compatibility( device ) ? [] : [ [ 'compat', { compatibility: true, tail: false } ], [ 'compat + tail', { compatibility: true, tail: true } ] ] ),
+		];
+		const runs = [
+			[ 333, 200, 3, 'rgba16float', {}, 'average, 3 layers' ],
+			[ 1917, 1079, 1, 'rgba8unorm', {}, 'average 1917×1079' ],
+			[ 255, 257, 1, 'r32float', { reduction: 'minmax' }, 'minmax' ],
+			[ 1129, 635, 1, 'rgba8unorm', { baseMipLevel: 2 }, 'sub-range from level 2' ],
+			[ 1129, 635, 1, 'rgba8unorm', { separate: 'rgba16float' }, 'separate rgba16float source' ],
+		];
+		const checked = [];
+		for ( const [ name, pathOptions ] of [ [ 'direct', { tail: false } ], ...paths ] ) {
+
+			const owners = [ 8, ...( big ? [ 16, 32 ] : [] ) ].map( tile => [ tile, new Downsampler( device, { ...pathOptions, exactTile: tile } ) ] );
+			const reference = new Downsampler( device, pathOptions );
+			for ( const [ width, height, layers, format, { separate, ...options }, label ] of runs ) {
+
+				// A path that cannot take a format skips that run (unsupportedReason).
+				const data = makeData( width, height, layers, format, 'random', 21 );
+				const source = separate ? createTexture( device, { width, height, layers, format: separate } ) : null;
+				if ( source ) upload( device, source, makeData( width, height, layers, separate, 'random', 22 ) );
+				const run = { ...options, ...( source ? { source: { texture: source } } : {} ) };
+				const chain = async owner => {
+
+					const texture = createTexture( device, { width, height, layers, format } );
+					upload( device, texture, data );
+					// A sub-range reads a level the full chain wrote first (by the default owner, so every tile starts equal).
+					if ( options.baseMipLevel ) untailed.generate( texture );
+					if ( owner.unsupportedReason( texture ) ) { texture.destroy(); return null; }
+					owner.generate( texture, run );
+					const mips = await readMips( device, texture, 0 );
+					texture.destroy();
+					return mips;
+
+				};
+				const expected = await chain( reference );
+				if ( expected === null ) { source?.destroy(); continue; }
+				for ( const [ tile, owner ] of owners ) {
+
+					const actual = await chain( owner );
+					actual.forEach( ( level, l ) => { if ( level.some( ( value, i ) => ! Object.is( value, expected[ l ][ i ] ) ) ) throw new Error( `exactTile ${ tile } on the ${ name } path, ${ label }: level ${ l } differs from tile ${ reference.exactTile }` ); } );
+
+				}
+				source?.destroy();
+				checked.push( `${ name }: ${ label }` );
+
+			}
+
+		}
+		results.push( { option: `exactTile ${ tiles.map( ( [ tile ] ) => tile ).join( '/' ) } match the default on every path (${ checked.length } runs: ${ [ ...new Set( checked.map( run => run.split( ':' )[ 0 ] ) ) ].join( ', ' ) })` } );
 
 	}
 

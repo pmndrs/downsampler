@@ -80,13 +80,13 @@ test( 'check-vendored passes dist/mipmap.js and reports a drifted copy', () => {
 	// A copy with one changed line fails, naming the cases.
 	const tmp = new URL( '../../dist/.check-vendored-mutant.js', import.meta.url );
 	const code = readFileSync( new URL( '../../dist/mipmap.js', import.meta.url ), 'utf8' );
-	writeFileSync( tmp, code.replace( 'fraction == vec4f(0.5)', 'fraction >= vec4f(0.5)' ) );
+	writeFileSync( tmp, code.replace( '{ return round(clamp(value, ', '{ return floor(clamp(value, ' ) );
 	try {
 
 		const mutant = run( fileURLToPath( tmp ) );
 		assert.equal( mutant.status, 1, mutant.stdout + mutant.stderr );
 		assert.match( mutant.stdout, /rgba8unorm\.2d\.exact4\.tile8\.sample\.wgsl/ );
-		assert.match( mutant.stdout, /fraction >= vec4f\(0\.5\)/ );
+		assert.match( mutant.stdout, /return floor\(clamp\(value, / );
 
 	} finally {
 

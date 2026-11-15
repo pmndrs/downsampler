@@ -15,6 +15,8 @@ import { compareSpdSizes, firstUnitStep, webgpuSpdVariants } from './webgpu-spd.
 import { storageUsage } from './storage-usage.js';
 import { kernelVariants } from './kernel-variants.js';
 import { srgbFormats, srgbStrategies } from './srgb.js';
+import { partialSizes, partialStrategies } from './partial.js';
+import { dispatchFit, dispatchFormats, dispatchSizes, dispatchStrategies } from './dispatch.js';
 
 export const defaultSizes = [ [ 256, 256 ], [ 512, 512 ], [ 1024, 1024 ], [ 2048, 2048 ], [ 4096, 4096 ], [ 1920, 1080 ], [ 512, 512, 6 ] ];
 
@@ -41,6 +43,7 @@ function compareStrategies( device ) {
 		// M2.5: area-weighted odd sizes, the 'exact' batches (odd-level batches load), with and without the tail.
 		strategies.box = { ...run( new Downsampler( device, { tail: false } ), { reduction, oddSizes: 'box' } ), parity: false };
 		strategies.tailBox = { ...run( tail, { reduction, oddSizes: 'box' } ), parity: false };
+		strategies.haloBox = { ...run( new Downsampler( device, { tail: true, halo: true } ), { reduction, oddSizes: 'box' } ), parity: false };
 		// Windows decisions (2026-11-12, results/windows/correctness.md): shader weights instead of
 		// the sampler ('load', identical on every GPU), and the device's own f16 conversion
 		// ('device', the cost of rounding to nearest even; the same as exact for non-f16 formats).
@@ -117,6 +120,9 @@ function renderStrategies( device ) {
 	strategies.exact16 = { ...run( new Downsampler( device, { exactTile: 16, tail: false } ), {} ), parity: true };
 	strategies.tail8 = { ...run( new Downsampler( device, { tail: true, exactTile: 8 } ), {} ), parity: true };
 	strategies.tail16 = { ...run( new Downsampler( device, { tail: true, exactTile: 16 } ), {} ), parity: true };
+	// Halo batches (SPEC §13 item 3): the default chain (tail on) with odd steps carried inside batches.
+	strategies.halo = { ...run( new Downsampler( device, { tail: true, halo: true } ), {} ), parity: true };
+	strategies.haloAny = { ...run( new Downsampler( device, { tail: true, halo: true, haloMaxOutput: Infinity } ), {} ), parity: true };
 	return { strategies, reference: () => 'render' };
 
 }
@@ -292,9 +298,21 @@ export async function benchmark( device, { sizes, formats: benchFormats, rounds,
 	// Modes with their own harness (and their own default sizes and formats). Without
 	// timestamp-query they measure throughput only.
 	if ( compare === 'storage-usage' ) return storageUsage( device, { sizes, formats: benchFormats, rounds: rounds ?? 11, repeats, shaders: only, throughput: throughput || ! timestamps ? tp : null, onProgress } );
-	if ( compare === 'subgroups' || compare === 'f16' ) return kernelVariants( device, { probe: compare, sizes, formats: benchFormats, rounds: rounds ?? 11, repeats, variants: only, throughput: throughput || ! timestamps ? tp : null, onProgress } );
+	if ( compare === 'subgroups' || compare === 'f16' || compare === 'trim' ) return kernelVariants( device, { probe: compare, sizes, formats: benchFormats, rounds: rounds ?? 11, repeats, variants: only, throughput: throughput || ! timestamps ? tp : null, onProgress } );
 	// sRGB output paths (test/bench/srgb.js): ratios paired against the buffer path.
 	if ( compare === 'srgb' ) return timestamps ? measure( device, pickStrategies( srgbStrategies( device ), only, [ 'buffer' ] ), { sizes: sizes ?? renderCompareSizes, benchFormats: benchFormats ?? srgbFormats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
+	// Partial updates (test/bench/partial.js): rect and layer updates paired against the full chain.
+	if ( compare === 'partial' ) return timestamps ? measure( device, pickStrategies( partialStrategies( device ), only, [ 'full' ] ), { sizes: sizes ?? partialSizes, benchFormats: benchFormats ?? defaultFormats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
+	// The cost of one dependent dispatch (test/bench/dispatch.js): the same chain at 1–6 levels per dispatch.
+	if ( compare === 'dispatch' ) {
+
+		if ( ! timestamps ) return { timestamps: false, results: [] };
+		const timing = await measure( device, pickStrategies( dispatchStrategies( device ), only ), { sizes: sizes ?? dispatchSizes, benchFormats: benchFormats ?? dispatchFormats, rounds: rounds ?? 11, repeats, onProgress } );
+		for ( const row of timing.results ) row.fit = dispatchFit( row );
+		return timing;
+
+	}
+
 	benchFormats ??= defaultFormats;
 	if ( compare === 'throughput' ) {
 

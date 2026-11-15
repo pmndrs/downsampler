@@ -119,8 +119,9 @@ function same( a, b, width, height, layers, where, label, fromLevel = 0 ) {
 
 /**
  * The CPU oracle for every level a plan writes, each from the GPU's own source level
- * (`mips`, from level 0; `sourceFloats` for a separate source). The tolerance is the
- * sampler model (looser than shader weights); folds are exact.
+ * (`mips`, from level 0; `sourceFloats` for a separate source). A batch's first output
+ * takes the sampler model (looser than shader weights), its in-tile levels the shader model;
+ * folds are exact.
  */
 function checkOracle( batches, mips, sourceFloats, sourceSize, sourceFormat, width, height, layers, format, reference, label, { oddSizes = 'exact', resample = false } = {} ) {
 
@@ -133,7 +134,7 @@ function checkOracle( batches, mips, sourceFloats, sourceSize, sourceFormat, wid
 		const sw = external ? sourceSize[ 0 ] : mipSize( width, batch.sourceMipLevel ), sh = external ? sourceSize[ 1 ] : mipSize( height, batch.sourceMipLevel );
 		if ( batch.kernel === 'clamp' ) {
 
-			spdReference( from, sw, sh, layers, quantization, reference, batch.count ).forEach( ( level, i ) => check( mips[ batch.firstMipLevel + i ], level, quantization, `${ label } oracle mip ${ batch.firstMipLevel + i }`, reference, channels ) );
+			spdReference( from, sw, sh, layers, quantization, reference, batch.count, { weights: 'sampler' } ).forEach( ( level, i ) => check( mips[ batch.firstMipLevel + i ], level, quantization, `${ label } oracle mip ${ batch.firstMipLevel + i }`, reference, channels ) );
 			continue;
 
 		}
@@ -146,7 +147,7 @@ function checkOracle( batches, mips, sourceFloats, sourceSize, sourceFormat, wid
 			const quantizedInput = ! first || formats[ sourceFormat ]?.quantization === quantization;
 			const step = oddSizes === 'box' ? boxReference : reduceReference;
 			// A resampled source's first level is an area step to the destination's size (M2.5).
-			const expected = first && w === mipSize( width, level ) && h === mipSize( height, level ) ? copyReference( previous, w, h, layers, quantization ) : first && resample ? areaReference( previous, w, h, layers, quantization, reference, mipSize( width, level ), mipSize( height, level ), { quantizedInput } ) : step( previous, w, h, layers, quantization, reference, { quantizedInput } );
+			const expected = first && w === mipSize( width, level ) && h === mipSize( height, level ) ? copyReference( previous, w, h, layers, quantization ) : first && resample ? areaReference( previous, w, h, layers, quantization, reference, mipSize( width, level ), mipSize( height, level ), { quantizedInput, weights: 'sampler' } ) : step( previous, w, h, layers, quantization, reference, { quantizedInput, weights: i === 0 ? 'sampler' : 'shader' } );
 			check( mips[ level ], expected, quantization, `${ label } oracle mip ${ level }`, reference, channels, external && i === 0 ? 2 ** - 21 : 0 );
 			previous = mips[ level ]; w = expected.width; h = expected.height;
 
@@ -368,7 +369,9 @@ export async function validateRegion( device, { quick, onProgress = () => {}, se
 			if ( plain.limits.maxStorageTexturesPerShaderStage !== 4 ) throw new Error( `region default limits: the device has ${ plain.limits.maxStorageTexturesPerShaderStage } storage textures, not WebGPU's default 4` );
 			for ( const [ mode, downsampler, options ] of [ [ 'tail', new Downsampler( plain ), {} ], [ 'exact', new Downsampler( plain, { tail: false } ), {} ], [ 'spd', new Downsampler( plain ), { oddSizes: 'spd' } ] ] ) {
 
-				if ( downsampler.levelsPerDispatch !== 4 || downsampler.bufferLevelsPerDispatch !== 6 ) throw new Error( `region default limits: ${ downsampler.levelsPerDispatch } storage and ${ downsampler.bufferLevelsPerDispatch } buffer levels per dispatch, not 4 and 6` );
+				// The buffer path's 6 levels take 256 invocations; a compatibility-mode device defaults to 128 (4 levels).
+				const bufferLevels = plain.limits.maxComputeInvocationsPerWorkgroup >= 256 ? 6 : 4;
+				if ( downsampler.levelsPerDispatch !== 4 || downsampler.bufferLevelsPerDispatch !== bufferLevels ) throw new Error( `region default limits: ${ downsampler.levelsPerDispatch } storage and ${ downsampler.bufferLevelsPerDispatch } buffer levels per dispatch, not 4 and ${ bufferLevels }` );
 				for ( const [ width, height ] of quick ? quickShapes : smallShapes ) {
 
 					const updates = rectsFor( width, height, width * 7 + height, 9 ).map( rect => ( { rect } ) );

@@ -1,0 +1,30 @@
+took the bench lock (C:\Users\denni\AppData\Local\Temp\ddgi-gpu-bench.lock) for "downsampler: intel-trim"
+GPU at 50 C, below 70 C: starting
+{"vendor":"intel","architecture":"gen-12lp","device":"","description":"","isFallbackAdapter":false,"timestamps":true,"features":["texture-formats-tier1","bgra8unorm-storage"],"compatibility":false,"maxStorageTexturesPerShaderStage":6,"subgroupMinSize":8,"subgroupMaxSize":128,"adapterFeatures":["bgra8unorm-storage","chromium-experimental-multi-draw-indirect","chromium-experimental-timestamp-query-inside-passes","clip-distances","core-features-and-limits","depth-clip-control","depth32float-stencil8","dual-source-blending","float32-blendable","float32-filterable","indirect-first-instance","primitive-index","rg11b10ufloat-renderable","shader-f16","subgroups","texture-component-swizzle","texture-compression-bc","texture-compression-bc-sliced-3d","texture-formats-tier1","texture-formats-tier2","timestamp-query"],"maxTextureDimension2D":8192}
+load average (1, 5, 15 min): before 0.0 0.0 0.0, after 0.0 0.0 0.0
+validation passed: 0 cases, 0 pattern runs, 0 ms
+plan: exactTile 32, tail true
+┌─────────┬─────────────┬──────────────┬─────────────────────────────────────────────────────────────┬──────────────────┬───────────────────────────────────────────────────┐
+│ (index) │ size        │ format       │ batches                                                     │ library          │ round                                             │
+├─────────┼─────────────┼──────────────┼─────────────────────────────────────────────────────────────┼──────────────────┼───────────────────────────────────────────────────┤
+│ 0       │ '256x256'   │ 'rgba8unorm' │ 'exact 6×32, exact 2×32'                                    │ '0.0562 ×1.000 ' │ '0.0447 ×0.788 tiles identical; random identical' │
+│ 1       │ '512x512'   │ 'rgba8unorm' │ 'exact 6×32, exact 3×32'                                    │ '0.1128 ×1.000 ' │ '0.0852 ×0.752 tiles identical; random identical' │
+│ 2       │ '1024x1024' │ 'rgba8unorm' │ 'exact 6×32, exact 4×32'                                    │ '0.1718 ×1.000 ' │ '0.1277 ×0.724 tiles identical; random identical' │
+│ 3       │ '2048x2048' │ 'rgba8unorm' │ 'exact 6×32, exact 5×32'                                    │ '1.0477 ×1.000 ' │ '0.7996 ×0.763 tiles identical; random identical' │
+│ 4       │ '4096x4096' │ 'rgba8unorm' │ 'exact 6×32, exact 6×32'                                    │ '4.9099 ×1.000 ' │ '5.8330 ×1.174 tiles identical; random identical' │
+│ 5       │ '960x540'   │ 'rgba8unorm' │ 'exact 2×32, exact 1×32, exact 1×32, tail 5×32'             │ '0.1223 ×1.000 ' │ '0.0942 ×0.771 tiles identical; random identical' │
+│ 6       │ '1129x635'  │ 'rgba8unorm' │ 'exact 1×32, exact 2×32, exact 1×32, exact 1×32, tail 5×32' │ '0.2057 ×1.000 ' │ '0.1882 ×0.925 tiles identical; random identical' │
+│ 7       │ '1280x720'  │ 'rgba8unorm' │ 'exact 4×32, exact 2×32, tail 4×16'                         │ '0.3850 ×1.000 ' │ '0.2772 ×0.726 tiles identical; random identical' │
+│ 8       │ '1920x1080' │ 'rgba8unorm' │ 'exact 3×32, exact 1×32, exact 1×32, tail 5×32'             │ '0.6297 ×1.000 ' │ '0.4581 ×0.705 tiles identical; random identical' │
+│ 9       │ '2560x1440' │ 'rgba8unorm' │ 'exact 5×32, exact 2×32, tail 4×16'                         │ '1.2331 ×1.000 ' │ '0.9193 ×0.730 tiles identical; random identical' │
+└─────────┴─────────────┴──────────────┴─────────────────────────────────────────────────────────────┴──────────────────┴───────────────────────────────────────────────────┘
+median ratio to the library kernel (render sizes / squares), and the check over every size and pattern:
+┌─────────┬──────────────────────┬──────────────┬─────────┬─────────────┐
+│ (index) │ case                 │ render sizes │ squares │ check       │
+├─────────┼──────────────────────┼──────────────┼─────────┼─────────────┤
+│ 0       │ 'rgba8unorm library' │ '1.000'      │ '1.000' │             │
+│ 1       │ 'rgba8unorm round'   │ '0.730'      │ '0.763' │ 'identical' │
+└─────────┴──────────────────────┴──────────────┴─────────┴─────────────┘
+GPU clock over 97 samples: SM min 210 / median 210 / max 210 MHz, memory min 405 / median 405 / max 405 MHz; no sample was under load
+Timing NO VERDICT: only 0 samples under load (5 needed).
+released the bench lock (C:\Users\denni\AppData\Local\Temp\ddgi-gpu-bench.lock)

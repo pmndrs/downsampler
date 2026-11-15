@@ -49,10 +49,12 @@ export interface ReferenceOptions {
 	pairing?: 'float32';
 	/**
 	 * Who applies the bilinear weights of an 'average' level, which sets `filterTolerance`:
-	 * - 'sampler' (default): a hardware sampler. Each axis may be off by
+	 * - 'shader' (default): weights computed in f32 in the shader (`averageAccess: 'load'`,
+	 *   tail kernels' in-tile levels). Only weights not representable in 8 bits get one step.
+	 * - 'sampler': a hardware sampler. Each axis may be off by
 	 *   {@link samplerWeightSteps} steps of 1/256 times the local contrast, at any weight.
-	 * - 'shader': weights computed in f32 in the shader (`averageAccess: 'load'`, tail
-	 *   kernels' in-tile levels). Only weights not representable in 8 bits get one step.
+	 * The strict model is the default so a check fails closed: a caller whose level was
+	 * sampled says so.
 	 */
 	weights?: 'sampler' | 'shader';
 }
@@ -63,7 +65,7 @@ export interface ReferenceOptions {
  * per-value `filterTolerance` for hardware bilinear weights. Compare with
  * {@link tolerance}.
  */
-export function reduceReference( source: Float32Array, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction = 'average', { quantizedInput = true, pairing, weights = 'sampler' }: ReferenceOptions = {} ): ReferenceLevel {
+export function reduceReference( source: Float32Array, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction = 'average', { quantizedInput = true, pairing, weights = 'shader' }: ReferenceOptions = {} ): ReferenceLevel {
 
 	if ( isIntQuantization( quantization ) ) throw new Error( `downsampler: ${ quantization } is an integer format; use intReference (exact integers, not float32 values).` );
 	// sRGB: colour in linear float32 then encoded as stored, alpha as unorm8 (src/core/srgb.ts).

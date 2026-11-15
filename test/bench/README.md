@@ -9,12 +9,15 @@ same-run ratios are trustworthy on a loaded machine.
 |---|---|---|
 | (default) | `bench.js` | render passes vs the library at 4 and 6 levels per dispatch, `'load'`, `'max'`, buffer output |
 | `--compare=spd` | `bench.js`, `atomic-spd.js` | odd-size strategies: `'exact'`, tail, `'spd'`, the atomic probe, render (M2T.4) |
-| `--compare=render` | `bench.js` | render passes vs `'exact'`, hybrids, level 1 alone, tile sweep (DIVERGES #17) |
+| `--compare=render` | `bench.js` | render passes vs `'exact'`, hybrids, level 1 alone, tile sweep (DIVERGES #17), `halo` and `haloAny` (halo batches, capped and uncapped; DIVERGES #2) |
 | `--compare=webgpu-spd` | `webgpu-spd.js` | webgpu-spd 3.0.0 vs ours (results/compare/webgpu-spd.md) |
 | `--compare=throughput` | `throughput.js`, `bench.js` | chains per second without timestamps (M3) |
 | `--compare=storage-usage` | `storage-usage.js` | does STORAGE_BINDING make sampling slower? (M3) |
 | `--compare=subgroups` | `kernel-variants.js` | upper bound for a subgroup kernel (M3) |
 | `--compare=f16` | `kernel-variants.js` | averaging in f16: speed and precision (M3) |
+| `--compare=trim` | `kernel-variants.js` | the 'exact' kernel with cheaper per-value arithmetic, same bits (results/windows/round2/trim.md) |
+| `--compare=dispatch` | `dispatch.js` | the cost of one dependent compute dispatch (results/windows/round2/dispatch.md) |
+| `--compare=partial` | `partial.js` | `rect` and one-layer updates against the full chain (results/windows/round2/partial.md) |
 
 `--strategies=a,b,c` times a subset in every `--compare` mode. The strategy a mode's ratios divide by is always kept:
 `render` for `render` and `throughput`, `exact`/`exactMax` for `spd` and `webgpu-spd`, the library kernel for the probes.

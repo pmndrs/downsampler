@@ -10,7 +10,7 @@
 //   decode to the exact table, so results don't depend on the GPU).
 // - `render`: one render pass per level (three.js today).
 // Ratios are paired per round against `buffer`.
-import { Downsampler, createKernel, kernelLayoutEntries, srgbScratchFormat } from '/dist/webgpu/index.js';
+import { Downsampler, createKernel, kernelLayoutEntries, srgbScratchFormat, srgbTable, srgbTableBinding } from '/dist/webgpu/index.js';
 import { createRenderBaseline } from './render-baseline.js';
 
 export const srgbFormats = [ 'rgba8unorm-srgb' ];
@@ -60,7 +60,7 @@ export function scratchPrototype( device, downsampler ) {
 			if ( batch.count > device.limits.maxStorageTexturesPerShaderStage ) throw new Error( `srgb scratch: a ${ batch.count }-level batch needs ${ batch.count } storage textures, above this device's ${ device.limits.maxStorageTexturesPerShaderStage }; plan with levelsPerDispatch ≤ the limit` );
 			const options = { format: texture.format, dimension, count: batch.count, access: 'sample', sourceFormat: texture.format, output: 'storage', tile: batch.tile, ...( batch.kernel === 'tail' ? { tail: true } : {} ) };
 			const { layout, pipeline: compute } = pipeline( options );
-			const entries = [ { binding: 0, resource: sampler }, { binding: 1, resource: view( texture, batch.sourceMipLevel ) } ];
+			const entries = [ { binding: 0, resource: sampler }, { binding: 1, resource: view( texture, batch.sourceMipLevel ) }, { binding: srgbTableBinding, resource: { buffer: srgbTable( device ) } } ];
 			for ( let i = 0; i < batch.count; i ++ ) entries.push( { binding: i + 2, resource: view( scratch, batch.firstMipLevel + i ) } );
 			return { batch, pipeline: compute, bindGroup: device.createBindGroup( { layout, entries } ) };
 

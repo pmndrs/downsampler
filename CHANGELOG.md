@@ -13,6 +13,7 @@ The first release.
 - Reductions: `'average'`, `'min'`, `'max'`, `'minmax'` and custom idempotent folds; folds are conservative at odd sizes, so min/max pyramids are a valid Hi-Z.
 - Separate sources (depth → Hi-Z, format conversion, any float-sampleable 2D texture): same size, half size, or any size with `resample: 'area'` (power-of-two Hi-Z; ratio cap `maxResampleRatio`, default 8).
 - Partial updates: `layers: [ first, count ]` and `rect`, bit-identical to a full recompute; an empty rect is a no-op.
+- `halo` (opt-in): `'exact'` and `'box'` chains carry odd steps inside a batch, one dispatch fewer at many render sizes (`planBatches` `halo`, `batchHalo` in core).
 - `encode`, `encodePass` (into your compute pass), `generate`, `prepare` (the planned dispatches, for self-dispatch) and `release`.
 - Two output paths (storage textures, or a buffer and copies for formats that can't be storage textures) and a compatibility-mode path, all bit-identical.
 - Identical results on every GPU where it matters: `f16Rounding: 'nearest'` (default) rounds float16 levels in the shader; `averageAccess: 'load'` replaces the sampler's vendor-specific weights.
@@ -23,7 +24,7 @@ The first release.
 - `Reducer`: one dispatch reduces up to six levels per tile and stores the levels you choose. Per-channel ops (sums, averages, min, max, weighted means, argmin/argmax with payloads), 4 or 8 channels, `'zero-weight'` or `'clamp'` (SPD/FSR) edges, `load`/`store`/`size` hooks over your own `@group(1)`, output textures or a buffer.
 - `ScalarReduction`: any image to one value per layer in two dispatches, every texel counted once, with a `finish` hook on the GPU; combine-only runs over partials a `Reducer` wrote; `bindGroupLayouts[ 1 ]` for the hooks' bind group, as on a `Reducer`.
 - One source shape everywhere: `source` is a texture or `{ texture, mipLevel }`, with the same checks; sizes are `width`/`height`; layer ranges are `layers: [ first, count ]` (a bare count is `layerCount`).
-- The WGSL generators (`createKernel`, `createScalarKernel`, …) for vendoring, and `requiredLimits( adapter )`.
+- The WGSL generators (`createKernel`, `createScalarKernel`, …) for vendoring, and `requiredLimits( adapter )`. Kernels that read or write sRGB take the exact sRGB tables from a 2 KiB storage buffer at binding 12 (`srgbTable( device )`, `usesSrgbTable( options )`, `srgbTableBinding`); `Downsampler` and `Reducer` bind it. As shader constants the tables made sRGB chains 4× slower and pipelines 8–19× slower to compile on D3D12.
 
 ### three.js (`downsampler/three`)
 

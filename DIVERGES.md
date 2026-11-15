@@ -2,46 +2,50 @@
 
 Where this library does something different from the sources in SPEC §13: AMD FidelityFX SPD, nvpro_pyramid (vk_compute_mipmaps), the WebGPU community ports (webgpu-spd, `greggman`, `davidar`, the `Volcomix` fiddle) and the requests in gpuweb #386/#5253.
 
-Each entry says what they do, what we do, why, what it would take to converge, and the expected effect. Performance figures marked *measured* come from the Apple M5 Pro runs in SPEC §2.2, §4 and §8. Nothing has been measured on other vendors yet, so anything else is an *estimate* or *unknown*.
+Each entry says what they do, what we do, why, what it would take to converge, and the expected effect. Performance figures marked *measured* come from an Apple M5 Pro (SPEC §2.2, §4, §8; `results/m3/`), an NVIDIA RTX 3060 Laptop and an Intel UHD (D3D12; `results/windows/`). AMD and mobile GPUs are unmeasured; anything else is an *estimate* or *unknown*.
+
+This is the design record. For a plain-language summary for users, see [docs/differences.md](docs/differences.md).
 
 **Verdicts**
 - **Keep:** a deliberate difference, with no plan to converge.
-- **Planned:** convergence or an alternative is on the milestone list (SPEC §11).
+- **Measured, not built:** we tried the source's approach and the data said no.
+- **Done:** we converged, or built an opt-in with the source's behaviour.
 - **Candidate:** worth doing, but not scheduled.
-- **Risk:** an open question that could change a default.
+- **Open:** an unresolved question that could change a default or the code.
 
 Effort: **S** is under a day, **M** a few days including oracle and GPU cases, **L** a week or more.
 
-Last updated: 2026-11-13 (M2.3.3/M2.3.7: rgb10a2unorm and integer formats, entries 22 and 24. M2.3.5: sRGB destinations, entry 16 done. Before that, M2.5: `oddSizes: 'box'` and resampled sources, entries 3 and 23. Before that, Windows: RTX 3060 Laptop and Intel UHD, native D3D12/Vulkan baselines; entries 1, 5, 17, 18, 22; results/windows/README.md)
+Last updated: 2026-11-15 (review of every entry after Windows round 2 and M3: subgroups, fp16, `STORAGE_BINDING`, throughput, `'box'` timings, the `round()` quantize; entries 2, 3, 7, 8, 10–13, 16–19 updated, 25 added. Before that, 2026-11-13: rgb10a2unorm and integer formats, sRGB destinations, `'box'`, resampled sources, the first Windows runs.)
 
 ## Summary
 
-| # | Divergence | Source | Verdict | Effort to converge | Quality | Performance |
-|---|---|---|---|---|---|---|
-| 1 | No single dispatch / atomic handoff | SPD, webgpu-spd | Keep | S (probe exists) | Converging risks missing mips | Measured: 2 dispatches beat the atomic probe, 1.1–2.2× at render sizes up to 1440p; tie at 4096² |
-| 2 | Batch ends at every odd size | SPD, nvpro | Tail kernel built, default since 2026-11-13; halo batches candidate | — / M–L | None | Measured, idle: tail 0.82–0.90× (RTX 3060), 0.81–1.02× (M5 Pro), 0.97× (Intel UHD); `'spd'` structure 0.47–0.73× |
-| 3 | Odd sizes match render passes, not area-weighted or dropped | SPD, nvpro | Keep default; `'spd'` and `'box'` opt-ins | Done for both (M2T.4, M2.5) | `'spd'`: drifting footprints, non-conservative Hi-Z | `'spd'` 1.4–2.1× faster at render sizes (rgba8); `'box'` same dispatches as `'exact'`, not timed |
-| 4 | Conservative min/max footprint at odd edges | SPD | Keep | S (but wrong) | SPD's Hi-Z can false-cull | One extra load per odd edge texel |
-| 5 | Clamp at edges, no zero reads | SPD | Keep | S | Ours: no dark or zero borders | ~None |
-| 6 | Clamp only, no wrap edges | gpuweb#5253 | Candidate | S–M | Seams on tiling textures at odd sizes | ~None |
-| 7 | Every level rounded as stored | SPD | Keep; unrounded opt-in is a candidate | S | Ours equals level-by-level generation | Unknown, likely noise |
-| 8 | Binary `reduce(a, b)` (fold or sum), not 4-way `SpdReduce4` | SPD | Mostly converged (M2T.1) | — | Sums, counts and weighted means now supported | None |
-| 9 | No alpha-coverage preservation | gpuweb#5253 | Candidate | M | Cutout foliage thins out with distance | One extra pass if added |
-| 10 | No subgroup / wave ops | SPD, nvpro, fiddle | Planned (M3, gated) | L | Butterfly order changes float sums | Unknown; plausible gain at ≤512² only |
-| 11 | No packed fp16 | SPD | Planned (M3) | M | f16 math, slightly less precise | Unknown; nvpro saw no gain |
-| 12 | One `vec4f` workgroup array, not per channel | SPD | Planned (M3) | S | None | Unknown, vendor-dependent |
-| 13 | float32 loads instead of sampling | nvpro | Planned (M3) | S | None | nvpro: sampler 26–32 % faster (NVIDIA) |
-| 14 | No `texture_external` source | fiddle | Candidate | M | None | Saves one full-frame copy per frame |
-| 15 | Sub-rectangles rewrite exact per-level regions, not 64-texel tiles | SPD | Done (M2.4), tighter by design | — | None | Fewer texels per partial update; bit-identical to a full recompute |
-| 16 | sRGB through the buffer output path, not a UNORM alias | SPD | Done (M2.3.5), by necessity | — | Linear-light averages, correctly rounded encode; loads snap to the exact decode (SPD trusts the hardware's) | Extra write and copy of levels 1+; scratch texture measured a tie; render passes faster from 1080p up on M5 Pro |
-| 17 | Compute only; no per-device render fallback | `greggman`, `toji` | Risk (M3), reduced | M | None | Windows: with 32×32 exact tiles (2026-11-13) `'exact'` ÷ render is 1.19 / 1.04 in rgba8 (NVIDIA / Intel), the tail kernel 0.98 / 1.02; `'spd'` beats render everywhere |
-| 18 | Needs `STORAGE_BINDING` on the texture | gpuweb#5253 (`Kangz`) | Risk, reduced | — | None | No measurable cost on NVIDIA or Intel (D3D12); Apple, AMD unmeasured |
-| 19 | Timestamp benchmark only | `greggman`, nvpro | Planned (M3) | S–M | — | Credibility of every claim |
-| 20 | API conventions: mip count, levels written, no counter buffer | SPD | Keep | S (docs) | — | — |
-| 21 | No size or level cap | SPD | Keep | — | — | — |
-| 22 | webgpu-spd 3.0.0, measured side by side ([results](results/compare/webgpu-spd.md)) | webgpu-spd | Keep | — | Its default handoff gave stale levels 7+ in up to 77 % of frames; Hi-Z up to 52 % non-conservative | Measured: our `'spd'` 1.2–2.1× faster (M5), 1.6× / 3.5× faster than its default (RTX / Intel, rgba8); no stale frames on Windows |
-| 23 | Power-of-two Hi-Z from a render-size source: area folds, not one 2×2 tap | niagara; SPD (FFX SSSR), Capsaicin | Keep | — | Ours conservative at any ratio; a 2×2 tap misses a texel at 1920 → 1024 | Up to ⌈S/n⌉ + 1 loads per axis; not timed |
-| 24 | Integer averages: exact mean, rounded to nearest (ties to even), no overflow; not a truncating `/ 4` | webgpu-spd | Keep | S | Truncation loses 3/8 of a unit per level on average; its 32-bit sums wrap | A few integer ops per texel; odd sizes split values into 16-bit halves; not timed |
+| # | Divergence | Source | Verdict | Quality | Performance |
+|---|---|---|---|---|---|
+| 1 | No single dispatch / atomic handoff | SPD, webgpu-spd | Keep | Converging risks stale levels (seen on Apple) | 2 dispatches beat the atomic probe (M5) and tie natively (D3D12) |
+| 2 | Batch ends at every odd size | SPD, nvpro | Done in part: tail kernel default; halo batches opt-in. **Open:** halo default (needs the M5) | None | Tail 0.82–0.90× (RTX), 0.97× (Intel), 0.81–1.02× (M5); halo 0.85–1.00× of that (RTX), neutral (Intel) |
+| 3 | Odd sizes match render passes | SPD, nvpro | Keep default; `'spd'` and `'box'` opt-ins (Done) | `'spd'` drifts and isn't a conservative Hi-Z | `'spd'` 1.3–2× faster at render sizes; `'box'` 1.45–2.15× of `'exact'` (Windows), 1.23–1.28× (M5) |
+| 4 | Conservative min/max at odd edges | SPD | Keep | SPD's Hi-Z can false-cull | One extra load per odd edge texel |
+| 5 | Clamped edges, no zero reads | SPD | Keep | AMD's own SPD reads zeros at the 1×1 | ~None |
+| 6 | No wrap edge mode | gpuweb#5253 | Candidate | Faint seam on tiling textures at odd sizes | ~None |
+| 7 | Every level rounded as stored (`'exact'`, `'box'`) | SPD | Keep; `'spd'` keeps SPD's unrounded in-tile values | Ours equals level-by-level generation | Tie rounding now one `round()` |
+| 8 | Binary reductions, not `SpdReduce4` | SPD | Done (sums, weights, argmin/argmax with payloads) | — | None |
+| 9 | No alpha-coverage preservation | gpuweb#5253 | Candidate (with the deferred transform hooks) | Cutout foliage thins with distance | One extra pass if added |
+| 10 | No subgroup / wave ops | SPD, nvpro | Measured, not built | — | Bound 8 % (RTX rgba8), 1.7–5.5 % (M5); the prototype lost 8–84 % |
+| 11 | No packed fp16 | SPD | Measured, not built | f16 loses precision (Intel rgba16f up to 512 steps) | ~2–5 %, not worth the precision |
+| 12 | One `vec4f` workgroup array | SPD | Keep (bounded) | None | All workgroup-memory traffic bounded at 8 % (RTX rgba8) |
+| 13 | float32 averages load, never sample | nvpro | **Open** (S) | None | Unmeasured; nvpro saw the sampler 26–32 % faster on NVIDIA |
+| 14 | No `texture_external` source | fiddle | Candidate | None | Saves one frame copy for video |
+| 15 | Sub-rectangles: exact per-level regions | SPD | Done, tighter | None | A rect costs the dispatch floor (7–18 µs, RTX) |
+| 16 | sRGB through the buffer output path | SPD | Done, by necessity. **Open:** speed on NVIDIA | Linear-light, correctly rounded | Render passes 2.6–3.3× faster on the RTX; 0.55–1.25× ours on the M5 |
+| 17 | Compute only, no render fallback | `greggman`, `toji` | Keep (resolved by measurement), except sRGB (#16) | None | See entry: at or below render passes on NVIDIA and Intel, 1.3–27× faster on the M5 |
+| 18 | Needs `STORAGE_BINDING` | gpuweb#5253 (`Kangz`) | Keep (measured: free) | None | No cost on M5, RTX or Intel |
+| 19 | Benchmark method | `greggman`, nvpro | Done (timestamps + throughput agree) | — | — |
+| 20 | Mip count, levels written, no counter buffer | SPD | Keep (documented in docs/spd-users.md) | — | — |
+| 21 | No size or level cap | SPD | Keep | — | — |
+| 22 | webgpu-spd 3.0.0 side by side | webgpu-spd | Keep | Its handoff gave stale levels on Apple; non-conservative Hi-Z | Our `'spd'` 1.2–3.5× faster than its default |
+| 23 | Power-of-two Hi-Z from a render-size source | niagara, SSSR, Capsaicin | Keep | Ours conservative at any ratio | Not timed |
+| 24 | Integer averages exact, ties to even | webgpu-spd | Keep | Truncation drifts ~4 units by 1×1 | Not timed |
+| 25 | float16 rounded to nearest, not truncated | D3D12/Metal `textureStore`, naive ports | Keep (`f16Rounding: 'device'` opt-out) | D3D12 and Apple stores truncate | 5 % (RTX), 8.5 % (Intel), ~3 % (M5) of an rgba16f chain |
 
 ## Dispatch structure
 
@@ -73,13 +77,14 @@ Last updated: 2026-11-13 (M2.3.3/M2.3.7: rgb10a2unorm and integer formats, entri
 - **Why:** it is the simplest structure that keeps `'exact'` results identical to render passes.
 - **Effort to converge:**
   - **Tail kernel: built (M2T.4), the default since 2026-11-13** (`tail: false` turns it off). Once a first output fits one 32×32 workgroup, that workgroup finishes the chain with exact weights. Render sizes drop to 3–6 dispatches (1920×1080: 4; 1477×831: 6, since 46×25 doesn't fit).
-  - **Halo batches, M–L (candidate):** our odd taps fall in `2x … 2x+2`, the same support as nvpro's, so their halo structure would work without changing results. This is what's left: the breaks at the large levels.
+  - **Halo batches, built (opt-in `halo`, 2026-11-14):** our odd taps fall in `2x … 2x+2`, the same support as nvpro's, so their halo structure carries odd steps without changing results (bit-identical with shader weights; within one step with the sampler, as the tail). The planner takes a halo only where it saves a dispatch, on first outputs up to 128²: RTX 3060 0.85–1.00× of the default chain (8–15 % at 960×540, 1129×635, 1477×831, 1920×1080), Intel UHD neutral; on large levels Intel lost 24–52 % (16-texel tiles), hence the cap. Not the default: the rule is ≥ 5 % on both GPUs; the M5 decides ([results/windows/round2/halo.md](results/windows/round2/halo.md)).
 - **Quality:** none. The tail matches `'exact'` within one 8-bit step (its shader bilinear weights replace the sampler's 8-bit ones). It passed the full GPU matrix against the `'exact'` oracle.
 - **Performance (measured, M5 Pro, loaded; SPEC §2.1):**
   - The tail is 0.83–1.07× of `'exact'` on a loaded M5 Pro (2026-11-11). Idle re-runs (2026-11-13): RTX 3060 0.82 / 0.90 (rgba8 / rgba16f), Intel UHD 0.97 / 0.97, M5 Pro 0.81–1.02 with 16×16 exact tiles (`results/render/m5-pro-render-tiles-*.json`). Owner rule: default if faster on most devices, so it became the default.
   - The gap is real, though. The `'spd'` structure, 2 dispatches with no batch ends, is 0.47–0.73× for rgba8 and 0.62–0.94× for rgba16f at render sizes up to 1440p.
   - It isn't pass overhead: one compute pass for all batches (`encodePass`) measured 0.94–1.03×.
-  - Part of it is the exact kernel's arithmetic: `'spd'` is 0.81× at 1024² rgba8 with the same 2 dispatches, and 0.63× for max.
+  - Part of it was the exact kernel's arithmetic: `'spd'` was 0.81× at 1024² rgba8 with the same 2 dispatches, and 0.63× for max. The tie rounding is now one WGSL `round()` (2026-11-15, same bits): rgba8 chains 0.91× / 0.96× (squares / render sizes) on the RTX, 0.76× / 0.73× on Intel ([results/windows/round2/trim.md](results/windows/round2/trim.md)).
+- **Open:** halo batches as the default. The rule is ≥ 5 % on both measured vendors; the RTX qualifies, Intel is neutral, the M5 is unmeasured (owner, PROGRESS *Waiting on owner*).
   - In absolute terms, `'spd'` saves 13–29 µs per render-size chain up to 1080p on the loaded machine.
 
 ## Odd sizes and edges
@@ -100,7 +105,10 @@ Last updated: 2026-11-13 (M2.3.3/M2.3.7: rgb10a2unorm and integer formats, entri
   - **Drift:** when level 0 or 1 is odd (1129×635, 1477×831, 1707×960), `'spd'`'s footprints drift by up to a texel towards the far edge, and every level is off.
   - **Against the area-weighted ideal** (scene, levels ≥ 4), `'exact'` is 1.3–7× closer than `'spd'`. On uniform noise `'spd'` is closer, because a box averages away more noise than a 2-tap bilinear.
   - **Hi-Z:** `'spd'` max leaves 0.01–15 % of texels below a base texel in their footprint (scene), up to 52 % on noise. `'exact'` and the tail have none.
-- **Performance (measured, M5 Pro, loaded):** `'spd'` is 1.4–2.1× faster than `'exact'` at render sizes up to 1440p in rgba8, 1.2–1.6× in rgba16f up to 1080p, within 3–9 % at 4K and at powers of two from 2048². `'box'` has `'exact'`'s dispatches; its odd-level batches load up to 9 texels per output instead of one sampler fetch. Not timed yet (`--compare=spd` has `box` and `tailBox`).
+- **Performance (measured):**
+  - M5 Pro (loaded): `'spd'` is 1.4–2.1× faster than `'exact'` at render sizes up to 1440p in rgba8, 1.2–1.6× in rgba16f up to 1080p, within 3–9 % at 4K and at powers of two from 2048².
+  - Windows (2026-11-15, `--compare=render`, tail kernel on): `'spd'` takes 0.56–0.81× of render passes on the RTX, 0.55–1.00× on Intel.
+  - `'box'` has `'exact'`'s dispatches; its odd-level batches load up to 9 texels per output instead of one sampler fetch: 1.45–2.15× of `'exact'` on Windows, 1.23–1.28× on the M5 Pro. The tail stays on under `'box'`: turning it off is 1.06–2.25× slower on the RTX at render sizes ([results/windows/round2/defaults.md](results/windows/round2/defaults.md)).
 - **Verdict:** keep `'exact'` as the default; `'box'` is the opt-in for quality (GI, irradiance, roughness, UI). `'spd'` stays a public opt-in for `'average'` only; folds under it are rejected, with an error pointing to `'exact'` or a `Reducer` with `'zero-weight'` edges (coordinator, 2026-11-11; the owner can overrule). It works on the buffer output path and in compatibility mode (SPEC §2.1).
 
 ### 4. Conservative min/max footprint at odd edges
@@ -130,7 +138,7 @@ Last updated: 2026-11-13 (M2.3.3/M2.3.7: rgb10a2unorm and integer formats, entri
 
 ### 7. Every level is rounded as stored
 - **They:** SPD keeps unrounded values in workgroup memory between levels and rounds once on store.
-- **We:** quantize each level exactly as stored. For 8-bit and 16-bit normalized formats, the math runs in exact integer units with ties to even.
+- **We:** under `'exact'` and `'box'`, quantize each level exactly as stored. For 8-bit and 16-bit normalized formats, the math runs in exact integer units with ties to even (one WGSL `round()` since 2026-11-15). Under `'spd'` we keep SPD's behaviour: in-tile values stay unrounded in workgroup memory and each level is rounded only when stored (`spdReference` models it; GPU-checked by `packed/f16-ties`).
 - **Why:** a chain equals level-by-level generation, so results match render passes and are deterministic across batch sizes and devices.
 - **Effort to converge:** S, as an opt-in that skips intermediate quantization. It would need an oracle mode.
 - **Quality:** SPD's output is closer to a true box average of the base level on deep 8-bit chains. Ours matches what every render-pass generator produces, and doesn't depend on the batch layout.
@@ -152,8 +160,9 @@ Last updated: 2026-11-13 (M2.3.3/M2.3.7: rgb10a2unorm and integer formats, entri
 - **They:** SPD's `SpdReduce4(a, b, c, d)` is arbitrary, so it can be a weighted average, a sum or a count.
 - **We (since M2T.1):** `Reducer` takes a reduction per channel: sum, average, min, max, a weight channel for weighted means, or a custom binary `{ wgsl, kind: 'fold' | 'sum' }`. `Downsampler` keeps idempotent folds only, because its `'exact'` odd sizes have no defined meaning for sums.
 - **Why binary:** a pairwise reduction composes inside the tile, and normalisation happens once when a level is emitted. A 4-way custom reduction adds nothing that a binary sum plus a weight channel can't express.
-- **Still missing:** argmin/argmax with a payload (ssgiDev's normal taken from the min-depth texel), and a non-commutative "first valid" scan (GI-1 probe masks).
-- **Verdict:** mostly converged. The payload fold is a candidate.
+- **Payload folds (built):** `'argmin'` / `'argmax'` keys with `'payload'` channels carried from the winning texel (ssgiDev's normal taken from the min-depth texel), ties to the smaller payload (SPEC §4; `validate-payload.js`).
+- **Still missing:** a non-commutative "first valid" scan (GI-1 probe masks). No user has asked.
+- **Verdict:** done.
 
 ### 9. No alpha-coverage preservation
 - **They:** gpuweb#5253 lists it as a requirement for a core API.
@@ -175,29 +184,30 @@ Last updated: 2026-11-13 (M2.3.3/M2.3.7: rgb10a2unorm and integer formats, entri
   - Firefox lacks `subgroups`; Chrome and Safari 27.3 have it.
 - **Effort:** L. The portable scheme in SPEC §13 builds a linear id from `subgroup_id` and uses `subgroupShuffleXor`. It ships with the workgroup-memory fallback.
 - **Quality:** butterfly order pairs sums as `(a+b)+(c+d)`. That doesn't matter for integer units, but the float oracle must pair the same way.
-- **Performance:** unknown. Barriers would fall from 10 to 1–2 and workgroup memory from 16 KiB to about 1 KiB. A gain is plausible at ≤512², where the kernel is latency-bound, and unlikely at 4096², where it is bandwidth-bound.
-- **Verdict:** planned for M3, behind an upper-bound test; build it only if that shows ≥5 %.
+- **Performance (measured, M3, `--compare=subgroups`):** the upper bound (no barriers or workgroup memory at all, wrong values) is 1.7 % (rgba8) / 5.5 % (rgba16f) on the M5 Pro and 8 % on the RTX in rgba8. The only real subgroup structure measured (`shuffle`) lost 8–20 % on the RTX and 47–84 % on Intel, and its quad mapping gave different results on both; one barrier per level without subgroups (`slot`) was 0.99× ([results/windows/round2/m3.md](results/windows/round2/m3.md), `results/m3/`).
+- **Verdict:** measured, not built. A kernel would have to beat `slot` by 5 % where the bound itself is 8 %. Revisit if WGSL defines a lane mapping in compute.
 
 ### 11. No packed fp16 math
 - **They:** SPD has a packed half-precision path.
 - **We:** compute in f32.
 - **Effort:** M. It needs a `shader-f16` kernel variant and oracle pairing.
-- **Performance:** unknown. nvpro saw no gain from f16 shared memory on an RTX 3090.
-- **Verdict:** planned for M3; keep only if measurably faster.
+- **Performance (measured, M3, `--compare=f16`):** about 2 % on the M5 Pro, under 5 % on the RTX and Intel in the overflow-safe form, except Intel rgba16f (9 %, with values up to 512 f16 steps off). nvpro saw no gain on an RTX 3090 either.
+- **Verdict:** measured, not built: too little gain for the lost precision.
 
 ### 12. Workgroup memory layout
 - **They:** SPD stores intermediates in separate per-channel arrays.
 - **We:** use one `array<vec4f>`.
 - **Effort:** S.
-- **Performance:** unknown. Bank behaviour differs by vendor.
-- **Verdict:** planned for M3; measure it.
+- **Performance:** not measured directly. The subgroup bound (entry 10) caps everything workgroup memory costs: removing it entirely would save at most 8 % (RTX rgba8), 1.7–5.5 % on the M5 Pro, so a layout change can win only a fraction of that.
+- **Verdict:** keep.
 
 ### 13. float32 formats load instead of sampling
 - **They:** nvpro measured the bilinear sampler 26–32 % faster than loads on NVIDIA.
 - **We:** load float32 formats, because sampling them needs `float32-filterable`.
 - **Effort:** S. Use the sample path when the device has the feature.
-- **Performance:** for rgba8, our own load path measured 12–50 % slower than sampling (Apple, under load). The same is likely for float32 where filterable.
-- **Verdict:** planned for M3.
+- **Performance:** for rgba8, our load path measures 12–50 % slower than sampling (Apple, under load), 2–13 % (RTX) and 22–31 % (Intel) at render sizes. The same is likely for float32 where filterable; unmeasured.
+- **Who it affects:** `'average'` chains of r32float, rg32float and rgba32float (HDR, GI). Folds (Hi-Z) load anyway.
+- **Verdict:** open, effort S: sample float32 when the device has `float32-filterable` (the RTX and the M5 do), behind a timing run.
 
 ## Sources and inputs
 
@@ -232,8 +242,10 @@ Last updated: 2026-11-13 (M2.3.3/M2.3.7: rgb10a2unorm and integer formats, entri
 - **The alternative measured:** the same kernel writing an rgba8unorm scratch texture (the linear alias, as storage) and `copyTextureToTexture` per level, which WebGPU allows between formats that differ only in sRGB-ness. Same bits (GPU-tested). Not faster: scratch ÷ buffer medians 0.95, 1.00 and 1.00 over 8 sizes in three runs, the quietest within 0.96–1.08 (M5 Pro, never idle; SPEC §6.1 sRGB). The buffer path was already built, composes with compatibility mode, `rect`, `layers` and separate sources, writes 6 levels per dispatch at the default storage limit, and needs no `bgra8unorm-storage` for bgra8unorm-srgb, so it won on simplicity.
 - **Effort to converge:** none possible (WebGPU). A scratch-texture variant is a kernel option (`output: 'storage'` writes the alias format) for tools that dispatch it themselves.
 - **Quality:** linear-light averages, as SPD; ours are rounded per level and identical on every GPU with `averageAccess: 'load'`.
-- **Performance:** one extra write and copy of the written levels, as for every buffer-path format. `encodePass` can't record the copies. Against render passes (three.js's path for sRGB textures today), M5 Pro at load average 14: ours is 1.19–1.98× faster up to 1280×720 and at 1024², a tie at 1707×960, and slower from 1080p up (render passes take 0.79× our time at 1920×1080, 0.55–0.65× at 2560×1440 and 4096²), where the copies dominate. That bears on #17 for large sRGB textures; re-measure idle and on other vendors.
-- **Verdict:** done, by necessity.
+- **Performance:** one extra write and copy of the written levels, as for every buffer-path format. `encodePass` can't record the copies.
+  - Against render passes (three.js's path for sRGB textures today), M5 Pro at load average 14: ours is 1.19–1.98× faster up to 1280×720 and at 1024², a tie at 1707×960, and slower from 1080p up (render passes take 0.55–0.79× our time).
+  - RTX 3060 (2026-11-15, [rtx3060-srgb-paths.json](results/windows/round2/rtx3060-srgb-paths.json)): render passes take 0.32–0.51× our time at every size. The scratch-texture path doesn't help there either (1.05–1.13× of the buffer path). The tables were a large part (moved to a storage buffer in round 2: 3.8–4× faster, [srgb.md](results/windows/round2/srgb.md)); with no lookups at all (wrong bits, timing only) the chain was still about 2× render passes at 1080p, so the rest is the shader's encode and the extra copy.
+- **Verdict:** done, by necessity. **Open:** speed on NVIDIA. Until then the docs say so, and three.js keeps render passes for sRGB textures (the fork's `mipmapGeneration: 'compute'` already does).
 
 ## Compute vs render, and measurement
 
@@ -243,25 +255,27 @@ Last updated: 2026-11-13 (M2.3.3/M2.3.7: rgb10a2unorm and integer formats, entri
 - **Effort:** M. Collect cross-vendor data (M3), then either choose the path per device in the adapters or add a render-pass backend here (SPEC §3 leaves room for one).
 - **Performance (measured):**
   - **Apple M5 Pro:** 1.3–27× faster than render passes.
-  - **Windows, WebGPU, same run** (Chrome 148, D3D12; medians at render sizes; results/windows/timings.md): with 8 × 8 exact workgroups, our default `'exact'` ÷ WebGPU render passes was **1.25 (rgba8) / 1.06 (rgba16f) on an RTX 3060 Laptop** and **1.71 / 0.94 on Intel UHD**. Most of Intel's gap was our kernel: with 32 × 32 exact tiles (the default since 2026-11-13) it is **1.19 / 1.06 on the RTX and 1.04 / 0.66 on Intel**. The tail kernel is now 0.98 / 0.90 and 1.02 / 0.63; `'spd'` 0.75 / 0.75 and 0.78 / 0.68.
-  - **Render passes for the large levels, then `'exact'`** (same results) cost as much as `'exact'` or more: render passes aren't cheaper per texel (4096² level 1 ties), only per dependent step (~10 µs less than a compute dispatch on the RTX at render sizes).
+  - **Windows, now** (2026-11-15, Chrome 148, D3D12, `--compare=render`, after the `round()` quantize; [rtx3060-render-round.json](results/windows/round2/rtx3060-render-round.json), [intel-uhd-render-round.json](results/windows/round2/intel-uhd-render-round.json)): the default chain (tail kernel on) takes **0.77–0.95× of render passes in rgba8 and 0.77–1.01× in rgba16f on the RTX 3060 Laptop**, and **0.48–1.05× / 0.62–0.96× on Intel UHD**, over 960×540 … 2560×1440, 1024² and 4096². `'spd'` 0.56–0.81× (RTX), 0.55–1.00× (Intel).
+  - **History:** with 8 × 8 exact workgroups (round 1) `'exact'` ÷ render was 1.25 / 1.06 (RTX) and 1.71 / 0.94 (Intel); 32 × 32 tiles, the tail default and the `round()` quantize closed the gap.
+  - **Render passes for the large levels, then `'exact'`** (same results) cost as much as `'exact'` or more: render passes aren't cheaper per texel. A dependent compute dispatch costs about 3–4 µs on the RTX and Intel (2026-11-15, `--compare=dispatch`; [dispatch.md](results/windows/round2/dispatch.md)); round 1's estimate of ~10 µs predated the 32 × 32 tiles.
   - **Native platform paths** (D3D12): on the RTX, AMD SPD beats render passes by 27–31 % and `GenerateMips` by 15–20 %; on Intel, render passes and `GenerateMips` beat every SPD variant by ~27 % in rgba8 (level in rgba16f). nvpro's Vulkan compute is 3–5× slower than `vkCmdBlitImage` on Intel. Nothing like `greggman`'s 10× on NVIDIA.
-- **Verdict:** risk, reduced. After the tile fix only RTX rgba8 still favours render passes (by 19 %), and the tail kernel closes that (0.98). The lever is fewer dependent dispatches (the tail kernel, or exact batches across odd sizes), not a render-pass path; a render fallback stays for textures we can't write.
+- **Verdict:** keep, resolved by measurement: no render-pass path. The exception is sRGB on NVIDIA (entry 16), where three.js should keep its render passes. A render fallback stays for textures we can't write. AMD and mobile are unmeasured.
 
 ### 18. Textures need `STORAGE_BINDING`
 - **They:** render-pass generators need only `RENDER_ATTACHMENT`. `Kangz` flagged that adding storage usage to sampled textures has an unmeasured cost.
 - **We:** need `STORAGE_BINDING` on every destination; the three.js integration would add it automatically.
-- **Effort:** none to measure the cost (M3). Avoiding it would require the buffer output path for every format.
+- **Effort:** none. Avoiding it would require the buffer output path for every format.
 - **Performance:** some drivers may disable compression on storage textures. Measured natively on Windows (D3D12, results/windows/native-tables.md): the same render-pass chain on a texture that also allows UAV access vs a render-target-only texture is 0.99–1.01× on the RTX 3060 and 0.96–1.08× on Intel UHD (no consistent direction). The flag itself costs nothing measurable there; still unmeasured on Apple and AMD.
-- **Verdict:** risk, reduced: no cost on NVIDIA or Intel under D3D12.
+- **Measured in WebGPU (M3, `--compare=storage-usage`):** sampling a texture with `STORAGE_BINDING` against one without costs nothing on the M5 Pro (0.999–1.006×), the RTX or Intel.
+- **Verdict:** keep: no cost on Apple, NVIDIA or Intel. AMD unmeasured.
 
 ### 19. Benchmark method
 - **They:**
   - `greggman` measures work per frame, because he found timestamp queries unreliable.
   - nvpro interleaves alternatives, takes the min and median over 256 batches, and compares against a speed-of-light kernel.
-- **We:** use timestamps bracketing 16 repeats, with medians of 11 rotated rounds.
-- **Effort:** S–M. Add a throughput mode and a speed-of-light copy kernel in M3.
-- **Verdict:** planned. Every cross-vendor claim depends on it.
+- **We:** use timestamps bracketing 16 repeats, with medians of 11 rotated rounds, plus a throughput mode (`--compare=throughput`, chains per second without timestamps) as a cross-check.
+- **Measured (M3):** timestamps order strategies like throughput: 80 of 83 pairs on the M5 Pro (Kendall τ 0.81), τ 0.83 on Intel, 0.46 on the RTX when hot ([m3.md](results/windows/round2/m3.md)). No speed-of-light kernel.
+- **Verdict:** done.
 
 ## API conventions
 
@@ -271,7 +285,7 @@ Last updated: 2026-11-13 (M2.3.3/M2.3.7: rgb10a2unorm and integer formats, entri
   - Count `mipLevelCount` including the source level in place, so SPD's `mips = N` is `N + 1` here.
   - With a separate source, write destination `baseMipLevel` at the same size (a copy) or half.
   - Need no counter buffer.
-- **Effort:** S, docs only (M4 notes for SPD users).
+- **Effort:** none: documented in [docs/spd-users.md](docs/spd-users.md).
 - **Verdict:** keep.
 
 ### 21. No size or level cap
@@ -310,3 +324,12 @@ Last updated: 2026-11-13 (M2.3.3/M2.3.7: rgb10a2unorm and integer formats, entri
   - **Stale levels:** none: 0 of 41,472 frames on each GPU (27 size/format rows × 3 variants × 256 frames, one encoder and one submit per frame). The race is real on Apple, not observed on NVIDIA or Intel.
   - **Speed:** its default ÷ our `'spd'` is 1.64 (rgba8) / 1.07 (rgba16f) on the RTX and 3.52 / 2.68 on Intel, where its subgroup path is the cost (1.78 / 1.35 without). Against native AMD SPD: its default 2.0× / 1.36× on the RTX (locked clocks), ours 1.26× / 1.27×.
 - **Verdict:** keep. For webgpu-spd users: set `maxMipsPerPass: 6`, and don't use it for Hi-Z at odd sizes. This is input for the planned webgpu-spd#7 comment (SPEC §13, Consequences item 5).
+
+## Precision on Windows and Apple
+
+### 25. float16 levels are rounded to nearest, not truncated
+- **They:** a plain `textureStore` of an f32 into rgba16float truncates toward zero on D3D12 (NVIDIA and Intel) and on Apple (probe `results/probes/f16-store-rounding.mjs`), so a naive WGSL port, webgpu-spd included, truncates there. Vulkan and some drivers round.
+- **We:** round every float16 level to nearest even in the shader before the store (`f16Rounding: 'nearest'`, the default), with integer math on the float's bits, so it survives fast math. `f16Rounding: 'device'` keeps the device's conversion.
+- **Why:** identical results on every GPU, matching the CPU oracle; truncation biases every level down by half a step on average, compounding along a chain.
+- **Performance (measured):** 5 % of an rgba16float chain on the RTX 3060, 8.5 % on Intel UHD, about 3 % on the M5 Pro ([results/windows/round2/defaults.md](results/windows/round2/defaults.md)).
+- **Verdict:** keep (owner, 2026-11-13: `'nearest'` everywhere; the Windows costs are small, so no per-device default).

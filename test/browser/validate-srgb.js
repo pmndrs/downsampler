@@ -14,7 +14,7 @@
 //   chains, bgra8unorm-srgb against rgba8unorm-srgb, the kernel's storage output (an
 //   rgba8unorm scratch copied into the level) against the buffer path, and the API.
 import { boxReference, quantizeTexel, reducePyramid, reduceReference, srgbBounds, srgbCode, srgbDecodeTable, srgbThresholds } from '/dist/index.js';
-import { Downsampler, Reducer, srgbWgsl } from '/dist/webgpu/index.js';
+import { Downsampler, Reducer, srgbTable, srgbTableBinding, srgbWgsl } from '/dist/webgpu/index.js';
 import { createTexture, poison, readMips, upload } from './gpu.js';
 import { compatibility, expectThrow } from './validate.js';
 import { levelTextures, runCodec, runReducer } from './validate-packed.js';
@@ -127,7 +127,7 @@ async function validateCodec( device ) {
 	const input = Uint32Array.from( inputs );
 	const output = await runCodec( device, srgbWgsl(), `	let v = bitcast<f32>(input[i]);
 	output[2u * i] = ds_srgb_code(v);
-	output[2u * i + 1u] = bitcast<u32>(ds_srgb_quantize(vec3f(v)).x);`, input, input.length * 2, input.length );
+	output[2u * i + 1u] = bitcast<u32>(ds_srgb_quantize(vec3f(v)).x);`, input, input.length * 2, input.length, [ { binding: srgbTableBinding, resource: { buffer: srgbTable( device ) } } ] );
 	let mismatches = 0, first = null;
 	for ( let i = 0; i < input.length; i ++ ) {
 
@@ -171,7 +171,7 @@ async function validateDecode( device ) {
 	const encoder = device.createCommandEncoder();
 	const pass = encoder.beginComputePass();
 	pass.setPipeline( pipeline );
-	pass.setBindGroup( 0, device.createBindGroup( { layout: pipeline.getBindGroupLayout( 0 ), entries: [ { binding: 0, resource: texture.createView() }, { binding: 1, resource: { buffer: out } } ] } ) );
+	pass.setBindGroup( 0, device.createBindGroup( { layout: pipeline.getBindGroupLayout( 0 ), entries: [ { binding: 0, resource: texture.createView() }, { binding: 1, resource: { buffer: out } }, { binding: srgbTableBinding, resource: { buffer: srgbTable( device ) } } ] } ) );
 	pass.dispatchWorkgroups( 4 );
 	pass.end();
 	encoder.copyBufferToBuffer( out, 0, readback, 0, 4096 );

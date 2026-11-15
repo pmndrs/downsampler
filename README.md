@@ -1,10 +1,28 @@
 # downsampler
 
-GPU texture pyramids for WebGPU: mip chains, min/max (Hi-Z) pyramids from depth, custom tile reductions and reductions to a single value, as generated WGSL compute kernels. Engine-agnostic, zero runtime dependencies, with a three.js adapter on top.
+Fast mipmaps and depth pyramids for WebGPU, built with compute shaders.
 
-It implements the ideas of AMD FidelityFX SPD independently in WGSL (a 64×64 tile reduced through six levels in workgroup memory, every level written once) and targets SPD's feature set, with two deliberate differences explained below. Every kernel is checked against a CPU oracle on real GPUs.
+```js
+const downsampler = new Downsampler( device );
+downsampler.generate( texture ); // every mip level from level 0
+```
 
-> Status: 0.1 (pre-1.0: a minor version may still change the API; see [CHANGELOG.md](CHANGELOG.md)). [PROGRESS.md](PROGRESS.md) has the live status; [SPEC.md](SPEC.md) is the design record.
+The usual way to make mipmaps in WebGPU is one render pass per level, and another set per layer of a cube map or
+array. downsampler writes up to six levels in one compute dispatch and handles every layer in the same dispatch, so a
+full chain takes two dispatches at power-of-two sizes and three to six at typical screen sizes.
+
+It also does the jobs render passes can't:
+
+- **Hi-Z depth pyramids** (min, max or both) from a depth buffer, guaranteed conservative for occlusion culling.
+- **Partial updates:** repaint a corner of a texture and refresh only the mip texels that depend on it.
+- **Statistics:** per-block mean, variance or max (`Reducer`), and a whole image down to one value, like average
+  luminance for auto-exposure (`ScalarReduction`).
+
+By default the results match render-pass mipmaps, so you can swap it in without a visual change. Every kernel is
+tested against a CPU reference on real GPUs. Zero dependencies; a three.js adapter is included.
+
+> **Status:** 0.1, not yet on npm. Build it from this repository for now. The API can still change before 1.0
+> ([CHANGELOG](CHANGELOG.md)).
 
 ## Install
 
@@ -12,14 +30,8 @@ It implements the ideas of AMD FidelityFX SPD independently in WGSL (a 64×64 ti
 npm install downsampler
 ```
 
-`three` is an optional peer dependency (`>=0.170.0`), needed only for `downsampler/three`. No runtime dependencies. TypeScript declarations ship with the package and use the standard WebGPU types: add [`@webgpu/types`](https://www.npmjs.com/package/@webgpu/types) to your project (`"types": [ "@webgpu/types" ]`), as for any WebGPU code.
-
-| Entry point | What it holds |
-|---|---|
-| `downsampler/webgpu` | `Downsampler`, `Reducer`, `ScalarReduction` and the WGSL generators |
-| `downsampler/three` | `generateMipmaps( renderer, texture )` for `WebGPURenderer` |
-| `downsampler` | the backend-neutral core: planning, formats and the CPU reference implementations (oracles) |
-| `downsampler/mipmap` | one self-contained file (no imports) for vendoring in-place `'average'` mip chains, e.g. into three.js: the kernel generator, planner and `kernelDefaults` |
+The types use the standard WebGPU types, so add [`@webgpu/types`](https://www.npmjs.com/package/@webgpu/types) to
+your project. `three` is optional and only needed for `downsampler/three`.
 
 ## Quick start
 
@@ -27,117 +39,94 @@ npm install downsampler
 import { Downsampler, requiredLimits } from 'downsampler/webgpu';
 
 const adapter = await navigator.gpu.requestAdapter();
-// Six levels per dispatch need six storage textures (the default limit is four).
+// requiredLimits asks for six storage textures, so one dispatch can write six levels.
 const device = await adapter.requestDevice( { requiredLimits: requiredLimits( adapter ) } );
-const downsampler = new Downsampler( device );
 
-// texture: any supported format, TEXTURE_BINDING | STORAGE_BINDING usage, level 0 filled.
-downsampler.generate( texture );                                  // levels 1 … n, encoded and submitted
-downsampler.encode( encoder, texture, { reduction: 'max' } );     // or into your own encoder
+const texture = device.createTexture( {
+	format: 'rgba8unorm',
+	size: [ 1920, 1080 ],
+	mipLevelCount: 11,
+	usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_DST,
+} );
+// … fill level 0 …
 
-// Partial updates: only the texels that depend on a changed region (bit-identical to a full
-// recompute), and only some array layers.
-downsampler.encode( encoder, texture, { rect: { x: 128, y: 64, width: 32, height: 32 } } );
-downsampler.encode( encoder, cubeAs2dArray, { layers: [ 2, 1 ] } );
+const downsampler = new Downsampler( device ); // make one per device and reuse it
+downsampler.generate( texture );               // records and submits the work
 ```
 
-## Concepts
+Already have a command encoder? Use `downsampler.encode( encoder, texture )` instead, and it records into yours.
 
-**Mip chains (`Downsampler`).** A chain is split into batches of up to six levels per dispatch (`min( 6, maxStorageTexturesPerShaderStage )`), and dependent batches are separated by dispatch boundaries. Use `baseMipLevel` and `mipLevelCount` for part of a chain, and `prepare( texture )` to see the planned dispatches.
-
-**Odd sizes: `'exact'` by default, `'box'` and `'spd'` opt-in.** Under `'exact'`, a level with an odd, non-unit dimension is re-sampled with normalized-coordinate bilinear filtering, exactly as render-pass and WebGL mipmaps are, so an engine can switch to it without a visual change. `oddSizes: 'spd'` reproduces SPD instead: clamped loads, the last odd row or column dropped, two dispatches up to 4096², and `'average'` only. It is faster at render sizes, but its levels drift from their footprints at odd sizes ([SPEC §2.1](SPEC.md#21-odd-sizes-exact-default-spd-opt-in-measured-box-opt-in)). `oddSizes: 'box'` weights odd sizes by area, as nvpro_pyramid does: every texel contributes in proportion to its overlap, so a 31×31 texture's 1×1 is its true mean. It takes the same dispatches as `'exact'`; use it for GI, irradiance and roughness chains and UI.
-
-**No single-dispatch mode.** SPD's last-workgroup handoff isn't guaranteed by WGSL's memory model (relaxed atomics, workgroup-scoped barriers), was observed to return stale levels in a WGSL port, and measured slower than two dispatches anyway ([SPEC §2.2](SPEC.md#22-no-single-dispatch-mode)).
-
-**Reductions and Hi-Z.** `reduction: 'average' | 'min' | 'max' | 'minmax' | { wgsl }`. Folds combine every texel an output covers, including the extra row or column at odd sizes, so min/max pyramids are conservative: the property Hi-Z occlusion culling needs. `'minmax'` stores (min, max) pairs.
-
-**Separate source.** `source: texture` (or `{ texture, mipLevel }`) reads the first level from another texture, such as a depth buffer that can't be a storage texture. Destination level `baseMipLevel` is a converting copy (same size) or one reduction step (half size), or any size with `resample: 'area'`, such as a power-of-two Hi-Z whose later levels halve cleanly (up to 8× smaller per axis by default, `maxResampleRatio`). Area-resampled min/max fold every source texel a destination texel overlaps, so they stay conservative. `Reducer` and `ScalarReduction` take their `source` in the same shape, with the same checks.
+## What else it can do
 
 ```js
-downsampler.generate( hiZ /* rg32float */, { source: depth, reduction: 'minmax' } );
-downsampler.generate( hiZPow2 /* 2048×1024 r32float */, { source: { texture: depth1080p, resample: 'area' }, reduction: 'min' } ); // 2 dispatches
+// A conservative min/max depth pyramid for occlusion culling (depth can't be written, so it goes into its own texture).
+downsampler.encode( encoder, hiZ, { source: depthTexture, reduction: 'minmax' } );
+
+// Refresh only what a 32×32 brush stroke changed.
+downsampler.encode( encoder, texture, { rect: { x: 128, y: 64, width: 32, height: 32 } } );
+
+// A true area average at odd sizes, for lighting and roughness chains.
+downsampler.encode( encoder, irradiance, { oddSizes: 'box' } );
 ```
 
-**`Reducer`** is a tile reduction for tools: a WGSL `load` hook over your own `@group(1)` bindings, per-channel ops (`'sum'`, `'average'`, `'min'`, `'max'`, weighted means, argmin/argmax with a payload), up to six levels in one dispatch with only the levels you choose stored, through output textures or a `store` hook. It is how FSR-style luminance and shading-change pyramids, block statistics and G-buffer downsamples are built.
-
-**`ScalarReduction`** reduces a whole image to one `vec4f` per layer in two dispatches at any size, every texel counted once, with an optional `finish` hook that runs on the GPU (exposure, scene statistics).
-
-**`encode` vs `encodePass`.** `encode( encoder, … )` records its own compute passes. `encodePass( pass, … )` records into a compute pass you own, so it can share the pass and one pair of timestamp writes with your other dispatches. `prepare()` returns what `encodePass` would record (pipelines, bind groups, workgroup counts) on all three classes, so a tool can dispatch the kernels itself. `release()` drops cached bind groups and destroys the buffers the library created for them.
-
-**Compatibility mode** (devices without `'core-features-and-limits'`) is handled: each batch writes scratch levels and a copy dispatch moves them in, with bit-identical results (`compatibility: 'auto'`).
-
-**Output paths.** Levels are written as storage textures, or, for formats that can't be (`rgb9e5ufloat`, the sRGB formats; `rg11b10ufloat`, `rgb10a2unorm` and the other 4-byte tier1 formats without `texture-formats-tier1`), packed into a buffer and copied in. `outputPath( texture )` says which; `output: 'buffer'` forces it; `scratch` shares one buffer across textures.
-
-**sRGB colour.** `rgba8unorm-srgb` and `bgra8unorm-srgb` are reduced in linear light (the sRGB view decodes, the shader encodes each level with correct rounding, alpha stays linear), as render-pass mipmaps of an sRGB texture are, so regular three.js colour textures work.
-
-**Identical results on every GPU.** Two options: `f16Rounding` (default `'nearest'`) rounds float16 levels to nearest even in the shader, because D3D12 truncates; `averageAccess: 'load'` applies bilinear weights in the shader instead of the hardware sampler, whose 8-bit weights round differently per vendor (2–13 % slower on an RTX 3060, 22–31 % on Intel UHD).
-
-**`f16Rounding: 'device'`** uses the GPU's own float16 conversion instead. It rounded on an Apple M5 Pro, but it truncates on D3D12 (NVIDIA, Intel): there every level comes out up to one f16 step low, and the bias carries down the chain, which matters to anything that reads levels as numbers (exposure, Hi-Z in half precision, tests). Use it only where the in-shader rounding measurably costs (14–29 % of an rgba16float chain on Intel UHD, noise on an RTX 3060) and a low bias is acceptable. The default stays `'nearest'` ([guide](docs/guide.md#float16-rounding-f16rounding)).
-
-**Formats.** `rgba8unorm`, `rgba8snorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, `rgb9e5ufloat`; with `texture-formats-tier1` also `r8unorm`, `rg8unorm`, `r8snorm`, `rg8snorm`, `r16float`, `rg16float`, the 16-bit normalized formats and `rg11b10ufloat` and `rgb10a2unorm` storage; `bgra8unorm` with `bgra8unorm-storage`; `rgba8unorm-srgb` and `bgra8unorm-srgb` through the buffer path. Integer formats (`r32uint`, `rgba8sint`, … and `rgb10a2uint`) reduce exactly: averages round to nearest with ties to even at any width, folds (min, max, a bitwise custom `reduce` on `vec4u`/`vec4i`) for ID and occupancy pyramids. Sources: any float-sampleable 2D format, including depth; integer destinations read integer sources of the same signedness.
+Each of these has a runnable page in [examples/](examples/) that checks its own output.
 
 ## three.js
 
 ```js
-import { generateMipmaps, requiredLimits, unsupportedReason } from 'downsampler/three';
+import { generateMipmaps, requiredLimits } from 'downsampler/three';
 
-const renderer = new WebGPURenderer( { requiredLimits: requiredLimits( adapter ) } );
+const renderer = new THREE.WebGPURenderer( { requiredLimits: requiredLimits( await navigator.gpu.requestAdapter() ) } );
 await renderer.init();
-// A StorageTexture, or an sRGB colour texture (buffer path), with generateMipmaps = true and
-// mipmapsAutoUpdate = false, level 0 written.
-if ( ! generateMipmaps( renderer, texture ) ) console.warn( unsupportedReason( renderer, texture ) ); // then use three's own path
-generateMipmaps( renderer, texture, { encoder, downsampler: { averageAccess: 'load' } } );        // into your encoder, not submitted
+generateMipmaps( renderer, texture ); // false if the texture isn't supported; three's own mipmaps still work then
 ```
 
-Native support for every three.js texture is planned as an in-tree option ([SPEC §10](SPEC.md#10-threejs-integration)).
+This works today for `StorageTexture`s and sRGB colour textures. A built-in `mipmapGeneration: 'compute'` option for
+three.js itself is in progress.
 
-## Performance
+## How fast is it?
 
-GPU time per full chain against one render pass per level (the common approach, and what three.js does). All numbers are medians of timestamped runs; differences under ~5 % are noise.
+GPU time for a full chain, against one render pass per level:
 
-**Apple M5 Pro** (Metal, Chrome 155, 2026-11-10; [SPEC §8](SPEC.md#8-performance-methodology)):
-
-| Size | Format | Render passes (ms) | downsampler (ms) | Speedup |
-|---|---|---:|---:|---:|
-| 512² | rgba8unorm | 0.0882 | 0.0098 | 9.0× |
-| 1024² | rgba8unorm | 0.1159 | 0.0161 | 7.2× |
-| 4096² | rgba8unorm | 0.4501 | 0.3371 | 1.3× |
-| 1920×1080 | rgba8unorm | 0.1176 | 0.0374 | 3.1× |
-| 512²×6 layers | rgba8unorm | 0.6337 | 0.0236 | 26.8× |
-| 1024² | rgba16float | 0.1178 | 0.0263 | 4.5× |
-
-**Windows, D3D12** (Chrome 148, render sizes 960×540 … 2560×1440, same-run ratios to WebGPU render passes, lower is faster; [docs/WINDOWS-REPORT.md](docs/WINDOWS-REPORT.md)):
-
-| ÷ render passes | RTX 3060 Laptop rgba8 / rgba16f | Intel UHD rgba8 / rgba16f |
+| Apple M5 Pro | rgba8 | rgba16float |
 |---|---|---|
-| `'exact'` + tail kernel (the default) | 0.98 / 0.90 | 1.02 / 0.63 |
-| `oddSizes: 'spd'` | 0.75 / 0.75 | 0.78 / 0.68 |
+| 512², six layers (a cube map) | 27× faster | |
+| 1024² | 7× faster | 4.5× faster |
+| 1920×1080 | 3× faster | |
 
-- Large textures are memory-bandwidth bound for every method: expect parity with render passes at 4096².
-- Our `'spd'` mode is 1.26 / 1.27× AMD's own native D3D12 SPD on the RTX 3060 at render sizes (locked clocks), and 1.00× at 4096² ([WINDOWS-REPORT](docs/WINDOWS-REPORT.md#speed-against-native)).
-- Against webgpu-spd 3.0.0 with the same semantics, `'spd'` is 1.2–2.1× faster on the M5 Pro and 1.6× / 3.5× faster than its default on the RTX / Intel UHD in rgba8 ([DIVERGES #22](DIVERGES.md)).
-- The M5 Pro table predates the tail kernel and tile defaults; it will be re-measured on an idle machine.
+On an NVIDIA RTX 3060 Laptop, from 960×540 to 2560×1440, it takes 5–20 % less time than render passes in rgba8 and up
+to 20 % less in rgba16float; a 512² cube map is 3–4× faster. The exception is sRGB colour textures, which compute
+shaders can't write directly: on the RTX, render passes are 2–3× faster for those.
+
+The big wins are small textures and cube maps, where the cost of starting many render passes dominates. Very large
+textures (4096²) are limited by memory bandwidth, so every method takes about the same time there. If you can accept
+SPD's handling of odd sizes, `oddSizes: 'spd'` takes about 25 % less time on the RTX. Methods and full numbers:
+[SPEC.md §8](SPEC.md#8-performance-methodology) and [docs/WINDOWS-REPORT.md](docs/WINDOWS-REPORT.md).
 
 ## Browser support
 
-Any browser with WebGPU compute and storage textures. Tested so far: Chrome 148–155 on macOS (Apple M5 Pro, Metal) and Windows (RTX 3060 Laptop and Intel UHD, D3D12), compatibility-mode devices, and SwiftShader in CI. AMD, Android, Safari and Firefox haven't been measured yet; device reports from `npm run lab` are welcome.
+Any browser with WebGPU. Tested in Chrome on macOS (Apple M5 Pro) and Windows (NVIDIA RTX 3060, Intel UHD), and on
+WebGPU compatibility-mode devices. Not yet tested: mobile, AMD, Safari, Firefox. If you try it there,
+`npm run lab` opens a page that runs the test suite on your device.
 
-## Documentation and examples
+## Documentation
 
-- [docs/guide.md](docs/guide.md): usage guide with every option.
-- [docs/spd-users.md](docs/spd-users.md): coming from AMD SPD, webgpu-spd or FSR.
-- [examples/](examples/): mip chain, Hi-Z from depth, power-of-two Hi-Z (`resample`), odd-size policies against the area-weighted ideal, partial updates (`rect`, `layers`), `Reducer` block statistics, `ScalarReduction` exposure, three.js. [Recipes](docs/guide.md#recipes) has the lines that matter from each. `npm run examples`, then open http://localhost:8080/examples/.
-- [SPEC.md](SPEC.md): design decisions and measurements. [DIVERGES.md](DIVERGES.md): every difference from SPD, nvpro and the WebGPU community, and why.
+- [Getting started](docs/getting-started.md): a walkthrough of every feature, with the reasons to pick each option.
+- [Reference](docs/guide.md): every class, option and default.
+- [Examples](examples/): `npm run examples`, then open http://localhost:8080/examples/.
+- [How it compares](docs/differences.md): what changes coming from render passes, SPD, nvpro or a Hi-Z shortcut.
+- [Coming from AMD SPD or FSR](docs/spd-users.md).
+- Design notes: [SPEC.md](SPEC.md) (decisions and measurements), [DIVERGES.md](DIVERGES.md) (where and why we
+  differ from SPD and other libraries).
 
 ## Development
 
 ```sh
 npm install
-npm test                  # build, unit tests, GPU suite (headless Chrome, real GPU)
+npm test                                            # build, unit tests, GPU suite on your GPU
 npm run test:gpu -- --quick --adapter=swiftshader   # software WebGPU, no GPU needed
-npm run test:examples     # load every example on the GPU and check its readout
-npm run bench             # validation + benchmark
-npm run lab               # device lab at http://localhost:8080/test/browser/
+npm run test:examples                               # every example page, checked
+npm run bench                                       # benchmarks
 ```
 
 ## License

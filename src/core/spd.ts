@@ -31,12 +31,12 @@ function tileReduction( reduction: ReferenceReduction ): PyramidReferenceReducti
  * layer-major then row-major), each quantized to the storage format.
  * `filterTolerance` carries the float allowance of the kernel's f32 sums
  * (`pyramidTolerance` of the terms' magnitude), so `tolerance()` applies as for
- * other levels; folds select values and stay exact. With `weights: 'sampler'` (default;
- * 'average' read by `access: 'sample'`, one bilinear sample at each 2×2 block's corner),
+ * other levels; folds select values and stay exact. With `weights: 'sampler'`
+ * ('average' read by `access: 'sample'`, one bilinear sample at each 2×2 block's corner),
  * it also allows {@link samplerWeightSteps} weight steps per axis on level 1, averaged into
- * the deeper levels as level 1's errors are; 'shader' (loads) adds nothing.
+ * the deeper levels as level 1's errors are; 'shader' (default; loads) adds nothing.
  */
-export function spdReference( source: ArrayLike<number>, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction = 'average', count = 1, { weights = 'sampler' }: Pick<ReferenceOptions, 'weights'> = {} ): ReferenceLevel[] {
+export function spdReference( source: ArrayLike<number>, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction = 'average', count = 1, { weights = 'shader' }: Pick<ReferenceOptions, 'weights'> = {} ): ReferenceLevel[] {
 
 	const levels = Array.from( { length: count }, ( _, i ) => i + 1 );
 	const sampled = weights === 'sampler' && reduction === 'average' ? samplerAllowance( source, width, height, layers, count ) : null;

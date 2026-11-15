@@ -3,7 +3,7 @@ import { outputBufferLayout, tileSize, workgroupSide } from '../core/plan.js';
 import { levelSize, tileDispatch } from '../core/pyramid.js';
 import { resolveReduction, type Channels, type Reduction, type TileEdgePolicy } from '../core/reduction.js';
 import { isCompatibilityTexture } from './compat.js';
-import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, sizeBinding, type F16Rounding, type KernelOptions, type OutputPath, type ViewDimension } from './kernel.js';
+import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, sizeBinding, srgbTable, srgbTableBinding, usesSrgbTable, type F16Rounding, type KernelOptions, type OutputPath, type ViewDimension } from './kernel.js';
 import { asTextureLevel, sourceShapeReason, sourceTextureReason, sourceView, type TextureLevel } from './source.js';
 import { checkToolBindings, retireBuffers, setToolBindGroup, toolBindGroupLayout, toolBindGroupReason, toolGroupLayouts, toolPipelineLayout, type ToolBindings } from './tool.js';
 
@@ -184,6 +184,8 @@ export class Reducer {
 	/** How output textures are written; undefined with a store hook. */
 	readonly output: OutputPath | undefined;
 	private readonly options: ReducerOptions;
+	/** The kernel reads the sRGB tables (an sRGB source or buffer output). */
+	private readonly srgbTable: boolean;
 	private readonly cache = new Map<string, Prepared>();
 
 	constructor( device: GPUDevice, options: ReducerOptions ) {
@@ -256,6 +258,7 @@ export class Reducer {
 		this.label = label;
 		this.output = output;
 		this.options = { ...options, reduction };
+		this.srgbTable = usesSrgbTable( kernel );
 
 	}
 
@@ -414,6 +417,7 @@ export class Reducer {
 		}
 
 		const entries: GPUBindGroupEntry[] = [];
+		if ( this.srgbTable ) entries.push( { binding: srgbTableBinding, resource: { buffer: srgbTable( this.device ) } } );
 		const owned: GPUBuffer[] = [];
 		if ( source !== undefined ) {
 

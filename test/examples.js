@@ -36,6 +36,18 @@ let failed = 0;
 
 try {
 
+	// Name the GPU the pages run on (dual-GPU laptops: check that --power picked the right one).
+	const probe = await browser.newPage();
+	await probe.goto( `http://127.0.0.1:${ server.address().port }/examples/index.html`, { waitUntil: 'load' } );
+	const info = await probe.evaluate( async () => {
+
+		const adapter = await navigator.gpu?.requestAdapter();
+		return adapter ? { ...Object.fromEntries( [ 'vendor', 'architecture', 'device', 'description' ].map( key => [ key, adapter.info[ key ] ] ) ), browser: navigator.userAgent.match( /Chrome\/[\d.]+/ )?.[ 0 ] } : null;
+
+	} );
+	console.log( `adapter: ${ info ? `${ info.vendor } ${ info.architecture } ${ info.description || info.device } (${ info.browser })` : 'none' }` );
+	await probe.close();
+
 	for ( const file of pages ) {
 
 		const page = await browser.newPage();

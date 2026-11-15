@@ -2,7 +2,7 @@
 // matrix: the WGSL codecs against the core ones bit for bit (every code point,
 // every rounding boundary), buffer against storage output, the default storage
 // texture limit, and API behaviour.
-import { fromHalf, fromUfloat, packRgb9e5, quantizeTexel, reducePyramid, reduceReference, toHalf, toUfloat, unpackRgb9e5 } from '/dist/index.js';
+import { fromHalf, fromUfloat, packRgb9e5, quantizeTexel, reducePyramid, reduceReference, spdReference, toHalf, toUfloat, unpackRgb9e5 } from '/dist/index.js';
 import { Downsampler, float16Wgsl, packedFloatWgsl, Reducer } from '/dist/webgpu/index.js';
 import { createTexture, makeData, poison, readMips, toFloats, upload } from './gpu.js';
 import { check, checkPyramid, reducerData } from './validate.js';
@@ -12,7 +12,8 @@ const bitsF32 = bits => new Float32Array( new Uint32Array( [ bits ] ).buffer )[ 
 const nextFloat = ( value, direction ) => bitsF32( f32Bits( value ) + direction );
 
 /** Runs `fn ds_test(i: u32)` over `count` invocations: `input` and `output` are u32 arrays. */
-export async function runCodec( device, helpers, body, input, outputWords, count ) {
+// `entries`: further group-0 entries the helpers bind (the sRGB tables).
+export async function runCodec( device, helpers, body, input, outputWords, count, entries = [] ) {
 
 	const code = `${ helpers }
 @group(0) @binding(0) var<storage, read> input: array<u32>;
@@ -30,7 +31,7 @@ ${ body }
 	const encoder = device.createCommandEncoder();
 	const pass = encoder.beginComputePass();
 	pass.setPipeline( pipeline );
-	pass.setBindGroup( 0, device.createBindGroup( { layout: pipeline.getBindGroupLayout( 0 ), entries: [ { binding: 0, resource: { buffer: inBuffer } }, { binding: 1, resource: { buffer: outBuffer } } ] } ) );
+	pass.setBindGroup( 0, device.createBindGroup( { layout: pipeline.getBindGroupLayout( 0 ), entries: [ { binding: 0, resource: { buffer: inBuffer } }, { binding: 1, resource: { buffer: outBuffer } }, ...entries ] } ) );
 	const groups = Math.ceil( count / 64 );
 	pass.dispatchWorkgroups( Math.min( groups, 1024 ), Math.ceil( groups / 1024 ) );
 	pass.end();
@@ -216,7 +217,7 @@ async function generateAndCheck( device, downsampler, texture, data, label, redu
 	for ( let level = 1; level < texture.mipLevelCount; level ++ ) {
 
 		const inTile = ! firstOutputs.has( level );
-		const expected = reduceReference( previous, w, h, layers, quantization, reduction, inTile ? { pairing: 'float32' } : {} );
+		const expected = reduceReference( previous, w, h, layers, quantization, reduction, inTile ? { pairing: 'float32' } : { weights: 'sampler' } );
 		check( mips[ level - 1 ], expected, quantization, `${ label } mip ${ level }`, reduction, 3, 0, inTile );
 		previous = mips[ level - 1 ]; w = expected.width; h = expected.height;
 
@@ -280,7 +281,7 @@ async function validateBufferPath( device, { quick } ) {
 		const copy = source[ 0 ].slice();
 		for ( let i = 0; i < copy.length; i += 4 ) copy.set( [ ...unpackRgb9e5( packRgb9e5( copy[ i ], copy[ i + 1 ], copy[ i + 2 ] ) ), 1 ], i );
 		if ( mips[ 0 ].some( ( value, i ) => value !== copy[ i ] ) ) throw new Error( 'rgb9e5 from a separate source: level 0 is not the quantized copy' );
-		for ( let l = 1; l < mips.length; l ++ ) check( mips[ l ], reduceReference( mips[ l - 1 ], Math.max( 1, 96 >> ( l - 1 ) ), Math.max( 1, 64 >> ( l - 1 ) ), 1, 'rgb9e5ufloat' ), 'rgb9e5ufloat', `auto rgb9e5 level ${ l }`, 'average', 3 );
+		for ( let l = 1; l < mips.length; l ++ ) check( mips[ l ], reduceReference( mips[ l - 1 ], Math.max( 1, 96 >> ( l - 1 ) ), Math.max( 1, 64 >> ( l - 1 ) ), 1, 'rgb9e5ufloat', 'average', { weights: 'sampler' } ), 'rgb9e5ufloat', `auto rgb9e5 level ${ l }`, 'average', 3 );
 		gi.destroy(); hdr.destroy();
 		results.push( { option: 'auto output: storage and buffer textures in one encoder' } );
 
@@ -532,6 +533,127 @@ async function validateReducerHalfRounding( device ) {
 
 }
 
+/**
+ * float16 ties at every kind of level: every 2:1 level of rgba16float chains must store the
+ * nearest half, ties to even. Split by where the level is written: a batch's first output, an
+ * in-tile combine, a tail kernel level after its first, and 'spd' batches. 'exact' and tail
+ * levels are checked bit for bit against the chained f32-pairing oracle; 'spd' keeps in-tile
+ * values unrounded in workgroup memory (as SPD does), so its batches are checked against
+ * `spdReference`, whose tolerance is only the f32 sums' (far under an f16 step). All chains
+ * load (`averageAccess: 'load'`), so no sampler weights blur the rounding. Random halves
+ * average to exact midpoints about one value in eight, so each kind must see ties, or the
+ * fixture failed to test it.
+ */
+async function validateHalfTies( device ) {
+
+	const [ width, height ] = [ 1536, 1024 ];
+	const data = makeData( width, height, 1, 'rgba16float', 'random', 31 );
+	const ties = { first: 0, 'in-tile': 0, tail: 0, spd: 0 }, checked = { first: 0, 'in-tile': 0, tail: 0, spd: 0 };
+	// An exact midpoint between two adjacent halves (f64 values).
+	const isTie = value => {
+
+		const nearest = toHalf( value ), stored = fromHalf( nearest );
+		if ( stored === value || ! Number.isFinite( stored ) ) return false;
+		return ( stored + fromHalf( Math.abs( stored ) > Math.abs( value ) ? nearest - 1 : nearest + 1 ) ) / 2 === value;
+
+	};
+	for ( const [ name, ownerOptions, options ] of [ [ 'exact', { tail: false }, {} ], [ 'tail', { tail: true }, {} ], [ 'spd', {}, { oddSizes: 'spd' } ] ] ) {
+
+		const downsampler = new Downsampler( device, { ...ownerOptions, averageAccess: 'load' } );
+		const texture = createTexture( device, { width, height, format: 'rgba16float' } );
+		upload( device, texture, data );
+		poison( device, texture, 1 );
+		downsampler.generate( texture, options );
+		const mips = await readMips( device, texture, 0 );
+		// Compatibility mode adds copy dispatches (scratch → destination): not reductions.
+		const batches = downsampler.prepare( texture, options ).filter( batch => ! batch.copy );
+		texture.destroy();
+		if ( name === 'spd' ) {
+
+			for ( const batch of batches ) {
+
+				const source = mips[ batch.sourceMipLevel ], sw = Math.max( 1, width >> batch.sourceMipLevel ), sh = Math.max( 1, height >> batch.sourceMipLevel );
+				const levels = Array.from( { length: batch.count }, ( _, i ) => i + 1 );
+				spdReference( source, sw, sh, 1, 'float16', 'average', batch.count, { weights: 'shader' } ).forEach( ( expected, i ) => check( mips[ batch.firstMipLevel + i ], expected, 'float16', `f16 ties spd mip ${ batch.firstMipLevel + i }`, 'average', 4 ) );
+				for ( const level of reducePyramid( source, sw, sh, 1, { reduction: 'average', levels, edges: 'clamp' } ) ) for ( const value of level.values ) { checked.spd ++; if ( isTie( value ) ) ties.spd ++; }
+
+			}
+			continue;
+
+		}
+
+		const kinds = new Map();
+		for ( const batch of batches ) for ( let i = 0; i < batch.count; i ++ ) kinds.set( batch.firstMipLevel + i, i === 0 ? 'first' : batch.kernel === 'tail' ? 'tail' : 'in-tile' );
+		for ( let level = 1; level < mips.length; level ++ ) {
+
+			const w = Math.max( 1, width >> ( level - 1 ) ), h = Math.max( 1, height >> ( level - 1 ) );
+			if ( ( w % 2 && w > 1 ) || ( h % 2 && h > 1 ) ) continue; // odd steps: the main matrix
+			const kind = kinds.get( level );
+			const expected = reduceReference( mips[ level - 1 ], w, h, 1, 'float16', 'average', { pairing: 'float32', weights: 'shader' } );
+			check( mips[ level ], expected, 'float16', `f16 ties ${ name } mip ${ level } (${ kind })`, 'average', 4, 0, true );
+			const previous = mips[ level - 1 ], ow = expected.width;
+			for ( let i = 0; i < expected.values.length; i ++ ) {
+
+				const x = ( i >> 2 ) % ow, y = Math.floor( ( i >> 2 ) / ow ), c = i & 3;
+				const at = ( dx, dy ) => previous[ ( Math.min( 2 * y + dy, h - 1 ) * w + Math.min( 2 * x + dx, w - 1 ) ) * 4 + c ];
+				checked[ kind ] ++;
+				if ( isTie( ( at( 0, 0 ) + at( 1, 0 ) + at( 0, 1 ) + at( 1, 1 ) ) / 4 ) ) ties[ kind ] ++;
+
+			}
+
+		}
+
+	}
+
+	// A kind with a few hundred values checked must have met ties (one in eight); 8×8 tails (adapters
+	// below 256 invocations) leave too few values after their first level to expect one.
+	for ( const [ kind, count ] of Object.entries( ties ) ) if ( count === 0 && checked[ kind ] >= 256 ) throw new Error( `f16 ties: no exact midpoint in ${ checked[ kind ] } ${ kind } values; the fixture tests nothing there` );
+	return [ { option: `rgba16float ties round to even at every 2:1 level (ties / values: ${ Object.entries( ties ).map( ( [ kind, count ] ) => `${ kind } ${ count } / ${ checked[ kind ] }` ).join( ', ' ) })` } ];
+
+}
+
+/**
+ * A same-size source (level 0 is a converting copy) with Inf and NaN texels next to finite
+ * ones: each texel copies alone, so every finite texel is exact. A copy that sampled with zero
+ * weights would turn a finite neighbour into NaN (0 · Inf). From rgba16float (filterable) and
+ * rgba32float. The Inf/NaN texels themselves are only counted: WGSL lets an implementation
+ * assume there are none (SwiftShader turns a loaded half ±Inf into NaN; the RTX 3060 and
+ * Intel UHD keep them).
+ */
+async function validateCopyNonFinite( device ) {
+
+	const [ width, height ] = [ 37, 21 ];
+	const specials = [ Infinity, - Infinity, NaN, 65504, - 65504, 0, - 0, 1 ];
+	const values = new Float32Array( width * height * 4 );
+	for ( let i = 0; i < values.length; i ++ ) values[ i ] = ( i >> 2 ) % 3 === 1 ? specials[ i % specials.length ] : Math.fround( ( i % 97 ) / 13 - 3 );
+	let copied = 0, nonFinite = 0, kept = 0;
+	for ( const sourceFormat of [ 'rgba16float', 'rgba32float' ] ) for ( const tail of [ false, true ] ) {
+
+		const source = createTexture( device, { width, height, format: sourceFormat, storage: false } );
+		upload( device, source, sourceFormat === 'rgba16float' ? Uint16Array.from( values, value => toHalf( value ) ) : values );
+		const destination = createTexture( device, { width, height, format: 'rgba16float' } );
+		poison( device, destination, 0 );
+		new Downsampler( device, { tail } ).generate( destination, { source: { texture: source } } );
+		const [ level0 ] = await readMips( device, destination, 0, 1 );
+		const wrong = [];
+		level0.forEach( ( value, i ) => {
+
+			const expected = fromHalf( toHalf( values[ i ] ) );
+			const same = Object.is( value, expected ) || ( Number.isNaN( value ) && Number.isNaN( expected ) );
+			if ( ! Number.isFinite( values[ i ] ) ) { nonFinite ++; if ( same ) kept ++; return; }
+			if ( ! same ) wrong.push( `value ${ i } is ${ value }, expected ${ expected } (input ${ values[ i ] })` );
+
+		} );
+		if ( wrong.length ) throw new Error( `same-size copy ${ sourceFormat } → rgba16float${ tail ? ' (tail)' : '' }: ${ wrong.length } finite texels next to Inf/NaN wrong; ${ wrong.slice( 0, 4 ).join( '; ' ) }` );
+		copied += level0.length;
+		source.destroy(); destination.destroy();
+
+	}
+
+	return [ { option: `same-size copies keep Inf/NaN to their own texels (${ copied } values, rgba16float and rgba32float sources; ${ kept } of ${ nonFinite } Inf/NaN values kept)` } ];
+
+}
+
 /** `part`: 'downsampler' (codecs, Downsampler buffer path) or 'reducer' (Reducer buffer output, f16 rounding); default both. */
 /** `select`: the case-group gate (test/ci/shard.js), one group per check below; default all. */
 export async function validatePacked( device, { quick = false, onProgress = () => {}, part, select = { has: () => true, run: async ( id, fn ) => fn() } } = {} ) {
@@ -543,6 +665,9 @@ export async function validatePacked( device, { quick = false, onProgress = () =
 		onProgress( 'validated packed codecs' );
 		results.push( ...await select.run( 'packed/buffer-path', () => validateBufferPath( device, { quick } ) ) );
 		onProgress( 'validated buffer output path' );
+		results.push( ...await select.run( 'packed/f16-ties', () => validateHalfTies( device ) ) );
+		results.push( ...await select.run( 'packed/copy-non-finite', () => validateCopyNonFinite( device ) ) );
+		onProgress( 'validated f16 ties and non-finite copies' );
 
 	}
 

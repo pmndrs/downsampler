@@ -1,17 +1,18 @@
-# downsampler usage guide
+# Reference
 
-Every public API, option and default, checked against the TypeScript source (`src/webgpu/*.ts`, `src/three/index.ts`). The design reasons and measurements live in [SPEC.md](../SPEC.md); this page says how to use the library. Runnable versions of most snippets are in [examples/](../examples/).
+Every class, option and default. New here? Start with [Getting started](getting-started.md), which explains each
+feature and when to use it; this page is for looking things up. The reasons behind the design, with measurements, are
+in [SPEC.md](../SPEC.md).
 
 - [Setup](#setup)
 - [Sources: one shape everywhere](#sources-one-shape-everywhere)
-- [Recipes](#recipes)
 - [Downsampler: mip chains and Hi-Z](#downsampler-mip-chains-and-hi-z)
 - [Reducer: tile reductions for tools](#reducer-tile-reductions-for-tools)
 - [ScalarReduction: an image to one value](#scalarreduction-an-image-to-one-value)
 - [three.js](#threejs)
-- [The core package: oracles and planning](#the-core-package-oracles-and-planning)
+- [The core package: CPU references and planning](#the-core-package-cpu-references-and-planning)
 - [Vendoring: `downsampler/mipmap`](#vendoring-downsamplermipmap)
-- [Coming next](#coming-next)
+- [Not built (yet)](#not-built-yet)
 
 ## Setup
 
@@ -53,123 +54,6 @@ The other shared names:
 
 - **Sizes** are `width` and `height` fields (Reducer dispatches, ScalarReduction runs). With a source they default to its level's size, and must match it if given.
 - **Layer ranges** are `layers: [ first, count ]` (Downsampler options, ScalarReduction runs, `PreparedBatch.layers`, `BufferCopy.layers`). A bare count is `layerCount` (Reducer dispatches, from layer 0; `ReducerCopy.layerCount`).
-
-## Recipes
-
-The lines that matter for each common job, each with a page in [examples/](../examples/) that runs it and checks its own output. `downsampler` is a `new Downsampler( device )`, made once per device; `encoder` is a `GPUCommandEncoder` you submit.
-
-### Mip chain ([mip-chain.html](../examples/mip-chain.html))
-
-```js
-const texture = device.createTexture( {
-	format: 'rgba8unorm', size: [ width, height ], mipLevelCount: Math.floor( Math.log2( Math.max( width, height ) ) ) + 1,
-	usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_DST,
-} );
-device.queue.writeTexture( { texture }, pixels, { bytesPerRow: width * 4 }, [ width, height ] );
-downsampler.encode( encoder, texture );            // levels 1 … n from level 0, as render-pass mipmaps
-downsampler.generate( texture );                   // or: in its own encoder, submitted
-```
-
-### Hi-Z from depth, conservative ([hi-z.html](../examples/hi-z.html))
-
-Depth formats can't be storage textures, so the pyramid is a separate `rg32float` (or `r32float`) texture with the depth buffer as its `source`. Odd sizes fold `2x … 2x+2`, so every texel bounds every depth texel under it.
-
-```js
-const hiZ = device.createTexture( {
-	format: 'rg32float', size: [ width, height ], mipLevelCount: Math.floor( Math.log2( Math.max( width, height ) ) ) + 1,
-	usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
-} );
-const pass = encoder.beginComputePass();
-downsampler.encodePass( pass, hiZ, { source: depth, reduction: 'minmax' } ); // r = min, g = max
-pass.end();
-// Conventional depth: occluded if the object's nearest depth is beyond g of the texels it covers (reverse-Z: r).
-```
-
-### Power-of-two Hi-Z from a render-size depth buffer ([hi-z-pow2.html](../examples/hi-z-pow2.html))
-
-`resample: 'area'` (with the source as `{ texture, resample }`) lets level 0 be any size (up to 8× smaller per axis by default, `maxResampleRatio`) and folds every depth texel that each Hi-Z texel's area overlaps, so the pyramid stays conservative. Later levels halve cleanly: 12 levels of 2048×1024 take 2 dispatches.
-
-```js
-const previousPow2 = n => 2 ** Math.floor( Math.log2( n ) );
-const size = [ previousPow2( width ), previousPow2( height ) ];    // 1920×1080 → 1024×1024
-const hiZ = device.createTexture( {
-	format: 'r32float', size, mipLevelCount: Math.log2( Math.max( ...size ) ) + 1,
-	usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
-} );
-downsampler.encode( encoder, hiZ, { source: { texture: depth, resample: 'area' }, reduction: 'max' } );
-```
-
-One 2×2 tap per texel (a min/max reduction sampler at the texel centre) misses depth texels at 1920 → 1024; the page counts them.
-
-### Partial update ([partial-update.html](../examples/partial-update.html))
-
-```js
-device.queue.writeTexture( { texture, origin: [ x, y ] }, pixels, { offset: ( y * width + x ) * 4, bytesPerRow: width * 4 }, [ w, h ] );
-downsampler.encode( encoder, texture, { rect: { x, y, width: w, height: h } } );   // only the texels that depend on it
-downsampler.encode( encoder, faces, { layers: [ 2, 1 ] } );                        // one face of a 6-layer array
-downsampler.encode( encoder, faces, { layers: [ 4, 1 ], rect: decal } );           // a decal on face 4
-```
-
-Bit-identical to a full recompute when nothing changed outside `rect`. Each distinct rect caches a small uniform buffer; the 16 most recent are kept per texture, and older ones are destroyed once the queue has finished the work submitted so far, so a painter needs no cleanup ([Partial updates](#partial-updates-rect-and-layers)). An empty rect records nothing.
-
-### Area-weighted odd sizes ([odd-sizes.html](../examples/odd-sizes.html))
-
-```js
-downsampler.encode( encoder, irradiance, { oddSizes: 'box' } );  // every level keeps the mean: a 31×31's 1×1 is its mean
-downsampler.encode( encoder, bloom, { oddSizes: 'spd' } );       // SPD: fewest dispatches, drops the last odd row or column
-```
-
-The default, `'exact'`, matches render-pass mipmaps. On the page's 1129×635 test image the mean error against the area-weighted ideal over levels 1–10 is 2.1 (`'exact'`), 5.1 (`'spd'`) and 0.3 (`'box'`) 8-bit steps.
-
-### Block statistics with `Reducer` ([reducer.html](../examples/reducer.html))
-
-```js
-const stats = new Reducer( device, {
-	reduction: [ 'average', 'average', 'max', 'sum' ],      // mean, mean of squares, max, count
-	levels: [ 3, 5 ],                                        // 8×8 and 32×32 blocks, in one dispatch
-	format: 'rgba32float',
-	bindings: { wgsl: '@group(1) @binding(0) var image: texture_2d<f32>;', entries: [ { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } } ] },
-	load: `fn load( texel: vec2i, layer: u32 ) -> vec4f {
-		let l = dot( textureLoad( image, texel, 0 ).rgb, vec3f( 0.2126, 0.7152, 0.0722 ) );
-		return vec4f( l, l * l, l, 1.0 );
-	}`,
-} );
-const bindGroup = device.createBindGroup( { layout: stats.bindGroupLayouts[ 1 ], entries: [ { binding: 0, resource: image.createView() } ] } );
-const outputs = stats.levels.map( level => device.createTexture( { format: 'rgba32float', size: stats.levelSize( level, width, height ), usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING } ) );
-stats.encode( encoder, { width, height, bindGroup, outputs } );
-```
-
-### Exposure with `ScalarReduction` ([scalar.html](../examples/scalar.html))
-
-```js
-const entries = [
-	{ binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
-	{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-];
-const metering = new ScalarReduction( device, {
-	reduction: [ 'average', 'max', 'min', 'average' ],
-	bindings: { wgsl: '@group(1) @binding(0) var hdr: texture_2d<f32>; @group(1) @binding(1) var<storage, read_write> exposure: array<vec4f, 2>;', entries },
-	load: 'fn load( texel: vec2i, layer: u32 ) -> vec4f { let l = max( dot( textureLoad( hdr, texel, 0 ).rgb, vec3f( 0.2126, 0.7152, 0.0722 ) ), 1e-4 ); return vec4f( log( l ), l, l, l ); }',
-	finish: 'fn finish( value: vec4f, weight: f32 ) { exposure[ 0 ] = value; exposure[ 1 ] = vec4f( exp( value.x ), 0.18 / exp( value.x ), weight, 0.0 ); }',
-} );
-const bindGroup = device.createBindGroup( { layout: metering.bindGroupLayouts[ 1 ], entries: [ { binding: 0, resource: hdr.createView() }, { binding: 1, resource: { buffer: exposureBuffer } } ] } );
-metering.encode( encoder, { width, height, bindGroup } );  // two dispatches at any size; the exposure stays on the GPU
-```
-
-### three.js ([three.html](../examples/three.html))
-
-```js
-import { generateMipmaps, requiredLimits, unsupportedReason } from 'downsampler/three';
-
-const renderer = new THREE.WebGPURenderer( { requiredLimits: requiredLimits( await navigator.gpu.requestAdapter() ) } );
-await renderer.init();
-const texture = new THREE.StorageTexture( width, height );
-texture.generateMipmaps = true;        // allocate the full chain
-texture.mipmapsAutoUpdate = false;     // the library writes the mips
-texture.minFilter = THREE.LinearMipmapLinearFilter;
-// … write level 0 with a compute pass …
-if ( ! generateMipmaps( renderer, texture ) ) console.warn( unsupportedReason( renderer, texture ) ); // then three's own path
-```
 
 ## Downsampler: mip chains and Hi-Z
 
@@ -213,6 +97,7 @@ Depth formats can't be destinations: use a separate source into `r32float` or `r
 | `f16Rounding` | `'nearest'`, `'device'` | `'nearest'` | float16 formats: round each level to nearest even in the shader (the same everywhere), or use the device's conversion, which truncates on D3D12 ([float16 rounding](#float16-rounding-f16rounding)). |
 | `compatibility` | `'auto'`, `true`, `false` | `'auto'` | The compatibility-mode path ([below](#compatibility-mode)). `'auto'` takes it for textures of a device without `'core-features-and-limits'`. |
 | `tail` | boolean | `true` <!-- defaults: tail/exactTile --> | `'exact'` chains: once a level fits one workgroup (32 × 32; 8 × 8 below 256 invocations), finish the chain in one dispatch instead of a batch per odd size. Same rule; tail levels use shader weights (within one rgba8 step of the sampler's). |
+| `halo` | boolean | `false` | `'exact'` and `'box'` chains of float formats: carry odd steps inside a batch with a halo (each workgroup also computes the few texels past its tile that the next odd steps read), so some render sizes take one dispatch fewer: 1920×1080 3 instead of 4. Same rule and results (odd steps inside a batch use shader weights, as the tail does). Measured 0.85–1.00× of the default on an RTX 3060, neutral on Intel UHD. Needs 256 invocations per workgroup; integer formats and `'spd'` ignore it. `haloMaxExtra` and `haloMaxOutput` tune the planner. |
 | `exactTile` | 8, 16, 32 | 16 on Apple GPUs, 32 on other hardware with 256 invocations per workgroup, 8 on software adapters and in compatibility mode <!-- defaults: tail/exactTile --> | Smallest first-output tile of an `'exact'` batch. Same results; a speed knob measured per vendor. 16 and 32 need 256 invocations. |
 | `maxResampleRatio` | a number ≥ 1 | 8 (the exported `maxResampleRatio`) | The largest source ÷ destination size ratio per axis that `source.resample: 'area'` accepts. Only validation reads it: the kernel loops over each texel's span at run time, so it compiles nothing new. The taps per first-level texel grow with its square, (ratio + 1)² at most. |
 
@@ -349,7 +234,7 @@ for ( const texture of textures ) downsampler.encode( encoder, texture, { scratc
 - Alpha is linear (these formats store it as plain unorm8): averaged in 0–255 units, ties to even, as `rgba8unorm`.
 - `'min'`, `'max'` and `'minmax'` select stored codes exactly: the decode is monotonic and the encoder inverts it, so they equal folding the codes themselves.
 - Hardware decoding isn't exact everywhere: an Apple M5 Pro decodes to 12-bit linear values (254 of 256 codes inexact, up to 0.39 of a code step off). `averageAccess: 'load'` snaps every loaded texel to the exact decode table, so results are the same on every GPU; the default `'sample'` keeps the hardware's decode and filtering, as render passes do (about a code from the exact result at most).
-- Cost (M5 Pro, not idle, SPEC §6.1 sRGB): 1.2–2× faster than render passes up to 1280×720 and at 1024², a tie at 1707×960, and slower from 1080p up (render passes take 0.55–0.79× the time), where the buffer path's extra copy of every level dominates. For large sRGB textures, three's own render-pass mipmaps may be the faster choice. `'load'` costs 1.7–2.1×.
+- Cost (M5 Pro, not idle, SPEC §6.1 sRGB): 1.2–2× faster than render passes up to 1280×720 and at 1024², a tie at 1707×960, and slower from 1080p up (render passes take 0.55–0.79× the time), where the buffer path's extra copy of every level dominates. On an RTX 3060, render passes are 2–3× faster at every size, and writing a scratch rgba8unorm texture instead of the buffer doesn't help (1.05–1.13×; DIVERGES #16). For large sRGB textures, and on NVIDIA, three's own render-pass mipmaps are the faster choice. `'load'` costs 1.7–2.1×.
 - The texture needs `COPY_DST` (three.js gives its textures that). `oddSizes`, `rect`, `layers`, separate sources (into or out of sRGB), the tail kernel and compatibility mode all work; `encodePass` doesn't (the buffer path's copies).
 
 ### Compatibility mode
@@ -377,7 +262,7 @@ float16 formats (`rgba16float`, `rg16float`, `r16float`) are computed in f32 and
 
 **What `'device'` costs in accuracy.** Where it truncates, every stored half is up to one f16 step (one unit in the last place, about 0.1 % of the value) closer to zero than the rounded one: positive values come out low by half a step on average, never high. Each level is computed from the previous, already truncated level, so the bias doesn't average out down the chain; the deepest levels of a large texture end up a few steps below the true mean. Images rarely show it. Anything that compares levels numerically does: exposure from a 1×1 mip, a half-precision Hi-Z compared against depth, an oracle-based test suite (it was 211 of 287 full-matrix failures on the RTX 3060 before the default changed).
 
-**When to use it.** Only after measuring the in-shader rounding as a real cost on your target, for chains where a low bias of up to one f16 step per level is acceptable (display-only colour mips, for instance). Measured at render sizes on rgba16float chains, `'nearest'` cost noise on an RTX 3060 and 14–29 % on Intel UHD, depending on the rounding code's version (`results/windows/timings.md`; the current version is being re-measured on Windows). The default stays `'nearest'`; a per-device default would only follow if that cost turns out large.
+**When to use it.** Only after measuring the in-shader rounding as a real cost on your target, for chains where a low bias of up to one f16 step per level is acceptable (display-only colour mips, for instance). Measured on rgba16float chains at render sizes, `'nearest'` costs 5 % on an RTX 3060 and 8.5 % on Intel UHD against `'device'` (`results/windows/round2/defaults.md`). The default stays `'nearest'`.
 
 ```js
 new Downsampler( device, { f16Rounding: 'device' } );  // the device's conversion: truncation on D3D12
@@ -558,13 +443,13 @@ generateMipmaps( renderer, texture, { encoder, downsampler: { averageAccess: 'lo
 
 The texture must have `STORAGE_BINDING` usage (in current three.js a `StorageTexture` or `StorageArrayTexture`), or `COPY_DST` for formats that take the buffer path. sRGB colour textures (`SRGBColorSpace`, so `rgba8unorm-srgb`) always take the buffer path, so regular three.js colour textures, which have `COPY_DST`, work today. Other regular textures don't get storage usage from three; native support for them is planned as an in-tree three.js option (SPEC §10). See [examples/three.html](../examples/three.html).
 
-## The core package: oracles and planning
+## The core package: CPU references and planning
 
-`import { … } from 'downsampler'` is backend-neutral (no WebGPU types). Useful for testing your own use of the library:
+`import { … } from 'downsampler'` is backend-neutral (no WebGPU types). It holds the CPU reference implementations the GPU kernels are tested against ("oracles"), useful for testing your own use of the library:
 
 | Export | What it is |
 |---|---|
-| `reduceReference( values, width, height, layers, quantization, reduction?, options? )` | One `'exact'` step on the CPU: the oracle every backend is tested against. `values` are RGBA floats; it returns the next level and a per-value `filterTolerance`. |
+| `reduceReference( values, width, height, layers, quantization, reduction?, options? )` | One `'exact'` step on the CPU: the oracle every backend is tested against. `values` are RGBA floats; it returns the next level and a per-value `filterTolerance`. That tolerance assumes weights computed in the shader; pass `{ weights: 'sampler' }` for a level a hardware sampler filtered (the default `averageAccess: 'sample'`, a batch's first output), which allows the samplers' 8-bit weights. |
 | `tolerance( expected, quantization, filterTolerance?, reduction? )` | The test tolerance for one value (folds: 0). |
 | `spdReference(…)`, `spdChainReference(…)` | `oddSizes: 'spd'` batches and chains. |
 | `boxReference(…)`, `boxChainReference(…)`, `areaReference( values, width, height, layers, quantization, reduction, outWidth, outHeight, options? )` | `oddSizes: 'box'` steps and chains, and an area step to any size (a resampled source). `areaSpan`, `areaOverlap`: the taps and their integer weights. |
@@ -576,7 +461,7 @@ The texture must have `STORAGE_BINDING` usage (in current three.js a `StorageTex
 | `formats`, `quantize`, `quantizeTexel`, `toHalf`, `fromHalf`, `packRgb9e5`, … | Format table and encoders. |
 | `srgbCode`, `srgbDecodeTable`, `quantizeSrgb`, `srgbThresholds`, `srgbBounds`, `srgbDecode`, `srgbEncode` | sRGB: the correctly rounded encoder, the exact decode table, the rounding thresholds and the f32 bounds the shader compares against. The oracles take the quantization `'srgb8'`. |
 
-The WGSL generators are exported from `downsampler/webgpu` for vendoring: `createKernel`, `kernelLayoutEntries`, `float16Wgsl`, `packedFloatWgsl`, `srgbWgsl`, `bufferOutputWgsl`, `createIntKernel`, `intMeanWgsl`, `createScalarKernel`. An exact kernel for an sRGB format with `output: 'storage'` writes the encoded bytes to storage textures of the linear alias format (`srgbScratchFormat`: `rgba8unorm` or `bgra8unorm`), for a self-dispatching tool that copies them into the sRGB level with `copyTextureToTexture`.
+The WGSL generators are exported from `downsampler/webgpu` for vendoring: `createKernel`, `kernelLayoutEntries`, `float16Wgsl`, `packedFloatWgsl`, `srgbWgsl`, `bufferOutputWgsl`, `createIntKernel`, `intMeanWgsl`, `createScalarKernel`. Kernels that read or write sRGB (`usesSrgbTable( options )`) take the exact tables from a storage buffer: bind `srgbTable( device )` at `srgbTableBinding` (12); `kernelLayoutEntries` declares it. An exact kernel for an sRGB format with `output: 'storage'` writes the encoded bytes to storage textures of the linear alias format (`srgbScratchFormat`: `rgba8unorm` or `bgra8unorm`), for a self-dispatching tool that copies them into the sRGB level with `copyTextureToTexture`.
 
 ## Vendoring: `downsampler/mipmap`
 
@@ -613,6 +498,9 @@ which imports the file (its relative imports resolved), calls its generator (an 
 
 When the library's kernels change on purpose, `npm run golden:update` rewrites the goldens (`test/core/golden.test.js` fails until then), and the diff of `test/golden/mipmap/` is the change a vendored copy has to follow.
 
-## Coming next
+## Not built (yet)
 
-Transform hooks around the average (premultiplied alpha, log-luminance; SPEC §5 Planned); subgroup kernels and fp16 math only if measured faster (M3). The full list is in [SPEC.md §11](../SPEC.md#11-milestones) and [DIVERGES.md](../DIVERGES.md).
+- Transform hooks around the average (premultiplied alpha, log-luminance; SPEC §5 Planned).
+- Subgroup and fp16-arithmetic kernels: measured and not built, because they weren't faster enough or changed results (`results/windows/round2/m3.md`).
+
+The full list is in [SPEC.md §11](../SPEC.md#11-milestones) and [DIVERGES.md](../DIVERGES.md); [How it compares](differences.md) is the short version.

@@ -68,6 +68,15 @@ export interface KernelOptions {
 	 */
 	box?: boolean;
 	/**
+	 * 'exact' only (not tail): a halo batch (`Batch.halo` from `planBatches` with `halo`). Per
+	 * output level of the batch, the texels each workgroup computes past its tile's far edge,
+	 * per axis, so odd steps can be reduced inside the batch: a step whose halo isn't twice the
+	 * next level's reads the `2x … 2x+2` taps by the 'exact' rule (shader bilinear weights,
+	 * the fold footprint, or area weights with `box`), as the next batch's first output would
+	 * with access 'load'. With `box`, the first output is area-weighted only if `area`.
+	 */
+	halo?: { x: readonly number[]; y: readonly number[] };
+	/**
 	 * The tile edge, 8, 16 or 32. Tail kernels: at least the first output's larger
 	 * side, default 32. Exact kernels: at least what `count` levels need (8 up to four
 	 * levels, then 16 and 32), which is the default.
@@ -245,17 +254,6 @@ fn ds_unpack11_11_10(bits: u32) -> vec3f { return vec3f(ds_from_ufloat(bits & 0x
 
 }
 
-/** An f32 as an exact WGSL hexadecimal literal (a decimal literal may round either way when converted to f32). */
-function f32Literal( value: number ): string {
-
-	if ( value === 0 ) return '0.0f';
-	const bits = new Uint32Array( new Float32Array( [ value ] ).buffer )[ 0 ];
-	const exponent = ( bits >>> 23 ) & 0xff;
-	if ( exponent === 0 || exponent === 0xff || bits >>> 31 ) throw new Error( `downsampler: ${ value } needs a normal positive f32 literal.` );
-	return `0x1.${ ( ( bits & 0x7fffff ) << 1 ).toString( 16 ).padStart( 6, '0' ) }p${ exponent - 127 }f`;
-
-}
-
 /**
  * WGSL for sRGB colour (`src/core/srgb.ts`), shared by every kernel that reads or writes it:
  * - `ds_srgb_code(v: f32) -> u32`: the 8-bit code of a linear value, rounded to nearest: a
@@ -266,24 +264,82 @@ function f32Literal( value: number ): string {
  *   decode(encode(v)), with the exact decode table (`srgbDecodeTable`).
  * Hardware decoding isn't exact everywhere (Apple M5: 12-bit linear values, up to 0.39 of a
  * code step off; results/probes/srgb-probe.mjs), so loads snap through `ds_srgb_quantize`.
+ *
+ * The two tables are read from a storage buffer at {@link srgbTableBinding} ({@link srgbTable},
+ * {@link srgbTableData}), not declared in the shader. As WGSL `const` or `var<private>` arrays
+ * indexed at run time they sit in per-invocation memory: on an RTX 3060 (D3D12) that made the
+ * chain 5× slower (1920×1080 rgba8unorm-srgb: 0.90 ms against 0.17 ms without lookups) and each
+ * pipeline took 0.5–5 s to compile (results/windows/round2/srgb.md).
  */
 export function srgbWgsl(): string {
 
-	const list = ( values: ArrayLike<number> ) => Array.from( values, f32Literal ).join( ', ' );
-	return `const DS_SRGB_DECODE = array<f32, 256>(${ list( srgbDecodeTable ) });
-const DS_SRGB_BOUND = array<f32, 255>(${ list( srgbBounds ) });
+	return `@group(0) @binding(${ srgbTableBinding }) var<storage, read> ds_srgb_table: array<f32, 512>;
 fn ds_srgb_code(v: f32) -> u32 {
 	if ((bitcast<u32>(v) & 0x7fffffffu) > 0x7f800000u) { return 0u; }
 	let c = clamp(v, 0.0, 1.0);
 	let e = select(1.055 * pow(c, 1.0 / 2.4) - 0.055, 12.92 * c, c <= 0.0031308);
 	var k = u32(clamp(round(e * 255.0), 0.0, 255.0));
-	if (k < 255u && c >= DS_SRGB_BOUND[k]) { k += 1u; } else if (k > 0u && c < DS_SRGB_BOUND[k - 1u]) { k -= 1u; }
+	if (k < 255u && c >= ds_srgb_table[256u + k]) { k += 1u; } else if (k > 0u && c < ds_srgb_table[255u + k]) { k -= 1u; }
 	return k;
 }
 fn ds_srgb_quantize(v: vec3f) -> vec3f {
-	return vec3f(DS_SRGB_DECODE[ds_srgb_code(v.x)], DS_SRGB_DECODE[ds_srgb_code(v.y)], DS_SRGB_DECODE[ds_srgb_code(v.z)]);
+	return vec3f(ds_srgb_table[ds_srgb_code(v.x)], ds_srgb_table[ds_srgb_code(v.y)], ds_srgb_table[ds_srgb_code(v.z)]);
 }
 `;
+
+}
+
+/** Group 0 binding of the sRGB tables ({@link srgbWgsl}): a read-only storage buffer of {@link srgbTableBytes} bytes. */
+export const srgbTableBinding = 12;
+/** Bytes of the sRGB table buffer: 512 f32, the decode table (256) then the code bounds (255, one unused). */
+export const srgbTableBytes = 2048;
+
+/** The contents of the sRGB table buffer: `srgbDecodeTable` at 0, `srgbBounds` at 256. */
+export function srgbTableData(): Float32Array<ArrayBuffer> {
+
+	const data = new Float32Array( srgbTableBytes / 4 );
+	data.set( srgbDecodeTable, 0 );
+	data.set( srgbBounds, 256 );
+	return data;
+
+}
+
+const srgbTables = new WeakMap<GPUDevice, GPUBuffer>();
+
+/**
+ * The sRGB table buffer for `device`, created and filled on first use and shared by every
+ * kernel on that device (2 KiB, never destroyed: it lives as long as the device).
+ */
+export function srgbTable( device: GPUDevice ): GPUBuffer {
+
+	let buffer = srgbTables.get( device );
+	if ( buffer === undefined ) {
+
+		buffer = device.createBuffer( { label: 'downsampler sRGB tables', size: srgbTableBytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST } );
+		device.queue.writeBuffer( buffer, 0, srgbTableData() );
+		srgbTables.set( device, buffer );
+
+	}
+
+	return buffer;
+
+}
+
+const isSrgb = ( format: string | undefined ) => format !== undefined && isSupportedFormat( format ) && formats[ format ].quantization === 'srgb8';
+
+/** Whether a kernel reads the sRGB tables, so its bind group needs {@link srgbTable} at {@link srgbTableBinding}. */
+export function usesSrgbTable( options: KernelOptions ): boolean {
+
+	if ( ( options.edges ?? 'exact' ) !== 'exact' ) {
+
+		const { format, load, store, output, sourceFormat } = tileOptions( options );
+		return ( load === undefined && isSrgb( sourceFormat ) ) || ( store === undefined && output === 'buffer' && isSrgb( format ) );
+
+	}
+
+	const { format, sourceFormat = format } = options;
+	if ( format !== undefined && isSupportedFormat( format ) && isIntQuantization( formats[ format ].quantization ) ) return false;
+	return isSrgb( format ) || isSrgb( sourceFormat );
 
 }
 
@@ -506,6 +562,7 @@ export function kernelLayoutEntries( options: KernelOptions ): GPUBindGroupLayou
 		else if ( store === undefined ) levels.forEach( ( _, i ) => entries.push( { binding: i + 2, visibility, storageTexture: { access: 'write-only', format: format!, viewDimension: dimension } } ) );
 		if ( load !== undefined && size === undefined ) entries.push( { binding: sizeBinding, visibility, buffer: { type: 'uniform', minBindingSize: 8 } } );
 		if ( options.region === true ) entries.push( { binding: regionBinding, visibility, buffer: { type: 'uniform', minBindingSize: regionBytes } } );
+		if ( usesSrgbTable( options ) ) entries.push( srgbTableEntry( visibility ) );
 		return entries;
 
 	}
@@ -523,7 +580,14 @@ export function kernelLayoutEntries( options: KernelOptions ): GPUBindGroupLayou
 
 	} else for ( let i = 0; i < count!; i ++ ) entries.push( { binding: i + 2, visibility, storageTexture: { access: 'write-only', format: srgbScratchFormat( format! ), viewDimension: dimension } } );
 	if ( options.region === true ) entries.push( { binding: regionBinding, visibility, buffer: { type: 'uniform', minBindingSize: regionBytes } } );
+	if ( usesSrgbTable( options ) ) entries.push( srgbTableEntry( visibility ) );
 	return entries;
+
+}
+
+function srgbTableEntry( visibility: number ): GPUBindGroupLayoutEntry {
+
+	return { binding: srgbTableBinding, visibility, buffer: { type: 'read-only-storage', minBindingSize: srgbTableBytes } };
 
 }
 
@@ -591,11 +655,13 @@ export function createKernel( options: KernelOptions ): string {
  * tile by the 'exact' rule at any parity (shader bilinear weights for 'average',
  * the `2x … 2x+2` footprint for folds), each quantized as stored.
  */
-function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage', tail = false, box = false, area = box, tile: tileOption, f16Rounding = 'nearest', f16Pack = true, region = false }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
+function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage', tail = false, box = false, area = box, tile: tileOption, f16Rounding = 'nearest', f16Pack = true, region = false, halo: haloOption }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
 
 	reductionKey( reduction );
 	const average = reduction === 'average';
-	if ( box && ! area ) throw new Error( 'downsampler: a box kernel\'s first output is area-weighted (area true).' );
+	const halo = haloOption !== undefined && ( haloOption.x.some( e => e > 0 ) || haloOption.y.some( e => e > 0 ) ) ? haloOption : null;
+	if ( halo !== null ) checkHalo( halo, count, tail );
+	if ( box && ! area && halo === null ) throw new Error( 'downsampler: a box kernel\'s first output is area-weighted (area true).' );
 	access ??= average && ! area ? 'sample' : 'load';
 	if ( ! average && access !== 'load' ) throw new Error( 'downsampler: fold reductions read their source with textureLoad (access "load").' );
 	if ( area && access !== 'load' ) throw new Error( 'downsampler: area-weighted (box) kernels read their source with textureLoad (access "load").' );
@@ -616,9 +682,11 @@ function createExactKernel( { format, dimension, count, reduction = 'average', a
 	const side = workgroupSide( tile );
 	const samples = tile / side;
 
+	// A halo batch's tile: the first output's tile plus its halo, per axis.
+	const tileW = tile + ( halo?.x[ 0 ] ?? 0 ), tileH = tile + ( halo?.y[ 0 ] ?? 0 );
 	let code = access === 'sample' ? '@group(0) @binding(0) var imageSampler: sampler;\n' : '';
 	code += `@group(0) @binding(1) var source: texture_2d${ suffix }<f32>;
-var<workgroup> tile: array<vec4f, ${ tile * tile }>;
+var<workgroup> tile: array<vec4f, ${ tileW * tileH }>;
 `;
 	const buffer = output === 'buffer';
 	if ( output !== 'storage' && ! buffer ) throw new Error( `downsampler: unknown output path ${ JSON.stringify( output ) }; expected 'storage' or 'buffer'.` );
@@ -632,8 +700,10 @@ var<workgroup> tile: array<vec4f, ${ tile * tile }>;
 	// Intermediate levels are quantized exactly as they would be stored.
 	// Normalized values stay in integer units (value × scale) so 2:1 averages are
 	// exact and ties round to even; with k/255 floats, float error turns ties into
-	// round-ups that drift by several steps along long 1D tails. The parity test
-	// uses i32: converting a negative float to u32 is undefined (snorm).
+	// round-ups that drift by several steps along long 1D tails. WGSL's round() is
+	// ties to even (Metal rint, HLSL round_ne, SPIR-V RoundEven); it replaced a
+	// floor/compare/select version with the same results, 0.91× (RTX 3060) and 0.76×
+	// (Intel UHD) of an rgba8 chain (results/windows/round2/trim.md).
 	if ( integer ) {
 
 		// Per-channel units: a scalar, or a vector for rgb10a2unorm (2-bit alpha).
@@ -642,13 +712,7 @@ var<workgroup> tile: array<vec4f, ${ tile * tile }>;
 		const vector = ( key: 'min' | 'max' ) => units( key ).startsWith( 'vec4f' ) ? units( key ) : `vec4f(${ units( key ) })`;
 		code += `
 const SCALE = ${ units( 'scale' ) };
-fn quantize(value: vec4f) -> vec4f {
-	let scaled = clamp(value, ${ vector( 'min' ) }, ${ vector( 'max' ) });
-	let lower = floor(scaled);
-	let fraction = scaled - lower;
-	let nearest = select(lower, lower + vec4f(1), fraction > vec4f(0.5));
-	return select(nearest, lower + vec4f(vec4i(lower) & vec4i(1)), fraction == vec4f(0.5));
-}
+fn quantize(value: vec4f) -> vec4f { return round(clamp(value, ${ vector( 'min' ) }, ${ vector( 'max' ) })); }
 `;
 
 	} else if ( quantization === 'float16' ) {
@@ -665,13 +729,7 @@ fn quantize(value: vec4f) -> vec4f { return ds_round_f16(value); }
 		// texture of the linear alias format) stores codes / 255.
 		code += `
 const SCALE = vec4f(1.0, 1.0, 1.0, 255.0);
-fn quantize(value: vec4f) -> vec4f {
-	let a = clamp(value.w, 0.0, 255.0);
-	let lower = floor(a);
-	let fraction = a - lower;
-	let alpha = select(select(lower, lower + 1.0, fraction > 0.5), lower + f32(i32(lower) & 1), fraction == 0.5);
-	return vec4f(ds_srgb_quantize(value.xyz), alpha);
-}
+fn quantize(value: vec4f) -> vec4f { return vec4f(ds_srgb_quantize(value.xyz), round(clamp(value.w, 0.0, 255.0))); }
 fn ds_srgb_store(v: vec4f) -> vec4f { return vec4f(f32(ds_srgb_code(v.x)), f32(ds_srgb_code(v.y)), f32(ds_srgb_code(v.z)), v.w) / 255.0; }
 `;
 
@@ -716,7 +774,7 @@ fn load(p: vec2u, layer: u32) -> vec4f {
 
 	}
 
-	if ( area ) code += areaWgsl( average );
+	if ( area || ( halo !== null && box && average ) ) code += areaWgsl( average );
 
 	code += `
 fn first(pos: vec2u, size: vec2u, layer: u32) -> vec4f {
@@ -852,6 +910,8 @@ fn tailStep(pos: vec2u, sourceSize: vec2u, size: vec2u) -> vec4f {
 
 	}
 
+	if ( halo !== null ) return code + haloMain( { halo, tile, tileW, tileH, side, count, average, box, dims, put, stored, entry } );
+
 	code += `
 @compute @workgroup_size(${ side }, ${ side })
 fn main(@builtin(local_invocation_id) local: vec3u, ${ entry }
@@ -921,6 +981,153 @@ fn main(@builtin(local_invocation_id) local: vec3u, ${ entry }
 		if (${ stored( i, 'pos', dims( i ) ) }) { ${ put( i, 'pos' ) } }
 	}
 `;
+
+	}
+
+	return code + '}\n';
+
+}
+
+/** Checks a halo ({@link KernelOptions.halo}) against its batch: per level, e_i = 2·e_(i+1) + 0 or 1, the last 0. */
+function checkHalo( halo: { x: readonly number[]; y: readonly number[] }, count: number, tail: boolean ): void {
+
+	if ( tail ) throw new Error( 'downsampler: a tail kernel needs no halo (one workgroup holds every level).' );
+	for ( const axis of [ halo.x, halo.y ] ) {
+
+		if ( axis.length !== count || axis[ count - 1 ] !== 0 ) throw new Error( `downsampler: a halo has one entry per level (${ count }), the last 0; got [ ${ axis.join( ', ' ) } ].` );
+		for ( let i = 0; i < count - 1; i ++ ) {
+
+			const odd = axis[ i ] - 2 * axis[ i + 1 ];
+			if ( odd !== 0 && odd !== 1 ) throw new Error( `downsampler: halo [ ${ axis.join( ', ' ) } ] is not 2·e(i+1) + 0 or 1 per level.` );
+
+		}
+
+	}
+
+}
+
+/**
+ * The entry point of a halo batch (SPEC §13 item 3). Level i of the batch is held in the tile
+ * from texel group·(tile >> i) (its origin) over (tile >> i) + halo[ i ] texels per axis; the
+ * first output is computed over the whole first region, later levels from the previous one.
+ * Even steps are the 2×2 combine of the plain kernel; a step that is odd along either axis takes
+ * the 'exact' rule at global positions (`ds_halo_step`), as a new batch's first output would with
+ * 'load' access, so the results are those of the plain batches with 'load' at odd levels. Only a
+ * workgroup's own texels (local < tile >> i) are stored.
+ */
+function haloMain( { halo, tile, tileW, tileH, side, count, average, box, dims, put, stored, entry }: {
+	halo: { x: readonly number[]; y: readonly number[] }; tile: number; tileW: number; tileH: number; side: number; count: number; average: boolean; box: boolean;
+	dims: ( i: number ) => string; put: ( i: number, pos: string ) => string; stored: ( i: number, pos: string, size: string ) => string; entry: string;
+} ): string {
+
+	let code = `
+fn ds_tile(p: vec2u) -> vec4f { return tile[p.y * ${ tileW }u + p.x]; }
+// The 'exact' rule for output pos (global) of a level of size 'size' from the previous level
+// ('sourceSize'), held in the tile from global texel 'origin'.
+fn ds_halo_step(pos: vec2u, origin: vec2u, sourceSize: vec2u, size: vec2u) -> vec4f {
+	let last = sourceSize - vec2u(1);
+`;
+	code += average && box ? `	let lo = ds_area_first(pos, sourceSize, size);
+	let hi = ds_area_last(pos, sourceSize, size);
+	var sum = vec4f(0.0);
+	for (var y = lo.y; y <= hi.y; y++) {
+		var row = vec4f(0.0);
+		for (var x = lo.x; x <= hi.x; x++) { row += ds_area_weight(x, pos.x, sourceSize.x, size.x) * ds_tile(vec2u(x, y) - origin); }
+		sum += ds_area_weight(y, pos.y, sourceSize.y, size.y) * row;
+	}
+	return quantize(sum);
+}
+` : average ? `	let numerator = (2u * pos + vec2u(1)) * sourceSize - size;
+	let denominator = 2u * size;
+	let lo = min(numerator / denominator, last);
+	let hi = min(lo + vec2u(1), last);
+	let f = vec2f(numerator % denominator) / vec2f(denominator);
+	let top = mix(ds_tile(lo - origin), ds_tile(vec2u(hi.x, lo.y) - origin), f.x);
+	let bottom = mix(ds_tile(vec2u(lo.x, hi.y) - origin), ds_tile(hi - origin), f.x);
+	return quantize(mix(top, bottom, f.y));
+}
+` : `	let lo = min(pos * 2u, last);
+	let hi = min(lo + vec2u(1), last);
+	var v = fold(fold(ds_tile(lo - origin), ds_tile(vec2u(hi.x, lo.y) - origin)), fold(ds_tile(vec2u(lo.x, hi.y) - origin), ds_tile(hi - origin)));
+	let odd = ((sourceSize & vec2u(1)) == vec2u(1)) & (sourceSize > vec2u(1));
+	let far = min(lo + vec2u(2), last);
+	if (odd.x) { v = fold(v, fold(ds_tile(vec2u(far.x, lo.y) - origin), ds_tile(vec2u(far.x, hi.y) - origin))); }
+	if (odd.y) { v = fold(v, fold(ds_tile(vec2u(lo.x, far.y) - origin), ds_tile(vec2u(hi.x, far.y) - origin))); }
+	if (odd.x && odd.y) { v = fold(v, ds_tile(far - origin)); }
+	return quantize(v);
+}
+`;
+	code += `
+@compute @workgroup_size(${ side }, ${ side })
+fn main(@builtin(local_invocation_id) local: vec3u, ${ entry }
+	let size0 = ${ dims( 0 ) };
+	var value: vec4f;
+`;
+
+	// The first output over the tile and its halo; own texels are stored.
+	for ( let y = 0; y < Math.ceil( tileH / side ); y ++ ) for ( let x = 0; x < Math.ceil( tileW / side ); x ++ ) {
+
+		code += `
+	{
+		let p = local.xy + vec2u(${ x * side }u, ${ y * side }u);
+		if (p.x < ${ tileW }u && p.y < ${ tileH }u) {
+			let pos0 = group.xy * ${ tile }u + p;
+			value = first(min(pos0, size0 - vec2u(1)), size0, group.z);
+			tile[p.y * ${ tileW }u + p.x] = value;
+			if (p.x < ${ tile }u && p.y < ${ tile }u && ${ stored( 0, 'pos0', 'size0' ) }) { ${ put( 0, 'pos0' ) } }
+		}
+	}
+`;
+
+	}
+
+	const combine = ( a: string, b: string, c: string, d: string ) => average ? `quantize((${ a } + ${ b } + ${ c } + ${ d }) * 0.25)` : `quantize(fold(fold(${ a }, ${ b }), fold(${ c }, ${ d })))`;
+	for ( let i = 1; i < count; i ++ ) {
+
+		const extent = tile >> i;
+		const w = extent + halo.x[ i ], h = extent + halo.y[ i ];
+		const odd = halo.x[ i - 1 ] - 2 * halo.x[ i ] === 1 || halo.y[ i - 1 ] - 2 * halo.y[ i ] === 1;
+		const passes: [ number, number ][] = [];
+		for ( let y = 0; y < Math.ceil( h / side ); y ++ ) for ( let x = 0; x < Math.ceil( w / side ); x ++ ) passes.push( [ x * side, y * side ] );
+		const at = ( p: string ) => `tile[${ p }.y * ${ tileW }u + ${ p }.x]`;
+		code += `
+	workgroupBarrier();
+	var values${ i }: array<vec4f, ${ passes.length }>;
+`;
+		passes.forEach( ( [ ox, oy ], k ) => {
+
+			code += `	{
+		let l = local.xy + vec2u(${ ox }u, ${ oy }u);
+		if (l.x < ${ w }u && l.y < ${ h }u) {
+`;
+			code += odd ? `			values${ i }[${ k }] = ds_halo_step(group.xy * ${ extent }u + l, group.xy * ${ extent * 2 }u, ${ dims( i - 1 ) }, ${ dims( i ) });
+` : `			let last = ${ dims( i - 1 ) } - group.xy * ${ extent * 2 }u - vec2u(1);
+			let lo = min(l * 2u, last);
+			let hi = min(lo + vec2u(1), last);
+			values${ i }[${ k }] = ${ combine( at( 'lo' ), at( 'vec2u(hi.x, lo.y)' ), at( 'vec2u(lo.x, hi.y)' ), at( 'hi' ) ) };
+`;
+			code += `		}
+	}
+`;
+
+		} );
+		code += `	// Every reader must finish before the shared tile is overwritten.
+	workgroupBarrier();
+`;
+		passes.forEach( ( [ ox, oy ], k ) => {
+
+			code += `	{
+		let l = local.xy + vec2u(${ ox }u, ${ oy }u);
+		if (l.x < ${ w }u && l.y < ${ h }u) {
+			value = values${ i }[${ k }];
+			tile[l.y * ${ tileW }u + l.x] = value;
+			let pos = group.xy * ${ extent }u + l;
+			if (l.x < ${ extent }u && l.y < ${ extent }u && ${ stored( i, 'pos', dims( i ) ) }) { ${ put( i, 'pos' ) } }
+		}
+	}
+`;
+
+		} );
 
 	}
 

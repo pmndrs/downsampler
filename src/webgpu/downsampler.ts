@@ -3,7 +3,7 @@ import { outputBufferLayout, planBatches, type Batch, type BatchKernel, type Odd
 import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
 import { layersProblem, planRegions, rectProblem, type BatchRegion, type Rect } from '../core/region.js';
 import { isCompatibilityTexture } from './compat.js';
-import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, regionBinding, regionBytes, type F16Rounding, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
+import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, regionBinding, regionBytes, srgbTable, srgbTableBinding, usesSrgbTable, type F16Rounding, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
 import { requiredLimits } from './limits.js';
 import { asTextureLevel, bindingViewDimension, levelSizeOf, sourceShapeReason, sourceTextureReason, sourceView, type TextureLevel } from './source.js';
 import { retireBuffers } from './tool.js';
@@ -67,6 +67,25 @@ export interface DownsamplerOptions {
 	 * on an M5 Pro, neutral on Intel UHD (SPEC.md §2.1).
 	 */
 	tail?: boolean;
+	/**
+	 * 'exact' and 'box' chains of float formats: carry odd steps inside a batch with a halo
+	 * (SPEC.md §13 item 3), so render sizes take fewer dispatches. Each workgroup also computes
+	 * the texels past its tile's far edge that the next odd steps read (1, 3, 7 … per further odd
+	 * step). Results are the same 'exact' rule: an odd step inside a batch uses shader bilinear
+	 * weights (the fold footprint, area weights under 'box'), as `averageAccess: 'load'` does at
+	 * a batch's first output, so with 'load', folds or 'box' the levels are bit-identical to
+	 * plain batches, and with 'sample' within one step of them. Needs 256 invocations per
+	 * workgroup (not in compatibility mode by default); integer formats and 'spd' ignore it.
+	 * Default false.
+	 */
+	halo?: boolean;
+	/**
+	 * With `halo`: the largest extra first-output work a halo may add to a batch, as a fraction
+	 * of its tile (default 0.25). For tuning; see `planBatches`' `haloMaxExtra`.
+	 */
+	haloMaxExtra?: number;
+	/** With `halo`: the largest first output (texels) a halo batch may start from (default 16384, 128²). For tuning; see `planBatches`' `haloMaxOutput`. */
+	haloMaxOutput?: number;
 	/**
 	 * float16 formats: how each level is rounded to a half, before it is stored and
 	 * before the next level reads it. 'nearest' (default): round to nearest even in the
@@ -288,6 +307,8 @@ interface BatchKernelKey {
 	box: boolean;
 	/** A partial update: the region uniform offsets the grid and restricts stores. */
 	region: boolean;
+	/** A halo batch ({@link Batch.halo}). */
+	halo?: { x: number[]; y: number[] };
 }
 
 /** Recent partial-update plans kept per texture (each holds a uniform buffer and bind groups). */
@@ -337,6 +358,10 @@ export class Downsampler {
 	readonly compatibility: boolean | 'auto';
 	/** Whether 'exact' chains finish in a tail kernel (resolved `tail` option). */
 	readonly tail: boolean;
+	/** Whether 'exact' and 'box' chains carry odd steps in halo batches (resolved `halo` option; false where workgroups have fewer than 256 invocations). */
+	readonly halo: boolean;
+	private readonly haloMaxExtra: number;
+	private readonly haloMaxOutput: number;
 	/** How float16 levels are rounded (resolved `f16Rounding` option). */
 	readonly f16Rounding: F16Rounding;
 	/** Smallest first-output tile of 'exact' batches (resolved `exactTile` option: 8, 16 or 32). */
@@ -388,6 +413,14 @@ export class Downsampler {
 		if ( compatibility !== 'auto' && typeof compatibility !== 'boolean' ) throw new Error( 'downsampler: compatibility must be true, false or "auto".' );
 		this.compatibility = compatibility;
 		this.tail = options.tail ?? defaults.tail;
+		// Halo tiles are at least 16 × 16 invocations, as the larger tail tiles.
+		this.halo = ( options.halo ?? false ) && defaults.tailMaxTile === 32;
+		const haloMaxExtra = options.haloMaxExtra ?? 0.25;
+		if ( typeof haloMaxExtra !== 'number' || ! ( haloMaxExtra >= 0 ) ) throw new Error( 'downsampler: haloMaxExtra must be a number ≥ 0.' );
+		this.haloMaxExtra = haloMaxExtra;
+		const haloMaxOutput = options.haloMaxOutput ?? 16384;
+		if ( typeof haloMaxOutput !== 'number' || ! ( haloMaxOutput >= 0 ) ) throw new Error( 'downsampler: haloMaxOutput must be a number ≥ 0.' );
+		this.haloMaxOutput = haloMaxOutput;
 		const f16Rounding = options.f16Rounding ?? 'nearest';
 		if ( f16Rounding !== 'nearest' && f16Rounding !== 'device' ) throw new Error( 'downsampler: f16Rounding must be "nearest" or "device".' );
 		this.f16Rounding = f16Rounding;
@@ -675,7 +708,7 @@ export class Downsampler {
 		const { tailMaxTile } = this;
 		// Under 'spd', a resampled source is its own 1-level batch, like a copy.
 		const resample = source?.resample === 'area';
-		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch, oddSizes, fromSource: source !== undefined, copySource: copySource || resample, tail: oddSizes !== 'spd' && this.tail, tailMaxTile, exactMinTile: this.exactTile } );
+		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch, oddSizes, fromSource: source !== undefined, copySource: copySource || resample, tail: oddSizes !== 'spd' && this.tail, tailMaxTile, exactMinTile: this.exactTile, ...this.haloPlan( texture.format as SupportedFormat, oddSizes ) } );
 		const layerCount = texture.depthOrArrayLayers;
 		const layers: readonly [ number, number ] = region?.layers ?? [ 0, layerCount ];
 		const regions: BatchRegion[] | null = region === null ? null : planRegions( planned, region.rect, texture.width, texture.height, sourceWidth, sourceHeight );
@@ -760,14 +793,17 @@ export class Downsampler {
 			// averages that read an odd level, or reduce odd levels in a tail. The others are
 			// the 'exact' kernels: an even step is the same 2×2 box, and folds are the same.
 			const [ sw, sh ] = sourceSize( batch );
-			const box = batch.kernel !== 'clamp' && oddSizes === 'box' && reduction === 'average' && ( batch.kernel === 'tail' || odd( sw ) || odd( sh ) );
-			const area = box || ( batch.kernel !== 'clamp' && external && resample );
+			const boxFirst = batch.kernel !== 'clamp' && oddSizes === 'box' && reduction === 'average' && ( batch.kernel === 'tail' || odd( sw ) || odd( sh ) );
+			// A halo batch under 'box' takes area weights at its odd steps, whatever its first output's source.
+			const box = boxFirst || ( batch.halo !== undefined && oddSizes === 'box' && reduction === 'average' );
+			const area = boxFirst || ( batch.kernel !== 'clamp' && external && resample );
 			const access = area || ( external && copySource && batch.firstMipLevel === baseMipLevel ) ? 'load' : this.access( reduction, sourceFormat );
-			const kernel: BatchKernelKey = { format, dimension, count: batch.count, access, reduction, sourceFormat, output, kind: batch.kernel, tile: batch.tile, area, box, region: region !== null };
+			const kernel: BatchKernelKey = { format, dimension, count: batch.count, access, reduction, sourceFormat, output, kind: batch.kernel, tile: batch.tile, area, box, region: region !== null, ...( batch.halo ? { halo: batch.halo } : {} ) };
 			const layout = this.layout( kernel );
 			const pipeline = this.pipeline( kernel );
 			const entries: GPUBindGroupEntry[] = access === 'sample' ? [ { binding: 0, resource: this.sampler } ] : [];
 			entries.push( { binding: 1, resource: external ? sourceView( source!, dimension, 'downsampler source' ) : input( batch.sourceMipLevel! ) } );
+			if ( usesSrgbTable( this.kernelOptions( kernel ) ) ) entries.push( { binding: srgbTableBinding, resource: { buffer: srgbTable( this.device ) } } );
 			const update = regions?.[ index ];
 			const prepared: PreparedBatch = { ...batch, pipeline, bindGroup: undefined as unknown as GPUBindGroup, output, layers };
 			if ( update !== undefined ) {
@@ -899,6 +935,7 @@ export class Downsampler {
 			const level = batch.firstMipLevel + i;
 			const outputWidth = mipSize( texture.width, level ), outputHeight = mipSize( texture.height, level );
 			const entries: GPUBindGroupEntry[] = [ { binding: 1, resource: this.scratchView( texture, level, dimension ) }, { binding: 2, resource: view( level ) } ];
+			if ( usesSrgbTable( this.kernelOptions( kernel ) ) ) entries.push( { binding: srgbTableBinding, resource: { buffer: srgbTable( this.device ) } } );
 			const copy: PreparedBatch = {
 				kernel: 'exact', sourceMipLevel: level, firstMipLevel: level, count: 1, outputWidth, outputHeight, tile, groupsX: Math.ceil( outputWidth / tile ), groupsY: Math.ceil( outputHeight / tile ), copy: true, output: 'storage',
 				layers: batch.layers, pipeline, bindGroup: undefined as unknown as GPUBindGroup
@@ -952,10 +989,19 @@ export class Downsampler {
 	 * Kernel options for a batch. 'clamp' batches (`oddSizes: 'spd'`) are the
 	 * Reducer's 'clamp' tile kernel emitting every level.
 	 */
-	private kernelOptions( { format, dimension, count, access, reduction, sourceFormat, output, kind, tile, area, box, region }: BatchKernelKey ): KernelOptions {
+	/** Halo planning for a texture of `format` (none for integer formats, whose kernel has no halo, or 'spd'). */
+	private haloPlan( format: SupportedFormat, oddSizes: OddSizePolicy ): { halo?: boolean; haloMaxTexels?: number; haloMaxExtra?: number; haloMaxOutput?: number } {
+
+		if ( ! this.halo || oddSizes === 'spd' || ! isSupportedFormat( format ) || isIntFormat( format ) ) return {};
+		return { halo: true, haloMaxTexels: Math.floor( this.device.limits.maxComputeWorkgroupStorageSize / 16 ), haloMaxExtra: this.haloMaxExtra, haloMaxOutput: this.haloMaxOutput };
+
+	}
+
+	private kernelOptions( { format, dimension, count, access, reduction, sourceFormat, output, kind, tile, area, box, region, halo }: BatchKernelKey ): KernelOptions {
 
 		const { f16Rounding } = this;
 		const partial = region ? { region: true } : {};
+		if ( halo !== undefined ) return { format, dimension, count, reduction, access, sourceFormat, output, f16Rounding, tile, halo, box, area, ...partial };
 		if ( kind !== 'clamp' ) return { format, dimension, count, reduction, access, sourceFormat, output, f16Rounding, tile, ...( kind === 'tail' ? { tail: true } : {} ), ...( box ? { box: true } : area ? { area: true } : {} ), ...partial };
 		return { format, dimension, edges: 'clamp', count, reduction, access, sourceFormat, output, f16Rounding, ...partial };
 
@@ -965,7 +1011,9 @@ export class Downsampler {
 
 		const { format, dimension, count, access, output, kind, region } = key;
 		// Exact and tail kernels share layouts; 'clamp' ones differ (no sampler under 'load').
-		const id = `${ format }:${ dimension }:${ count }:${ access }:${ output }${ kind === 'clamp' ? ':clamp' : '' }${ region ? ':region' : '' }`;
+		// An sRGB source or destination adds the table binding.
+		const srgb = usesSrgbTable( this.kernelOptions( key ) );
+		const id = `${ format }:${ dimension }:${ count }:${ access }:${ output }${ kind === 'clamp' ? ':clamp' : '' }${ region ? ':region' : '' }${ srgb ? ':srgb' : '' }`;
 		let layout = this.layouts.get( id );
 		if ( layout === undefined ) this.layouts.set( id, layout = this.device.createBindGroupLayout( { label: `downsampler ${ id }`, entries: kernelLayoutEntries( this.kernelOptions( key ) ) } ) );
 		return layout;
@@ -974,8 +1022,8 @@ export class Downsampler {
 
 	private pipeline( key: BatchKernelKey ): GPUComputePipeline {
 
-		const { format, dimension, count, access, reduction, sourceFormat, output, kind, tile, area, box, region } = key;
-		const id = `${ kind }${ kind === 'clamp' ? '' : tile }${ box ? ':box' : area ? ':area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }:${ output }${ region ? ':region' : '' }`;
+		const { format, dimension, count, access, reduction, sourceFormat, output, kind, tile, area, box, region, halo } = key;
+		const id = `${ kind }${ kind === 'clamp' ? '' : tile }${ box ? ':box' : area ? ':area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }:${ output }${ region ? ':region' : '' }${ halo ? `:halo${ area ? 'a' : '' }${ halo.x.join( '.' ) }/${ halo.y.join( '.' ) }` : '' }`;
 		let pipeline = this.pipelines.get( id );
 		if ( pipeline !== undefined ) return pipeline;
 		const label = `downsampler ${ kind }${ box ? ' box' : area ? ' area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ typeof reduction === 'string' ? reduction : 'custom' }:${ output }${ region ? ':region' : '' }`;
