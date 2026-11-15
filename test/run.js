@@ -289,7 +289,7 @@ try {
 	if ( value( 'output' ) ) {
 
 		await mkdir( dirname( value( 'output' ) ), { recursive: true } );
-		await writeFile( value( 'output' ), JSON.stringify( { ...report, browserArgs }, null, 2 ) + '\n' );
+		await writeFile( value( 'output' ), JSON.stringify( { ...report, browserArgs } ) + '\n' );
 
 	}
 

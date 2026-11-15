@@ -11,8 +11,12 @@ drafts/
 native/.deps/
 native/*/build/
 
-# test/parallel.js: per-shard files (the summary, summary.json and durations.json are kept)
+# Test runs (test/parallel.js, test/run.js): only summary.md is kept; it has the verdict and every failure.
+# Durations worth keeping are merged into one named file (results/windows/durations-rtx3060-full.json).
 results/local/
-results/**/report-[0-9]*.json
-results/**/timing-[0-9]*.json
+results/**/report-*.json
+results/**/timing-*.json
+results/**/shard*.json
 results/**/shard-[0-9]*.log
+results/**/summary.json
+results/**/durations.json
