@@ -38,6 +38,8 @@ Last updated: 2026-11-14 · Branch: `main` (the Mac's work merged; the Windows a
 - [ ] sRGB chains on NVIDIA (DIVERGES #16): render passes take 0.32–0.51× our time on the RTX; the scratch-texture path doesn't help (1.05–1.13×), so the cost is the shader's encode/decode and the copy. Profile the encode (a `--compare=srgb` variant without the correction step, as timing only) before deciding
 - [ ] float32 averages sample when `float32-filterable` is available (DIVERGES #13, effort S): time load vs sample for rgba32float/r32float first
 
+- [x] Per-dispatch cost (2026-11-15, new `--compare=dispatch`): a dependent dispatch costs 3–4 µs on the RTX and Intel; one compute pass vs a pass per dispatch identical; at 1080p ~15 µs of a ~50 µs RTX chain is dispatch overhead, so the lever left is small (halo ~4 µs, two dispatches ~8 µs) ([round2/dispatch.md](results/windows/round2/dispatch.md)). M5 not run
+
 ## Deferred (three.js-driven)
 
 - [ ] Transform hooks around the average (premultiplied alpha, log luminance): deferred, design sketch in SPEC §5 Planned

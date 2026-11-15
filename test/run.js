@@ -32,6 +32,7 @@
 //   --compare=trim                       the 'exact' kernel with cheaper per-value arithmetic, same bits (--strategies=round,mul,trim)
 //   --throughput with --compare=storage-usage|subgroups|f16 adds per-frame throughput to the timestamps
 //   --compare=partial                    rect and one-layer updates against the full chain (test/bench/partial.js)
+//   --compare=dispatch                   the cost of one dependent compute dispatch (test/bench/dispatch.js)
 //   --strategies=a,b,c                   time a subset (any --compare mode; the ratios' reference is always kept)
 // Shards (test/ci/README.md):
 //   node test/run.js --quick --adapter=swiftshader --shard=2/8   one of 8 disjoint shards, balanced by test/ci/durations.json
@@ -223,13 +224,19 @@ try {
 			...Object.fromEntries( names.map( name => [ name, `${ row.gpuMs[ name ].toFixed( 4 ) } (${ ( row.gpuMs[ name ] / row.gpuMs[ name.endsWith( 'Max' ) ? 'exactMax' : 'exact' ] ).toFixed( 2 ) })` ] ) )
 		} ) ) );
 
-	} else if ( timing?.results.length && ( options.compare === 'webgpu-spd' || options.compare === 'render' || options.compare === 'srgb' || options.compare === 'partial' ) ) {
+	} else if ( timing?.results.length && ( options.compare === 'webgpu-spd' || options.compare === 'render' || options.compare === 'srgb' || options.compare === 'partial' || options.compare === 'dispatch' ) ) {
 
 		// Paired per-round ratios to 'exact' (averages) and 'exactMax' (max); 'render': to render passes.
 		console.table( timing.results.map( row => ( {
 			size: `${ row.width }x${ row.height }`, format: row.format,
 			...Object.fromEntries( Object.keys( row.gpuMs ).map( name => [ name, `${ row.gpuMs[ name ].toFixed( 4 ) } ×${ row.ratios[ name ].toFixed( 2 ) } [${ row.passes[ name ] }]` ] ) )
 		} ) ) );
+		if ( options.compare === 'dispatch' ) {
+
+			console.log( 'fit of gpu time against dependent dispatches (time = work + dispatches × per dispatch):' );
+			console.table( timing.results.map( row => ( { size: `${ row.width }x${ row.height }`, format: row.format, 'per dispatch µs': row.fit.perDispatchUs.toFixed( 2 ), 'work µs': row.fit.workUs.toFixed( 1 ), dispatches: row.fit.dispatches.join( ' / ' ) } ) ) );
+
+		}
 
 	} else if ( timing?.results.length ) {
 

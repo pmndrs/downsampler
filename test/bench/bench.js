@@ -16,6 +16,7 @@ import { storageUsage } from './storage-usage.js';
 import { kernelVariants } from './kernel-variants.js';
 import { srgbFormats, srgbStrategies } from './srgb.js';
 import { partialSizes, partialStrategies } from './partial.js';
+import { dispatchFit, dispatchFormats, dispatchSizes, dispatchStrategies } from './dispatch.js';
 
 export const defaultSizes = [ [ 256, 256 ], [ 512, 512 ], [ 1024, 1024 ], [ 2048, 2048 ], [ 4096, 4096 ], [ 1920, 1080 ], [ 512, 512, 6 ] ];
 
@@ -302,6 +303,16 @@ export async function benchmark( device, { sizes, formats: benchFormats, rounds,
 	if ( compare === 'srgb' ) return timestamps ? measure( device, pickStrategies( srgbStrategies( device ), only, [ 'buffer' ] ), { sizes: sizes ?? renderCompareSizes, benchFormats: benchFormats ?? srgbFormats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
 	// Partial updates (test/bench/partial.js): rect and layer updates paired against the full chain.
 	if ( compare === 'partial' ) return timestamps ? measure( device, pickStrategies( partialStrategies( device ), only, [ 'full' ] ), { sizes: sizes ?? partialSizes, benchFormats: benchFormats ?? defaultFormats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
+	// The cost of one dependent dispatch (test/bench/dispatch.js): the same chain at 1–6 levels per dispatch.
+	if ( compare === 'dispatch' ) {
+
+		if ( ! timestamps ) return { timestamps: false, results: [] };
+		const timing = await measure( device, pickStrategies( dispatchStrategies( device ), only ), { sizes: sizes ?? dispatchSizes, benchFormats: benchFormats ?? dispatchFormats, rounds: rounds ?? 11, repeats, onProgress } );
+		for ( const row of timing.results ) row.fit = dispatchFit( row );
+		return timing;
+
+	}
+
 	benchFormats ??= defaultFormats;
 	if ( compare === 'throughput' ) {
 

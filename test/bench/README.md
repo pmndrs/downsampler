@@ -16,6 +16,7 @@ same-run ratios are trustworthy on a loaded machine.
 | `--compare=subgroups` | `kernel-variants.js` | upper bound for a subgroup kernel (M3) |
 | `--compare=f16` | `kernel-variants.js` | averaging in f16: speed and precision (M3) |
 | `--compare=trim` | `kernel-variants.js` | the 'exact' kernel with cheaper per-value arithmetic, same bits (results/windows/round2/trim.md) |
+| `--compare=dispatch` | `dispatch.js` | the cost of one dependent compute dispatch (results/windows/round2/dispatch.md) |
 | `--compare=partial` | `partial.js` | `rect` and one-layer updates against the full chain (results/windows/round2/partial.md) |
 
 `--strategies=a,b,c` times a subset in every `--compare` mode. The strategy a mode's ratios divide by is always kept:
