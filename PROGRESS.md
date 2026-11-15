@@ -49,6 +49,7 @@ Last updated: 2026-11-14 · Branch: `main` (the Mac's work merged; the Windows a
 
 - Rect updates without allocation: one ring buffer of region uniforms with dynamic offsets, for tools that change rects every frame (owner 2026-11-13: not now). Caveat to design around: more than N updates recorded before a submit would overwrite slots
 - **M3, dial in:** per-frame throughput benchmark; cross-vendor device lab runs (NVIDIA/D3D12 first); `STORAGE_BINDING` sampling cost; float32 sampler vs load; subgroup kernel with fallback (upper-bound test first); fp16
+- Maybe: linear rgba16float for colour textures re-mipped every frame (canvas, video), as a three.js opt-in, so they take the compute path (DIVERGES #16, other options)
 - **M5, ship:** npm publish, the upscaler and other tools as consumers, three.js in-tree PR, the gpuweb#5253 comment
 
 ## Done
