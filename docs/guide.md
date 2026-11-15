@@ -234,7 +234,7 @@ for ( const texture of textures ) downsampler.encode( encoder, texture, { scratc
 - Alpha is linear (these formats store it as plain unorm8): averaged in 0–255 units, ties to even, as `rgba8unorm`.
 - `'min'`, `'max'` and `'minmax'` select stored codes exactly: the decode is monotonic and the encoder inverts it, so they equal folding the codes themselves.
 - Hardware decoding isn't exact everywhere: an Apple M5 Pro decodes to 12-bit linear values (254 of 256 codes inexact, up to 0.39 of a code step off). `averageAccess: 'load'` snaps every loaded texel to the exact decode table, so results are the same on every GPU; the default `'sample'` keeps the hardware's decode and filtering, as render passes do (about a code from the exact result at most).
-- Cost (M5 Pro, not idle, SPEC §6.1 sRGB): 1.2–2× faster than render passes up to 1280×720 and at 1024², a tie at 1707×960, and slower from 1080p up (render passes take 0.55–0.79× the time), where the buffer path's extra copy of every level dominates. On an RTX 3060, render passes are 2.6–3.3× faster at every size (`results/windows/round2/m3.md`). For large sRGB textures, and on Windows, three's own render-pass mipmaps are the faster choice. `'load'` costs 1.7–2.1×.
+- Cost (M5 Pro, not idle, SPEC §6.1 sRGB): 1.2–2× faster than render passes up to 1280×720 and at 1024², a tie at 1707×960, and slower from 1080p up (render passes take 0.55–0.79× the time), where the buffer path's extra copy of every level dominates. On an RTX 3060, render passes are 2–3× faster at every size, and writing a scratch rgba8unorm texture instead of the buffer doesn't help (1.05–1.13×; DIVERGES #16). For large sRGB textures, and on NVIDIA, three's own render-pass mipmaps are the faster choice. `'load'` costs 1.7–2.1×.
 - The texture needs `COPY_DST` (three.js gives its textures that). `oddSizes`, `rect`, `layers`, separate sources (into or out of sRGB), the tail kernel and compatibility mode all work; `encodePass` doesn't (the buffer path's copies).
 
 ### Compatibility mode
@@ -503,4 +503,4 @@ When the library's kernels change on purpose, `npm run golden:update` rewrites t
 - Transform hooks around the average (premultiplied alpha, log-luminance; SPEC §5 Planned).
 - Subgroup and fp16-arithmetic kernels: measured and not built, because they weren't faster enough or changed results (`results/windows/round2/m3.md`).
 
-The full list is in [SPEC.md §11](../SPEC.md#11-milestones) and [DIVERGES.md](../DIVERGES.md).
+The full list is in [SPEC.md §11](../SPEC.md#11-milestones) and [DIVERGES.md](../DIVERGES.md); [How it compares](differences.md) is the short version.

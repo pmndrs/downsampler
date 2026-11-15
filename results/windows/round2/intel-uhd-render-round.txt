@@ -1,0 +1,28 @@
+took the bench lock (C:\Users\denni\AppData\Local\Temp\ddgi-gpu-bench.lock) for "downsampler: intel-uhd-render-round"
+GPU at 61 C, below 70 C: starting
+{"vendor":"intel","architecture":"gen-12lp","device":"","description":"","isFallbackAdapter":false,"timestamps":true,"features":["texture-formats-tier1","bgra8unorm-storage"],"compatibility":false,"maxStorageTexturesPerShaderStage":6,"subgroupMinSize":8,"subgroupMaxSize":128,"adapterFeatures":["bgra8unorm-storage","chromium-experimental-multi-draw-indirect","chromium-experimental-timestamp-query-inside-passes","clip-distances","core-features-and-limits","depth-clip-control","depth32float-stencil8","dual-source-blending","float32-blendable","float32-filterable","indirect-first-instance","primitive-index","rg11b10ufloat-renderable","shader-f16","subgroups","texture-component-swizzle","texture-compression-bc","texture-compression-bc-sliced-3d","texture-formats-tier1","texture-formats-tier2","timestamp-query"],"maxTextureDimension2D":8192}
+load average (1, 5, 15 min): before 0.0 0.0 0.0, after 0.0 0.0 0.0
+validation passed: 0 cases, 0 pattern runs, 0 ms
+┌─────────┬─────────────┬───────────────┬──────────────────────┬─────────────────────┬─────────────────────┬─────────────────────┐
+│ (index) │ size        │ format        │ render               │ exact               │ spd                 │ tail                │
+├─────────┼─────────────┼───────────────┼──────────────────────┼─────────────────────┼─────────────────────┼─────────────────────┤
+│ 0       │ '960x540'   │ 'rgba8unorm'  │ '0.1607 ×1.00 [9]'   │ '0.1145 ×0.77 [7]'  │ '0.1172 ×0.76 [2]'  │ '0.1118 ×0.72 [4]'  │
+│ 1       │ '1129x635'  │ 'rgba8unorm'  │ '0.1431 ×1.00 [10]'  │ '0.1026 ×0.68 [6]'  │ '0.1003 ×0.70 [2]'  │ '0.1003 ×0.68 [5]'  │
+│ 2       │ '1280x720'  │ 'rgba8unorm'  │ '0.1631 ×1.00 [10]'  │ '0.1247 ×0.79 [5]'  │ '0.1243 ×0.76 [2]'  │ '0.1233 ×0.75 [3]'  │
+│ 3       │ '1707x960'  │ 'rgba8unorm'  │ '0.2587 ×1.00 [10]'  │ '0.1947 ×0.76 [8]'  │ '0.2016 ×0.78 [2]'  │ '0.1791 ×0.71 [4]'  │
+│ 4       │ '1920x1080' │ 'rgba8unorm'  │ '0.5013 ×1.00 [10]'  │ '0.2715 ×0.53 [7]'  │ '0.2813 ×0.55 [2]'  │ '0.2423 ×0.48 [4]'  │
+│ 5       │ '2560x1440' │ 'rgba8unorm'  │ '0.7884 ×1.00 [11]'  │ '0.6974 ×0.91 [5]'  │ '0.6391 ×0.84 [2]'  │ '0.6438 ×0.93 [3]'  │
+│ 6       │ '1024x1024' │ 'rgba8unorm'  │ '0.3429 ×1.00 [10]'  │ '0.3067 ×0.86 [2]'  │ '0.2733 ×0.78 [2]'  │ '0.3066 ×0.87 [2]'  │
+│ 7       │ '4096x4096' │ 'rgba8unorm'  │ '6.1717 ×1.00 [12]'  │ '4.9580 ×0.82 [2]'  │ '5.9291 ×0.98 [2]'  │ '6.5988 ×1.05 [2]'  │
+│ 8       │ '960x540'   │ 'rgba16float' │ '0.2892 ×1.00 [9]'   │ '0.2054 ×0.69 [7]'  │ '0.2053 ×0.70 [2]'  │ '0.1953 ×0.67 [4]'  │
+│ 9       │ '1129x635'  │ 'rgba16float' │ '0.3651 ×1.00 [10]'  │ '0.2371 ×0.65 [6]'  │ '0.2436 ×0.67 [2]'  │ '0.2278 ×0.62 [5]'  │
+│ 10      │ '1280x720'  │ 'rgba16float' │ '0.4539 ×1.00 [10]'  │ '0.3143 ×0.70 [5]'  │ '0.3020 ×0.70 [2]'  │ '0.3221 ×0.70 [3]'  │
+│ 11      │ '1707x960'  │ 'rgba16float' │ '0.6155 ×1.00 [10]'  │ '0.3961 ×0.67 [8]'  │ '0.4301 ×0.74 [2]'  │ '0.4016 ×0.65 [4]'  │
+│ 12      │ '1920x1080' │ 'rgba16float' │ '0.6169 ×1.00 [10]'  │ '0.4810 ×0.78 [7]'  │ '0.5241 ×0.85 [2]'  │ '0.4733 ×0.75 [4]'  │
+│ 13      │ '2560x1440' │ 'rgba16float' │ '2.2454 ×1.00 [11]'  │ '2.1495 ×0.94 [5]'  │ '2.2033 ×1.00 [2]'  │ '2.1608 ×0.96 [3]'  │
+│ 14      │ '1024x1024' │ 'rgba16float' │ '0.4996 ×1.00 [10]'  │ '0.3682 ×0.74 [2]'  │ '0.3469 ×0.68 [2]'  │ '0.3726 ×0.74 [2]'  │
+│ 15      │ '4096x4096' │ 'rgba16float' │ '14.0089 ×1.00 [12]' │ '13.1942 ×0.93 [2]' │ '12.8981 ×0.90 [2]' │ '13.1088 ×0.91 [2]' │
+└─────────┴─────────────┴───────────────┴──────────────────────┴─────────────────────┴─────────────────────┴─────────────────────┘
+GPU clock over 185 samples: SM min 210 / median 210 / max 1432 MHz, memory min 405 / median 405 / max 7151 MHz; no sample was under load
+Timing NO VERDICT: only 0 samples under load (5 needed).
+released the bench lock (C:\Users\denni\AppData\Local\Temp\ddgi-gpu-bench.lock)

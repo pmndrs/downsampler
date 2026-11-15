@@ -2,7 +2,7 @@
 
 Live status board. SPEC.md holds the design and the reasons behind it; this file holds where things stand.
 
-**For the owner:** open decisions and the Windows run sheet are also in the artifact (`docs/diverges.html`), with a recommendation on each.
+**For the owner:** open decisions are under *Waiting on owner*. Where we differ from SPD, nvpro and render passes: [DIVERGES.md](DIVERGES.md) (the record, with every open item marked **Open**) and [docs/differences.md](docs/differences.md) (the plain-language version).
 
 **For agents:** read this after SPEC.md. When you start a task, move it to *Now* with your branch. When you finish, tick it, add the commit, and log the verification run. Keep entries to one line and link SPEC sections instead of restating them. Anything that needs the owner goes under *Waiting on owner*.
 
@@ -33,6 +33,10 @@ Last updated: 2026-11-14 · Branch: `main` (the Mac's work merged; the Windows a
 - [x] Timings for `'box'` / `tailBox` and partial updates (2026-11-15): tail stays on under `'box'` (RTX `box ÷ tailBox` 1.06–2.25 at render sizes; [round2/defaults.md](results/windows/round2/defaults.md)); new `--compare=partial`: a rectangle costs the chain's dispatch floor, 7–18 µs on the RTX at any size up to 256² (3 % of a 4096² chain, 17–31 % at 1080p), one cube face 0.18–0.35 of the cube ([round2/partial.md](results/windows/round2/partial.md))
 
 - [x] Cheaper exact kernel (handoff-2 §4.2, 2026-11-15): normalized `quantize` is WGSL `round()` (ties to even) instead of floor/compare/select, same bits; rgba8 chains 0.91× / 0.96× (squares / render sizes) on the RTX 3060, 0.76× / 0.73× on Intel UHD; rgba16float unchanged; dividing stores by 255 vs multiplying: no difference, kept. New probe `--compare=trim` ([round2/trim.md](results/windows/round2/trim.md)). Not yet run on the M5 Pro (Metal `rint`; the suite's bit-exact in-tile checks would catch another tie rule)
+
+- [x] Divergence review (2026-11-15): every DIVERGES entry updated with round 2 and M3 data; 8, 10, 11, 12, 18, 19, 20 resolved; #17 (no render fallback) resolved by a fresh `--compare=render` (tail chain 0.77–1.01× of render passes on the RTX, 0.48–1.05× on Intel); new #25 (f16 rounding); plain-language [docs/differences.md](docs/differences.md) replaces the owner dashboard `docs/diverges.html` (stale since 2026-11-13; in git history)
+- [ ] sRGB chains on NVIDIA (DIVERGES #16): render passes take 0.32–0.51× our time on the RTX; the scratch-texture path doesn't help (1.05–1.13×), so the cost is the shader's encode/decode and the copy. Profile the encode (a `--compare=srgb` variant without the correction step, as timing only) before deciding
+- [ ] float32 averages sample when `float32-filterable` is available (DIVERGES #13, effort S): time load vs sample for rgba32float/r32float first
 
 ## Deferred (three.js-driven)
 

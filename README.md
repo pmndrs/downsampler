@@ -94,8 +94,9 @@ GPU time for a full chain, against one render pass per level:
 | 1024² | 7× faster | 4.5× faster |
 | 1920×1080 | 3× faster | |
 
-On an NVIDIA RTX 3060 Laptop, at screen sizes from 960×540 to 2560×1440, it's about as fast as render passes in rgba8
-and 10 % faster in rgba16float; a 512² cube map is 3–4× faster.
+On an NVIDIA RTX 3060 Laptop, from 960×540 to 2560×1440, it takes 5–20 % less time than render passes in rgba8 and up
+to 20 % less in rgba16float; a 512² cube map is 3–4× faster. The exception is sRGB colour textures, which compute
+shaders can't write directly: on the RTX, render passes are 2–3× faster for those.
 
 The big wins are small textures and cube maps, where the cost of starting many render passes dominates. Very large
 textures (4096²) are limited by memory bandwidth, so every method takes about the same time there. If you can accept
@@ -113,6 +114,7 @@ WebGPU compatibility-mode devices. Not yet tested: mobile, AMD, Safari, Firefox.
 - [Getting started](docs/getting-started.md): a walkthrough of every feature, with the reasons to pick each option.
 - [Reference](docs/guide.md): every class, option and default.
 - [Examples](examples/): `npm run examples`, then open http://localhost:8080/examples/.
+- [How it compares](docs/differences.md): what changes coming from render passes, SPD, nvpro or a Hi-Z shortcut.
 - [Coming from AMD SPD or FSR](docs/spd-users.md).
 - Design notes: [SPEC.md](SPEC.md) (decisions and measurements), [DIVERGES.md](DIVERGES.md) (where and why we
   differ from SPD and other libraries).

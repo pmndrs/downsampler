@@ -203,6 +203,9 @@ does nothing when it can't handle a texture, so three's own mipmaps remain your 
 It works for `StorageTexture`s and for sRGB colour textures. Other regular three.js textures don't get the storage
 usage it needs; a built-in compute option for three.js itself is in progress.
 
+For sRGB textures on NVIDIA, three's own mipmaps are 2–3× faster (compute shaders can't write sRGB directly, so the
+library takes a slower path), so leave those to three there.
+
 ## When a texture isn't supported
 
 ```js
@@ -241,5 +244,6 @@ truncate when they convert. So those are the same everywhere by default.
 ## Where next
 
 - [Reference](guide.md): every option, default and method.
+- [How it compares](differences.md) with render passes, SPD and nvpro.
 - [Coming from AMD SPD or FSR](spd-users.md).
 - [SPEC.md](../SPEC.md) for why things work the way they do, with measurements.
