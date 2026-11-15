@@ -14,7 +14,7 @@ import { measureUnits, orderAgreement, throughputOptions } from './throughput.js
 import { compareSpdSizes, firstUnitStep, webgpuSpdVariants } from './webgpu-spd.js';
 import { storageUsage } from './storage-usage.js';
 import { kernelVariants } from './kernel-variants.js';
-import { srgbFormats, srgbStrategies } from './srgb.js';
+import { srgbCostStrategies, srgbFormats, srgbStrategies } from './srgb.js';
 import { partialSizes, partialStrategies } from './partial.js';
 import { dispatchFit, dispatchFormats, dispatchSizes, dispatchStrategies } from './dispatch.js';
 
@@ -300,6 +300,7 @@ export async function benchmark( device, { sizes, formats: benchFormats, rounds,
 	if ( compare === 'storage-usage' ) return storageUsage( device, { sizes, formats: benchFormats, rounds: rounds ?? 11, repeats, shaders: only, throughput: throughput || ! timestamps ? tp : null, onProgress } );
 	if ( compare === 'subgroups' || compare === 'f16' || compare === 'trim' ) return kernelVariants( device, { probe: compare, sizes, formats: benchFormats, rounds: rounds ?? 11, repeats, variants: only, throughput: throughput || ! timestamps ? tp : null, onProgress } );
 	// sRGB output paths (test/bench/srgb.js): ratios paired against the buffer path.
+	if ( compare === 'srgb-cost' ) return timestamps ? measure( device, pickStrategies( srgbCostStrategies( device ), only, [ 'buffer' ] ), { sizes: sizes ?? renderCompareSizes, benchFormats: benchFormats ?? srgbFormats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
 	if ( compare === 'srgb' ) return timestamps ? measure( device, pickStrategies( srgbStrategies( device ), only, [ 'buffer' ] ), { sizes: sizes ?? renderCompareSizes, benchFormats: benchFormats ?? srgbFormats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
 	// Partial updates (test/bench/partial.js): rect and layer updates paired against the full chain.
 	if ( compare === 'partial' ) return timestamps ? measure( device, pickStrategies( partialStrategies( device ), only, [ 'full' ] ), { sizes: sizes ?? partialSizes, benchFormats: benchFormats ?? defaultFormats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
@@ -352,7 +353,7 @@ export async function benchmark( device, { sizes, formats: benchFormats, rounds,
 
 	}
 
-	if ( compare ) throw new Error( `unknown --compare=${ compare }; expected spd, render, webgpu-spd, throughput, storage-usage, subgroups, f16 or srgb` );
+	if ( compare ) throw new Error( `unknown --compare=${ compare }; expected spd, render, webgpu-spd, throughput, storage-usage, subgroups, f16, srgb or srgb-cost` );
 	const strategies = { render: createRenderBaseline( device ) };
 	for ( const levels of [ 4, limit ].filter( ( value, index, all ) => all.indexOf( value ) === index ) ) {
 
