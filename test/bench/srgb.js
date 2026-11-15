@@ -97,3 +97,76 @@ export function scratchPrototype( device, downsampler ) {
 	};
 
 }
+
+// `--compare=srgb-cost` (DIVERGES #16): where an sRGB chain's time goes. Timing only: every
+// variant but `buffer` writes wrong values. Each is the library's buffer path on the same
+// rgba8unorm-srgb texture with one part of the shader's sRGB work edited out of the WGSL
+// (through a device whose createShaderModule edits the code), so the differences split the cost:
+// - `buffer`: the library.
+// - `noCorrect`: ds_srgb_code without its table correction step (the ±1 code fix-up).
+// - `noPow`: ds_srgb_code with sqrt in place of pow(c, 1/2.4) (correction kept).
+// - `noSnap`: in-tile values not snapped through encode/decode (`quantize` keeps linear colour);
+//   stores still encode.
+// - `fastStore` (a candidate, same bits expected): stores encode without the correction step.
+//   Every stored value has been through `quantize`, so it is exactly decode(k) for some code k,
+//   and the formula alone rounds it back to k (largest miss on the CPU in f32: 0.000016 of a step).
+// - `noEncode`: no snap, and stores write round(v · 255): no sRGB maths in the shader at all.
+// - `linearBuffer`: an rgba8unorm texture of the same size on the buffer path (`output: 'buffer'`):
+//   the same dispatches and copies with the linear format's arithmetic.
+// - `linearStorage`: that texture on the storage path, no copies.
+// - `render`: one render pass per level.
+const srgbEdits = {
+	noCorrect: code => edit( code, /\n\tif \(k < 255u && c >= ds_srgb_table[^\n]+/, '' ),
+	noPow: code => edit( code, '1.055 * pow(c, 1.0 / 2.4) - 0.055', 'sqrt(c)' ),
+	noSnap: code => edit( code, 'return vec4f(ds_srgb_quantize(value.xyz), round(', 'return vec4f(value.xyz, round(' ),
+	fastStore: code => edit( code.replace( /^.*<< 24u.*$/m, line => line.replaceAll( 'ds_srgb_code(', 'ds_srgb_stored_code(' ) ), 'fn ds_srgb_quantize(', `fn ds_srgb_stored_code(v: f32) -> u32 {
+	let c = clamp(v, 0.0, 1.0);
+	return u32(round(select(1.055 * pow(c, 1.0 / 2.4) - 0.055, 12.92 * c, c <= 0.0031308) * 255.0));
+}
+fn ds_srgb_quantize(` ),
+	noEncode: code => edit( srgbEdits.noSnap( code ), /fn ds_srgb_code\(v: f32\) -> u32 \{[\s\S]*?\n\}/, 'fn ds_srgb_code(v: f32) -> u32 { return u32(clamp(round(v * 255.0), 0.0, 255.0)); }' )
+};
+
+function edit( code, from, to ) {
+
+	if ( ! code.includes( 'ds_srgb_code' ) ) return code;
+	const out = code.replace( from, to );
+	if ( out === code ) throw new Error( `srgb-cost: edit ${ from } didn't apply` );
+	return out;
+
+}
+
+/** `device`, with every shader module's WGSL passed through `transform`. */
+function editingDevice( device, transform ) {
+
+	return new Proxy( device, { get( target, key ) {
+
+		if ( key === 'createShaderModule' ) return descriptor => target.createShaderModule( { ...descriptor, code: transform( descriptor.code ) } );
+		const value = Reflect.get( target, key );
+		return typeof value === 'function' ? value.bind( target ) : value;
+
+	} } );
+
+}
+
+export function srgbCostStrategies( device ) {
+
+	const run = downsampler => ( { passes: texture => downsampler.prepare( texture ).length, encode: ( encoder, texture ) => downsampler.encode( encoder, texture ) } );
+	const linear = new WeakMap();
+	const linearTexture = texture => {
+
+		if ( ! linear.has( texture ) ) linear.set( texture, device.createTexture( { label: 'srgb-cost linear', format: 'rgba8unorm', size: [ texture.width, texture.height, texture.depthOrArrayLayers ], mipLevelCount: texture.mipLevelCount, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST } ) );
+		return linear.get( texture );
+
+	};
+	const onLinear = downsampler => ( { passes: texture => downsampler.prepare( linearTexture( texture ) ).length, encode: ( encoder, texture ) => downsampler.encode( encoder, linearTexture( texture ) ) } );
+	const strategies = {
+		render: { ...createRenderBaseline( device ), parity: false },
+		buffer: { ...run( new Downsampler( device ) ), parity: true }
+	};
+	for ( const [ name, transform ] of Object.entries( srgbEdits ) ) strategies[ name ] = { ...run( new Downsampler( editingDevice( device, transform ) ) ), parity: name === 'fastStore' };
+	strategies.linearBuffer = { ...onLinear( new Downsampler( device, { output: 'buffer' } ) ), parity: false };
+	strategies.linearStorage = { ...onLinear( new Downsampler( device ) ), parity: false };
+	return { strategies, reference: () => 'buffer' };
+
+}
