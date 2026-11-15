@@ -29,6 +29,7 @@
 //   --compare=storage-usage              sampling a texture with vs without STORAGE_BINDING (--strategies=fullscreen,material,write)
 //   --compare=subgroups                  upper bound for a subgroup kernel (--strategies=lds,slot,shuffle,nosync)
 //   --compare=f16                        averaging in f16 vs f32, with the precision cost (--strategies=f32,f16,f16safe)
+//   --compare=trim                       the 'exact' kernel with cheaper per-value arithmetic, same bits (--strategies=round,mul,trim)
 //   --throughput with --compare=storage-usage|subgroups|f16 adds per-frame throughput to the timestamps
 //   --compare=partial                    rect and one-layer updates against the full chain (test/bench/partial.js)
 //   --strategies=a,b,c                   time a subset (any --compare mode; the ratios' reference is always kept)
@@ -200,7 +201,7 @@ try {
 		console.log( 'median storage ÷ plain over sizes (min–max):' );
 		console.table( Object.entries( timing.summary ).map( ( [ key, v ] ) => ( { case: key, median: fixed( v.median, 3 ), range: `${ fixed( v.min, 3 ) }–${ fixed( v.max, 3 ) }` } ) ) );
 
-	} else if ( timing?.mode === 'subgroups' || timing?.mode === 'f16' ) {
+	} else if ( timing?.mode === 'subgroups' || timing?.mode === 'f16' || timing?.mode === 'trim' ) {
 
 		if ( timing.skipped.length ) console.log( `skipped (feature unavailable): ${ timing.skipped.join( ', ' ) }` );
 		console.log( `plan: exactTile ${ timing.exactTile }, tail ${ timing.tail }` );

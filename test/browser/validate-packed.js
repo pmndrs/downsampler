@@ -565,7 +565,8 @@ async function validateHalfTies( device ) {
 		poison( device, texture, 1 );
 		downsampler.generate( texture, options );
 		const mips = await readMips( device, texture, 0 );
-		const batches = downsampler.prepare( texture, options );
+		// Compatibility mode adds copy dispatches (scratch → destination): not reductions.
+		const batches = downsampler.prepare( texture, options ).filter( batch => ! batch.copy );
 		texture.destroy();
 		if ( name === 'spd' ) {
 

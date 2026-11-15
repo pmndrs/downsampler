@@ -69,7 +69,7 @@ A 2:1 reduction is only exact when a dimension halves cleanly. For odd, non-unit
 What the numbers say:
 - **`'spd'` is 1.4–2.1× faster than `'exact'` at render sizes up to 1440p in rgba8, and 1.2–1.6× in rgba16f up to 1080p.** At 4K, and at powers of two from 2048², it is within 3–9 %: those chains are bandwidth-bound and already take 2 dispatches.
 - **The saving is the chain of dependent dispatches, not pass overhead.** Recording every batch into one compute pass (`encodePass`) instead of one pass per batch measured 0.94–1.03× (runs 4–7).
-- **Part of it is kernel arithmetic.** At 1024² rgba8, with 2 dispatches each, `'spd'` is 0.81× (0.63× for max). The exact kernel's integer tie rounding and odd-footprint branches cost there; that is worth optimizing in `'exact'` by itself.
+- **Part of it is kernel arithmetic.** At 1024² rgba8, with 2 dispatches each, `'spd'` is 0.81× (0.63× for max). The exact kernel's integer tie rounding and odd-footprint branches cost there; that is worth optimizing in `'exact'` by itself. **Done for the rounding (2026-11-15):** `quantize` is now WGSL's `round()` (ties to even) instead of floor/compare/select, same bits: rgba8 chains 0.91× (squares) / 0.96× (render sizes) on the RTX 3060, 0.76× / 0.73× on Intel UHD; rgba16float unchanged ([results/windows/round2/trim.md](results/windows/round2/trim.md)). Stores multiplying by 1/255 instead of dividing gained nothing.
 - **The tail kernel doesn't close the gap.** It removes 1–4 trailing dispatches, but those are cheap. The time goes to the breaks at the large levels: 1477×831 ends a batch at every level down to 46×25, and 1129×635 at level 1.
   - The tail measured 0.83–1.07×: a gain at 960×540 (0.83–0.85), about 0.90–0.97 elsewhere, often inside the noise. These runs used a 32×32 tail tile everywhere. The tile now follows the first output (§4 Tiles), which changes only 1280×720 among these sizes (10×5 → a 16×16 tile); not re-timed.
   - The `'exact'`-preserving fix for the large-level breaks is halo batches (§13). Their upside is bounded by the `'spd'` column.
@@ -106,7 +106,7 @@ What the numbers say:
 3. ~~The tail kernel stays opt-in~~. **Superseded 2026-11-13 (owner rule: default if faster on most devices): `tail: true` is the default.** Tail ÷ `'exact'` at render sizes, idle: RTX 3060 0.82 / 0.90 (rgba8 / rgba16f), Intel UHD 0.97 / 0.97, M5 Pro 0.81–1.02 with 16×16 exact tiles (`results/render/m5-pro-render-tiles-*.json`, `results/windows/timings.md`). The same sweep set `exactTile`'s default to 16 on Apple GPUs: 32 was 1.04–1.28× slower than 8 or 16 there at render sizes, while on the RTX and Intel 32 was the fast one. Tail levels use shader bilinear weights, within one rgba8 step of the sampler's. It composes with both output paths and with compatibility mode, where devices with fewer than 256 invocations per workgroup cap tail tiles at 8×8.
 
 **Still for the owner:**
-- If `'exact'` must get closer to `'spd'` at render sizes, the levers are halo batches for the large-level breaks (§13) and a cheaper exact kernel (integer rounding, fold footprint branches). Measure on NVIDIA, AMD and Intel first (§9): the cost of a dependent dispatch there is unknown.
+- If `'exact'` must get closer to `'spd'` at render sizes, the levers are halo batches for the large-level breaks (§13) and a cheaper exact kernel (integer rounding: done, see above; fold footprint branches: not measured). Measure on NVIDIA, AMD and Intel first (§9): the cost of a dependent dispatch there is unknown.
 
 ### 2.2 No single-dispatch mode
 

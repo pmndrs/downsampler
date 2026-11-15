@@ -319,19 +319,14 @@ var<workgroup> tile: array<vec4f, ${ tile * tile }>;
 
 	// Intermediate levels are quantized exactly as they are stored. Normalized values stay in
 	// integer units, so 2:1 averages are exact and ties round to even (with k/255 floats, float
-	// error turns ties into round-ups that drift along 1D tails). The parity test uses i32:
-	// converting a negative float to u32 is undefined (snorm).
+	// error turns ties into round-ups that drift along 1D tails). WGSL's round() is ties to even;
+	// it replaced a floor/compare/select version with the same results, 0.91× (RTX 3060) and
+	// 0.76× (Intel UHD) of an rgba8 chain (results/windows/round2/trim.md).
 	if ( domain !== undefined ) {
 
 		code += `
 const SCALE = ${ domain.scale }.0;
-fn quantize(value: vec4f) -> vec4f {
-	let scaled = clamp(value, vec4f(${ domain.min }.0), vec4f(${ domain.max }.0));
-	let lower = floor(scaled);
-	let fraction = scaled - lower;
-	let nearest = select(lower, lower + vec4f(1), fraction > vec4f(0.5));
-	return select(nearest, lower + vec4f(vec4i(lower) & vec4i(1)), fraction == vec4f(0.5));
-}
+fn quantize(value: vec4f) -> vec4f { return round(clamp(value, vec4f(${ domain.min }.0), vec4f(${ domain.max }.0))); }
 `;
 
 	} else if ( quantization === 'float16' ) {

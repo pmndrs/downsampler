@@ -700,8 +700,10 @@ var<workgroup> tile: array<vec4f, ${ tileW * tileH }>;
 	// Intermediate levels are quantized exactly as they would be stored.
 	// Normalized values stay in integer units (value × scale) so 2:1 averages are
 	// exact and ties round to even; with k/255 floats, float error turns ties into
-	// round-ups that drift by several steps along long 1D tails. The parity test
-	// uses i32: converting a negative float to u32 is undefined (snorm).
+	// round-ups that drift by several steps along long 1D tails. WGSL's round() is
+	// ties to even (Metal rint, HLSL round_ne, SPIR-V RoundEven); it replaced a
+	// floor/compare/select version with the same results, 0.91× (RTX 3060) and 0.76×
+	// (Intel UHD) of an rgba8 chain (results/windows/round2/trim.md).
 	if ( integer ) {
 
 		// Per-channel units: a scalar, or a vector for rgb10a2unorm (2-bit alpha).
@@ -710,13 +712,7 @@ var<workgroup> tile: array<vec4f, ${ tileW * tileH }>;
 		const vector = ( key: 'min' | 'max' ) => units( key ).startsWith( 'vec4f' ) ? units( key ) : `vec4f(${ units( key ) })`;
 		code += `
 const SCALE = ${ units( 'scale' ) };
-fn quantize(value: vec4f) -> vec4f {
-	let scaled = clamp(value, ${ vector( 'min' ) }, ${ vector( 'max' ) });
-	let lower = floor(scaled);
-	let fraction = scaled - lower;
-	let nearest = select(lower, lower + vec4f(1), fraction > vec4f(0.5));
-	return select(nearest, lower + vec4f(vec4i(lower) & vec4i(1)), fraction == vec4f(0.5));
-}
+fn quantize(value: vec4f) -> vec4f { return round(clamp(value, ${ vector( 'min' ) }, ${ vector( 'max' ) })); }
 `;
 
 	} else if ( quantization === 'float16' ) {
@@ -733,13 +729,7 @@ fn quantize(value: vec4f) -> vec4f { return ds_round_f16(value); }
 		// texture of the linear alias format) stores codes / 255.
 		code += `
 const SCALE = vec4f(1.0, 1.0, 1.0, 255.0);
-fn quantize(value: vec4f) -> vec4f {
-	let a = clamp(value.w, 0.0, 255.0);
-	let lower = floor(a);
-	let fraction = a - lower;
-	let alpha = select(select(lower, lower + 1.0, fraction > 0.5), lower + f32(i32(lower) & 1), fraction == 0.5);
-	return vec4f(ds_srgb_quantize(value.xyz), alpha);
-}
+fn quantize(value: vec4f) -> vec4f { return vec4f(ds_srgb_quantize(value.xyz), round(clamp(value.w, 0.0, 255.0))); }
 fn ds_srgb_store(v: vec4f) -> vec4f { return vec4f(f32(ds_srgb_code(v.x)), f32(ds_srgb_code(v.y)), f32(ds_srgb_code(v.z)), v.w) / 255.0; }
 `;
 

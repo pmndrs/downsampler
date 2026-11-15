@@ -1,0 +1,275 @@
+{
+	"date": "2026-11-15T08:39:54.369Z",
+	"flags": [
+		"--quick",
+		"--power=low"
+	],
+	"jobs": 6,
+	"shards": 18,
+	"part": null,
+	"capMinutes": 20,
+	"seconds": 641,
+	"adapter": {
+		"vendor": "intel",
+		"architecture": "gen-12lp",
+		"device": "",
+		"description": "",
+		"isFallbackAdapter": false,
+		"timestamps": true,
+		"features": [
+			"texture-formats-tier1",
+			"bgra8unorm-storage"
+		],
+		"compatibility": false,
+		"maxStorageTexturesPerShaderStage": 6,
+		"subgroupMinSize": 8,
+		"subgroupMaxSize": 128,
+		"adapterFeatures": [
+			"bgra8unorm-storage",
+			"chromium-experimental-multi-draw-indirect",
+			"chromium-experimental-timestamp-query-inside-passes",
+			"clip-distances",
+			"core-features-and-limits",
+			"depth-clip-control",
+			"depth32float-stencil8",
+			"dual-source-blending",
+			"float32-blendable",
+			"float32-filterable",
+			"indirect-first-instance",
+			"primitive-index",
+			"rg11b10ufloat-renderable",
+			"shader-f16",
+			"subgroups",
+			"texture-component-swizzle",
+			"texture-compression-bc",
+			"texture-compression-bc-sliced-3d",
+			"texture-formats-tier1",
+			"texture-formats-tier2",
+			"timestamp-query"
+		],
+		"maxTextureDimension2D": 8192
+	},
+	"ok": false,
+	"cases": 20635,
+	"checks": 31557,
+	"groups": {
+		"ran": 1757,
+		"listed": 1859
+	},
+	"failures": [
+		{
+			"shard": 4,
+			"label": "fixtures/1129x635",
+			"first": "fixtures/1129x635 threw: tool fixtures 1129x635: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp",
+			"thrown": true
+		},
+		{
+			"shard": 6,
+			"label": "fixtures/960x540",
+			"first": "fixtures/960x540 threw: tool fixtures 960x540: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp",
+			"thrown": true
+		}
+	],
+	"problems": [
+		"shard 1: exit 1, no report: Backend messages: |  * Device removed reason: DXGI_ERROR_DEVICE_HUNG (0x887A0006) | Node.js v24.13.1"
+	],
+	"skipped": [],
+	"perShard": [
+		{
+			"index": 1,
+			"ran": true,
+			"code": 1,
+			"seconds": 115,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 2,
+			"ran": true,
+			"code": 0,
+			"seconds": 220,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 3,
+			"ran": true,
+			"code": 0,
+			"seconds": 209,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 4,
+			"ran": true,
+			"code": 1,
+			"seconds": 218,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 5,
+			"ran": true,
+			"code": 0,
+			"seconds": 225,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 6,
+			"ran": true,
+			"code": 1,
+			"seconds": 278,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 7,
+			"ran": true,
+			"code": 0,
+			"seconds": 227,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 8,
+			"ran": true,
+			"code": 0,
+			"seconds": 187,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 9,
+			"ran": true,
+			"code": 0,
+			"seconds": 200,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 10,
+			"ran": true,
+			"code": 0,
+			"seconds": 221,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 11,
+			"ran": true,
+			"code": 0,
+			"seconds": 178,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 12,
+			"ran": true,
+			"code": 0,
+			"seconds": 195,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 13,
+			"ran": true,
+			"code": 0,
+			"seconds": 213,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 14,
+			"ran": true,
+			"code": 0,
+			"seconds": 219,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 15,
+			"ran": true,
+			"code": 0,
+			"seconds": 206,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 16,
+			"ran": true,
+			"code": 0,
+			"seconds": 175,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 17,
+			"ran": true,
+			"code": 0,
+			"seconds": 192,
+			"timedOut": false,
+			"overBudget": false
+		},
+		{
+			"index": 18,
+			"ran": true,
+			"code": 0,
+			"seconds": 169,
+			"timedOut": false,
+			"overBudget": false
+		}
+	],
+	"slowest": [
+		{
+			"id": "halo/rgba8unorm-srgb/auto",
+			"ms": 83371,
+			"cases": 21
+		},
+		{
+			"id": "downsampler/options",
+			"ms": 53916,
+			"cases": 9
+		},
+		{
+			"id": "source/rgba8unorm-srgb/rgba8unorm-srgb/same",
+			"ms": 52387,
+			"cases": 11
+		},
+		{
+			"id": "halo/rgba16float/buffer",
+			"ms": 41401,
+			"cases": 26
+		},
+		{
+			"id": "source/bgra8unorm-srgb/bgra8unorm-srgb/half",
+			"ms": 37731,
+			"cases": 11
+		},
+		{
+			"id": "source/rgba16float/rgba8unorm-srgb/half",
+			"ms": 32086,
+			"cases": 11
+		},
+		{
+			"id": "region/tail/rgba8unorm-srgb/max",
+			"ms": 27894,
+			"cases": 7
+		},
+		{
+			"id": "halo/rgb9e5ufloat/auto",
+			"ms": 26456,
+			"cases": 18
+		},
+		{
+			"id": "region/exact/rgba16float/max",
+			"ms": 22046,
+			"cases": 8
+		},
+		{
+			"id": "region/exact/rgba8unorm-srgb/max",
+			"ms": 19390,
+			"cases": 8
+		}
+	]
+}

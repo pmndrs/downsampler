@@ -297,7 +297,7 @@ export async function benchmark( device, { sizes, formats: benchFormats, rounds,
 	// Modes with their own harness (and their own default sizes and formats). Without
 	// timestamp-query they measure throughput only.
 	if ( compare === 'storage-usage' ) return storageUsage( device, { sizes, formats: benchFormats, rounds: rounds ?? 11, repeats, shaders: only, throughput: throughput || ! timestamps ? tp : null, onProgress } );
-	if ( compare === 'subgroups' || compare === 'f16' ) return kernelVariants( device, { probe: compare, sizes, formats: benchFormats, rounds: rounds ?? 11, repeats, variants: only, throughput: throughput || ! timestamps ? tp : null, onProgress } );
+	if ( compare === 'subgroups' || compare === 'f16' || compare === 'trim' ) return kernelVariants( device, { probe: compare, sizes, formats: benchFormats, rounds: rounds ?? 11, repeats, variants: only, throughput: throughput || ! timestamps ? tp : null, onProgress } );
 	// sRGB output paths (test/bench/srgb.js): ratios paired against the buffer path.
 	if ( compare === 'srgb' ) return timestamps ? measure( device, pickStrategies( srgbStrategies( device ), only, [ 'buffer' ] ), { sizes: sizes ?? renderCompareSizes, benchFormats: benchFormats ?? srgbFormats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
 	// Partial updates (test/bench/partial.js): rect and layer updates paired against the full chain.

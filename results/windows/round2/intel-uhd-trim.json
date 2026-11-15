@@ -1,0 +1,880 @@
+{
+  "date": "2026-11-15T07:20:09.289Z",
+  "adapter": {
+    "vendor": "intel",
+    "architecture": "gen-12lp",
+    "device": "",
+    "description": "",
+    "isFallbackAdapter": false,
+    "timestamps": true,
+    "features": [
+      "texture-formats-tier1",
+      "bgra8unorm-storage"
+    ],
+    "compatibility": false,
+    "maxStorageTexturesPerShaderStage": 6,
+    "subgroupMinSize": 8,
+    "subgroupMaxSize": 128,
+    "adapterFeatures": [
+      "bgra8unorm-storage",
+      "chromium-experimental-multi-draw-indirect",
+      "chromium-experimental-timestamp-query-inside-passes",
+      "clip-distances",
+      "core-features-and-limits",
+      "depth-clip-control",
+      "depth32float-stencil8",
+      "dual-source-blending",
+      "float32-blendable",
+      "float32-filterable",
+      "indirect-first-instance",
+      "primitive-index",
+      "rg11b10ufloat-renderable",
+      "shader-f16",
+      "subgroups",
+      "texture-component-swizzle",
+      "texture-compression-bc",
+      "texture-compression-bc-sliced-3d",
+      "texture-formats-tier1",
+      "texture-formats-tier2",
+      "timestamp-query"
+    ],
+    "maxTextureDimension2D": 8192
+  },
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36",
+  "validation": {
+    "passed": true,
+    "cases": 0,
+    "checks": 0,
+    "skipped": [],
+    "ms": 0,
+    "results": []
+  },
+  "timing": {
+    "mode": "trim",
+    "timestamps": true,
+    "rounds": 11,
+    "repeats": 16,
+    "throughput": null,
+    "variants": [
+      "library",
+      "round"
+    ],
+    "skipped": [],
+    "exactTile": 32,
+    "tail": true,
+    "results": [
+      {
+        "width": 256,
+        "height": 256,
+        "format": "rgba8unorm",
+        "batches": [
+          "exact 6×32",
+          "exact 2×32"
+        ],
+        "checks": {
+          "round": {
+            "tiles": {
+              "values": 87380,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            },
+            "random": {
+              "values": 87380,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            }
+          }
+        },
+        "gpuMs": {
+          "library": 0.0562073125,
+          "round": 0.044736
+        },
+        "ratios": {
+          "library": 1,
+          "round": 0.7878675433290262
+        },
+        "markerMs": 0.00155275,
+        "samples": {
+          "marker": [
+            0.001416,
+            0.00079425,
+            0.000817,
+            0.0015331875,
+            0.0018424375,
+            0.0017448125,
+            0.00155275,
+            0.0015495,
+            0.0016634375,
+            0.00217125,
+            0.001647125
+          ],
+          "library": [
+            0.02591125,
+            0.0276105,
+            0.06321575,
+            0.0631083125,
+            0.0635608125,
+            0.0577600625,
+            0.057164375,
+            0.0586096875,
+            0.0584826875,
+            0.0571188125,
+            0.057307625
+          ],
+          "round": [
+            0.0220148125,
+            0.021412625,
+            0.0232225,
+            0.04703425,
+            0.04625625,
+            0.0483493125,
+            0.0464385625,
+            0.04596325,
+            0.046406,
+            0.046513375,
+            0.04628875
+          ]
+        }
+      },
+      {
+        "width": 512,
+        "height": 512,
+        "format": "rgba8unorm",
+        "batches": [
+          "exact 6×32",
+          "exact 3×32"
+        ],
+        "checks": {
+          "round": {
+            "tiles": {
+              "values": 349524,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            },
+            "random": {
+              "values": 349524,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            }
+          }
+        },
+        "gpuMs": {
+          "library": 0.1128378125,
+          "round": 0.0852078125
+        },
+        "ratios": {
+          "library": 1,
+          "round": 0.7524974602389533
+        },
+        "markerMs": 0.001403,
+        "samples": {
+          "marker": [
+            0.00171225,
+            0.0016699375,
+            0.001656875,
+            0.0016764375,
+            0.001324875,
+            0.001403,
+            0.0012923125,
+            0.001328125,
+            0.0014615625,
+            0.0011295625,
+            0.001084
+          ],
+          "library": [
+            0.145054375,
+            0.1447451875,
+            0.1425349375,
+            0.147079125,
+            0.151620125,
+            0.1123560625,
+            0.1142408125,
+            0.114117125,
+            0.092685,
+            0.0921869375,
+            0.0926394375
+          ],
+          "round": [
+            0.107850875,
+            0.1102239375,
+            0.1110181875,
+            0.1077336875,
+            0.087789125,
+            0.08435825,
+            0.0866108125,
+            0.0847325,
+            0.08580675,
+            0.0713895,
+            0.0700581875
+          ]
+        }
+      },
+      {
+        "width": 1024,
+        "height": 1024,
+        "format": "rgba8unorm",
+        "batches": [
+          "exact 6×32",
+          "exact 4×32"
+        ],
+        "checks": {
+          "round": {
+            "tiles": {
+              "values": 1398100,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            },
+            "random": {
+              "values": 1398100,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            }
+          }
+        },
+        "gpuMs": {
+          "library": 0.1717990625,
+          "round": 0.1277400625
+        },
+        "ratios": {
+          "library": 1,
+          "round": 0.7236862832124011
+        },
+        "markerMs": 0.001009125,
+        "samples": {
+          "marker": [
+            0.001966125,
+            0.0015006875,
+            0.0009244375,
+            0.0009244375,
+            0.001009125,
+            0.00094725,
+            0.001018875,
+            0.001009125,
+            0.001009125,
+            0.0010481875,
+            0.0011588125
+          ],
+          "library": [
+            0.4400265625,
+            0.35513125,
+            0.1700868125,
+            0.16941625,
+            0.1709039375,
+            0.1728081875,
+            0.1693609375,
+            0.1719943125,
+            0.173872625,
+            0.1740679375,
+            0.180308125
+          ],
+          "round": [
+            0.2609846875,
+            0.2486605625,
+            0.123075375,
+            0.125852125,
+            0.1232804375,
+            0.12533775,
+            0.1471898125,
+            0.1287491875,
+            0.12876875,
+            0.1322289375,
+            0.1280460625
+          ]
+        }
+      },
+      {
+        "width": 2048,
+        "height": 2048,
+        "format": "rgba8unorm",
+        "batches": [
+          "exact 6×32",
+          "exact 5×32"
+        ],
+        "checks": {
+          "round": {
+            "tiles": {
+              "values": 5592404,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            },
+            "random": {
+              "values": 5592404,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            }
+          }
+        },
+        "gpuMs": {
+          "library": 1.0476985,
+          "round": 0.7996499375
+        },
+        "ratios": {
+          "library": 1,
+          "round": 0.7632443279244935
+        },
+        "markerMs": 0.0013965,
+        "samples": {
+          "marker": [
+            0.0019270625,
+            0.0014648125,
+            0.0013965,
+            0.00124675,
+            0.0012044375,
+            0.00125325,
+            0.001523375,
+            0.0016926875,
+            0.0015136875,
+            0.0010025625,
+            0.0010286875
+          ],
+          "library": [
+            1.754448625,
+            1.207525,
+            1.1127306875,
+            1.1320339375,
+            1.0164194375,
+            0.9746195625,
+            1.0623599375,
+            1.049095,
+            0.8926148125,
+            0.886192375,
+            0.9172956875
+          ],
+          "round": [
+            1.277114375,
+            0.8999618125,
+            0.8315638125,
+            0.80126775,
+            0.7623226875,
+            0.77696125,
+            0.8502290625,
+            0.8010464375,
+            0.7887580625,
+            0.687984,
+            0.703133625
+          ]
+        }
+      },
+      {
+        "width": 4096,
+        "height": 4096,
+        "format": "rgba8unorm",
+        "batches": [
+          "exact 6×32",
+          "exact 6×32"
+        ],
+        "checks": {
+          "round": {
+            "tiles": {
+              "values": 22369620,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            },
+            "random": {
+              "values": 22369620,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            }
+          }
+        },
+        "gpuMs": {
+          "library": 4.9098879375,
+          "round": 5.8330104375
+        },
+        "ratios": {
+          "library": 1,
+          "round": 1.174498591087137
+        },
+        "markerMs": 0.00110025,
+        "samples": {
+          "marker": [
+            0.003050125,
+            0.001354125,
+            0.0009179375,
+            0.0009114375,
+            0.0018815,
+            0.0013801875,
+            0.00090825,
+            0.00110025,
+            0.000983125,
+            0.0013834375,
+            0.0010384375
+          ],
+          "library": [
+            5.627181625,
+            4.9011770625,
+            4.89095575,
+            4.6172530625,
+            5.19979175,
+            4.66160175,
+            4.54018975,
+            5.111097625,
+            5.2052995,
+            5.01394,
+            4.9109881875
+          ],
+          "round": [
+            6.1783630625,
+            5.7562335625,
+            5.4706624375,
+            5.5264010625,
+            5.96702,
+            5.8987814375,
+            5.641628125,
+            6.0762705625,
+            5.8341106875,
+            6.03996875,
+            5.593142125
+          ]
+        }
+      },
+      {
+        "width": 960,
+        "height": 540,
+        "format": "rgba8unorm",
+        "batches": [
+          "exact 2×32",
+          "exact 1×32",
+          "exact 1×32",
+          "tail 5×32"
+        ],
+        "checks": {
+          "round": {
+            "tiles": {
+              "values": 690620,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            },
+            "random": {
+              "values": 690620,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            }
+          }
+        },
+        "gpuMs": {
+          "library": 0.12230068749999999,
+          "round": 0.0942409375
+        },
+        "ratios": {
+          "library": 1,
+          "round": 0.770638284010477
+        },
+        "markerMs": 0.001005875,
+        "samples": {
+          "marker": [
+            0.0010905,
+            0.0010611875,
+            0.0009960625,
+            0.001500625,
+            0.001002625,
+            0.001044875,
+            0.00094725,
+            0.001035125,
+            0.001005875,
+            0.0008789375,
+            0.0009375
+          ],
+          "library": [
+            0.12438075,
+            0.124631375,
+            0.1299145625,
+            0.1231893125,
+            0.123798,
+            0.1233065625,
+            0.12159425,
+            0.1212883125,
+            0.1213566875,
+            0.121164625,
+            0.1256990625
+          ],
+          "round": [
+            0.0975775,
+            0.09633075,
+            0.0968125625,
+            0.095152375,
+            0.0956341875,
+            0.0949310625,
+            0.0981504375,
+            0.0937461875,
+            0.093391375,
+            0.0952468125,
+            0.09256125
+          ]
+        }
+      },
+      {
+        "width": 1129,
+        "height": 635,
+        "format": "rgba8unorm",
+        "batches": [
+          "exact 1×32",
+          "exact 2×32",
+          "exact 1×32",
+          "exact 1×32",
+          "tail 5×32"
+        ],
+        "checks": {
+          "round": {
+            "tiles": {
+              "values": 952296,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            },
+            "random": {
+              "values": 952296,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            }
+          }
+        },
+        "gpuMs": {
+          "library": 0.2056660625,
+          "round": 0.1881954375
+        },
+        "ratios": {
+          "library": 1,
+          "round": 0.9253815945591208
+        },
+        "markerMs": 0.001487625,
+        "samples": {
+          "marker": [
+            0.0015299375,
+            0.0015234375,
+            0.0014680625,
+            0.001416,
+            0.0015918125,
+            0.001487625,
+            0.0014745625,
+            0.0014388125,
+            0.0026009375,
+            0.0037239375,
+            0.0014388125
+          ],
+          "library": [
+            0.2029544375,
+            0.204018875,
+            0.207736375,
+            0.2007605,
+            0.2114114375,
+            0.2038170625,
+            0.203826875,
+            0.2071536875,
+            0.3336535,
+            0.214835875,
+            0.2116555625
+          ],
+          "round": [
+            0.1902918125,
+            0.1896700625,
+            0.186730625,
+            0.1982506875,
+            0.187853625,
+            0.1887195625,
+            0.1888236875,
+            0.19297725,
+            0.2881850625,
+            0.1896830625,
+            0.1899141875
+          ]
+        }
+      },
+      {
+        "width": 1280,
+        "height": 720,
+        "format": "rgba8unorm",
+        "batches": [
+          "exact 4×32",
+          "exact 2×32",
+          "tail 4×16"
+        ],
+        "checks": {
+          "round": {
+            "tiles": {
+              "values": 1228652,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            },
+            "random": {
+              "values": 1228652,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            }
+          }
+        },
+        "gpuMs": {
+          "library": 0.385023625,
+          "round": 0.2771988125
+        },
+        "ratios": {
+          "library": 1,
+          "round": 0.7256183345276735
+        },
+        "markerMs": 0.0019368125,
+        "samples": {
+          "marker": [
+            0.0020768125,
+            0.001966125,
+            0.00187175,
+            0.0018326875,
+            0.002441375,
+            0.0019368125,
+            0.0019270625,
+            0.001969375,
+            0.00186525,
+            0.0019270625,
+            0.001953125
+          ],
+          "library": [
+            0.3869604375,
+            0.39875075,
+            0.39578525,
+            0.3881063125,
+            0.388243,
+            0.38260175,
+            0.3815048125,
+            0.39574625,
+            0.3822274375,
+            0.3817489375,
+            0.3828915
+          ],
+          "round": [
+            0.286661625,
+            0.279135625,
+            0.2789598125,
+            0.2806883125,
+            0.27794425,
+            0.290431125,
+            0.2773583125,
+            0.2776610625,
+            0.278530125,
+            0.2991191875,
+            0.291687625
+          ]
+        }
+      },
+      {
+        "width": 1920,
+        "height": 1080,
+        "format": "rgba8unorm",
+        "batches": [
+          "exact 3×32",
+          "exact 1×32",
+          "exact 1×32",
+          "tail 5×32"
+        ],
+        "checks": {
+          "round": {
+            "tiles": {
+              "values": 2764220,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            },
+            "random": {
+              "values": 2764220,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            }
+          }
+        },
+        "gpuMs": {
+          "library": 0.6296900625,
+          "round": 0.458118875
+        },
+        "ratios": {
+          "library": 1,
+          "round": 0.7045437646173649
+        },
+        "markerMs": 0.00172525,
+        "samples": {
+          "marker": [
+            0.001975875,
+            0.0019465625,
+            0.001972625,
+            0.003701125,
+            0.00173825,
+            0.001656875,
+            0.0016764375,
+            0.00172525,
+            0.00154625,
+            0.0016438125,
+            0.0015494375
+          ],
+          "library": [
+            0.7526645625,
+            0.75340675,
+            0.74585475,
+            0.7305423125,
+            0.733416625,
+            0.6213046875,
+            0.6278541875,
+            0.6245664375,
+            0.6096771875,
+            0.6314153125,
+            0.6095893125
+          ],
+          "round": [
+            0.5394790625,
+            0.5192155,
+            0.512793,
+            0.5038998125,
+            0.5380045,
+            0.429496,
+            0.4440434375,
+            0.440544125,
+            0.4595511875,
+            0.459844125,
+            0.39924875
+          ]
+        }
+      },
+      {
+        "width": 2560,
+        "height": 1440,
+        "format": "rgba8unorm",
+        "batches": [
+          "exact 5×32",
+          "exact 2×32",
+          "tail 4×16"
+        ],
+        "checks": {
+          "round": {
+            "tiles": {
+              "values": 4915052,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            },
+            "random": {
+              "values": 4915052,
+              "differing": 0,
+              "worstSteps": 0,
+              "nonFinite": 0,
+              "worstLevel": 0
+            }
+          }
+        },
+        "gpuMs": {
+          "library": 1.2331238125,
+          "round": 0.9192650625
+        },
+        "ratios": {
+          "library": 1,
+          "round": 0.729654339499094
+        },
+        "markerMs": 0.0016731875,
+        "samples": {
+          "marker": [
+            0.0019498125,
+            0.0017903125,
+            0.001809875,
+            0.0017024375,
+            0.0016926875,
+            0.00155275,
+            0.0016731875,
+            0.001139375,
+            0.0009635625,
+            0.00092125,
+            0.0011718125
+          ],
+          "library": [
+            1.5744953125,
+            1.3178889375,
+            1.2936670625,
+            1.288048625,
+            1.2886051875,
+            1.234797,
+            1.205412375,
+            0.8482075625,
+            0.6102956875,
+            0.639943875,
+            0.65098225
+          ],
+          "round": [
+            0.9836526875,
+            0.9219864375,
+            0.944382125,
+            0.95075575,
+            0.92093825,
+            0.976383875,
+            0.4526826875,
+            0.572450875,
+            0.477344,
+            0.510879,
+            0.59354125
+          ]
+        }
+      }
+    ],
+    "summary": {
+      "rgba8unorm library": {
+        "renderSizes": 1,
+        "squares": 1
+      },
+      "rgba8unorm round": {
+        "renderSizes": 0.729654339499094,
+        "squares": 0.7632443279244935,
+        "identical": true,
+        "worstSteps": 0,
+        "nonFinite": 0,
+        "differing": 0,
+        "values": 80695736
+      }
+    }
+  },
+  "quality": null,
+  "webgpuSpd": null,
+  "loadAverage": {
+    "before": [
+      0,
+      0,
+      0
+    ],
+    "after": [
+      0,
+      0,
+      0
+    ]
+  },
+  "browserArgs": [
+    "--enable-unsafe-webgpu",
+    "--use-adapter-luid=0,66946"
+  ]
+}

@@ -32,6 +32,8 @@ Last updated: 2026-11-14 · Branch: `main` (the Mac's work merged; the Windows a
 - [x] Halo batches for `'exact'` and `'box'` (SPEC §13 item 3), built opt-in (`halo`, branch `halo-batches`): planner takes a halo only where it saves a dispatch, on first outputs ≤ 128²; RTX 0.85–1.00× of the default, Intel neutral, so not the default by the ≥ 5 %-on-both rule ([round2/halo.md](results/windows/round2/halo.md))
 - [x] Timings for `'box'` / `tailBox` and partial updates (2026-11-15): tail stays on under `'box'` (RTX `box ÷ tailBox` 1.06–2.25 at render sizes; [round2/defaults.md](results/windows/round2/defaults.md)); new `--compare=partial`: a rectangle costs the chain's dispatch floor, 7–18 µs on the RTX at any size up to 256² (3 % of a 4096² chain, 17–31 % at 1080p), one cube face 0.18–0.35 of the cube ([round2/partial.md](results/windows/round2/partial.md))
 
+- [x] Cheaper exact kernel (handoff-2 §4.2, 2026-11-15): normalized `quantize` is WGSL `round()` (ties to even) instead of floor/compare/select, same bits; rgba8 chains 0.91× / 0.96× (squares / render sizes) on the RTX 3060, 0.76× / 0.73× on Intel UHD; rgba16float unchanged; dividing stores by 255 vs multiplying: no difference, kept. New probe `--compare=trim` ([round2/trim.md](results/windows/round2/trim.md)). Not yet run on the M5 Pro (Metal `rint`; the suite's bit-exact in-tile checks would catch another tie rule)
+
 ## Deferred (three.js-driven)
 
 - [ ] Transform hooks around the average (premultiplied alpha, log luminance): deferred, design sketch in SPEC §5 Planned
@@ -197,6 +199,10 @@ Last updated: 2026-11-14 · Branch: `main` (the Mac's work merged; the Windows a
 | 2026-11-15 | test hardening | RTX 3060 Laptop, Chrome 148, D3D12 | quick, `test/parallel.js` ([hardening-rtx-quick](results/windows/round2/hardening-rtx-quick/summary.md)) | ✅ 21,780 cases, 1859/1859 groups; failures identical to the halo-branch run (FSR fixtures, sampled sRGB-source group); new checks pass (ties: 182 first, 89,988 in-tile, 28 tail, 40,046 spd) |
 | 2026-11-15 | test hardening | Intel UHD, Chrome 148, D3D12 | quick, `test/parallel.js` ([hardening-intel-quick](results/windows/round2/hardening-intel-quick/summary.md)), then shard 1 without `packed/buffer-path` and that group alone (the known device hang) | ✅ 1859/1859 groups; only the FSR fixtures fail; new checks pass |
 | 2026-11-15 | test hardening, final `packed/f16-ties` and `packed/copy-non-finite` | RTX 3060, Intel UHD, SwiftShader | those two groups, then `downsampler/options` (the exactTile paths) on SwiftShader | ✅ on all three (SwiftShader: tile 8 only, 30 path runs; no tail levels past the first at 2:1, so no tail ties required) |
+| 2026-11-15 | `round()` quantize (cheaper exact kernel) | core (node) | `npm run test:core`, golden WGSL updated (35 files) | ✅ 125/125 |
+| 2026-11-15 | `round()` quantize | RTX 3060 Laptop, Chrome 148, D3D12 | full matrix: `test/parallel.js --shards=48 --part=i/3` balanced by `results/windows/durations-rtx3060-full.json` (18–21 min each) ([p1](results/windows/round2/round-full-p1/summary.md), [p2](results/windows/round2/round-full-p2/summary.md), [p3](results/windows/round2/round-full-p3/summary.md)) | ✅ 35,829 cases, 3234/3234 groups, no timeouts; only the FSR fixtures and the sampled sRGB-source group fail (known) |
+| 2026-11-15 | `round()` quantize | RTX 3060 Laptop, compatibility mode | quick `--compat`, `test/parallel.js` ([round-compat-quick](results/windows/round2/round-compat-quick/summary.md)) | ✅ 21,064 cases, 1795/1795 groups; known failures only, after a test fix (`packed/f16-ties` counted compat's copy dispatches as levels; passes since) |
+| 2026-11-15 | `round()` quantize | Intel UHD, Chrome 148, D3D12 | quick, `test/parallel.js` ([round-intel-quick](results/windows/round2/round-intel-quick/summary.md)), then shard 1 without `packed/buffer-path` and that group alone (the known device hang) | ✅ 1859/1859 groups; only the FSR fixtures fail |
 
 ## Notes
 
