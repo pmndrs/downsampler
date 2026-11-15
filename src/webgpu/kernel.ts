@@ -262,6 +262,12 @@ fn ds_unpack11_11_10(bits: u32) -> vec3f { return vec3f(ds_from_ufloat(bits & 0x
  *   NaN and values below 0 → 0, above 1 → 255.
  * - `ds_srgb_quantize(v: vec3f) -> vec3f`: linear values as stored and read back,
  *   decode(encode(v)), with the exact decode table (`srgbDecodeTable`).
+ * - `ds_srgb_stored_code(v: f32) -> u32`: the code of a value that is already exactly
+ *   decode(k) (every value an exact kernel stores has been through `quantize`): the `pow`
+ *   estimate alone, without the correction step. Over all 256 codes the estimate misses k by at
+ *   most 0.000016 of a step in f32, so it is k on any GPU; 16–21 % less time for an sRGB chain
+ *   on an RTX 3060 (results/windows/round2/srgb-cost.md). Tile kernels store unrounded values
+ *   and use `ds_srgb_code`.
  * Hardware decoding isn't exact everywhere (Apple M5: 12-bit linear values, up to 0.39 of a
  * code step off; results/probes/srgb-probe.mjs), so loads snap through `ds_srgb_quantize`.
  *
@@ -281,6 +287,10 @@ fn ds_srgb_code(v: f32) -> u32 {
 	var k = u32(clamp(round(e * 255.0), 0.0, 255.0));
 	if (k < 255u && c >= ds_srgb_table[256u + k]) { k += 1u; } else if (k > 0u && c < ds_srgb_table[255u + k]) { k -= 1u; }
 	return k;
+}
+fn ds_srgb_stored_code(v: f32) -> u32 {
+	let c = clamp(v, 0.0, 1.0);
+	return u32(round(select(1.055 * pow(c, 1.0 / 2.4) - 0.055, 12.92 * c, c <= 0.0031308) * 255.0));
 }
 fn ds_srgb_quantize(v: vec3f) -> vec3f {
 	return vec3f(ds_srgb_table[ds_srgb_code(v.x)], ds_srgb_table[ds_srgb_code(v.y)], ds_srgb_table[ds_srgb_code(v.z)]);
@@ -404,7 +414,9 @@ function packedWords( format: SupportedFormat, normalized = false ): string[] {
 		// Linear colour encoded to codes; alpha in integer units (exact kernels) or normalized (pack4x8unorm's rounding).
 		const [ r, g, b ] = format === 'bgra8unorm-srgb' ? [ 'z', 'y', 'x' ] : [ 'x', 'y', 'z' ];
 		const alpha = normalized ? 'u32(floor(clamp(v.w, 0.0, 1.0) * 255.0 + 0.5))' : 'u32(v.w)';
-		return [ `ds_srgb_code(v.${ r }) | (ds_srgb_code(v.${ g }) << 8u) | (ds_srgb_code(v.${ b }) << 16u) | (${ alpha } << 24u)` ];
+		// Exact kernels' values are already exact codes (ds_srgb_stored_code); tile kernels' aren't.
+		const code = normalized ? 'ds_srgb_code' : 'ds_srgb_stored_code';
+		return [ `${ code }(v.${ r }) | (${ code }(v.${ g }) << 8u) | (${ code }(v.${ b }) << 16u) | (${ alpha } << 24u)` ];
 
 	}
 
@@ -730,7 +742,7 @@ fn quantize(value: vec4f) -> vec4f { return ds_round_f16(value); }
 		code += `
 const SCALE = vec4f(1.0, 1.0, 1.0, 255.0);
 fn quantize(value: vec4f) -> vec4f { return vec4f(ds_srgb_quantize(value.xyz), round(clamp(value.w, 0.0, 255.0))); }
-fn ds_srgb_store(v: vec4f) -> vec4f { return vec4f(f32(ds_srgb_code(v.x)), f32(ds_srgb_code(v.y)), f32(ds_srgb_code(v.z)), v.w) / 255.0; }
+fn ds_srgb_store(v: vec4f) -> vec4f { return vec4f(f32(ds_srgb_stored_code(v.x)), f32(ds_srgb_stored_code(v.y)), f32(ds_srgb_stored_code(v.z)), v.w) / 255.0; }
 `;
 
 	} else if ( isPackedQuantization( quantization ) ) {

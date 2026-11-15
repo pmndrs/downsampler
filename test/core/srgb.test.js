@@ -64,6 +64,26 @@ test( 'encode rounds to nearest: against the standard\'s encode formula at 20000
 
 } );
 
+test( 'stores: the shader pow estimate alone (ds_srgb_stored_code) rounds every decoded code back to its code, with a wide margin', () => {
+
+	// Exact kernels store only values that are already decode(k); they skip the correction step.
+	// Mirrors the WGSL in f32: select(1.055 * pow(c, 1 / 2.4) - 0.055, 12.92 * c, c <= 0.0031308).
+	const f = Math.fround;
+	let worst = 0;
+	for ( let k = 0; k < 256; k ++ ) {
+
+		const c = f( srgbDecodeTable[ k ] );
+		const e = c <= f( 0.0031308 ) ? f( f( 12.92 ) * c ) : f( f( f( 1.055 ) * f( Math.pow( c, f( 1 / 2.4 ) ) ) ) - f( 0.055 ) );
+		assert.equal( Math.round( f( e * 255 ) ), k, `code ${ k }` );
+		worst = Math.max( worst, Math.abs( e * 255 - k ) );
+
+	}
+
+	// GPU pow is far more accurate than this (WGSL: exp2/log2 error bounds); 0.5 would be a wrong code.
+	assert.ok( worst < 1e-3, `largest miss ${ worst } of a step` );
+
+} );
+
 test( 'no ties: no threshold is an f32, and each lies far enough from the f32 grid that its f64 rounding can\'t move a bound', () => {
 
 	for ( let k = 0; k < 255; k ++ ) {
