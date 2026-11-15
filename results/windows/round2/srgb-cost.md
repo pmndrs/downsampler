@@ -60,9 +60,17 @@ code step (against 0.5 to be wrong), far beyond any GPU `pow` error. So the stor
 | 1024² | 0.071 | 0.83 | 0.70 | 0.50 |
 | 4096² | 0.752 | 0.84 | 0.64 | 0.49 |
 
-16–21 % less time, and the bench's parity check (last level against `buffer`) passed. Render passes would then take
-0.37–0.61× our time instead of 0.31–0.51×. Not built in the library yet: it is a kernel change (full RTX matrix in
-parts and Intel quick before it lands; the sRGB GPU groups check it bit for bit).
+16–21 % less time, and the bench's parity check (last level against `buffer`) passed. Render passes now take
+0.37–0.61× our time instead of 0.31–0.51×.
+
+**Built** (`ds_srgb_stored_code` in `srgbWgsl`, used by the exact kernels' sRGB stores on the buffer and storage paths;
+tile kernels, which store unrounded values, keep the correction). Same bits: RTX full matrix (three parts, 35,829
+cases, all 3234 groups), RTX compat quick and Intel quick fail only the known groups (the FSR fixtures and the
+sampled `rgba8unorm-srgb → rgba16float` source on NVIDIA, the same 27 checks before and after the change).
+
+The built library against the old store (`--strategies=slowStore,render`,
+[rtx3060-srgb-built.json](rtx3060-srgb-built.json), VALID): the old store takes 1.19–1.38× the time of the new one at
+all 8 sizes, and render passes take 0.38–0.63× ours. The bench's `buffer` is now this version; `slowStore` is the old one.
 
 ## What it means for three.js
 

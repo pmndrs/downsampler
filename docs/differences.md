@@ -19,7 +19,7 @@ odd sizes. You can swap downsampler in without a visual change.
 | GPU | rgba8 | rgba16float | sRGB colour |
 |---|---|---|---|
 | Apple M5 Pro | 3–27× faster | 4.5× faster at 1024² | faster up to 720p, slower from 1080p |
-| NVIDIA RTX 3060 Laptop | 0.77–0.95× the time | 0.77–1.01× | **2–3× slower** |
+| NVIDIA RTX 3060 Laptop | 0.77–0.95× the time | 0.77–1.01× | **1.6–2.7× slower** |
 | Intel UHD | 0.48–1.05× | 0.62–0.96× | not measured |
 
 Times are for screen sizes from 960×540 to 2560×1440, plus 1024² and 4096². Cube maps gain the most (3–4× on the RTX,

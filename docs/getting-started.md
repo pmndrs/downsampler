@@ -203,7 +203,7 @@ does nothing when it can't handle a texture, so three's own mipmaps remain your 
 It works for `StorageTexture`s and for sRGB colour textures. Other regular three.js textures don't get the storage
 usage it needs; a built-in compute option for three.js itself is in progress.
 
-For sRGB textures on NVIDIA, three's own mipmaps are 2–3× faster (compute shaders can't write sRGB directly, so the
+For sRGB textures on NVIDIA, three's own mipmaps are 1.6–2.7× faster (compute shaders can't write sRGB directly, so the
 library takes a slower path), so leave those to three there.
 
 ## When a texture isn't supported

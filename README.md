@@ -96,7 +96,7 @@ GPU time for a full chain, against one render pass per level:
 
 On an NVIDIA RTX 3060 Laptop, from 960×540 to 2560×1440, it takes 5–20 % less time than render passes in rgba8 and up
 to 20 % less in rgba16float; a 512² cube map is 3–4× faster. The exception is sRGB colour textures, which compute
-shaders can't write directly: on the RTX, render passes are 2–3× faster for those.
+shaders can't write directly: on the RTX, render passes are 1.6–2.7× faster for those.
 
 The big wins are small textures and cube maps, where the cost of starting many render passes dominates. Very large
 textures (4096²) are limited by memory bandwidth, so every method takes about the same time there. If you can accept

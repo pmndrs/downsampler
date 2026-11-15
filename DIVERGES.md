@@ -36,7 +36,7 @@ Last updated: 2026-11-15 (review of every entry after Windows round 2 and M3: su
 | 13 | float32 averages load, never sample | nvpro | **Open** (S) | None | Unmeasured; nvpro saw the sampler 26–32 % faster on NVIDIA |
 | 14 | No `texture_external` source | fiddle | Candidate | None | Saves one frame copy for video |
 | 15 | Sub-rectangles: exact per-level regions | SPD | Done, tighter | None | A rect costs the dispatch floor (7–18 µs, RTX) |
-| 16 | sRGB through the buffer output path | SPD | Done, by necessity. **Open:** speed on NVIDIA | Linear-light, correctly rounded | Render passes 2.6–3.3× faster on the RTX; 0.55–1.25× ours on the M5 |
+| 16 | sRGB through the buffer output path | SPD | Done, by necessity; render passes stay the faster path on NVIDIA | Linear-light, correctly rounded | Render passes 1.6–2.7× faster on the RTX; 0.55–1.25× ours on the M5 |
 | 17 | Compute only, no render fallback | `greggman`, `toji` | Keep (resolved by measurement), except sRGB (#16) | None | See entry: at or below render passes on NVIDIA and Intel, 1.3–27× faster on the M5 |
 | 18 | Needs `STORAGE_BINDING` | gpuweb#5253 (`Kangz`) | Keep (measured: free) | None | No cost on M5, RTX or Intel |
 | 19 | Benchmark method | `greggman`, nvpro | Done (timestamps + throughput agree) | — | — |
@@ -245,8 +245,8 @@ Last updated: 2026-11-15 (review of every entry after Windows round 2 and M3: su
 - **Performance:** one extra write and copy of the written levels, as for every buffer-path format. `encodePass` can't record the copies.
   - Against render passes (three.js's path for sRGB textures today), M5 Pro at load average 14: ours is 1.19–1.98× faster up to 1280×720 and at 1024², a tie at 1707×960, and slower from 1080p up (render passes take 0.55–0.79× our time).
   - RTX 3060 (2026-11-15, [rtx3060-srgb-paths.json](results/windows/round2/rtx3060-srgb-paths.json)): render passes take 0.32–0.51× our time at every size. The scratch-texture path doesn't help there either (1.05–1.13× of the buffer path). The tables were a large part (moved to a storage buffer in round 2: 3.8–4× faster, [srgb.md](results/windows/round2/srgb.md)); with no lookups at all (wrong bits, timing only) the chain was still about 2× render passes at 1080p.
-  - Where the time goes ([srgb-cost.md](results/windows/round2/srgb-cost.md), RTX, 1080p): shader sRGB maths 32 % (mostly the correction steps), reading an sRGB source ~17 %, the buffer path's write and copy 25 %. With no sRGB maths at all the chain is still 1.4× render passes, so no shader change reaches them on NVIDIA. One same-bits saving: stores can skip the correction step, because every stored value is already an exact decoded code (16–21 % less time; not built yet).
-- **Verdict:** done, by necessity. **Open:** speed on NVIDIA, which the buffer path bounds (above); the store saving is the one change left. The docs say so, and three.js keeps render passes for sRGB textures (the fork's `mipmapGeneration: 'compute'` already does).
+  - Where the time goes ([srgb-cost.md](results/windows/round2/srgb-cost.md), RTX, 1080p): shader sRGB maths 32 % (mostly the correction steps), reading an sRGB source ~17 %, the buffer path's write and copy 25 %. With no sRGB maths at all the chain is still 1.4× render passes, so no shader change reaches them on NVIDIA. Stores now skip the correction step, because every stored value is already an exact decoded code: same bits, 16–28 % less time, so render passes take 0.37–0.63× our time.
+- **Verdict:** done, by necessity. On NVIDIA render passes stay faster, and the buffer path WebGPU forces on us bounds how close we can get (above), so nothing is left to try in the shader. The docs say so, and three.js keeps render passes for sRGB textures (the fork's `mipmapGeneration: 'compute'` already does).
 
 ## Compute vs render, and measurement
 
