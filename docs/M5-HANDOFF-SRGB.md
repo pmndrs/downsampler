@@ -31,6 +31,11 @@ Background: [DIVERGES #16](../DIVERGES.md#16-srgb-through-the-buffer-output-path
    npm run bench -- --compare=storage-usage --formats=rgba8unorm-srgb --skip-validation --output=results/m5/m5-pro-srgb-alias-sampling.json
    ```
 
+4. float32 averages, sampled vs loaded (`requiredFeatures` asks for `float32-filterable`; RTX and Intel: sampling 0.69–1.00× of loading):
+   ```bash
+   npm run bench -- --compare=float32 --skip-validation --output=results/m5/m5-pro-float32.json
+   ```
+
 ## What the numbers decide
 
 - **Render path as the sRGB default.** It stays if `renderPath` beats `buffer` on the M5, as it does on both Windows

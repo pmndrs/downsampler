@@ -36,11 +36,12 @@ your project. `three` is optional and only needed for `downsampler/three`.
 ## Quick start
 
 ```js
-import { Downsampler, requiredLimits } from 'downsampler/webgpu';
+import { Downsampler, requiredFeatures, requiredLimits } from 'downsampler/webgpu';
 
 const adapter = await navigator.gpu.requestAdapter();
-// requiredLimits asks for six storage textures, so one dispatch can write six levels.
-const device = await adapter.requestDevice( { requiredLimits: requiredLimits( adapter ) } );
+// requiredLimits asks for six storage textures, so one dispatch can write six levels;
+// requiredFeatures for the optional features that make some formats faster or available.
+const device = await adapter.requestDevice( { requiredFeatures: requiredFeatures( adapter ), requiredLimits: requiredLimits( adapter ) } );
 
 const texture = device.createTexture( {
 	format: 'rgba8unorm',

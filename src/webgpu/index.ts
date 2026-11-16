@@ -1,5 +1,5 @@
 export { Downsampler, maxResampleRatio } from './downsampler.js';
-export { requiredLimits } from './limits.js';
+export { optionalFeatures, requiredFeatures, requiredLimits } from './limits.js';
 export { isCompatibilityTexture } from './compat.js';
 export type { BufferCopy, ChainPath, DownsamplerOptions, EncodeOptions, PreparedBatch, SourceOptions } from './downsampler.js';
 export { createRenderKernel, renderFormats, renderLayoutEntries, usesTables } from './render.js';

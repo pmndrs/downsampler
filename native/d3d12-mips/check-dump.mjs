@@ -4,6 +4,8 @@
 //                          our oddSizes: 'spd' implements them (floor sizes, unrounded within a
 //                          batch, the next batch reads stored mip 6)
 //   render*, d3d11-*, blit 'exact' level by level (reduceReference): render-pass semantics
+//   rgba8unorm-srgb        the same oracles with the 'srgb8' quantization (averaged in linear
+//                          light, stored as the nearest code); differences are counted in codes
 //   nvpro-*                'box' level by level (defined here; the library's 'box' is planned for
 //                          M2.5): nvpro_pyramid's area weights (n−x, n, x+1)/(2n+1) for size 2n+1,
 //                          each level from the stored one below it; max over the same footprint
@@ -12,7 +14,7 @@
 // Usage: npm run build && node native/d3d12-mips/check-dump.mjs <dump folder> [--json=out.json]
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { quantize, reduceReference, spdChainReference, tolerance } from '../../dist/index.js';
+import { quantize, quantizeSrgb, reduceReference, spdChainReference, srgbCode, tolerance } from '../../dist/index.js';
 
 /** Source texels and weights for output x along an axis of `size` texels (nvpro_pyramid). */
 function boxTaps( size, x ) {
@@ -48,9 +50,10 @@ const folder = process.argv[ 2 ];
 const jsonOut = process.argv.find( arg => arg.startsWith( '--json=' ) )?.slice( 7 );
 if ( ! folder ) throw new Error( 'usage: node check-dump.mjs <dump folder> [--json=out.json]' );
 
-const quantizations = { rgba8unorm: 'unorm8', rgba16float: 'float16', r32float: 'float32' };
+const quantizations = { rgba8unorm: 'unorm8', rgba16float: 'float16', r32float: 'float32', 'rgba8unorm-srgb': 'srgb8' };
 // One storage step near 1 (the inputs are in [0, 1)): 8-bit unit, f16 ulp at [0.5, 1), f32 ulp.
-const steps = { rgba8unorm: 1 / 255, rgba16float: 2 ** -11, r32float: 2 ** -24 };
+// sRGB: codes (r, g, b), 8-bit units (alpha).
+const steps = { rgba8unorm: 1 / 255, rgba16float: 2 ** -11, r32float: 2 ** -24, 'rgba8unorm-srgb': 1 / 255 };
 
 const report = [];
 for ( const file of readdirSync( folder ).filter( name => name.endsWith( '.json' ) ).sort() ) {
@@ -67,6 +70,9 @@ for ( const file of readdirSync( folder ).filter( name => name.endsWith( '.json'
 	const reduction = format === 'r32float' ? 'max' : 'average';
 	const isSpd = variant.startsWith( 'spd-' ), isBox = variant.startsWith( 'nvpro-' );
 	const channels = format === 'r32float' ? 1 : 4;
+	const srgb = quantization === 'srgb8';
+	// The dump holds each code's decode as the f32 nearest it: snap to the library's table.
+	if ( srgb ) for ( const level of levels ) for ( let i = 0; i < level.length; i ++ ) if ( i % 4 < 3 ) level[ i ] = quantizeSrgb( level[ i ] );
 
 	let reference;
 	if ( isSpd ) reference = spdChainReference( levels[ 0 ], width, height, 1, quantization, reduction, levels.length - 1, 6 ); // ReferenceLevel objects
@@ -96,8 +102,9 @@ for ( const file of readdirSync( folder ).filter( name => name.endsWith( '.json'
 			values ++;
 			const error = Math.abs( actual[ i ] - expected[ i ] );
 			if ( error > 0 ) differing ++;
-			if ( error > tolerance( expected[ i ], quantization, allowance[ i ] ?? 0, reduction ) ) outside ++;
-			max = Math.max( max, error );
+			if ( error > tolerance( expected[ i ], quantization, allowance[ i ] ?? 0, reduction, srgb ? { channel: i % 4, texelMax: 0 } : undefined ) ) outside ++;
+			// sRGB color: in codes, as a step of 1/255 (maxSteps below divides by it).
+			max = Math.max( max, srgb && i % 4 < 3 ? Math.abs( srgbCode( actual[ i ] ) - srgbCode( expected[ i ] ) ) / 255 : error );
 
 		}
 		perLevel.push( { level, size: meta.levels[ level ], maxSteps: +( max / steps[ format ] ).toFixed( 3 ), differing, outside, values } );
@@ -112,4 +119,4 @@ for ( const file of readdirSync( folder ).filter( name => name.endsWith( '.json'
 
 }
 
-if ( jsonOut ) writeFileSync( jsonOut, JSON.stringify( { about: 'Native level dumps diffed against the library oracles; maxSteps is in storage steps near 1 (8-bit unit, f16 ulp in [0.5, 1), f32 ulp)', report }, null, '\t' ) + '\n' );
+if ( jsonOut ) writeFileSync( jsonOut, JSON.stringify( { about: 'Native level dumps diffed against the library oracles; maxSteps is in storage steps near 1 (8-bit unit, f16 ulp in [0.5, 1), f32 ulp; rgba8unorm-srgb: codes)', report }, null, '\t' ) + '\n' );

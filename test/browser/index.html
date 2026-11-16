@@ -44,7 +44,7 @@
 
 				// webgpu-spd (results/compare/webgpu-spd.md) runs with the features and limits it uses: subgroups, shader-f16, the adapter's storage texture limit.
 				const webgpuSpd = compare === 'webgpu-spd' || webgpuSpdCheck;
-				const features = webgpuSpd ? [ 'subgroups', 'shader-f16' ] : compare === 'subgroups' ? [ 'subgroups' ] : compare === 'f16' ? [ 'shader-f16' ] : [];
+				const features = webgpuSpd ? [ 'subgroups', 'shader-f16' ] : compare === 'subgroups' ? [ 'subgroups' ] : compare === 'f16' ? [ 'shader-f16' ] : compare === 'float32' ? [ 'float32-filterable' ] : [];
 				const { device, adapter, userAgent } = await requestDevice( { compat, maxStorageTextures: compare === 'spd' || webgpuSpd, features, timestamps: timestampQuery } );
 				const errors = [];
 				device.addEventListener( 'uncapturederror', event => errors.push( event.error.message ) );

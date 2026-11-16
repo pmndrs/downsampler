@@ -57,9 +57,14 @@ foreach( wave wave lds )
 		endif()
 		spd_shader( spd-${wave}-${source}-float ${waveDefine} ${sourceDefine} )
 		spd_shader( spd-${wave}-${source}-unorm ${waveDefine} ${sourceDefine} -D SPD_UNORM )
+		spd_shader( spd-${wave}-${source}-srgb ${waveDefine} ${sourceDefine} -D SPD_UNORM -D SPD_SRGB )
 	endforeach()
 	spd_shader( spd-max-${wave} ${waveDefine} -D SPD_MAX -D SPD_CHANNELS=1 )
 endforeach()
+
+# rgba8unorm-srgb as AMD's sample does it (quad-wave only): see shaders/spd.hlsl.
+spd_shader( spd-wave-load-amdsrgb -D SPD_UNORM -D SPD_SRGB_AMD )
+spd_shader( spd-wave-linear-amdsrgb -D SPD_LINEAR_SAMPLER -D SPD_UNORM -D SPD_SRGB_AMD )
 
 foreach( stage vs ps )
 	set( output "${CMAKE_CURRENT_BINARY_DIR}/shaders/blit-${stage}.cso" )

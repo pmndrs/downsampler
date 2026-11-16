@@ -17,16 +17,20 @@ runnable page in [examples/](../examples/) that checks its own output. For the f
 ## Set up a device
 
 ```js
-import { Downsampler, requiredLimits } from 'downsampler/webgpu';
+import { Downsampler, requiredFeatures, requiredLimits } from 'downsampler/webgpu';
 
 const adapter = await navigator.gpu.requestAdapter();
-const device = await adapter.requestDevice( { requiredLimits: requiredLimits( adapter ) } );
+const device = await adapter.requestDevice( { requiredFeatures: requiredFeatures( adapter ), requiredLimits: requiredLimits( adapter ) } );
 const downsampler = new Downsampler( device );
 ```
 
 Each level a dispatch writes needs its own storage texture binding, and WebGPU allows only four unless you ask for
 more. `requiredLimits( adapter )` asks for up to six, plus the larger workgroups some kernels use, but never for more
 than the adapter has. Without it everything still works, just with fewer levels per dispatch.
+
+`requiredFeatures( adapter )` asks for the optional features the library can use, if the adapter has them: more
+storage formats, and filtering for float32 formats, which cuts their chains' time by up to 30 %. Add your own features
+to the list.
 
 Make one `Downsampler` per device and keep it. It caches its compiled pipelines, so the first chain of each format
 pays a compile and later ones don't.

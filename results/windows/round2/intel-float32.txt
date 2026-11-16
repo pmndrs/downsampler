@@ -1,0 +1,31 @@
+{"vendor":"intel","architecture":"gen-12lp","device":"","description":"","isFallbackAdapter":false,"timestamps":true,"features":["texture-formats-tier1","bgra8unorm-storage","float32-filterable"],"compatibility":false,"maxStorageTexturesPerShaderStage":6,"subgroupMinSize":8,"subgroupMaxSize":128,"adapterFeatures":["bgra8unorm-storage","chromium-experimental-multi-draw-indirect","chromium-experimental-timestamp-query-inside-passes","clip-distances","core-features-and-limits","depth-clip-control","depth32float-stencil8","dual-source-blending","float32-blendable","float32-filterable","indirect-first-instance","primitive-index","rg11b10ufloat-renderable","shader-f16","subgroups","texture-component-swizzle","texture-compression-bc","texture-compression-bc-sliced-3d","texture-formats-tier1","texture-formats-tier2","timestamp-query"],"maxTextureDimension2D":8192}
+load average (1, 5, 15 min): before 0.0 0.0 0.0, after 0.0 0.0 0.0
+validation passed: 0 cases, 0 pattern runs, 0 ms
+┌─────────┬─────────────┬───────────────┬─────────────────────┬─────────────────────┐
+│ (index) │ size        │ format        │ load                │ sample              │
+├─────────┼─────────────┼───────────────┼─────────────────────┼─────────────────────┤
+│ 0       │ '960x540'   │ 'r32float'    │ '0.0776 ×1.00 [4]'  │ '0.0595 ×0.75 [4]'  │
+│ 1       │ '1129x635'  │ 'r32float'    │ '0.1018 ×1.00 [5]'  │ '0.0709 ×0.71 [5]'  │
+│ 2       │ '1280x720'  │ 'r32float'    │ '0.1246 ×1.00 [3]'  │ '0.1039 ×0.85 [3]'  │
+│ 3       │ '1707x960'  │ 'r32float'    │ '0.2061 ×1.00 [4]'  │ '0.1403 ×0.69 [4]'  │
+│ 4       │ '1920x1080' │ 'r32float'    │ '0.2400 ×1.00 [4]'  │ '0.1941 ×0.81 [4]'  │
+│ 5       │ '2560x1440' │ 'r32float'    │ '0.6032 ×1.00 [3]'  │ '0.4960 ×0.82 [3]'  │
+│ 6       │ '1024x1024' │ 'r32float'    │ '0.1642 ×1.00 [2]'  │ '0.1435 ×0.88 [2]'  │
+│ 7       │ '4096x4096' │ 'r32float'    │ '7.4663 ×1.00 [2]'  │ '7.5162 ×1.00 [2]'  │
+│ 8       │ '960x540'   │ 'rg32float'   │ '0.1350 ×1.00 [4]'  │ '0.1083 ×0.78 [4]'  │
+│ 9       │ '1129x635'  │ 'rg32float'   │ '0.1824 ×1.00 [5]'  │ '0.1527 ×0.86 [5]'  │
+│ 10      │ '1280x720'  │ 'rg32float'   │ '0.2475 ×1.00 [3]'  │ '0.2158 ×0.85 [3]'  │
+│ 11      │ '1707x960'  │ 'rg32float'   │ '0.3030 ×1.00 [4]'  │ '0.2616 ×0.80 [4]'  │
+│ 12      │ '1920x1080' │ 'rg32float'   │ '0.8248 ×1.00 [4]'  │ '0.7271 ×0.82 [4]'  │
+│ 13      │ '2560x1440' │ 'rg32float'   │ '2.5971 ×1.00 [3]'  │ '2.6439 ×0.98 [3]'  │
+│ 14      │ '1024x1024' │ 'rg32float'   │ '0.2190 ×1.00 [2]'  │ '0.2095 ×0.92 [2]'  │
+│ 15      │ '4096x4096' │ 'rg32float'   │ '14.8712 ×1.00 [2]' │ '14.9731 ×1.00 [2]' │
+│ 16      │ '960x540'   │ 'rgba32float' │ '0.1948 ×1.00 [4]'  │ '0.1806 ×0.91 [4]'  │
+│ 17      │ '1129x635'  │ 'rgba32float' │ '0.2269 ×1.00 [5]'  │ '0.2113 ×0.93 [5]'  │
+│ 18      │ '1280x720'  │ 'rgba32float' │ '0.3458 ×1.00 [3]'  │ '0.3029 ×0.81 [3]'  │
+│ 19      │ '1707x960'  │ 'rgba32float' │ '1.9754 ×1.00 [4]'  │ '1.7898 ×0.92 [4]'  │
+│ 20      │ '1920x1080' │ 'rgba32float' │ '3.6283 ×1.00 [4]'  │ '3.3022 ×0.93 [4]'  │
+│ 21      │ '2560x1440' │ 'rgba32float' │ '7.7186 ×1.00 [3]'  │ '7.3058 ×0.93 [3]'  │
+│ 22      │ '1024x1024' │ 'rgba32float' │ '0.5780 ×1.00 [2]'  │ '0.4002 ×0.70 [2]'  │
+│ 23      │ '4096x4096' │ 'rgba32float' │ '33.4385 ×1.00 [2]' │ '32.8679 ×0.98 [2]' │
+└─────────┴─────────────┴───────────────┴─────────────────────┴─────────────────────┘

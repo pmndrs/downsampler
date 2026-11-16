@@ -13,7 +13,7 @@
  * in-tree three.js option; see SPEC.md.
  */
 import { Downsampler, type DownsamplerOptions, type EncodeOptions } from '../webgpu/downsampler.js';
-import { requiredLimits } from '../webgpu/limits.js';
+import { requiredFeatures, requiredLimits } from '../webgpu/limits.js';
 
 interface ThreeBackendLike {
 	isWebGPUBackend?: boolean;
@@ -128,4 +128,4 @@ export { Downsampler };
  * work in compatibility mode): `requiredLimits` from `downsampler/webgpu`.
  * Requires an adapter, e.g. from `await navigator.gpu.requestAdapter()`.
  */
-export { requiredLimits };
+export { requiredFeatures, requiredLimits };

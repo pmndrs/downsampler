@@ -2,7 +2,7 @@
 // the CPU reference, computed from the GPU's own previous level so permitted
 // rounding differences do not accumulate along the chain.
 import { areaReference, boxReference, bufferWritable, copyReference, formats, maxViolations, fromHalf, isIntegerDomain, isIntQuantization, isPackedQuantization, levelSize, pyramidTolerance, quantize, reducePyramid, reduceReference, sampledChannels, spdReference, storageWritable, toHalf, tolerance } from '/dist/index.js';
-import { Downsampler, Reducer, requiredLimits } from '/dist/webgpu/index.js';
+import { Downsampler, Reducer, requiredFeatures, requiredLimits } from '/dist/webgpu/index.js';
 import * as three from '/dist/three/index.js';
 import { createDepthSource, createTexture, makeData, poison, readMip, readMips, toFloats, trackBuffers, upload } from './gpu.js';
 import { validateBox } from './validate-box.js';
@@ -503,6 +503,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 				results.push( ...await validateSource( device, { quick, onProgress, select } ) );
 				results.push( ...await select.run( 'downsampler/options', () => validateOptions( device ) ) );
+				results.push( ...await select.run( 'downsampler/float32-sample', () => validateFloat32Sample( device, { quick } ) ) );
 				results.push( ...await select.run( 'downsampler/mipmap', () => validateMipmap( device, { quick } ) ) );
 				results.push( ...await validateRegion( device, { quick, onProgress, select } ) );
 				results.push( ...await validatePacked( device, { quick, onProgress, part: 'downsampler', select } ) );
@@ -758,6 +759,93 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 	}
 
 	return results;
+
+}
+
+/**
+ * float32 averages through the sampler (DIVERGES #13). The suite's device leaves `float32-filterable`
+ * off, so float32 formats load everywhere else; this group takes a device with it (on the same adapter
+ * and feature level), where 'average' samples float32 as it does every filterable format. Each level
+ * against the oracle from the GPU's level above: a batch's first output with the sampler's weight
+ * tolerance, in-tile and tail levels with shader weights. Skipped where the adapter lacks the feature.
+ */
+async function validateFloat32Sample( device, { quick } ) {
+
+	const compat = compatibility( device );
+	const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance', ...( compat ? { featureLevel: 'compatibility' } : {} ) } );
+	if ( ! adapter?.features.has( 'float32-filterable' ) ) return [ { option: 'float32-sample', skipped: 'the adapter has no float32-filterable' } ];
+	// The device an app gets from requiredFeatures( adapter ): it must include float32-filterable here.
+	const features = requiredFeatures( adapter );
+	if ( ! features.includes( 'float32-filterable' ) || features.some( feature => ! adapter.features.has( feature ) ) ) throw new Error( `requiredFeatures: ${ features.join( ', ' ) } for an adapter with float32-filterable` );
+	const filterable = await adapter.requestDevice( { requiredFeatures: features, requiredLimits: requiredLimits( adapter ) } );
+	const errors = [];
+	filterable.addEventListener( 'uncapturederror', event => errors.push( event.error.message ) );
+	const shapes = [ [ 255, 257, 1 ], [ 192, 108, 1 ], [ 33, 17, 3 ], [ 64, 64, 1 ], [ 7, 1, 1 ], [ 1, 128, 1 ], ...( quick ? [] : [ [ 1920, 1080, 1 ], [ 1129, 635, 1 ] ] ) ];
+	const variants = [
+		{ name: 'tail', downsampler: new Downsampler( filterable ) },
+		{ name: 'no tail', downsampler: new Downsampler( filterable, { tail: false } ) },
+		{ name: 'box', downsampler: new Downsampler( filterable ), oddSizes: 'box' }
+	];
+	let levels = 0, chains = 0;
+	try {
+
+		for ( const format of [ 'r32float', 'rg32float', 'rgba32float' ] ) {
+
+			if ( compat && format === 'rg32float' ) continue; // no storage in compatibility mode (the buffer path; covered by the main matrix)
+			const { quantization, channels } = formats[ format ];
+			for ( const [ width, height, layers ] of shapes ) {
+
+				const texture = createTexture( filterable, { width, height, layers, format } );
+				try {
+
+					const data = makeData( width, height, layers, format, 'random', 7 );
+					const floats = toFloats( data, format );
+					for ( const { name, downsampler, oddSizes } of variants ) {
+
+						const options = oddSizes === undefined ? {} : { oddSizes };
+						const batches = downsampler.prepare( texture, options );
+						// The chain must take the sample path: its first outputs sample, as for any filterable format
+						// ('box' loads every odd level, so a chain can load throughout).
+						if ( oddSizes === undefined && ! batches.some( batch => batch.pipeline.label.includes( ':sample:' ) ) ) throw new Error( `float32 sample ${ format } ${ width }x${ height }x${ layers } ${ name }: no batch samples (${ batches.map( batch => batch.pipeline.label ).join( '; ' ) })` );
+						upload( filterable, texture, data );
+						poison( filterable, texture );
+						downsampler.generate( texture, options );
+						const mips = await readMips( filterable, texture, 1 );
+						const sampled = new Set( batches.filter( batch => batch.pipeline.label.includes( ':sample:' ) ).map( batch => batch.firstMipLevel ) );
+						let previous = floats, w = width, h = height;
+						for ( let level = 1; level < texture.mipLevelCount; level ++ ) {
+
+							const expected = ( oddSizes === 'box' ? boxReference : reduceReference )( previous, w, h, layers, quantization, 'average', { weights: sampled.has( level ) ? 'sampler' : 'shader' } );
+							check( mips[ level - 1 ], expected, quantization, `float32 sample ${ format } ${ width }x${ height }x${ layers } ${ name } mip ${ level }`, 'average', channels );
+							previous = mips[ level - 1 ]; w = expected.width; h = expected.height;
+							levels ++;
+
+						}
+
+						chains ++;
+						downsampler.release( texture );
+
+					}
+
+				} finally {
+
+					texture.destroy();
+
+				}
+
+			}
+
+		}
+
+		await filterable.queue.onSubmittedWorkDone();
+		if ( errors.length > 0 ) throw new Error( `float32 sample: GPU errors: ${ errors.slice( 0, 3 ).join( ' | ' ) }` );
+		return [ { option: 'float32-sample', chains, levels } ];
+
+	} finally {
+
+		filterable.destroy();
+
+	}
 
 }
 

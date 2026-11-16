@@ -17,14 +17,24 @@ in [SPEC.md](../SPEC.md).
 ## Setup
 
 ```js
-import { Downsampler, Reducer, ScalarReduction, requiredLimits } from 'downsampler/webgpu';
+import { Downsampler, Reducer, ScalarReduction, requiredFeatures, requiredLimits } from 'downsampler/webgpu';
 
 const adapter = await navigator.gpu.requestAdapter();
 const device = await adapter.requestDevice( {
-	requiredFeatures: [ 'texture-formats-tier1' ].filter( feature => adapter.features.has( feature ) ), // optional: more formats
+	requiredFeatures: requiredFeatures( adapter ), // optional features the library uses, where the adapter has them
 	requiredLimits: requiredLimits( adapter ),
 } );
 ```
+
+`requiredFeatures( adapter )` (also re-exported by `downsampler/three`) returns the optional features the library uses that the adapter has:
+
+| Feature | What it changes |
+|---|---|
+| `float32-filterable` | `'average'` chains of r32float, rg32float and rgba32float sample instead of loading, like every other filterable format: 0.74–1.00× the time on an RTX 3060, 0.69–1.00× on Intel UHD (DIVERGES #13). Sampled results follow the GPU's sampler weights; `averageAccess: 'load'` keeps them identical everywhere |
+| `texture-formats-tier1` | storage for r8unorm, rg8unorm, r16float, rg16float, the 16-bit normalized formats and the small integer formats |
+| `bgra8unorm-storage` | storage for bgra8unorm |
+
+Everything works without them; add your own features to the list.
 
 `requiredLimits( adapter )` (also `Downsampler.requiredLimits`, and re-exported by `downsampler/three`) returns the limits worth requesting for all three classes:
 

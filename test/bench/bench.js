@@ -15,6 +15,7 @@ import { compareSpdSizes, firstUnitStep, webgpuSpdVariants } from './webgpu-spd.
 import { storageUsage } from './storage-usage.js';
 import { kernelVariants } from './kernel-variants.js';
 import { srgbCostStrategies, srgbFormats, srgbStrategies } from './srgb.js';
+import { float32Formats, float32Strategies } from './float32.js';
 import { partialSizes, partialStrategies } from './partial.js';
 import { dispatchFit, dispatchFormats, dispatchSizes, dispatchStrategies } from './dispatch.js';
 
@@ -302,6 +303,8 @@ export async function benchmark( device, { sizes, formats: benchFormats, rounds,
 	// sRGB output paths (test/bench/srgb.js): ratios paired against the buffer path.
 	if ( compare === 'srgb-cost' ) return timestamps ? measure( device, pickStrategies( srgbCostStrategies( device ), only, [ 'buffer' ] ), { sizes: sizes ?? renderCompareSizes, benchFormats: benchFormats ?? srgbFormats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
 	if ( compare === 'srgb' ) return timestamps ? measure( device, pickStrategies( srgbStrategies( device ), only, [ 'buffer' ] ), { sizes: sizes ?? renderCompareSizes, benchFormats: benchFormats ?? srgbFormats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
+	// float32 averages, sampled vs loaded (test/bench/float32.js; the device has float32-filterable).
+	if ( compare === 'float32' ) return timestamps ? measure( device, pickStrategies( float32Strategies( device ), only, [ 'load' ] ), { sizes: sizes ?? renderCompareSizes, benchFormats: benchFormats ?? float32Formats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
 	// Partial updates (test/bench/partial.js): rect and layer updates paired against the full chain.
 	if ( compare === 'partial' ) return timestamps ? measure( device, pickStrategies( partialStrategies( device ), only, [ 'full' ] ), { sizes: sizes ?? partialSizes, benchFormats: benchFormats ?? defaultFormats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
 	// The cost of one dependent dispatch (test/bench/dispatch.js): the same chain at 1–6 levels per dispatch.
@@ -353,7 +356,7 @@ export async function benchmark( device, { sizes, formats: benchFormats, rounds,
 
 	}
 
-	if ( compare ) throw new Error( `unknown --compare=${ compare }; expected spd, render, webgpu-spd, throughput, storage-usage, subgroups, f16, srgb or srgb-cost` );
+	if ( compare ) throw new Error( `unknown --compare=${ compare }; expected spd, render, webgpu-spd, throughput, storage-usage, subgroups, f16, srgb, srgb-cost or float32` );
 	const strategies = { render: createRenderBaseline( device ) };
 	for ( const levels of [ 4, limit ].filter( ( value, index, all ) => all.indexOf( value ) === index ) ) {
 
