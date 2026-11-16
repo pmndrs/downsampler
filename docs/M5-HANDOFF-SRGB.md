@@ -35,8 +35,13 @@ Background: [DIVERGES #16](../DIVERGES.md#16-srgb-through-the-buffer-output-path
 
 - **Render path as the sRGB default.** It stays if `renderPath` beats `buffer` on the M5, as it does on both Windows
   GPUs. If it loses there, that's a split by vendor, which we avoid: bring it to the owner.
-- **`srgbRounding` default** (waiting on owner): `'exact'` is the same everywhere; `'device'` matches plain render
-  passes. The gap between `renderPath` and `renderDevice` is the price of exact rounding: on Intel about 5×, on the RTX up to 1.6×.
+- **`srgbRounding`** stays `'exact'` by default (decided 2026-11-16). Record the gap between `renderPath` and
+  `renderDevice` (the price of exact rounding: about 5× on Intel, up to 1.6× on the RTX); bring it back only if the M5
+  changes the picture.
+- **Halo batches** become the default if they gain at least 5 % here and lose nowhere:
+  ```bash
+  npm run bench -- --compare=render --skip-validation --strategies=render,tail,halo,haloAny --output=results/m5/m5-pro-halo.json
+  ```
 - **`colorSpace: 'srgb'`**: worth recommending only if it beats the render path somewhere and sampling stays at about 1.00×.
 
 Record results in PROGRESS (verification log) and DIVERGES #16.

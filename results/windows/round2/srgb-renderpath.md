@@ -63,4 +63,4 @@ The differences come from the hardware's encode (not correctly rounded) and deco
 ## Open
 
 - The M5 Pro, AMD and mobile: the same bench and `srgb/render`.
-- Whether `srgbRounding` should default to `'device'` for three.js-style use (PROGRESS, waiting on owner).
+- `srgbRounding` stays `'exact'` by default (owner, 2026-11-16); `'device'` is the opt-in for display-only color.

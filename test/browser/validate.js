@@ -681,6 +681,13 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 								const mips = await readMips( device, destination, 0 );
 								const label = `${ sourceFormat } ${ width }x${ height }x${ layers } -> ${ format } ${ relation } ${ reduction } ${ pattern } L${ downsampler.levelsPerDispatch } ${ mode }`;
 								const unormSource = /unorm/.test( sourceFormat ) ? 2 ** - 21 : 0;
+								// A sampled sRGB source into a float destination: NVIDIA's filtered sRGB decode is coarser than
+								// the exact table (RTX 3060: up to 0.64 % of the value, e.g. 0.9765625 = 1000/1024 for 0.97363;
+								// Intel and the M5 are within the sampler tolerance). Render passes read it the same way, so the
+								// levels the sampler reads from the source get 2^-7 of the value (owner, 2026-11-16: widen the
+								// tolerance rather than load). A missing decode is tens of percent off, still caught.
+								const sampledSrgb = sourceFormat.endsWith( '-srgb' ) && ! format.endsWith( '-srgb' ) && reduction === 'average' ? 2 ** - 7 : 0;
+								const sourceSlack = unormSource + sampledSrgb;
 
 								if ( mode === 'spd' ) {
 
@@ -699,7 +706,7 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 										spdReference( from, sw, sh, layers, quantization, reduction, batch.count, { weights: 'sampler' } ).forEach( ( level, i ) => {
 
 											const mip = batch.firstMipLevel + i;
-											check( mips[ mip ], level, quantization, `${ label } mip ${ mip }`, reduction, channels, external ? unormSource : 0 );
+											check( mips[ mip ], level, quantization, `${ label } mip ${ mip }`, reduction, channels, external ? sourceSlack : 0 );
 
 										} );
 
@@ -717,7 +724,7 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 
 									const quantizedInput = level > 0 || formats[ sourceFormat ]?.quantization === quantization;
 									const expected = level === 0 && dw === width && dh === height ? copyReference( previous, w, h, layers, quantization ) : ( box ? boxReference : reduceReference )( previous, w, h, layers, quantization, reduction, { quantizedInput, weights: firstOutputs.has( level ) ? 'sampler' : 'shader' } );
-									const slack = level === 0 && /unorm/.test( sourceFormat ) ? 2 ** - 21 : 0;
+									const slack = level === 0 ? sourceSlack : 0;
 									check( mips[ level ], expected, quantization, `${ label } mip ${ level }`, reduction, channels, slack );
 									previous = mips[ level ]; w = expected.width; h = expected.height;
 
