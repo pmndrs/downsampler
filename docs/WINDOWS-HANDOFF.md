@@ -14,7 +14,7 @@ Read `CLAUDE.md`, `SPEC.md` (§2, §8, §13, §14) and `PROGRESS.md` first. `DIV
 - Work on `windows-testing` and commit results to it. Push only that branch. Never push `main` or `m2-reductions`.
 - **Don't change library kernels** (`src/`). If something fails on D3D12, record it: the failing case, the full output, the adapter info and the driver version. Then stop and report. A kernel fix needs the full GPU matrix on a real GPU, and this branch isn't where that happens.
 - **Name every number.** Give the GPU, the driver version, the Chrome version, the power state (plugged in, power plan) and the run's load. Differences under ~5 % are noise.
-- **Commit raw JSON** to `results/windows/`, with a short `.md` next to it summarising what it shows.
+- **Commit raw JSON** to `results/windows/`, with a short `.md` next to it summarizing what it shows.
 - Draft nothing for outside repos or forums. Put questions for the owner in `PROGRESS.md` under *Waiting on owner*.
 
 ## Setup
@@ -107,7 +107,7 @@ It should show the 6–10× exposure speedup off Apple, with DXC compile time at
 
 - Update `PROGRESS.md`: the verification log rows, plus what is answered under *Waiting on owner*.
 - Update `DIVERGES.md` entries 1–3 and 17 with the new numbers. Keep `docs/diverges.html` in step.
-- Commit, push `windows-testing`, and summarise for the owner. Cover:
+- Commit, push `windows-testing`, and summarize for the owner. Cover:
   - correctness on both GPUs;
   - compute vs render vs native;
   - which recommendations the numbers change.

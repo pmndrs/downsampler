@@ -3,7 +3,7 @@
  *
  * Under the 'exact' edge policy (mip chains, `Downsampler`):
  * - 'average' is a normalized-coordinate bilinear sample at the output texel
- *   centre (an exact 2×2 box for even sizes), matching render-pass mipmaps.
+ *   center (an exact 2×2 box for even sizes), matching render-pass mipmaps.
  * - Every other reduction is a fold over the texels the output covers, with a
  *   binary `reduce` that must be associative, commutative and idempotent (a
  *   semilattice, like min, max or bitwise or). Idempotence makes duplicated reads
@@ -11,7 +11,7 @@
  *
  * Under the tile edge policies ('zero-weight', 'clamp'; `Reducer`), output
  * texel x of level l reduces the 2^l × 2^l block of source texels it covers,
- * channel by channel (see `ChannelOp`). Sums stay unnormalised until a level is
+ * channel by channel (see `ChannelOp`). Sums stay unnormalized until a level is
  * emitted. See SPEC.md §14.1.
  */
 

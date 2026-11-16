@@ -7,7 +7,7 @@
 // `context` holds:
 //   scene     the synthetic frame (scene.js)
 //   formats   storage formats for the FSR outputs (gpu.js outputFormats)
-//   colour    the scene colour texture (rgba16float) the upscaler passes read
+//   colour    the scene color texture (rgba16float) the upscaler passes read
 //   tools     factories for the tool halves:
 //               tools.luma( { variant } )      FSR luma pyramid    → { parts, entries, groupEntries, layout, group, reset, check, destroy }
 //               tools.shading( { levels } )    FSR shading change  → { parts, entries, layout, group, texture, check, destroy }

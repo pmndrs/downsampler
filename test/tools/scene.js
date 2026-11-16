@@ -4,7 +4,7 @@
 // Six objects move between the previous frame (t = 0) and the current one
 // (t = 1), one of them a small emissive light; a ground region is lit 2.5×
 // brighter in the current frame (a genuine shading change); a 1.3 px checker
-// aliases under the jitter. Colour is HDR (luma 0.05 to ~100) and every input
+// aliases under the jitter. Color is HDR (luma 0.05 to ~100) and every input
 // is rounded to the format it is uploaded in, so the oracles read exactly what
 // the GPU reads.
 //
@@ -163,7 +163,7 @@ export function createScene( width, height, { seed = 1 } = {} ) {
 
 	}
 
-	// Dilate: the motion of the nearest-depth texel of the 3×3 neighbourhood
+	// Dilate: the motion of the nearest-depth texel of the 3×3 neighborhood
 	// (FSR FindDepthExtents order; a sample replaces the nearest only if strictly nearer).
 	const offsets = [ [ 0, 0 ], [ 1, 0 ], [ 0, 1 ], [ 0, - 1 ], [ - 1, 0 ], [ - 1, 1 ], [ 1, 1 ], [ - 1, - 1 ], [ 1, - 1 ] ];
 	const fsrMotion = new Float32Array( count * 2 ), upscalerMotion = new Float32Array( count * 4 );
@@ -195,7 +195,7 @@ export function createScene( width, height, { seed = 1 } = {} ) {
 		currentLuma[ i ] = f16( current ); previousLuma[ i ] = f16( previous );
 		hostLuma[ i ] = current; lumaHistory[ i ] = previous;
 		// FindDepthExtents' "farthest" only grows from a sample that is also nearer
-		// than the nearest so far, so it always equals the centre depth (non-inverted).
+		// than the nearest so far, so it always equals the center depth (non-inverted).
 		farthestDepth[ i ] = f16( Math.min( depth[ i ], 65504 ) );
 		masks[ i * 4 ] = disocclusion[ i ] * 255; masks[ i * 4 + 3 ] = 255;
 

@@ -37,7 +37,7 @@ test( 'encode inverts the decode table: every code round-trips, so min/max of de
 
 } );
 
-test( 'encode rounds to nearest: against the standard\'s encode formula at 200000 random values and every threshold neighbourhood', () => {
+test( 'encode rounds to nearest: against the standard\'s encode formula at 200000 random values and every threshold neighborhood', () => {
 
 	let state = 7;
 	for ( let i = 0; i < 200000; i ++ ) {
@@ -137,7 +137,7 @@ test( 'formats: rgba8unorm-srgb and bgra8unorm-srgb are srgb8, never storage; qu
 
 } );
 
-test( 'reference averages colour in linear light, alpha as unorm8 (ties to even)', () => {
+test( 'reference averages color in linear light, alpha as unorm8 (ties to even)', () => {
 
 	// Black and white side by side: the linear mean 0.5 is code 188, not the encoded-space mean (128).
 	const source = Float32Array.from( [ 0, 0, 0, 0, 1, 1, 1, 1 ] );
@@ -154,7 +154,7 @@ test( 'reference averages colour in linear light, alpha as unorm8 (ties to even)
 
 } );
 
-test( 'reference: in-tile levels pair colour in float32 (the kernel\'s order), then encode; folds select codes', () => {
+test( 'reference: in-tile levels pair color in float32 (the kernel\'s order), then encode; folds select codes', () => {
 
 	const codes = [ 3, 200, 17, 255, 90, 91, 0, 128 ];
 	const source = Float32Array.from( codes.flatMap( code => [ srgbDecodeTable[ code ], srgbDecodeTable[ 255 - code ], srgbDecodeTable[ code >> 1 ], code / 255 ] ) );
@@ -192,7 +192,7 @@ test( 'reference: box, area, spd and copy oracles quantize sRGB texels the same 
 
 } );
 
-test( 'tolerance: two codes around the value for colour, unorm8 steps for alpha; the texel is required', () => {
+test( 'tolerance: two codes around the value for color, unorm8 steps for alpha; the texel is required', () => {
 
 	assert.throws( () => tolerance( 0.5, 'srgb8' ), /texel/ );
 	const value = srgbDecodeTable[ 188 ];

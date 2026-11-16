@@ -21,7 +21,7 @@
 			<code>[ 'average', 'max', 'min', 'average' ]</code>, and a <code>finish</code> hook, run once on the GPU, turns the log
 			average into an exposure (<code>0.18 / geometric mean</code>) and stores it in the tool's own buffer, where a
 			tone-mapping pass could read it the same frame. The second reduction has no hooks at all: it averages the texture's
-			colour into an output buffer. Move the slider: the scene gets brighter, the exposure drops, and the tone-mapped image
+			color into an output buffer. Move the slider: the scene gets brighter, the exposure drops, and the tone-mapped image
 			(drawn on the CPU here with the GPU's exposure) stays about the same.
 		</p>
 		<pre><code>const metering = new ScalarReduction( device, {
@@ -79,7 +79,7 @@ new ScalarReduction( device ).encode( encoder, { source: hdr, output: { buffer }
 				const { device } = await initDevice();
 				const hdr = device.createTexture( { label: 'example hdr', format: 'rgba16float', size: [ width, height ], usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST } );
 				const result = device.createBuffer( { label: 'metering result', size: 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC } );
-				const averageOutput = device.createBuffer( { label: 'average colour', size: 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC } );
+				const averageOutput = device.createBuffer( { label: 'average color', size: 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC } );
 
 				const reduce = [ 'average', 'max', 'min', 'average' ];
 				const metering = new ScalarReduction( device, {
@@ -127,7 +127,7 @@ new ScalarReduction( device ).encode( encoder, { source: hdr, output: { buffer }
 					metering.encode( encoder, { width, height, bindGroup } );
 					average.encode( encoder, { source: hdr, output: { buffer: averageOutput } } );
 					device.queue.submit( [ encoder.finish() ] );
-					const [ measured, colour ] = await Promise.all( [ readBuffer( result ), readBuffer( averageOutput ) ] );
+					const [ measured, color ] = await Promise.all( [ readBuffer( result ), readBuffer( averageOutput ) ] );
 
 					// Oracles: the hook's values in f64 from the stored halves; bounds from scalarReference.
 					const read = new Float32Array( scene.length );
@@ -153,8 +153,8 @@ new ScalarReduction( device ).encode( encoder, { source: hdr, output: { buffer }
 					checks.push( { name: 'every texel counted (weight = texel count)', ok: measured[ 6 ] === width * height, detail: `${ measured[ 6 ] }` } );
 					const exposure = 0.18 / Math.exp( measured[ 0 ] );
 					checks.push( { name: 'finish hook: exposure = 0.18 / exp( average log luma )', ok: Math.abs( measured[ 5 ] - exposure ) <= 1e-5 * exposure, detail: `${ measured[ 5 ].toPrecision( 5 ) }` } );
-					const colourOk = [ 0, 1, 2, 3 ].every( c => Math.abs( colour[ c ] - mean.exact[ c ] ) <= mean.bound[ c ] );
-					checks.push( { name: 'average colour (no hooks, output buffer) within its bound', ok: colourOk, detail: `(${ [ ...colour.slice( 0, 3 ) ].map( c => c.toFixed( 4 ) ).join( ', ' ) }), weight ${ colour[ 4 ] }` } );
+					const colorOk = [ 0, 1, 2, 3 ].every( c => Math.abs( color[ c ] - mean.exact[ c ] ) <= mean.bound[ c ] );
+					checks.push( { name: 'average color (no hooks, output buffer) within its bound', ok: colorOk, detail: `(${ [ ...color.slice( 0, 3 ) ].map( c => c.toFixed( 4 ) ).join( ', ' ) }), weight ${ color[ 4 ] }` } );
 					report( checks );
 
 					document.getElementById( 'values' ).innerHTML = `<tr><th>Measured</th><th>Value</th></tr>

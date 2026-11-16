@@ -1,6 +1,6 @@
 // Comparison with webgpu-spd (JolifantoBambla/webgpu-spd, npm `webgpu-spd`
 // 3.0.0, git adc666e, vendored test-only in test/vendor/webgpu-spd/ with its
-// MIT licence; never a dependency of the library). Results and method:
+// MIT license; never a dependency of the library). Results and method:
 // results/compare/webgpu-spd.md.
 //
 // - `webgpuSpdVariants( device )`: the library's configurations we compare.
@@ -137,7 +137,7 @@ export function firstUnitStep( width, height, mips ) {
 
 }
 
-/** The colour `poison()` writes, as read back (it encodes with Math.round, not quantizeTexel's ties to even). */
+/** The color `poison()` writes, as read back (it encodes with Math.round, not quantizeTexel's ties to even). */
 function poisonTexel( format ) {
 
 	const v = [ 0.9, 0.1, 0.7, 0.3 ];

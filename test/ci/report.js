@@ -5,7 +5,7 @@
 //       passed, one listing, and the groups they ran disjoint and covering it. Prints a markdown summary;
 //       exits 1 on a problem. --write-durations merges the core groups' times into a durations file.
 //   NEEDS_JSON='${{ toJSON(needs) }}' node test/ci/report.js needs --require=layout,gpu
-//       fails unless every --require job succeeded and no other needed job failed or was cancelled
+//       fails unless every --require job succeeded and no other needed job failed or was canceled
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { partitionProblems } from './shard.js';

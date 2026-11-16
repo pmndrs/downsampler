@@ -21,4 +21,4 @@ r32float runs max (Hi-Z) with SPD only: `spd-{atomic,split}-{wave,lds}` (texel l
 
 `shaders/spd.hlsl` compiles AMD's `ffx_spd.h` with callbacks in the style of AMD's SPD sample: the source level through an SRV, mip 6 through a `globallycoherent` UAV that the last workgroup reads back, the other levels through a UAV array, and a `globallycoherent` counter buffer reset by the last workgroup. `mips` and the dispatch size come from AMD's `ffxSpdSetup` (`mips = floor(log2(max(w, h)))`, one 64×64 tile per workgroup). Loads past the edge follow D3D (zero), as in AMD's sample.
 
-Upstream: FidelityFX SDK `7539ae8b6568ad29ed78a753404351daf3b5cca7`, `Kits/Cauldron2/framework/shaders/fidelityfx/` (`ffx_core.h`, `spd/ffx_spd.h`). MIT licence; nothing copied here.
+Upstream: FidelityFX SDK `7539ae8b6568ad29ed78a753404351daf3b5cca7`, `Kits/Cauldron2/framework/shaders/fidelityfx/` (`ffx_core.h`, `spd/ffx_spd.h`). MIT license; nothing copied here.

@@ -22,7 +22,7 @@
 			A 2048 × 1024 pyramid takes 2 dispatches for 12 levels.
 		</p>
 		<p>
-			For comparison, the readout builds the pyramid niagara does: one 2×2 tap at each texel centre for the first level (what a
+			For comparison, the readout builds the pyramid niagara does: one 2×2 tap at each texel center for the first level (what a
 			min/max reduction sampler returns; WebGPU has none, so a small shader takes the four loads), then exact 2×2 levels. It
 			misses depth texels wherever a texel's area spans three, which can cull visible objects. The readout counts those misses
 			against every depth texel, and the right-hand view marks them: in red where the miss is larger than 0.01 in depth (object
@@ -101,7 +101,7 @@ downsampler.encode( encoder, hiZ, { source: { texture: depth, resample: 'area' }
 			} );
 			const sceneGroup = device.createBindGroup( { layout: scene.getBindGroupLayout( 0 ), entries: [ { binding: 0, resource: { buffer: rectBuffer } } ] } );
 
-			// The comparison's first level: one 2×2 tap at each texel centre (a reduction sampler's footprint).
+			// The comparison's first level: one 2×2 tap at each texel center (a reduction sampler's footprint).
 			const tap = device.createComputePipeline( { layout: 'auto', compute: { entryPoint: 'main', module: device.createShaderModule( { code: /* wgsl */ `
 				@group(0) @binding(0) var depth: texture_depth_2d;
 				@group(0) @binding(1) var level0: texture_storage_2d<r32float, write>;
@@ -232,7 +232,7 @@ downsampler.encode( encoder, hiZ, { source: { texture: depth, resample: 'area' }
 					const deficit = naiveDeficits[ level ];
 					drawLevelScaled( document.getElementById( 'naive' ), naiveLevels[ level ], ( values, i ) => deficit[ i / 4 ] > 0.01 ? [ 1, 0.1, 0.1 ] : deficit[ i / 4 ] > 0 ? [ 0.75, 0.45, 0.1 ] : shade( 0 )( values, i ), 256 );
 					setText( 'naiveCaption', `2×2-tap max: ${ naiveMisses[ level ] } misses (red: by more than 0.01 in depth, orange: less, on sloped surfaces)` );
-					setText( 'caption', `Level ${ level }: ${ levels[ level ].width } × ${ levels[ level ].height } (scaled, nearest neighbour)` );
+					setText( 'caption', `Level ${ level }: ${ levels[ level ].width } × ${ levels[ level ].height } (scaled, nearest neighbor)` );
 
 				}, 0 );
 

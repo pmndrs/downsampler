@@ -1,7 +1,7 @@
 /**
  * CPU reference for one downsampling step. This is the correctness oracle for
  * every backend. 'average' is a normalized-coordinate bilinear sample at each
- * output texel centre (an exact 2×2 box for even sizes), clamped at edges. Fold
+ * output texel center (an exact 2×2 box for even sizes), clamped at edges. Fold
  * reductions (min, max, minmax, custom) combine every source texel the output
  * covers (see `footprint`). Results are quantized to the storage format.
  */
@@ -68,7 +68,7 @@ export interface ReferenceOptions {
 export function reduceReference( source: Float32Array, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction = 'average', { quantizedInput = true, pairing, weights = 'shader' }: ReferenceOptions = {} ): ReferenceLevel {
 
 	if ( isIntQuantization( quantization ) ) throw new Error( `downsampler: ${ quantization } is an integer format; use intReference (exact integers, not float32 values).` );
-	// sRGB: colour in linear float32 then encoded as stored, alpha as unorm8 (src/core/srgb.ts).
+	// sRGB: color in linear float32 then encoded as stored, alpha as unorm8 (src/core/srgb.ts).
 	if ( quantization === 'srgb8' ) return srgbLevel( ( q, input ) => reduceReference( source, width, height, layers, q, reduction, { quantizedInput: input, pairing, weights } ), quantizedInput );
 
 	const w = Math.max( 1, Math.floor( width / 2 ) ), h = Math.max( 1, Math.floor( height / 2 ) );

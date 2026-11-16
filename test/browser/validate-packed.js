@@ -1,7 +1,7 @@
 // Packed float formats and the buffer output path (SPEC §6.1), beyond the main
 // matrix: the WGSL codecs against the core ones bit for bit (every code point,
 // every rounding boundary), buffer against storage output, the default storage
-// texture limit, and API behaviour.
+// texture limit, and API behavior.
 import { fromHalf, fromUfloat, packRgb9e5, quantizeTexel, reducePyramid, reduceReference, spdReference, toHalf, toUfloat, unpackRgb9e5 } from '/dist/index.js';
 import { Downsampler, float16Wgsl, packedFloatWgsl, Reducer } from '/dist/webgpu/index.js';
 import { createTexture, makeData, poison, readMips, toFloats, upload } from './gpu.js';
@@ -615,7 +615,7 @@ async function validateHalfTies( device ) {
 /**
  * A same-size source (level 0 is a converting copy) with Inf and NaN texels next to finite
  * ones: each texel copies alone, so every finite texel is exact. A copy that sampled with zero
- * weights would turn a finite neighbour into NaN (0 · Inf). From rgba16float (filterable) and
+ * weights would turn a finite neighbor into NaN (0 · Inf). From rgba16float (filterable) and
  * rgba32float. The Inf/NaN texels themselves are only counted: WGSL lets an implementation
  * assume there are none (SwiftShader turns a loaded half ±Inf into NaN; the RTX 3060 and
  * Intel UHD keep them).

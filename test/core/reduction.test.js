@@ -16,7 +16,7 @@ test( 'footprint covers 2x..2x+1, plus 2x+2 along odd sizes', () => {
 
 test( 'min/max include the odd last column', () => {
 
-	// 3 -> 1: average samples only the centre texel; max must see all three.
+	// 3 -> 1: average samples only the center texel; max must see all three.
 	const source = rgba( [ 0, 0.25, 1 ] );
 	assert.equal( reduceReference( source, 3, 1, 1, 'float16', 'average' ).values[ 0 ], 0.25 );
 	assert.equal( reduceReference( source, 3, 1, 1, 'float16', 'max' ).values[ 0 ], 1 );

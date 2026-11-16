@@ -45,7 +45,7 @@ inline std::vector<std::string> split( const std::string & text ) {
 
 }
 
-/** The formats the native runs cover: average for the two colour formats, max (Hi-Z) for r32float. */
+/** The formats the native runs cover: average for the two color formats, max (Hi-Z) for r32float. */
 enum class Format { rgba8unorm, rgba16float, r32float };
 
 inline const char * formatName( Format format ) { return format == Format::rgba8unorm ? "rgba8unorm" : format == Format::rgba16float ? "rgba16float" : "r32float"; }

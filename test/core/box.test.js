@@ -39,7 +39,7 @@ test( 'odd sizes take nvpro_pyramid\'s three taps (n − x, n, x + 1) / (2n + 1)
 	assert.deepEqual( areaSpan( 3, 16, 8 ), [ 6, 7 ] );
 	assert.deepEqual( [ areaOverlap( 6, 3, 16, 8 ), areaOverlap( 7, 3, 16, 8 ) ], [ 8, 8 ] );
 	assert.deepEqual( [ areaSpan( 0, 1, 1 ), areaOverlap( 0, 0, 1, 1 ) ], [ [ 0, 0 ], 1 ] );
-	// 3 → 1 averages all three texels (render passes take the centre one alone).
+	// 3 → 1 averages all three texels (render passes take the center one alone).
 	assert.equal( boxReference( rgba( [ 0, 0.5, 1 ] ), 3, 1, 1, 'float32' ).values[ 0 ], 0.5 );
 	assert.equal( boxReference( rgba( [ 0, 0, 1 ] ), 3, 1, 1, 'float32' ).values[ 0 ], Math.fround( 1 / 3 ) );
 	assert.equal( reduceReference( rgba( [ 0, 0, 1 ] ), 3, 1, 1, 'float32' ).values[ 0 ], 0 );
@@ -158,7 +158,7 @@ test( 'even and unit steps are the \'exact\' 2×2 box, and 2:1 folds are the \'e
 
 } );
 
-test( 'area folds are conservative at any ratio; a 2×2 max at the texel centre (a pow2 Hi-Z with a reduction sampler) is not', () => {
+test( 'area folds are conservative at any ratio; a 2×2 max at the texel center (a pow2 Hi-Z with a reduction sampler) is not', () => {
 
 	for ( const [ width, height, dw, dh ] of [ [ 1920, 1, 1024, 1 ], [ 1, 1080, 1, 512 ], [ 1129, 1, 512, 1 ], [ 1920, 1, 2048, 1 ], [ 64, 36, 32, 16 ], [ 120, 67, 128, 64 ] ] ) {
 
@@ -173,7 +173,7 @@ test( 'area folds are conservative at any ratio; a 2×2 max at the texel centre 
 
 	}
 
-	// niagara's layout: previousPow2(1920) = 1024, a min (here max) sampler's 2×2 at each texel centre.
+	// niagara's layout: previousPow2(1920) = 1024, a min (here max) sampler's 2×2 at each texel center.
 	const width = 1920, dw = 1024, data = Float32Array.from( random( width * 4, 13 ) ), sampled = new Float32Array( dw * 4 );
 	for ( let x = 0; x < dw; x ++ ) {
 

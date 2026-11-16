@@ -26,7 +26,8 @@
 //                                        then the same by timestamps and whether both order them alike
 //       [--window=1000] [--pacing=queue|raf] [--in-flight=2] [--batch-ms=8] [--max-batch=1024] [--textures=1]
 //       [--no-timestamps] skip the timestamp check; [--no-timestamp-query] a device without timestamp-query
-//   --compare=storage-usage              sampling a texture with vs without STORAGE_BINDING (--strategies=fullscreen,material,write)
+//   --compare=storage-usage              sampling a texture with vs without STORAGE_BINDING (--strategies=fullscreen,material,write;
+//                                        --formats=rgba8unorm-srgb: an sRGB texture vs an aliased rgba8unorm one)
 //   --compare=subgroups                  upper bound for a subgroup kernel (--strategies=lds,slot,shuffle,nosync)
 //   --compare=f16                        averaging in f16 vs f32, with the precision cost (--strategies=f32,f16,f16safe)
 //   --compare=trim                       the 'exact' kernel with cheaper per-value arithmetic, same bits (--strategies=round,mul,trim)

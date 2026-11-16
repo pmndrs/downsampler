@@ -785,7 +785,7 @@ async function validateOptions( device ) {
 	// Unsupported textures are reported, not silently processed.
 	const unsupported = [
 		device.createTexture( { size: [ 16, 16 ], format: 'rgba8unorm', mipLevelCount: 5, usage: GPUTextureUsage.TEXTURE_BINDING } ),
-		device.createTexture( { size: [ 16, 16 ], format: 'rgba8unorm-srgb', mipLevelCount: 5, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT } )
+		device.createTexture( { size: [ 16, 16 ], format: 'rgba8unorm-srgb', mipLevelCount: 5, usage: GPUTextureUsage.TEXTURE_BINDING } )
 	];
 	for ( const texture of unsupported ) {
 

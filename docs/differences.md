@@ -14,17 +14,19 @@ different. Each point links to the full record in [DIVERGES.md](../DIVERGES.md),
 **Your mipmaps look the same.** By default every level is what one render pass per level gives you, including the
 odd sizes. You can swap downsampler in without a visual change.
 
-**It's faster, except for sRGB on NVIDIA.** A full chain takes:
+**It's faster, except for sRGB.** A full chain takes:
 
-| GPU | rgba8 | rgba16float | sRGB colour |
+| GPU | rgba8 | rgba16float | sRGB color |
 |---|---|---|---|
-| Apple M5 Pro | 3–27× faster | 4.5× faster at 1024² | faster up to 720p, slower from 1080p |
-| NVIDIA RTX 3060 Laptop | 0.77–0.95× the time | 0.77–1.01× | **1.6–2.7× slower** |
-| Intel UHD | 0.48–1.05× | 0.62–0.96× | not measured |
+| Apple M5 Pro | 3–27× faster | 4.5× faster at 1024² | not measured yet |
+| NVIDIA RTX 3060 Laptop | 0.77–0.95× the time | 0.77–1.01× | **1.05–1.6× slower**; the same with `srgbRounding: 'device'` |
+| Intel UHD | 0.48–1.05× | 0.62–0.96× | **about 5× slower**; the same with `srgbRounding: 'device'` |
 
 Times are for screen sizes from 960×540 to 2560×1440, plus 1024² and 4096². Cube maps gain the most (3–4× on the RTX,
 27× on the M5) because every face goes through the same dispatches. sRGB textures can't be written by compute shaders,
-so they take a slower path; on NVIDIA, keep three.js's own mipmaps for them. ([#16](../DIVERGES.md#16-srgb-through-the-buffer-output-path), [#17](../DIVERGES.md#17-compute-only-with-no-per-device-render-fallback))
+so we draw them with render passes too. The difference is that we round every level exactly, so the results are the
+same on every GPU; that rounding is what costs. `srgbRounding: 'device'` lets the GPU round instead: the same speed as
+render passes, with codes up to 3 steps apart between GPUs ([guide](guide.md#srgb-color)). ([#16](../DIVERGES.md#16-srgb-through-the-buffer-output-path), [#17](../DIVERGES.md#17-compute-only-with-no-per-device-render-fallback))
 
 **The texture needs `STORAGE_BINDING`.** That's how compute shaders write the levels. It costs nothing when you sample
 the texture later: we measured that on Apple, NVIDIA and Intel. ([#18](../DIVERGES.md#18-textures-need-storage_binding))

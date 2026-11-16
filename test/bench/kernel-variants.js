@@ -167,7 +167,7 @@ fn main(@builtin(local_invocation_id) local: vec3u, @builtin(workgroup_id) group
 
 		} else if ( variant === 'shuffle' ) {
 
-			// Level 1 from the first output in registers: x neighbour lane ^ 1, y neighbour lane ^ side.
+			// Level 1 from the first output in registers: x neighbor lane ^ 1, y neighbor lane ^ side.
 			code += '\n	{\n		let even = ((local.x | local.y) & 1u) == 0u;\n';
 			for ( let s = 0; s < n; s ++ ) code += `		{
 			let a = v[${ s }];

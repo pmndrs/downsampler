@@ -8,7 +8,7 @@
  *   other ratio (`source.resample: 'area'`). Signed formats compare as signed.
  * - 'average' is the exact weighted mean, rounded to the nearest integer with ties
  *   to even. With `weights: 'bilinear'` (`oddSizes: 'exact'`) the weights are the
- *   render-pass bilinear weights at the output texel centre, as rationals: per axis
+ *   render-pass bilinear weights at the output texel center, as rationals: per axis
  *   the sample position ((2x + 1)·S − n) / 2n splits into a base texel and a
  *   remainder r, and the two taps weigh (2n − r) / 2n and r / 2n. With `weights:
  *   'area'` (`oddSizes: 'box'`, resampled sources) each source texel weighs its

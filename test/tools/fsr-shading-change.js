@@ -9,7 +9,7 @@
 // ffx_fsr3upscaler_shading_change.h (ShadingChange), ffx_fsr3upscaler_common.h
 // (constants, ClampLoad, ClampUv, IsUvInside, MinDividedByMax) and the
 // resource callbacks of ffx_fsr3upscaler_callbacks_hlsl.h.
-// Copyright (C) 2026 Advanced Micro Devices, Inc. MIT licence; full notice in ./spd.js.
+// Copyright (C) 2026 Advanced Micro Devices, Inc. MIT license; full notice in ./spd.js.
 import { spdConstants, spdReference, spdSetup, spdWgsl } from './spd.js';
 import { compile, createTexture, readTexture, uniformBuffer } from './gpu.js';
 import { f16, f32, halfUlp } from './half.js';

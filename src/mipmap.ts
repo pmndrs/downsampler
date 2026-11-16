@@ -19,7 +19,7 @@
  * (SPEC.md §10).
  *
  * Results match render-pass mipmaps ('exact' semantics, SPEC.md §2.1): a batch's first level
- * is one bilinear sample at each texel centre in normalized coordinates, so odd sizes give
+ * is one bilinear sample at each texel center in normalized coordinates, so odd sizes give
  * what a render pass gives. Further levels are exact 2:1 reductions in workgroup memory, so a
  * batch ends where a non-unit dimension is odd; once a level fits one workgroup, a tail kernel
  * finishes the chain by the same rule, odd sizes included. Every level is quantized as
@@ -369,7 +369,7 @@ fn first(pos: vec2u, size: vec2u, layer: u32) -> vec4f {
 
 	} else {
 
-		// Bilinear weights at the output texel centre, as the sampler applies them but without its
+		// Bilinear weights at the output texel center, as the sampler applies them but without its
 		// fixed-point weight rounding. The sample position (x + 0.5) * S / n - 0.5 is
 		// ((2x + 1) * S - n) / 2n: integer math keeps the base texel exact (GPU float division
 		// isn't correctly rounded), and gives weights of exactly 0 or 0.5 at even sizes. A

@@ -171,7 +171,7 @@ export const formats = {
 	rg16uint: { quantization: 'uint16', bytesPerTexel: 4, channels: 2, filterable: false, feature: 'texture-formats-tier1' },
 	rg16sint: { quantization: 'sint16', bytesPerTexel: 4, channels: 2, filterable: false, feature: 'texture-formats-tier1' },
 	rgb10a2uint: { quantization: 'uint10a2', bytesPerTexel: 4, channels: 4, filterable: false, feature: 'texture-formats-tier1' },
-	// sRGB colour (src/core/srgb.ts): read through the sRGB view (decoded to linear by the
+	// sRGB color (src/core/srgb.ts): read through the sRGB view (decoded to linear by the
 	// hardware), reduced in linear, encoded in the shader and written through the buffer
 	// output path: WebGPU has no sRGB storage textures, even through a view. Alpha is linear.
 	'rgba8unorm-srgb': { quantization: 'srgb8', bytesPerTexel: 4, channels: 4, filterable: true, storage: false },
@@ -195,6 +195,18 @@ export function storageWritable( format: SupportedFormat, features: { has( featu
 
 	const info: FormatInfo = formats[ format ];
 	return info.storage !== false && ( info.feature === undefined || features.has( info.feature ) );
+
+}
+
+/**
+ * The sRGB format that shares the bytes of an 8-bit unorm color format (rgba8unorm →
+ * rgba8unorm-srgb, bgra8unorm → bgra8unorm-srgb), or undefined. A texture of the unorm format
+ * that holds sRGB color (`EncodeOptions.colorSpace: 'srgb'`) is reduced as the sRGB format:
+ * the same codes in, the same codes out.
+ */
+export function srgbViewFormat( format: string ): 'rgba8unorm-srgb' | 'bgra8unorm-srgb' | undefined {
+
+	return format === 'rgba8unorm' ? 'rgba8unorm-srgb' : format === 'bgra8unorm' ? 'bgra8unorm-srgb' : undefined;
 
 }
 

@@ -70,7 +70,7 @@ groupshared float spdIntermediateA[16][16];
 float4 SpdLoadSourceImage(int2 p, uint slice)
 {
 #ifdef SPD_LINEAR_SAMPLER
-	// p is the top-left texel of a 2x2 quad: sample its centre.
+	// p is the top-left texel of a 2x2 quad: sample its center.
 	float2 uv = float2(p) * invInputSize + invInputSize;
 	return imgSrc.SampleLevel(srcSampler, uv, 0);
 #else

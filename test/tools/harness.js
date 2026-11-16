@@ -87,7 +87,7 @@ function run( device, fixture, times = 1 ) {
 /** All fixtures for one scene, in dependency order (the FSR consumer reads the FSR pyramid's mips). */
 async function createFixtures( device, scene, formats, owned, only ) {
 
-	const colour = createTexture( device, { label: 'scene colour', width: scene.width, height: scene.height, format: 'rgba16float', data: scene.colour } );
+	const colour = createTexture( device, { label: 'scene color', width: scene.width, height: scene.height, format: 'rgba16float', data: scene.colour } );
 	const lumaInputs = createLumaInputs( device, scene );
 	const exposure = lumaOracle( scene, 'amd' ).frameInfo[ 0 ];
 	const shadingInputs = createShadingInputs( device, scene, exposure );
@@ -123,7 +123,7 @@ async function createFixtures( device, scene, formats, owned, only ) {
 
 /**
  * Fail-before proof for the oracles: after the GPU inputs are uploaded, the
- * oracles' copy of the scene is perturbed (colour, current luma and depth ×(1 + 2^-7),
+ * oracles' copy of the scene is perturbed (color, current luma and depth ×(1 + 2^-7),
  * jitter +0.25 px), so every check must fail.
  */
 function mutate( scene ) {

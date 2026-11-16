@@ -1,7 +1,9 @@
 export { Downsampler, maxResampleRatio } from './downsampler.js';
 export { requiredLimits } from './limits.js';
 export { isCompatibilityTexture } from './compat.js';
-export type { BufferCopy, DownsamplerOptions, EncodeOptions, PreparedBatch, SourceOptions } from './downsampler.js';
+export type { BufferCopy, ChainPath, DownsamplerOptions, EncodeOptions, PreparedBatch, SourceOptions } from './downsampler.js';
+export { createRenderKernel, renderFormats, renderLayoutEntries, usesTables } from './render.js';
+export type { RenderKernelOptions, SrgbRounding } from './render.js';
 export { Reducer } from './reducer.js';
 export type { PreparedReducer, ReducerCopy, ReducerDispatch, ReducerOptions } from './reducer.js';
 export type { TextureLevel, TextureSource } from './source.js';

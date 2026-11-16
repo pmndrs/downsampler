@@ -85,7 +85,7 @@ export const renderCompareSizes = [ [ 960, 540 ], [ 1129, 635 ], [ 1280, 720 ], 
 /**
  * `compare: 'render'` (DIVERGES #17): where render passes beat 'exact' compute.
  * `hybrid<K>` renders levels 1..K and finishes with 'exact' from level K: the same
- * results as both (render passes sample texel centres with normalized coordinates,
+ * results as both (render passes sample texel centers with normalized coordinates,
  * as 'exact' does). `hybridSpd1` finishes with 'spd' instead (different semantics).
  * `renderL1` / `exactL1` write only level 1, isolating the largest level; `exactBuffer`
  * writes through the buffer output path, isolating storage-texture writes.

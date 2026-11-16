@@ -30,10 +30,10 @@ The scene:
 - Both frames carry ±3 % render noise.
 
 Derived per texel:
-- Current and previous colour (rgba16float).
+- Current and previous color (rgba16float).
 - FSR current and previous luma (`RGBToLuma(max(0, rgb))`, R16F).
-- Farthest depth in metres (R16F).
-- Motion dilated by the nearest depth of the 3×3 neighbourhood:
+- Farthest depth in meters (R16F).
+- Motion dilated by the nearest depth of the 3×3 neighborhood:
   - FSR convention, `prev = uv + mv`, RG16F.
   - Upscaler convention, `prev = uv − motion`, rgba16float.
 - The upscaler's luma history (r32float).
@@ -45,7 +45,7 @@ Jitters are (−0.375, −0.1111) for the current frame and (0.125, 0.2222) for 
 
 | Fixture | What it is | Dispatches |
 |---|---|---|
-| `upscaler/exposure` | `luminancePyramid.ts` verbatim: a single invocation takes 32×32 bilinear taps of the colour, averages log2 luma and eases toward the target. One 8×8 workgroup, as `UpscalerCore` dispatches it | 1 |
+| `upscaler/exposure` | `luminancePyramid.ts` verbatim: a single invocation takes 32×32 bilinear taps of the color, averages log2 luma and eases toward the target. One 8×8 workgroup, as `UpscalerCore` dispatches it | 1 |
 | `fsr/luma-pyramid` | FSR 3.1 luma pyramid as shipped. Load `(max(ε, log luma), luma, farthest depth)`; SPD average; mip 1 depth → `FarthestDepthMip1` (R16F, ⌊w/2⌋×⌊h/2⌋); mip 6 `.xy` → `rw_spd_mip5` (RG16F); texel (0,0) of mip `mips` → `FrameInfo` with temporal smoothing and `ComputeAutoExposureFromLavg` | 2 (tile, tail) |
 | `fsr/luma-pyramid-correct` | The same load and epilogue over **every** texel, equally weighted: per-tile sums with an in-bounds count, one workgroup combines them, then `finish()`. Mip 1 is ⌈w/2⌉×⌈h/2⌉ over in-bounds texels only. This is what M2T.2 should match | 2 (tile, combine) |
 | `upscaler/shading-change` | `shadingChange.ts` verbatim: a fused 16×16-tile pass with 4×4/8×8 block means, block memory and luma history. ⌈⌈w/2⌉/8⌉ × ⌈⌈h/2⌉/8⌉ workgroups | 1 |
@@ -72,8 +72,8 @@ The FSR fixtures read the exposure the oracle computes for `fsr/luma-pyramid` on
   - `ffx_fsr3upscaler_luma_pyramid.h`, `_shading_change_pyramid.h`, `_shading_change.h`, `_common.h` and `_callbacks_hlsl.h`: the tool code, in `fsr-*.js`.
   - `internal/ffx_fsr3upscaler.cpp`: the setup, resource sizes and clears.
 
-  MIT licence. The notice is kept in `spd.js`, and the `fsr-*.js` headers point to it. Function and constant names follow the HLSL.
-- **pmndrs/upscaler**: `f38e9ac`; the shaders last changed in `8ffb3fd`. `upscaler-wgsl.js` holds the WGSL of `common.ts`, `luminancePyramid.ts` and `shadingChange.ts`, extracted verbatim, plus `assembleShader`. Re-extract it when the upscaler changes; don't edit it by hand. The bindings were already plain `@group(0)`, so nothing was adapted. MIT licence.
+  MIT license. The notice is kept in `spd.js`, and the `fsr-*.js` headers point to it. Function and constant names follow the HLSL.
+- **pmndrs/upscaler**: `f38e9ac`; the shaders last changed in `8ffb3fd`. `upscaler-wgsl.js` holds the WGSL of `common.ts`, `luminancePyramid.ts` and `shadingChange.ts`, extracted verbatim, plus `assembleShader`. Re-extract it when the upscaler changes; don't edit it by hand. The bindings were already plain `@group(0)`, so nothing was adapted. MIT license.
 
 ### How the FSR port differs from AMD (deliberately)
 
@@ -116,7 +116,7 @@ The FSR fixtures read the exposure the oracle computes for `fsr/luma-pyramid` on
 - **The reset clears `FrameInfo` to (−1, 1, 0, 0).** `1 < resetAutoExposureAverageSmoothing (1e4)`, so the first frame after a reset eases from log luma 1 at `1 − exp(−Δt)` (1.65 % at 60 Hz) instead of jumping. The check runs both from this state and from an unsmoothed one (previous log luma = 1e4).
 - **Clamped edge loads.** Partial tiles repeat the edge texel. `FarthestDepthMip1` and SpdMips are ⌊w/2⌋ wide, so the last odd row or column is dropped. Every stored texel of both pyramids covers in-bounds source only; the clamps matter for the 5-tap crosses and for tiles beyond the stored range.
 - **The fp16 paths (`SpdLoadSourceImageH` etc.) are stubs returning 0.** They are not ported; the fixtures are the float path.
-- **(Input side, not a pyramid quirk.)** `FindDepthExtents` only grows the farthest depth from a sample that is also nearer than the nearest so far, so it always equals the centre depth. `scene.js` therefore takes the centre depth.
+- **(Input side, not a pyramid quirk.)** `FindDepthExtents` only grows the farthest depth from a sample that is also nearer than the nearest so far, so it always equals the center depth. `scene.js` therefore takes the center depth.
 
 ## Oracles and tolerances
 
@@ -134,7 +134,7 @@ The oracles redo the GPU's float32 arithmetic in JavaScript (`Math.fround` at ea
 | upscaler luma history | 2 f32 ulp | A dot product; FMA contraction may differ |
 | upscaler block memory | 1 f16 ulp; up to 1e-4 outside | `pack2x16float` rounding is implementation-defined. Measured: exact |
 
-`--mutate` is the fail-before proof. It perturbs the oracles' copy of the scene after upload: colour, current luma and depth ×(1 + 2^-7), and jitter +0.25 px. Every fixture's check then fails.
+`--mutate` is the fail-before proof. It perturbs the oracles' copy of the scene after upload: color, current luma and depth ×(1 + 2^-7), and jitter +0.25 px. Every fixture's check then fails.
 
 ## Timing
 
@@ -214,7 +214,7 @@ The wide kernel moves twice the workgroup memory per level; that is hidden behin
 | `experiment/shading-tile16-cached` | both | 1.04× / 1.01× |
 | `experiment/shading-pingpong` | kernel patch: level 2 to a second workgroup region, one barrier fewer | 1.01× / 0.99× |
 
-None moves it outside noise. The pass is bound by its loads (colour, motion, mask, 4 history taps, block memory), which both versions issue alike; the generator's three barriers and its serial 8×8 tail (4 lanes × 16 signal stores) cost nothing measurable. So the library kernel was left unchanged.
+None moves it outside noise. The pass is bound by its loads (color, motion, mask, 4 history taps, block memory), which both versions issue alike; the generator's three barriers and its serial 8×8 tail (4 lanes × 16 signal stores) cost nothing measurable. So the library kernel was left unchanged.
 
 ## Generator versions (`generator.js`)
 

@@ -76,4 +76,4 @@ all 8 sizes, and render passes take 0.38–0.63× ours. The bench's `buffer` is 
 
 - On NVIDIA, sRGB textures stay on render passes; `fastStore` narrows the gap but can't close it.
 - The plan for three.js stays per format: compute for linear formats (at or below render passes on NVIDIA and Intel,
-  much faster on the M5), render passes for sRGB colour textures on NVIDIA-class GPUs.
+  much faster on the M5), render passes for sRGB color textures on NVIDIA-class GPUs.

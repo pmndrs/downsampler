@@ -4,11 +4,13 @@
  * Typed structurally so `three` stays an optional peer dependency. The texture
  * must already be allocated on the GPU (rendered to, uploaded or initialized via
  * `renderer.initTexture`) with STORAGE_BINDING usage — in current three.js that
- * means a `StorageTexture` (or `StorageArrayTexture`) — or, for formats that
- * can't be storage textures (rgb9e5ufloat; rgba8unorm-srgb and bgra8unorm-srgb, so
- * regular sRGB colour textures; rg11b10ufloat without tier1), with COPY_DST usage:
- * they take the buffer output path (SPEC.md §6.1). Native integration for all textures is
- * planned as an in-tree three.js option; see SPEC.md.
+ * means a `StorageTexture` (or `StorageArrayTexture`). Formats that can't be
+ * storage textures take another path: sRGB color textures (rgba8unorm-srgb,
+ * bgra8unorm-srgb) with RENDER_ATTACHMENT usage the render path (render passes,
+ * with the exact rounding unless `srgbRounding: 'device'`); otherwise these and
+ * rgb9e5ufloat and rg11b10ufloat without tier1 need COPY_DST usage for the buffer
+ * output path (SPEC.md §6.1). Native integration for all textures is planned as an
+ * in-tree three.js option; see SPEC.md.
  */
 import { Downsampler, type DownsamplerOptions, type EncodeOptions } from '../webgpu/downsampler.js';
 import { requiredLimits } from '../webgpu/limits.js';
@@ -57,7 +59,7 @@ function optionsKey( options: DownsamplerOptions ): string {
 
 /**
  * The shared Downsampler for a renderer's device and `options`: one per device
- * and distinct option set (`averageAccess`, `f16Rounding`, `output`, `tail`,
+ * and distinct option set (`averageAccess`, `f16Rounding`, `srgbRounding`, `output`, `tail`,
  * …), created on first use. Pipelines and plans are cached per Downsampler, so
  * reuse one option set where you can.
  */

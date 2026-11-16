@@ -1,0 +1,62 @@
+took the bench lock (C:\Users\denni\AppData\Local\Temp\ddgi-gpu-bench.lock) for "srgb alias sampling cost"
+GPU at 49 C, below 70 C: starting
+{"vendor":"nvidia","architecture":"ampere","device":"","description":"","isFallbackAdapter":false,"timestamps":true,"features":["texture-formats-tier1","bgra8unorm-storage"],"compatibility":false,"maxStorageTexturesPerShaderStage":6,"subgroupMinSize":32,"subgroupMaxSize":128,"adapterFeatures":["bgra8unorm-storage","chromium-experimental-multi-draw-indirect","chromium-experimental-timestamp-query-inside-passes","clip-distances","core-features-and-limits","depth-clip-control","depth32float-stencil8","dual-source-blending","float32-blendable","float32-filterable","indirect-first-instance","primitive-index","rg11b10ufloat-renderable","shader-f16","subgroups","texture-component-swizzle","texture-compression-bc","texture-compression-bc-sliced-3d","texture-formats-tier1","texture-formats-tier2","timestamp-query"],"maxTextureDimension2D":8192}
+load average (1, 5, 15 min): before 0.0 0.0 0.0, after 0.0 0.0 0.0
+validation passed: 0 cases, 0 pattern runs, 0 ms
+┌─────────┬─────────────┬───────────────────┬────────────┬──────────────┬──────────┬────────────┬─────────────────┐
+│ (index) │ size        │ format            │ content    │ shader       │ plain ms │ storage ms │ storage ÷ plain │
+├─────────┼─────────────┼───────────────────┼────────────┼──────────────┼──────────┼────────────┼─────────────────┤
+│ 0       │ '960x540'   │ 'rgba8unorm-srgb' │ 'rendered' │ 'fullscreen' │ '0.0083' │ '0.0083'   │ '0.996'         │
+│ 1       │ '960x540'   │ 'rgba8unorm-srgb' │ 'rendered' │ 'material'   │ '0.0617' │ '0.0617'   │ '1.000'         │
+│ 2       │ '960x540'   │ 'rgba8unorm-srgb' │ 'rendered' │ 'write'      │ '0.0083' │ '0.0083'   │ '1.000'         │
+│ 3       │ '960x540'   │ 'rgba8unorm-srgb' │ 'noise'    │ 'fullscreen' │ '0.0119' │ '0.0119'   │ '1.003'         │
+│ 4       │ '960x540'   │ 'rgba8unorm-srgb' │ 'noise'    │ 'material'   │ '0.0628' │ '0.0628'   │ '1.000'         │
+│ 5       │ '1129x635'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'fullscreen' │ '0.0116' │ '0.0116'   │ '1.000'         │
+│ 6       │ '1129x635'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'material'   │ '0.0880' │ '0.0880'   │ '1.000'         │
+│ 7       │ '1129x635'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'write'      │ '0.0100' │ '0.0100'   │ '1.000'         │
+│ 8       │ '1129x635'  │ 'rgba8unorm-srgb' │ 'noise'    │ 'fullscreen' │ '0.0181' │ '0.0182'   │ '1.000'         │
+│ 9       │ '1129x635'  │ 'rgba8unorm-srgb' │ 'noise'    │ 'material'   │ '0.0779' │ '0.0779'   │ '1.000'         │
+│ 10      │ '1280x720'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'fullscreen' │ '0.0126' │ '0.0126'   │ '1.000'         │
+│ 11      │ '1280x720'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'material'   │ '0.0858' │ '0.0858'   │ '1.000'         │
+│ 12      │ '1280x720'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'write'      │ '0.0111' │ '0.0111'   │ '1.000'         │
+│ 13      │ '1280x720'  │ 'rgba8unorm-srgb' │ 'noise'    │ 'fullscreen' │ '0.0236' │ '0.0236'   │ '0.999'         │
+│ 14      │ '1280x720'  │ 'rgba8unorm-srgb' │ 'noise'    │ 'material'   │ '0.0948' │ '0.0941'   │ '1.001'         │
+│ 15      │ '1707x960'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'fullscreen' │ '0.0196' │ '0.0196'   │ '1.000'         │
+│ 16      │ '1707x960'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'material'   │ '0.1574' │ '0.1624'   │ '1.000'         │
+│ 17      │ '1707x960'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'write'      │ '0.0193' │ '0.0193'   │ '1.000'         │
+│ 18      │ '1707x960'  │ 'rgba8unorm-srgb' │ 'noise'    │ 'fullscreen' │ '0.0426' │ '0.0426'   │ '0.998'         │
+│ 19      │ '1707x960'  │ 'rgba8unorm-srgb' │ 'noise'    │ 'material'   │ '0.1942' │ '0.1942'   │ '1.000'         │
+│ 20      │ '1920x1080' │ 'rgba8unorm-srgb' │ 'rendered' │ 'fullscreen' │ '0.0268' │ '0.0268'   │ '1.001'         │
+│ 21      │ '1920x1080' │ 'rgba8unorm-srgb' │ 'rendered' │ 'material'   │ '0.2059' │ '0.2055'   │ '1.001'         │
+│ 22      │ '1920x1080' │ 'rgba8unorm-srgb' │ 'rendered' │ 'write'      │ '0.0238' │ '0.0238'   │ '1.000'         │
+│ 23      │ '1920x1080' │ 'rgba8unorm-srgb' │ 'noise'    │ 'fullscreen' │ '0.0539' │ '0.0539'   │ '1.001'         │
+│ 24      │ '1920x1080' │ 'rgba8unorm-srgb' │ 'noise'    │ 'material'   │ '0.2328' │ '0.2315'   │ '1.001'         │
+│ 25      │ '2560x1440' │ 'rgba8unorm-srgb' │ 'rendered' │ 'fullscreen' │ '0.0485' │ '0.0487'   │ '1.002'         │
+│ 26      │ '2560x1440' │ 'rgba8unorm-srgb' │ 'rendered' │ 'material'   │ '0.3816' │ '0.3833'   │ '1.005'         │
+│ 27      │ '2560x1440' │ 'rgba8unorm-srgb' │ 'rendered' │ 'write'      │ '0.0438' │ '0.0438'   │ '0.999'         │
+│ 28      │ '2560x1440' │ 'rgba8unorm-srgb' │ 'noise'    │ 'fullscreen' │ '0.0966' │ '0.0964'   │ '0.998'         │
+│ 29      │ '2560x1440' │ 'rgba8unorm-srgb' │ 'noise'    │ 'material'   │ '0.4363' │ '0.4381'   │ '1.000'         │
+│ 30      │ '1024x1024' │ 'rgba8unorm-srgb' │ 'rendered' │ 'fullscreen' │ '0.0127' │ '0.0136'   │ '1.002'         │
+│ 31      │ '1024x1024' │ 'rgba8unorm-srgb' │ 'rendered' │ 'material'   │ '0.0985' │ '0.0986'   │ '1.001'         │
+│ 32      │ '1024x1024' │ 'rgba8unorm-srgb' │ 'rendered' │ 'write'      │ '0.0121' │ '0.0121'   │ '1.000'         │
+│ 33      │ '1024x1024' │ 'rgba8unorm-srgb' │ 'noise'    │ 'fullscreen' │ '0.0270' │ '0.0271'   │ '1.000'         │
+│ 34      │ '1024x1024' │ 'rgba8unorm-srgb' │ 'noise'    │ 'material'   │ '0.1129' │ '0.1128'   │ '0.999'         │
+│ 35      │ '4096x4096' │ 'rgba8unorm-srgb' │ 'rendered' │ 'fullscreen' │ '0.2241' │ '0.2223'   │ '0.994'         │
+│ 36      │ '4096x4096' │ 'rgba8unorm-srgb' │ 'rendered' │ 'material'   │ '1.8031' │ '1.7848'   │ '0.999'         │
+│ 37      │ '4096x4096' │ 'rgba8unorm-srgb' │ 'rendered' │ 'write'      │ '0.1972' │ '0.1970'   │ '1.001'         │
+│ 38      │ '4096x4096' │ 'rgba8unorm-srgb' │ 'noise'    │ 'fullscreen' │ '0.4420' │ '0.4417'   │ '0.999'         │
+│ 39      │ '4096x4096' │ 'rgba8unorm-srgb' │ 'noise'    │ 'material'   │ '2.0994' │ '2.0909'   │ '0.997'         │
+└─────────┴─────────────┴───────────────────┴────────────┴──────────────┴──────────┴────────────┴─────────────────┘
+median storage ÷ plain over sizes (min–max):
+┌─────────┬───────────────────────────────────────┬─────────┬───────────────┐
+│ (index) │ case                                  │ median  │ range         │
+├─────────┼───────────────────────────────────────┼─────────┼───────────────┤
+│ 0       │ 'rgba8unorm-srgb rendered fullscreen' │ '1.000' │ '0.994–1.002' │
+│ 1       │ 'rgba8unorm-srgb rendered material'   │ '1.000' │ '0.999–1.005' │
+│ 2       │ 'rgba8unorm-srgb rendered write'      │ '1.000' │ '0.999–1.001' │
+│ 3       │ 'rgba8unorm-srgb noise fullscreen'    │ '1.000' │ '0.998–1.003' │
+│ 4       │ 'rgba8unorm-srgb noise material'      │ '1.000' │ '0.997–1.001' │
+└─────────┴───────────────────────────────────────┴─────────┴───────────────┘
+GPU clock over 76 samples: SM min 210 / median 1642 / max 2077 MHz, memory min 405 / median 7151 / max 7151 MHz; under load (33 samples at 70%+ use): SM min 1260 / median 1642 / max 1890 MHz, memory min 7151 / median 7151 / max 7151 MHz
+Timing VALID: started at 49 C, thermal throttling in 0% of 33 loaded samples. SM clock median under load 1642 MHz (information only). Power limit in 100% of loaded samples.
+released the bench lock (C:\Users\denni\AppData\Local\Temp\ddgi-gpu-bench.lock)

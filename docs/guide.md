@@ -60,14 +60,14 @@ The other shared names:
 ```js
 const downsampler = new Downsampler( device, options );
 downsampler.generate( texture );                         // encode + submit
-downsampler.encode( encoder, texture, encodeOptions );   // into your encoder, one compute pass per batch
+downsampler.encode( encoder, texture, encodeOptions );   // into your encoder: a compute pass per batch (sRGB: a render pass per level)
 downsampler.encodePass( pass, texture, encodeOptions );  // into a compute pass you own (storage path only)
 ```
 
 ### Textures it takes
 
 - Dimension `'2d'`, sample count 1, `textureBindingViewDimension` (where defined) `'2d'` or `'2d-array'`. Array layers are reduced together, one workgroup z per layer, so all layers take the same dispatches. Cube maps work as 6-layer `'2d-array'` textures (WGSL has no cube storage textures).
-- Usage `TEXTURE_BINDING`, plus `STORAGE_BINDING` on the storage path or `COPY_DST` on the buffer path ([Output paths](#output-paths)).
+- Usage `TEXTURE_BINDING`, plus `STORAGE_BINDING` on the storage path, `COPY_DST` on the buffer path or `RENDER_ATTACHMENT` on the render path ([Output paths](#output-paths)).
 - A supported format:
 
 | Formats | Needs |
@@ -77,7 +77,7 @@ downsampler.encodePass( pass, texture, encodeOptions );  // into a compute pass 
 | `bgra8unorm` | `bgra8unorm-storage` |
 | `rg11b10ufloat`, `rgb10a2unorm` | storage with `texture-formats-tier1`; otherwise the buffer path |
 | `rgb9e5ufloat` | always the buffer path (it is never a storage texture) |
-| `rgba8unorm-srgb`, `bgra8unorm-srgb` | always the buffer path (WebGPU has no sRGB storage textures); reduced in linear light ([sRGB colour](#srgb-colour)) |
+| `rgba8unorm-srgb`, `bgra8unorm-srgb` | the render path with `RENDER_ATTACHMENT`, else the buffer path (WebGPU has no sRGB storage textures); reduced in linear light ([sRGB color](#srgb-color)) |
 | `rgba8uint`, `rgba8sint`, `rgba16uint`, `rgba16sint`, `r32uint`, `r32sint`, `rg32uint`, `rg32sint`, `rgba32uint`, `rgba32sint` | core (`rg32uint`/`rg32sint`: the buffer path in compatibility mode) |
 | `r8uint`, `r8sint`, `rg8uint`, `rg8sint`, `r16uint`, `r16sint`, `rg16uint`, `rg16sint`, `rgb10a2uint` | `texture-formats-tier1`; without it the 4-byte ones (`rg16uint`, `rg16sint`, `rgb10a2uint`) take the buffer path |
 
@@ -92,9 +92,10 @@ Depth formats can't be destinations: use a separate source into `r32float` or `r
 | Option | Values | Default | What it does |
 |---|---|---|---|
 | `levelsPerDispatch` | 1 … 6 | storage path: `min( 6, maxStorageTexturesPerShaderStage )`; buffer path: 6; both 4 below 256 invocations per workgroup | Output levels per dispatch. Above the storage texture limit only with `output: 'buffer'`. |
-| `output` | `'auto'`, `'storage'`, `'buffer'` | `'auto'` | How levels are written ([Output paths](#output-paths)). |
+| `output` | `'auto'`, `'storage'`, `'buffer'`, `'render'` | `'auto'` | How levels are written ([Output paths](#output-paths)). |
 | `averageAccess` | `'sample'`, `'load'` | `'sample'` | How `'average'` reads each batch's source level: one hardware bilinear sample, or four loads with weights in the shader. `'load'` is identical on every GPU; samplers round their 8-bit weights per vendor. Unfilterable formats and folds always load. |
 | `f16Rounding` | `'nearest'`, `'device'` | `'nearest'` | float16 formats: round each level to nearest even in the shader (the same everywhere), or use the device's conversion, which truncates on D3D12 ([float16 rounding](#float16-rounding-f16rounding)). |
+| `srgbRounding` | `'exact'`, `'device'` | `'exact'` | sRGB on the render path: round each level to its code in the shader (the same bits everywhere), or let the GPU encode, as plain render passes do: their speed, with codes up to 3 apart ([sRGB color](#srgb-color)). |
 | `compatibility` | `'auto'`, `true`, `false` | `'auto'` | The compatibility-mode path ([below](#compatibility-mode)). `'auto'` takes it for textures of a device without `'core-features-and-limits'`. |
 | `tail` | boolean | `true` <!-- defaults: tail/exactTile --> | `'exact'` chains: once a level fits one workgroup (32 × 32; 8 × 8 below 256 invocations), finish the chain in one dispatch instead of a batch per odd size. Same rule; tail levels use shader weights (within one rgba8 step of the sampler's). |
 | `halo` | boolean | `false` | `'exact'` and `'box'` chains of float formats: carry odd steps inside a batch with a halo (each workgroup also computes the few texels past its tile that the next odd steps read), so some render sizes take one dispatch fewer: 1920×1080 3 instead of 4. Same rule and results (odd steps inside a batch use shader weights, as the tail does). Measured 0.85–1.00× of the default on an RTX 3060, neutral on Intel UHD. Needs 256 invocations per workgroup; integer formats and `'spd'` ignore it. `haloMaxExtra` and `haloMaxOutput` tune the planner. |
@@ -128,7 +129,7 @@ A 2:1 reduction is exact only when a dimension halves cleanly. At odd, non-unit 
   - Works with the tail kernel, both output paths, compatibility mode, `encodePass` and partial updates (`rect`, `layers`).
   - Recommended for GI, irradiance and roughness chains, and UI.
 
-Like render-pass mipmaps, `'exact'` 3 → 1 takes only the centre texel, so a 31×31 texture can reduce to an unrepresentative 1×1. Under `'box'` its 1×1 is the mean of all 961 texels.
+Like render-pass mipmaps, `'exact'` 3 → 1 takes only the center texel, so a 31×31 texture can reduce to an unrepresentative 1×1. Under `'box'` its 1×1 is the mean of all 961 texels.
 
 ```js
 downsampler.generate( irradiance, { oddSizes: 'box' } );
@@ -173,9 +174,9 @@ downsampler.encode( encoder, hiZ, { source: { texture: depth, resample: 'area' }
 | Method | What it does |
 |---|---|
 | `generate( texture, options? )` | Creates an encoder, encodes, submits. |
-| `encode( encoder, texture, options? )` | One compute pass per batch, plus the buffer path's copies after each. |
-| `encodePass( pass, texture, options? )` | One dispatch per batch into your compute pass. Dispatches are separate usage scopes, so each batch sees the previous one's writes. Throws on the buffer path (a compute pass can't record copies). |
-| `prepare( texture, options? )` | What `encode` records, for dispatching it yourself (or inspecting the plan): `PreparedBatch[]` with `kernel` (`'exact'`, `'tail'` or `'clamp'`), `sourceMipLevel` (`null` for the separate source), `firstMipLevel`, `count`, `outputWidth`/`outputHeight`, `groupsX`/`groupsY`, `layers` (`[ first, count ]`), `pipeline`, `bindGroup`, `output`, and on the buffer path `buffer` and `copies` (`{ mipLevel, offset, bytesPerRow, rowsPerImage, x, y, width, height, layers: [ first, count ] }`). Dispatch them yourself with `dispatchWorkgroups( groupsX, groupsY, layers[ 1 ] )`. Validates and throws like `encode`. |
+| `encode( encoder, texture, options? )` | One compute pass per batch, plus the buffer path's copies after each; on the render path, one render pass per level and layer. |
+| `encodePass( pass, texture, options? )` | One dispatch per batch into your compute pass. Dispatches are separate usage scopes, so each batch sees the previous one's writes. Throws on the buffer path (a compute pass can't record copies) and the render path. |
+| `prepare( texture, options? )` | What `encode` records, for dispatching it yourself (or inspecting the plan): `PreparedBatch[]` with `kernel` (`'exact'`, `'tail'` or `'clamp'`), `sourceMipLevel` (`null` for the separate source), `firstMipLevel`, `count`, `outputWidth`/`outputHeight`, `groupsX`/`groupsY`, `layers` (`[ first, count ]`), `pipeline`, `bindGroup`, `output`, and on the buffer path `buffer` and `copies` (`{ mipLevel, offset, bytesPerRow, rowsPerImage, x, y, width, height, layers: [ first, count ] }`). Dispatch them yourself with `dispatchWorkgroups( groupsX, groupsY, layers[ 1 ] )`. Validates and throws like `encode`, and on the render path (render passes aren't dispatches). |
 | `release( texture )` | Drops the texture's cached bind groups and destroys its buffer-path buffers, partial-update uniforms and compatibility scratch textures. Call it after the last submitted use. |
 
 Pipelines are cached per `Downsampler` and compiled synchronously on first use of a format, reduction and batch shape; `prepare()` ahead of time to move that cost.
@@ -212,9 +213,10 @@ downsampler.encode( encoder, texture, { rect: { x: 0, y: 0, width: 0, height: 0 
 |---|---|---|
 | `'storage'` | one write-only storage texture per level | `STORAGE_BINDING` |
 | `'buffer'` | packed texels into one storage buffer, then a `copyBufferToTexture` per level | `COPY_DST`, a format of whole 32-bit words |
-| `'auto'` (default) | storage whenever the device can store the format; the buffer path only for formats it can't (`rgb9e5ufloat`, the sRGB formats, `rg11b10ufloat` without tier1, `rg32float` in compatibility mode) | as above |
+| `'render'` | a render pass per level and layer, its fragment shader the compute kernel's rule and rounding (the same bits; float32 within a few ulp). `'average'` chains in place, `'exact'` or `'box'` | `RENDER_ATTACHMENT`, a color-renderable float format |
+| `'auto'` (default) | sRGB: the render path when the texture has `RENDER_ATTACHMENT` and the chain is one it covers, else the buffer path. Other formats: storage whenever the device can store the format; the buffer path only for formats it can't (`rgb9e5ufloat`, `rg11b10ufloat` without tier1, `rg32float` in compatibility mode) | as above |
 
-`outputPath( texture )` returns `'storage'`, `'buffer'` or `null`. A storable texture without `STORAGE_BINDING` is an error under `'auto'`, not a silent switch to the slower buffer path. The buffer path writes six levels per dispatch at any storage texture limit, and costs one extra write and read of the written levels (1.6–2.3× the storage path where both exist; SPEC §6.1). It can't record into a caller's compute pass (`encodePass` throws; use `encode`).
+`outputPath( texture )` returns `'storage'`, `'buffer'`, `'render'` or `null`. A storable texture without `STORAGE_BINDING` is an error under `'auto'`, not a silent switch to the slower buffer path. The buffer path writes six levels per dispatch at any storage texture limit, and costs one extra write and read of the written levels (1.6–2.3× the storage path where both exist; SPEC §6.1). It can't record into a caller's compute pass (`encodePass` throws; use `encode`).
 
 Each texture's plan keeps its own scratch buffer, sized for its largest batch (about a third of the base level), until `release( texture )`. With many textures, share one instead:
 
@@ -225,17 +227,35 @@ for ( const texture of textures ) downsampler.encode( encoder, texture, { scratc
 
 `scratchSize( texture, options? )` is the size that fits any batch of that chain (every written level in the buffer layout), and 0 for storage-path textures. A smaller buffer is rejected with the size the chain needs.
 
-### sRGB colour
+### sRGB color
 
-`rgba8unorm-srgb` and `bgra8unorm-srgb` textures (most colour textures in three.js) are reduced in **linear light** and stored sRGB-encoded, as render-pass mipmaps of an sRGB texture are:
+`rgba8unorm-srgb` and `bgra8unorm-srgb` textures (most color textures in three.js) are reduced in **linear light** and stored sRGB-encoded, as render-pass mipmaps of an sRGB texture are:
 
 - Each batch reads the sRGB view, so the hardware decodes every texel to linear (and filters in linear on the sample path). Black and white average to 0.5 linear, code 188, not 128.
-- Each level is encoded to 8-bit codes in the shader with the exact sRGB curve, **rounded to nearest** (correctly rounded for the shader's f32 value: a `pow` estimate, corrected against the exact thresholds; a stored value is already an exact code, so the store skips the correction), and written through the buffer path, since WebGPU has no sRGB storage textures, even through a view. Later levels in a batch read it back through the exact decode table, so a chain equals level-by-level generation.
+- Each level is encoded to 8-bit codes in the shader with the exact sRGB curve, **rounded to nearest** (correctly rounded for the shader's f32 value: a `pow` estimate, corrected against the exact thresholds; a stored value is already an exact code, so the store skips the correction), and written by render passes or through the buffer path (below), since WebGPU has no sRGB storage textures, even through a view. Later levels in a batch read it back through the exact decode table, so a chain equals level-by-level generation.
 - Alpha is linear (these formats store it as plain unorm8): averaged in 0–255 units, ties to even, as `rgba8unorm`.
 - `'min'`, `'max'` and `'minmax'` select stored codes exactly: the decode is monotonic and the encoder inverts it, so they equal folding the codes themselves.
 - Hardware decoding isn't exact everywhere: an Apple M5 Pro decodes to 12-bit linear values (254 of 256 codes inexact, up to 0.39 of a code step off). `averageAccess: 'load'` snaps every loaded texel to the exact decode table, so results are the same on every GPU; the default `'sample'` keeps the hardware's decode and filtering, as render passes do (about a code from the exact result at most).
-- Cost (M5 Pro, not idle, SPEC §6.1 sRGB): 1.2–2× faster than render passes up to 1280×720 and at 1024², a tie at 1707×960, and slower from 1080p up (render passes take 0.55–0.79× the time), where the buffer path's extra copy of every level dominates. On an RTX 3060, render passes are 1.6–2.7× faster at every size, and writing a scratch rgba8unorm texture instead of the buffer doesn't help (1.05–1.13×; DIVERGES #16). For large sRGB textures, and on NVIDIA, three's own render-pass mipmaps are the faster choice. `'load'` costs 1.7–2.1×.
-- The texture needs `COPY_DST` (three.js gives its textures that). `oddSizes`, `rect`, `layers`, separate sources (into or out of sRGB), the tail kernel and compatibility mode all work; `encodePass` doesn't (the buffer path's copies).
+- **How levels are written.** With `RENDER_ATTACHMENT` usage, by render passes (the render path): one per level and layer, whose fragment shader rounds each level exactly as above and returns the exact decode of its code, so the attachment's encode writes that code: the compute path's rule and rounding per level (with `averageAccess: 'load'`, the same bits as any compute plan, on every GPU). It covers `'average'` in place under `'exact'` or `'box'`, with `rect`, `layers` and sub-ranges; folds, `'spd'` and separate sources take the buffer path, which needs `COPY_DST`. Without `RENDER_ATTACHMENT`, the buffer path. `encodePass` takes neither.
+- **Cost** (DIVERGES #16, [srgb-renderpath.md](../results/windows/round2/srgb-renderpath.md)). The render path takes 0.63–0.79× of the buffer path's time on an RTX 3060 and 0.74–0.92× on Intel UHD. Plain render passes (three.js's mipmaps) are still faster, 1.05–1.6× on the RTX and about 5× on Intel, because they skip the exact rounding: on Intel it is most of the chain's time. `'load'` on the render path is slow (four snapped loads per fragment).
+- **`srgbRounding: 'device'`** skips it: the attachment encodes, and the sampler's decode is used as is (no tables, so it also works in compatibility mode). That is plain render passes' speed (within 0–7 % on the RTX, 3–12 % on Intel), but about 16 % of the written bytes differ from the exact codes on the RTX (by up to 3) and 6 % on Intel (up to 2), and they differ between GPUs. Each level is still within the oracle's tolerance.
+
+**`colorSpace: 'srgb'`.** Create the color texture as `rgba8unorm` (or `bgra8unorm`) with its sRGB format as a view format, and tell the library it holds sRGB color:
+
+```js
+const texture = device.createTexture( {
+	format: 'rgba8unorm', viewFormats: [ 'rgba8unorm-srgb' ], size, mipLevelCount,
+	usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_DST
+} );
+downsampler.encode( encoder, texture, { colorSpace: 'srgb' } );
+// Materials sample the sRGB view, so filtering decodes first, as with an sRGB texture.
+const view = texture.createView( { format: 'rgba8unorm-srgb', usage: GPUTextureUsage.TEXTURE_BINDING } );
+```
+
+- The levels are the same bytes an `rgba8unorm-srgb` texture gets. With `RENDER_ATTACHMENT` it takes the render path through the sRGB view, as an sRGB texture does. Without it, it writes the levels directly as storage, with no buffer and no copies (20–30 % less time than the buffer path on an RTX 3060, 7–17 % on Intel), and `encodePass` works.
+- The sRGB view must name its usage: an sRGB view can't have the texture's `STORAGE_BINDING`.
+- Sampling the texture through that view costs the same as sampling an sRGB texture (RTX 3060: 1.000×).
+- Not with `oddSizes: 'spd'`, and not in compatibility mode, which has no `viewFormats`.
 
 ### Compatibility mode
 
@@ -249,7 +269,7 @@ By default results may differ between GPUs by a hardware sampler's 8-bit weight 
 new Downsampler( device, { averageAccess: 'load' } );  // 2–13 % slower on an RTX 3060, 22–31 % on Intel UHD at render sizes
 ```
 
-`f16Rounding: 'nearest'` (the default) already makes float16 levels identical; `'device'` opts out ([below](#float16-rounding-f16rounding)).
+`f16Rounding: 'nearest'` (the default) already makes float16 levels identical; `'device'` opts out ([below](#float16-rounding-f16rounding)). On the render path, `srgbRounding: 'device'` opts sRGB levels out ([sRGB color](#srgb-color)).
 
 ### float16 rounding: `f16Rounding`
 
@@ -258,11 +278,11 @@ float16 formats (`rgba16float`, `rg16float`, `r16float`) are computed in f32 and
 | Value | How | Result |
 |---|---|---|
 | `'nearest'` (default) | Round to nearest even in the shader, with integer math on the float's bits (`float16Wgsl`), then store an exact half. | The same bits on every GPU, matching the CPU oracles (`toHalf`). |
-| `'device'` | The device's own conversion (`pack2x16float`, and the store). | **Truncates toward zero on D3D12** (NVIDIA and Intel; measured on an RTX 3060 and Intel UHD). On Apple GPUs it rounded to nearest even when measured (M5 Pro, Chrome 148: the suite's tie cases came out bit for bit as under `'nearest'`), but no specification promises either behaviour. |
+| `'device'` | The device's own conversion (`pack2x16float`, and the store). | **Truncates toward zero on D3D12** (NVIDIA and Intel; measured on an RTX 3060 and Intel UHD). On Apple GPUs it rounded to nearest even when measured (M5 Pro, Chrome 148: the suite's tie cases came out bit for bit as under `'nearest'`), but no specification promises either behavior. |
 
 **What `'device'` costs in accuracy.** Where it truncates, every stored half is up to one f16 step (one unit in the last place, about 0.1 % of the value) closer to zero than the rounded one: positive values come out low by half a step on average, never high. Each level is computed from the previous, already truncated level, so the bias doesn't average out down the chain; the deepest levels of a large texture end up a few steps below the true mean. Images rarely show it. Anything that compares levels numerically does: exposure from a 1×1 mip, a half-precision Hi-Z compared against depth, an oracle-based test suite (it was 211 of 287 full-matrix failures on the RTX 3060 before the default changed).
 
-**When to use it.** Only after measuring the in-shader rounding as a real cost on your target, for chains where a low bias of up to one f16 step per level is acceptable (display-only colour mips, for instance). Measured on rgba16float chains at render sizes, `'nearest'` costs 5 % on an RTX 3060 and 8.5 % on Intel UHD against `'device'` (`results/windows/round2/defaults.md`). The default stays `'nearest'`.
+**When to use it.** Only after measuring the in-shader rounding as a real cost on your target, for chains where a low bias of up to one f16 step per level is acceptable (display-only color mips, for instance). Measured on rgba16float chains at render sizes, `'nearest'` costs 5 % on an RTX 3060 and 8.5 % on Intel UHD against `'device'` (`results/windows/round2/defaults.md`). The default stays `'nearest'`.
 
 ```js
 new Downsampler( device, { f16Rounding: 'device' } );  // the device's conversion: truncation on D3D12
@@ -441,7 +461,7 @@ generateMipmaps( renderer, texture, { encoder, downsampler: { averageAccess: 'lo
 | `requiredLimits( adapter )` | The same function as in `downsampler/webgpu`, for `new WebGPURenderer( { requiredLimits } )`. |
 | `Downsampler` | Re-exported. |
 
-The texture must have `STORAGE_BINDING` usage (in current three.js a `StorageTexture` or `StorageArrayTexture`), or `COPY_DST` for formats that take the buffer path. sRGB colour textures (`SRGBColorSpace`, so `rgba8unorm-srgb`) always take the buffer path, so regular three.js colour textures, which have `COPY_DST`, work today. Other regular textures don't get storage usage from three; native support for them is planned as an in-tree three.js option (SPEC §10). See [examples/three.html](../examples/three.html).
+The texture must have `STORAGE_BINDING` usage (in current three.js a `StorageTexture` or `StorageArrayTexture`), or `COPY_DST` for formats that take the buffer path. sRGB color textures (`SRGBColorSpace`, so `rgba8unorm-srgb`) always take the buffer path, so regular three.js color textures, which have `COPY_DST`, work today. Other regular textures don't get storage usage from three; native support for them is planned as an in-tree three.js option (SPEC §10). See [examples/three.html](../examples/three.html).
 
 ## The core package: CPU references and planning
 

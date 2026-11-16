@@ -1,5 +1,5 @@
 /**
- * sRGB 8-bit colour (rgba8unorm-srgb, bgra8unorm-srgb; SPEC.md §6.1 sRGB).
+ * sRGB 8-bit color (rgba8unorm-srgb, bgra8unorm-srgb; SPEC.md §6.1 sRGB).
  *
  * Levels are reduced in linear light and stored sRGB-encoded. A read of an sRGB
  * texture view decodes each 8-bit code to linear (hardware), so filtering and
@@ -103,7 +103,7 @@ interface Level {
 
 /**
  * An sRGB reference level from one of the reference functions (`reduceReference`,
- * `areaReference`, …), passed as `step( quantization, quantizedInput )`: colour is
+ * `areaReference`, …), passed as `step( quantization, quantizedInput )`: color is
  * reduced in linear light as float32 values (the kernels' f32 working values) and
  * then quantized as stored, alpha as unorm8 in integer units (ties to even).
  * `quantizedInput` is the caller's: whether alpha already holds unorm8 values.

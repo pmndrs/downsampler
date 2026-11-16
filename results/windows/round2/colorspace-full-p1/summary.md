@@ -1,0 +1,114 @@
+# GPU suite, FAILED
+
+- Device: nvidia ampere
+- Flags: `--power=high --durations=results/windows/durations-rtx3060-full.json`; part 1/3 (shards 1–16) of 48 shards, 6 at a time, cap 15 min
+- 11414 cases, 25595 pattern runs, 1054 of 3235 case groups; wall 17 min 32 s
+
+## Failures (93)
+
+- fixtures/1920x1080 threw: tool fixtures 1920x1080: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp
+- rgba8unorm-srgb 255x257x1 -> rgba16float half average random L1 spd mip 0: value 12494, actual 0.912109375, expected 0.91552734375, error 0.00341796875 > 0.0033509372733533382 (2/65024 values outside, max error 0.005859375)
+- rgba8unorm-srgb 255x257x1 -> rgba16float half average random L4 spd mip 0: value 12494, actual 0.912109375, expected 0.91552734375, error 0.00341796875 > 0.0033509372733533382 (2/65024 values outside, max error 0.005859375)
+- rgba8unorm-srgb 255x257x1 -> rgba16float half average random L5 spd mip 0: value 12494, actual 0.912109375, expected 0.91552734375, error 0.00341796875 > 0.0033509372733533382 (2/65024 values outside, max error 0.005859375)
+- rgba8unorm-srgb 255x257x1 -> rgba16float half average random L6 spd mip 0: value 12494, actual 0.912109375, expected 0.91552734375, error 0.00341796875 > 0.0033509372733533382 (2/65024 values outside, max error 0.005859375)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L1 exact mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446 (651/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L1 spd mip 0: value 12546, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215 (704/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L1 box mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446 (651/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 exact mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446 (651/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 spd mip 0: value 12546, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215 (704/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 spd mip 1: value 3202, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215 (176/5184 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 spd mip 2: value 834, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215 (40/1248 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 spd mip 3: value 226, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215 (8/288 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 box mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446 (651/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 tail mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446 (651/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L4 tail box mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446 (651/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 exact mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446 (651/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 spd mip 0: value 12546, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215 (704/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 spd mip 1: value 3202, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215 (176/5184 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 spd mip 2: value 834, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215 (40/1248 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 spd mip 3: value 226, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215 (8/288 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 spd mip 4: value 66, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215 (2/72 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 box mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446 (651/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 tail mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446 (651/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L5 tail box mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446 (651/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 exact mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446 (651/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 spd mip 0: value 12546, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215 (704/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 spd mip 1: value 3202, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215 (176/5184 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 spd mip 2: value 834, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215 (40/1248 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 spd mip 3: value 226, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215 (8/288 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 spd mip 4: value 66, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.0029252564828166215 (2/72 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 box mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446 (651/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 tail mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446 (651/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 192x108x1 -> rgba16float half average tiles L6 tail box mip 0: value 12934, actual 0.9765625, expected 0.9736328125, error 0.0029296875 > 0.002921362701803446 (651/20736 values outside, max error 0.0029296875)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L1 exact mip 0: value 34053, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (2914/262144 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L1 spd mip 0: value 33025, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (3072/262144 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L1 box mip 0: value 34053, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (2914/262144 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 exact mip 0: value 34053, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (2914/262144 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 spd mip 0: value 33025, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (3072/262144 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 spd mip 1: value 8321, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (768/65536 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 spd mip 2: value 2113, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (192/16384 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 spd mip 3: value 545, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (48/4096 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L4 box mip 0: value 34053, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (2914/262144 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 exact mip 0: value 34053, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (2914/262144 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 spd mip 0: value 33025, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (3072/262144 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 spd mip 1: value 8321, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (768/65536 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 spd mip 2: value 2113, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (192/16384 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 spd mip 3: value 545, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (48/4096 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 spd mip 4: value 145, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (12/1024 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L5 box mip 0: value 34053, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (2914/262144 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 exact mip 0: value 34053, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (2914/262144 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 0: value 33025, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (3072/262144 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 1: value 8321, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (768/65536 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 2: value 2113, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (192/16384 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 3: value 545, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (48/4096 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 4: value 145, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (12/1024 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 spd mip 5: value 41, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (3/256 values outside, max error 0.00390625)
+- rgba8unorm-srgb 512x512x1 -> rgba16float half average tiles L6 box mip 0: value 34053, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (2914/262144 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average random L1 spd mip 0: value 201484, actual 0.822265625, expected 0.82666015625, error 0.00439453125 > 0.004174153322353959 (6/2073600 values outside, max error 0.00634765625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average random L4 spd mip 0: value 201484, actual 0.822265625, expected 0.82666015625, error 0.00439453125 > 0.004174153322353959 (6/2073600 values outside, max error 0.00634765625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average random L5 spd mip 0: value 201484, actual 0.822265625, expected 0.82666015625, error 0.00439453125 > 0.004174153322353959 (6/2073600 values outside, max error 0.00634765625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average random L6 spd mip 0: value 201484, actual 0.822265625, expected 0.82666015625, error 0.00439453125 > 0.004174153322353959 (6/2073600 values outside, max error 0.00634765625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L1 exact mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (17205/2073600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L1 spd mip 0: value 3714, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (18304/2073600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L1 box mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (17205/2073600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 exact mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (17205/2073600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 spd mip 0: value 3714, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (18304/2073600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 spd mip 1: value 1858, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (4576/518400 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 spd mip 2: value 930, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (1144/129600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 spd mip 3: value 466, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (284/32160 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 box mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (17205/2073600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 tail mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (17205/2073600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L4 tail box mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (17205/2073600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 exact mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (17205/2073600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 spd mip 0: value 3714, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (18304/2073600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 spd mip 1: value 1858, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (4576/518400 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 spd mip 2: value 930, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (1144/129600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 spd mip 3: value 466, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (284/32160 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 spd mip 4: value 234, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (70/7920 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 box mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (17205/2073600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 tail mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (17205/2073600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L5 tail box mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (17205/2073600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 exact mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (17205/2073600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 0: value 3714, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (18304/2073600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 1: value 1858, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (4576/518400 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 2: value 930, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (1144/129600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 3: value 466, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (284/32160 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 4: value 234, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (70/7920 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 spd mip 5: value 118, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.002872443838066829 (17/1920 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 box mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (17205/2073600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 tail mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (17205/2073600 values outside, max error 0.00390625)
+- rgba8unorm-srgb 1920x1080x1 -> rgba16float half average tiles L6 tail box mip 0: value 3718, actual 0.953125, expected 0.9560546875, error 0.0029296875 > 0.0028686199449002745 (17205/2073600 values outside, max error 0.00390625)
+- fixtures/960x540 threw: tool fixtures 960x540: oracle checks failed: fsr/luma-pyramid, generator/luma-pyramid-clamp
+
+## Slowest groups
+
+- `source/rgba8unorm-srgb/rgba8unorm-srgb/same` 276.9 s, 13 cases
+- `source/rgba32float/rgb9e5ufloat/same` 143.6 s, 13 cases
+- `source/rgba16float/rgba8unorm/same` 141.7 s, 13 cases
+- `source/bgra8unorm-srgb/bgra8unorm-srgb/half` 139.9 s, 13 cases
+- `source/rgba16float/rgba8unorm-srgb/half` 124.2 s, 13 cases
+- `integer/sources` 104.1 s, 22 cases
+- `source/rgba8unorm/rgba16float/half` 97.4 s, 13 cases
+- `source/depth32float/r32float/same` 89.9 s, 13 cases
+- `source/rgba16float/rgb9e5ufloat/half` 89.5 s, 13 cases
+- `source/rgba16float/rgba8unorm/half` 88.6 s, 13 cases

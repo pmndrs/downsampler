@@ -119,10 +119,10 @@ downsampler.encode( encoder, faces, { layers: [ 4, 1 ], rect } );          // a 
 				const y0 = Math.max( 0, Math.floor( cy - radius ) ), y1 = Math.min( height, Math.ceil( cy + radius ) );
 				if ( x0 >= x1 || y0 >= y1 ) return;
 				hue = ( hue + 7 ) % 360;
-				const colour = [ 0, 8, 4 ].map( n => { const k = ( n + hue / 30 ) % 12; return Math.round( 255 * ( 0.5 - 0.5 * Math.max( - 1, Math.min( k - 3, 9 - k, 1 ) ) ) ); } );
+				const color = [ 0, 8, 4 ].map( n => { const k = ( n + hue / 30 ) % 12; return Math.round( 255 * ( 0.5 - 0.5 * Math.max( - 1, Math.min( k - 3, 9 - k, 1 ) ) ) ); } );
 				for ( let y = y0; y < y1; y ++ ) for ( let x = x0; x < x1; x ++ ) {
 
-					if ( ( x + 0.5 - cx ) ** 2 + ( y + 0.5 - cy ) ** 2 <= radius * radius ) data.set( colour, ( y * width + x ) * 4 );
+					if ( ( x + 0.5 - cx ) ** 2 + ( y + 0.5 - cy ) ** 2 <= radius * radius ) data.set( color, ( y * width + x ) * 4 );
 
 				}
 
