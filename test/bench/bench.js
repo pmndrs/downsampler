@@ -527,7 +527,10 @@ async function measure( device, { strategies, exact, reference }, { sizes, bench
 
 						const texture = textures[ name === 'marker' ? baselineName : name ];
 						const encode = name === 'marker' ? () => {} : encoder => strategies[ name ].encode( encoder, texture );
-						samples[ name ].push( await timeGpu( device, texture, encode, repeats ) );
+						// The markers bracket the texture a strategy writes (`target`, when it isn't the bench
+						// texture): with no dependency on the work, Metal ran the end marker early (time ≈ 0).
+						const written = name === 'marker' ? texture : strategies[ name ].target?.( texture ) ?? texture;
+						samples[ name ].push( await timeGpu( device, written, encode, repeats ) );
 
 					}
 

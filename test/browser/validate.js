@@ -1230,6 +1230,10 @@ async function validateThree( device ) {
 	if ( three.getDownsampler( renderer ) !== shared || three.getDownsampler( renderer, {} ) !== shared ) throw new Error( 'three: getDownsampler must share one Downsampler per device and option set' );
 	const load = three.getDownsampler( renderer, { averageAccess: 'load', f16Rounding: 'device' } );
 	if ( load === shared || load !== three.getDownsampler( renderer, { f16Rounding: 'device', averageAccess: 'load' } ) || load.averageAccess !== 'load' || load.f16Rounding !== 'device' ) throw new Error( 'three: getDownsampler options must select their own shared Downsampler, whatever the key order' );
+	// Non-finite options get their own key (JSON would write Infinity as null, which the constructor rejects).
+	const never = three.getDownsampler( renderer, { renderPathMinTexels: Infinity } );
+	// (null means the default, as for every option; a key of null for Infinity would hand back that one.)
+	if ( never.renderPathMinTexels !== Infinity || never === three.getDownsampler( renderer, { renderPathMinTexels: 0 } ) || never === three.getDownsampler( renderer, { renderPathMinTexels: null } ) ) throw new Error( 'three: renderPathMinTexels Infinity must select its own Downsampler' );
 
 	const [ unallocated, single, noStorage, chain ] = [ {}, {}, {}, {} ];
 	gpuTextures.set( single, device.createTexture( { size: [ 4, 4 ], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING } ) );
