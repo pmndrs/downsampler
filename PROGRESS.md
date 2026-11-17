@@ -134,10 +134,14 @@ Last updated 2026-11-18. `main` has `srgb-store` (PR #2, `0d91892`). Branch `web
 
 ## Waiting on owner
 
-- **The review branch `web-performance-review`** (pushed 2026-11-18; the review's 19 commits on `main`, merges cleanly; [WEB-PERFORMANCE-REVIEW.md](WEB-PERFORMANCE-REVIEW.md)): a new public `warmup()`, moving-rect binding reuse, plan-retry fix, brush and Hi-Z examples, README/guide rewrites. Windows gates passed (RTX full 3239/3239, Intel quick, compat quick, 161 core). Before it goes to `main` as PR #3: the Metal acceptance in [the Mac handoff](docs/M5-HANDOFF-SRGB.md), and the owner's OK on `warmup()` as public API
+- **The review branch `web-performance-review`** (pushed 2026-11-18; the review's 19 commits on `main`, merges cleanly; [WEB-PERFORMANCE-REVIEW.md](WEB-PERFORMANCE-REVIEW.md)): a new public `warmup()`, moving-rect binding reuse, plan-retry fix, brush and Hi-Z examples, README/guide rewrites. Windows gates passed (RTX full 3239/3239, Intel quick, compat quick, 161 core). Before it goes to `main` as PR #3: the Metal acceptance in [the Mac handoff](docs/M5-HANDOFF-SRGB.md) (`warmup()` is approved as public API, below)
 - **three.js cube-mipmap fix upstream**: branch `fix-compat-cube-mipmaps` (`4bf8797c22`, on `dev`, local); PR text in [three-compat-cube-pr.md](results/windows/round2/three-compat-cube-pr.md). Push and file when ready
 - **three.js and `colorSpace: 'srgb'`**: it now meets the recommendation rule (beats the render path on the M5 at every size, sampling 1.00×). Should the three.js fork create 8-bit color textures as `rgba8unorm` + `viewFormats: ['rgba8unorm-srgb']` (core devices only; compat has no `viewFormats`)? That's what it takes for three.js to use it. The agent's suggestion: not yet: it changes how three.js creates every 8-bit color texture, compatibility mode can't, and the fork keeps render passes for sRGB, so nothing is lost by waiting; revisit as an opt-in
 - Publishing (owner-only step): turn on npm trusted publishing for pmndrs/downsampler on npmjs.com (decided over an `NPM_TOKEN` secret: no long-lived token), then run `release.yml` (dry run first). npm `downsampler` is free
+
+## Decided (owner, 2026-11-18)
+
+- **`warmup()` is public API** (DS3, [WEB-PERFORMANCE-REVIEW.md](WEB-PERFORMANCE-REVIEW.md#ds3--compile-pipelines-before-interactive-use)): `await downsampler.warmup( texture, options )` takes the same options as `encode`, is optional (encode still compiles synchronously on a miss) and cut the first fresh-profile submission from 128 to 3 ms on the RTX (storage path; Intel and the buffer and render paths alike). One method returning `Promise<void>` is little to keep stable; covered by `test/core/warmup.test.js` and the `downsampler/warmup` GPU group
 
 ## Decided (owner, 2026-11-17)
 
