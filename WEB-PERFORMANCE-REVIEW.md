@@ -1,6 +1,6 @@
 # Downsampler performance and code review
 
-November 17, 2026 · Baseline `d8368d0` · Handoff branch `codex/web-performance-review` includes `windows-3` at `0210cd1` and the M5 work through `1ff808b`. [Review Page](https://chatgpt.com/space/page_31c5c354d25c81918908d3903f124634) · [Mac checkout and M5 tests](docs/M5-HANDOFF-SRGB.md)
+November 17, 2026 · Baseline `d8368d0` · Handoff branch `codex/web-performance-review` includes `windows-3` at `0210cd1` and the M5 work through `1ff808b`, and the separate Windows verification in `b6e97c5`. [Review Page](https://chatgpt.com/space/page_31c5c354d25c81918908d3903f124634) · [Mac checkout and M5 tests](docs/M5-HANDOFF-SRGB.md)
 
 ## DS1 · Keep a working plan after a failed replacement
 
@@ -47,7 +47,9 @@ The [brush example](examples/partial-update.html) replays the same 40 strokes in
 
 The merged `renderPathMinTexels` option defaults to 1920 × 1080 texels per layer. On M5, exact render took 1.25–2.18× the buffer path below 1080p, reached parity at 1080p and won at larger sizes. Automatic selection uses the size of the source level or dirty rectangle, including for pipeline warmup. `renderPathMinTexels: 0` enables rendering at any size that supports it. [M5 report](results/m5/srgb-m5.md) · [Selection rules](docs/guide.md)
 
-With the markers bracketing the texture each strategy actually writes, `colorSpace`/buffer GPU time was 0.726–0.841 on the RTX and 0.771–0.927 on Intel. At 1080p, the old → corrected ratios were 0.757 → 0.761 and 0.884 → 0.866, respectively. Three changes exceeded 5%: RTX 1440p 0.797 → 0.745, Intel 960×540 0.848 → 0.771, and Intel 720p 0.906 → 0.805. Each run used 11 rotating rounds of 32 repetitions over eight sizes. The RTX clock check passed. Intel ratios compare strategies in the same round. [RTX data](results/windows/round3/review-rtx3060-srgb.json) · [RTX clock log](results/windows/round3/review-rtx3060-srgb.clock.json) · [Intel data](results/windows/round3/review-intel-srgb.json)
+With the markers bracketing the texture each strategy actually writes, `colorSpace`/buffer GPU time was 0.726–0.841 on the RTX and 0.771–0.927 on Intel. At 1080p, the old → corrected ratios were 0.757 → 0.761 and 0.884 → 0.866, respectively. In this run, three ratios moved by more than 5%: RTX 1440p 0.797 → 0.745, Intel 960×540 0.848 → 0.771, and Intel 720p 0.906 → 0.805. An independent corrected-marker RTX run measured 0.757 at 1440p. These are run-to-run differences, and both runs favor the alias over buffer output at this size. [Independent RTX data](results/windows/round3/rtx3060-srgb-renderpath.json)
+
+Each run used 11 rotating rounds of 32 repetitions over eight sizes. The RTX clock check passed. Intel ratios compare strategies in the same round. [RTX data](results/windows/round3/review-rtx3060-srgb.json) · [RTX clock log](results/windows/round3/review-rtx3060-srgb.clock.json) · [Intel data](results/windows/round3/review-intel-srgb.json)
 
 ## Windows verification
 

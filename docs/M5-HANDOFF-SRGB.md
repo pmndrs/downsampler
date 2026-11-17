@@ -1,6 +1,6 @@
 # Mac handoff for the downsampler
 
-The portable bundle's `codex/web-performance-review` branch combines `srgb-store` through `1ff808b` (including
+The portable bundle's `codex/web-performance-review` branch combines `srgb-store` through its Windows results commit `b6e97c5` (including
 `windows-3`) with the DS review fixes. To use it in a fresh checkout:
 
 ```sh
