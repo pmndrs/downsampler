@@ -51,4 +51,16 @@ With the markers bracketing the texture each strategy actually writes, `colorSpa
 
 ## Windows verification
 
-`ff785d9` built, typechecked and passed all **161 core tests**. Chrome 148 passed 21 targeted cases on each of the RTX 3060 and Intel UHD, including native deferred validation, threshold selection and nonconstant mip readback. SwiftShader passed eight cases and RTX compatibility mode passed seven. At the 1080p sRGB path boundary the RTX had two one-code differences among 84 near ties and Intel had one among 2,371. Full RTX and cross-adapter quick suites on the combined revision are still running. The 24 example pages and presets previously passed on the RTX.
+The combined runtime at `ff785d9` built, typechecked and passed all **161 core tests**. A clean clone of the Git bundle produced a 153,782-byte tarball with 56 files. All five public export paths loaded in a fresh consumer with the optional three.js peer absent. Its declarations passed strict NodeNext and Bundler checks.
+
+| Chrome 148 on Windows | Groups run / listed | Cases | Pattern runs | Outcome |
+| --- | ---: | ---: | ---: | --- |
+| RTX 3060 Laptop, full | 3,239 / 3,239 | 35,840 | 79,132 | Two FSR fixtures flagged at five sizes |
+| Intel UHD, quick | 1,864 / 1,864 | 21,791 | 33,288 | Same two fixtures at two sizes |
+| RTX, compatibility quick | 1,800 / 1,800 | 21,074 | 32,452 | Passed |
+
+All 84 shards finished. The two fixture oracles are `fsr/luma-pyramid` and `generator/luma-pyramid-clamp`. Their D3D12 FrameInfo values show the previously recorded f16 packing difference. Every other listed group passed. [RTX part 1](results/windows/round3/review-rtx-full-1/summary.md) · [Part 2](results/windows/round3/review-rtx-full-2/summary.md) · [Part 3](results/windows/round3/review-rtx-full-3/summary.md) · [Part 4](results/windows/round3/review-rtx-full-4/summary.md) · [Intel quick](results/windows/round3/review-intel-quick/summary.md) · [RTX compatibility](results/windows/round3/review-compat-quick/summary.md)
+
+The targeted tests passed 21 cases on each hardware adapter, eight on SwiftShader and seven in compatibility mode. They checked a native rejection and retry, warmed render-only sRGB aliases through core WebGPU, and read back patterned two-layer textures. At the 1080p sRGB threshold, render and buffer differed by one code in two of 84 near ties on RTX and one of 2,371 on Intel. All 24 example pages and presets passed on each hardware adapter, including the no-timestamps brush replay and odd-size Hi-Z checks.
+
+The Intel default benchmark covered 14 format/shape pairs. At 1080p RGBA8, four-level compute, six-level compute and per-level rendering took 0.251, 0.359 and 0.437 ms respectively. The Intel tools run checked 15 fixtures at each of five sizes. The same two FSR fixtures flagged at all five sizes. [Benchmark](results/windows/round3/review-intel-bench.json) · [Tools and oracles](results/windows/round3/review-intel-tools.json)
