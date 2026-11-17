@@ -1094,7 +1094,7 @@
 			"cases": 5
 		},
 		"downsampler/warmup": {
-			"ms": 7102,
+			"ms": 6434,
 			"cases": 5
 		},
 		"fixtures/1129x635": {

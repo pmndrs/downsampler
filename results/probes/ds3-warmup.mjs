@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { dirname, extname, join, relative, resolve, sep } from 'node:path';
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer';
 import { gpuChoiceArgs } from '../../test/gpu-choice.js';
@@ -65,6 +65,14 @@ const flags = [ '--enable-unsafe-webgpu' ];
 if ( software ) flags.push( '--use-webgpu-adapter=swiftshader', '--enable-unsafe-swiftshader', '--enable-features=Vulkan' );
 // A dry run must not query adapters or start a GPU process.
 else if ( ! dryRun ) flags.push( ...gpuChoiceArgs( power ) );
+
+// Keep paths in a shared result usable from another checkout.
+function reportPath( file ) {
+
+	const local = relative( repository, file );
+	return isAbsolute( local ) || local === '..' || local.startsWith( '..' + sep ) ? file : local.split( sep ).join( '/' );
+
+}
 
 async function manifest( root ) {
 
@@ -156,7 +164,7 @@ async function collectTrace( page, traceDirectory, name ) {
 			}
 
 		}
-		return { status: 'collected', file, eventCount: trace.traceEvents.length, compilerEvents, compilerSpans };
+		return { status: 'collected', file: reportPath( file ), eventCount: trace.traceEvents.length, compilerEvents, compilerSpans };
 
 	} catch ( error ) {
 
@@ -174,7 +182,7 @@ let build;
 let traceDirectory;
 let failure;
 const report = {
-	schema: 2, startedAt, platform: process.platform, command: process.argv.slice( 1 ), flags,
+	schema: 2, startedAt, platform: process.platform, command: [ reportPath( process.argv[ 1 ] ), ...args ], flags,
 	options: { power, software, repeats, paths, traceEnabled, keepTemp, dryRun, executablePath: executablePath ?? 'puppeteer-default' },
 	cacheCaveat: 'Fresh private profile per path/arm/pair, followed by same-browser reload at one origin. OS/driver shader caches remain. Arms alternate by pair.',
 	runs,
@@ -187,12 +195,12 @@ try {
 	await cp( resolve( value( 'dist' ) ?? 'dist' ), snapshot, { recursive: true } );
 	build = await manifest( snapshot );
 	if ( ! build.files.some( file => file.path === 'webgpu/index.js' ) ) throw new Error( 'Build lacks webgpu/index.js; run npm run build first' );
-	report.build = { ...build, capturedAt: new Date().toISOString(), source: resolve( value( 'dist' ) ?? 'dist' ), snapshot: keepTemp ? snapshot : null };
+	report.build = { ...build, capturedAt: new Date().toISOString(), source: reportPath( resolve( value( 'dist' ) ?? 'dist' ) ), snapshot: keepTemp ? snapshot : null };
 	if ( traceEnabled ) {
 
 		traceDirectory = value( 'trace-dir' ) ? resolve( value( 'trace-dir' ) ) : await mkdtemp( join( tempRoot, 'ds3-traces-' ) );
 		await mkdir( traceDirectory, { recursive: true } );
-		report.traceDirectory = traceDirectory;
+		report.traceDirectory = reportPath( traceDirectory );
 		console.log( `Raw traces retained: ${ traceDirectory }` );
 
 	}
@@ -312,7 +320,7 @@ try {
 
 	}
 	await mkdir( dirname( output ), { recursive: true } );
-	await writeFile( output, JSON.stringify( report, null, 2 ) );
+	await writeFile( output, JSON.stringify( report ) + '\n' );
 	console.log( `Result JSON: ${ output }` );
 
 }
