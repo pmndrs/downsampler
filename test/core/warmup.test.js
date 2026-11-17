@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Downsampler } from '../../dist/webgpu/downsampler.js';
+import { generateMipmaps, getDownsampler, unsupportedReason as adapterReason } from '../../dist/three/index.js';
 
 // Host scheduling/cache tests: no adapter or shader compiler is involved.
 globalThis.GPUTextureUsage = { COPY_SRC: 1, COPY_DST: 2, TEXTURE_BINDING: 4, STORAGE_BINDING: 8, RENDER_ATTACHMENT: 16 };
@@ -322,6 +323,9 @@ for ( const threshold of [ 0, 64, Infinity ] ) test( `auto warms a render-only s
 	const texture = f.texture( { usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST } );
 	assert.equal( ds.outputPath( texture ), null );
 	assert.match( ds.unsupportedReason( texture ), /STORAGE_BINDING/ );
+	assert.equal( ds.supports( texture ), false );
+	assert.equal( ds.unsupportedReason( texture, { colorSpace: 'srgb' } ), null );
+	assert.equal( ds.supports( texture, { colorSpace: 'srgb' } ), true );
 	await assert.rejects( ds.warmup( texture ), /STORAGE_BINDING/ );
 	const options = { colorSpace: 'srgb', oddSizes: 'box' };
 	assert.equal( ds.scratchSize( texture, options ), 0 );
@@ -344,5 +348,35 @@ for ( const threshold of [ 0, 64, Infinity ] ) test( `auto warms a render-only s
 		[ { usage: GPUTextureUsage.RENDER_ATTACHMENT }, /TEXTURE_BINDING/ ],
 		[ { textureBindingViewDimension: 'cube' }, /textureBindingViewDimension/ ]
 	] ) await assert.rejects( ds.warmup( f.texture( { ...texture, ...overrides } ), options ), message );
+
+} );
+
+
+test( 'three adapter forwards sRGB alias eligibility to normal generateMipmaps and retains no-options rejection', async () => {
+
+	const f = fixture(), object = {};
+	const texture = f.texture( { usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST } );
+	const renderer = { backend: { isWebGPUBackend: true, device: f.device, get: () => ( { texture } ) } };
+	let submissions = 0;
+	f.device.createCommandEncoder = () => ( { ...f.encoder, finish: () => ( {} ) } );
+	f.device.queue.submit = () => { submissions ++; };
+	const downsampler = { renderPathMinTexels: Infinity };
+	const options = { colorSpace: 'srgb', downsampler };
+	const ds = getDownsampler( renderer, downsampler );
+	assert.match( adapterReason( renderer, object ), /STORAGE_BINDING/ );
+	assert.equal( generateMipmaps( renderer, object ), false );
+	assert.equal( submissions, 0 );
+	assert.equal( adapterReason( renderer, object, options ), null );
+	await ds.warmup( texture, options );
+	assert.equal( generateMipmaps( renderer, object, options ), true );
+	const partial = { ...options, rect: { x: 128, y: 68, width: 5, height: 7 } };
+	await ds.warmup( texture, partial );
+	assert.equal( generateMipmaps( renderer, object, partial ), true );
+	assert.equal( submissions, 2 );
+	assert.equal( f.calls.sync.length, 0 );
+	assert.equal( f.calls.compute.length, 0 );
+	assert.ok( f.calls.used.every( pipeline => pipeline.descriptor.fragment !== undefined ) );
+	assert.match( adapterReason( renderer, object ), /STORAGE_BINDING/ );
+	assert.equal( generateMipmaps( renderer, object ), false );
 
 } );

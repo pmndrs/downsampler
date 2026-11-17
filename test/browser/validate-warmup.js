@@ -107,7 +107,7 @@ async function validateAutoThresholdWarmup( device ) {
 		try {
 
 			upload( device, texture, data );
-			if ( renderOnly && ( ds.outputPath( texture ) !== null || ds.unsupportedReason( texture ) === null || ds.scratchSize( texture, base ) !== 0 ) ) throw new Error( 'warmup render-only alias: preserve option-blind queries and report zero scratch for the alias' );
+			if ( renderOnly && ( ds.outputPath( texture ) !== null || ds.unsupportedReason( texture ) === null || ds.unsupportedReason( texture, base ) !== null || ! ds.supports( texture, base ) || ds.scratchSize( texture, base ) !== 0 ) ) throw new Error( 'warmup render-only alias: preserve option-blind queries and report zero scratch for the alias' );
 			await ds.warmup( texture, base );
 			if ( counts.createRenderPipelineAsync === 0 || counts.createComputePipelineAsync !== 0 ) throw new Error( 'warmup auto threshold: full chain must warm render only' );
 			ds.generate( texture, base );

@@ -478,7 +478,7 @@ generateMipmaps( renderer, texture, { encoder, downsampler: { averageAccess: 'lo
 | `requiredLimits( adapter )` | The same function as in `downsampler/webgpu`, for `new WebGPURenderer( { requiredLimits } )`. |
 | `Downsampler` | Re-exported. |
 
-The texture must have `STORAGE_BINDING` usage (in current three.js a `StorageTexture` or `StorageArrayTexture`), or `COPY_DST` for formats that take the buffer path. sRGB color textures (`SRGBColorSpace`, so `rgba8unorm-srgb`) always take the buffer path, so regular three.js color textures, which have `COPY_DST`, work today. Other regular textures don't get storage usage from three; native support for them is planned as an in-tree three.js option (SPEC §10). See [examples/three.html](../examples/three.html).
+For native sRGB textures, `output: 'auto'` uses the render path at the configured size threshold when the texture has `RENDER_ATTACHMENT`. Smaller chains use the buffer path with `COPY_DST`. A texture whose only writable usage is `RENDER_ATTACHMENT` can render at any size for supported chains. For ordinary linear textures, use a three.js `StorageTexture` or `StorageArrayTexture` when the format supports storage. The example shows how to query support on an allocated three.js texture. [three.js example](../examples/three.html)
 
 ## The core package: CPU references and planning
 

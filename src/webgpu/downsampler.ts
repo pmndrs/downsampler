@@ -276,10 +276,10 @@ export interface EncodeOptions {
 	 * 'srgb': the texture is rgba8unorm or bgra8unorm and holds sRGB color, created with its
 	 * sRGB format in `viewFormats` (`viewFormats: [ 'rgba8unorm-srgb' ]`). Levels are averaged in
 	 * linear light and stored as sRGB codes, exactly as for an rgba8unorm-srgb texture with the
-	 * same bytes, but written directly: by render passes when the texture has RENDER_ATTACHMENT
-	 * usage (as for sRGB formats, {@link DownsamplerOptions.output}), else as storage textures, with
-	 * no buffer and no copies (19–30 % less time than the buffer path on an RTX 3060), and then
-	 * `encodePass` works. Sample it through an sRGB view
+	 * same bytes, but written directly: under auto, render passes when RENDER_ATTACHMENT is
+	 * available and the chain reaches renderPathMinTexels (or only rendering can write it),
+	 * otherwise storage textures with STORAGE_BINDING. The storage path uses no buffer or
+	 * copies and supports `encodePass`. Explicit output selects its path. Sample through an sRGB view
 	 * (`createView( { format: 'rgba8unorm-srgb', usage: GPUTextureUsage.TEXTURE_BINDING } )`), so
 	 * filtering decodes first. Not with `oddSizes: 'spd'`, nor on the compatibility path
 	 * (compatibility mode has no `viewFormats`). 'linear' (default): the texture's own format
@@ -540,8 +540,12 @@ export class Downsampler {
 
 	}
 
-	/** Shape and sampling requirements shared by every destination path. */
-	private destinationShapeReason( texture: GPUTexture ): string | null {
+	/**
+	 * Why the texture cannot be a destination, or null. Options account for destination
+	 * eligibility through an sRGB alias; mip ranges, reductions and sources are validated
+	 * when preparing/encoding the chain. Without options, describes its own format.
+	 */
+	unsupportedReason( texture: GPUTexture, options: EncodeOptions = {} ): string | null {
 
 		if ( ! isSupportedFormat( texture.format ) ) return `format ${ texture.format } is not supported`;
 		if ( texture.dimension !== '2d' ) return `dimension ${ texture.dimension } is not supported`;
@@ -549,16 +553,11 @@ export class Downsampler {
 		if ( ( texture.usage & GPUTextureUsage.TEXTURE_BINDING ) === 0 ) return 'texture needs TEXTURE_BINDING usage';
 		const viewDimension = ( texture as GPUTexture & { textureBindingViewDimension?: string } ).textureBindingViewDimension;
 		if ( viewDimension !== undefined && viewDimension !== '2d' && viewDimension !== '2d-array' ) return `textureBindingViewDimension ${ viewDimension } is not supported`;
-		return null;
-
-	}
-
-	/** Why a texture cannot be a destination, or null if it can. */
-	unsupportedReason( texture: GPUTexture ): string | null {
-
-		const shape = this.destinationShapeReason( texture );
-		if ( shape !== null ) return shape;
 		if ( this.outputPath( texture ) !== null ) return null;
+		// An option-blind query describes the linear texture. Its sRGB alias may
+		// still render under auto even when the texture has no storage usage.
+		const alias = this.output === 'auto' && options.colorSpace === 'srgb' ? srgbViewFormat( texture.format ) : undefined;
+		if ( alias !== undefined && ! this.usesCompatibility( texture ) && this.renderReason( texture, alias ) === null ) return null;
 
 		// Why no path applies.
 		const format = texture.format as SupportedFormat;
@@ -578,18 +577,13 @@ export class Downsampler {
 	}
 
 	/**
-	 * How levels of `texture` are written by default: 'storage' (storage textures),
-	 * 'buffer' (a storage buffer and copies) or 'render' (render passes), or null
-	 * when none applies (see {@link Downsampler.unsupportedReason}). Follows the
-	 * `output` option; 'auto' takes the render path for sRGB formats that can be
-	 * render attachments from `renderPathMinTexels` texels (the whole texture's
-	 * chain; smaller ones, or any size where no compute path can write it), and the
-	 * buffer path only for formats the device can't write as storage textures,
-	 * never for a texture that merely lacks STORAGE_BINDING usage. Under 'auto', a
-	 * chain the render path doesn't cover (folds, 'spd', a separate source) takes the
-	 * buffer path instead, a chain whose first level is smaller than
-	 * `renderPathMinTexels` (a sub-range, a rect) the compute path, and
-	 * `colorSpace: 'srgb'` chains take the render path when the texture can.
+	 * How the whole texture's default chain is written, using its own format:
+	 * 'storage', 'buffer', 'render', or null if no output path can write it.
+	 * Under 'auto', native sRGB formats render from renderPathMinTexels texels,
+	 * or at any size when only render usage is available; otherwise they use a buffer.
+	 * Encode options such as colorSpace, baseMipLevel and rect may select another path.
+	 * This query does not resolve those options; use unsupportedReason(texture, options)
+	 * for destination eligibility and scratchSize(texture, options) for scratch allocation.
 	 */
 	outputPath( texture: GPUTexture ): ChainPath | null {
 
@@ -701,10 +695,10 @@ export class Downsampler {
 
 	}
 
-	/** Whether `texture` can be a destination: {@link Downsampler.unsupportedReason} is null. */
-	supports( texture: GPUTexture ): boolean {
+	/** Whether `texture` is an eligible destination with these options; full chain validation occurs on encode. */
+	supports( texture: GPUTexture, options: EncodeOptions = {} ): boolean {
 
-		return this.unsupportedReason( texture ) === null;
+		return this.unsupportedReason( texture, options ) === null;
 
 	}
 
@@ -907,15 +901,8 @@ export class Downsampler {
 	/** The cached plan of a chain: `prepare()`'s batches, or the render path's levels. */
 	private plan( texture: GPUTexture, options: EncodeOptions, encoding = false, warming?: Promise<unknown>[] ): CachedPlan {
 
-		const reason = this.unsupportedReason( texture );
-		if ( reason !== null ) {
-
-			// The option-blind query describes the linear texture. A valid sRGB alias
-			// can still render under auto when that texture has no storage usage.
-			const alias = this.output === 'auto' && options.colorSpace === 'srgb' && this.destinationShapeReason( texture ) === null ? srgbViewFormat( texture.format as SupportedFormat ) : undefined;
-			if ( alias === undefined || this.usesCompatibility( texture ) || this.renderReason( texture, alias ) !== null ) throw new Error( `downsampler: ${ reason }.` );
-
-		}
+		const reason = this.unsupportedReason( texture, options );
+		if ( reason !== null ) throw new Error( `downsampler: ${ reason }.` );
 		const baseMipLevel = options.baseMipLevel ?? 0;
 		const mipLevelCount = options.mipLevelCount ?? texture.mipLevelCount - baseMipLevel;
 		if ( baseMipLevel < 0 || mipLevelCount < 1 || baseMipLevel + mipLevelCount > texture.mipLevelCount ) throw new Error( 'downsampler: mip range is outside the texture.' );

@@ -10,7 +10,9 @@
  * (`renderPathMinTexels`; render passes, with the exact rounding unless
  * `srgbRounding: 'device'`); otherwise, and below that size, these and
  * rgb9e5ufloat and rg11b10ufloat without tier1 need COPY_DST usage for the buffer
- * output path (SPEC.md §6.1). Native integration for all textures is planned as an
+ * output path (SPEC.md §6.1). A `colorSpace: 'srgb'` alias with RENDER_ATTACHMENT
+ * can render without STORAGE_BINDING when no compute path can write it.
+ * Native integration for all textures is planned as an
  * in-tree three.js option; see SPEC.md.
  */
 import { Downsampler, type DownsamplerOptions, type EncodeOptions } from '../webgpu/downsampler.js';
@@ -96,7 +98,7 @@ export function unsupportedReason( renderer: ThreeRendererLike, texture: object,
 	if ( gpuTexture === undefined ) return 'the texture is not allocated on the GPU yet (render to it, upload it or call renderer.initTexture first)';
 	if ( options.source === undefined && gpuTexture.mipLevelCount < 2 ) return 'the texture has a single mip level (set generateMipmaps = true before it is allocated)';
 	const downsampler = getDownsampler( renderer, options.downsampler );
-	return downsampler.unsupportedReason( gpuTexture ) ?? ( options.source === undefined ? null : downsampler.sourceUnsupportedReason( gpuTexture, options.source, options.baseMipLevel ) );
+	return downsampler.unsupportedReason( gpuTexture, options ) ?? ( options.source === undefined ? null : downsampler.sourceUnsupportedReason( gpuTexture, options.source, options.baseMipLevel ) );
 
 }
 
