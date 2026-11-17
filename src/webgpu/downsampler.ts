@@ -800,10 +800,10 @@ export class Downsampler {
 			if ( cache === undefined ) this.plans.set( texture, cache = new Map() );
 			const cached = cache.get( key );
 			if ( cached !== undefined && cached.source === source?.texture && cached.scratch === options.scratch ) return cached;
-			// A new source texture (e.g. a depth buffer recreated on resize) or scratch buffer replaces the plan.
-			if ( cached !== undefined ) retireBuffers( this.device, cached.buffers );
 			const plan = this.build( texture, parameters, null );
 			cache.set( key, plan );
+			// Keep the old plan alive until its replacement has been constructed successfully.
+			if ( cached !== undefined ) retireBuffers( this.device, cached.buffers );
 			return plan;
 
 		}
@@ -824,17 +824,18 @@ export class Downsampler {
 		let cache = this.regionPlans.get( texture );
 		if ( cache === undefined ) this.regionPlans.set( texture, cache = new Map() );
 		const cached = cache.get( regionKey );
-		cache.delete( regionKey );
 		if ( cached !== undefined && cached.source === source?.texture && cached.scratch === options.scratch ) {
 
+			cache.delete( regionKey );
 			cache.set( regionKey, cached );
 			return cached;
 
 		}
 
-		if ( cached !== undefined ) retireBuffers( this.device, cached.buffers );
 		const plan = this.build( texture, parameters, { rect, layers } );
+		cache.delete( regionKey );
 		cache.set( regionKey, plan );
+		if ( cached !== undefined ) retireBuffers( this.device, cached.buffers );
 		// Evicted plans may still be recorded in an encoder not yet submitted: their
 		// region uniforms are destroyed once the queue has finished the work submitted so far.
 		while ( cache.size > regionPlanLimit ) {
@@ -876,6 +877,25 @@ export class Downsampler {
 
 	/** Prepares the batches of one plan; `region` makes it a partial update. */
 	private build( texture: GPUTexture, parameters: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null ): CachedPlan {
+		const buffers: GPUBuffer[] = [];
+		const previousRegionScratch = region === null ? undefined : this.regionScratch.get( texture );
+		try {
+			return this.buildCompute( texture, parameters, region, buffers );
+		} catch ( error ) {
+			for ( const buffer of buffers ) buffer.destroy();
+			if ( region !== null ) {
+				const allocatedScratch = this.regionScratch.get( texture );
+				if ( allocatedScratch !== undefined && allocatedScratch !== previousRegionScratch ) {
+					allocatedScratch.destroy();
+					if ( previousRegionScratch === undefined ) this.regionScratch.delete( texture );
+					else this.regionScratch.set( texture, previousRegionScratch );
+				}
+			}
+			throw error;
+		}
+	}
+
+	private buildCompute( texture: GPUTexture, parameters: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null, buffers: GPUBuffer[] ): CachedPlan {
 
 		if ( parameters.path === 'render' ) return this.buildRender( texture, parameters, region );
 		const { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel, scratch: scratchBuffer, srgb } = parameters;
@@ -909,7 +929,6 @@ export class Downsampler {
 		// at the same offsets and copy their regions out.
 		const bytesPerTexel = formats[ format ].bytesPerTexel;
 		const layouts = output === 'buffer' ? planned.map( batch => outputBufferLayout( Array.from( { length: batch.count }, ( _, i ) => [ mipSize( texture.width, batch.firstMipLevel + i ), mipSize( texture.height, batch.firstMipLevel + i ) ] as const ), layerCount, bytesPerTexel ) ) : [];
-		const buffers: GPUBuffer[] = [];
 		let scratch: GPUBuffer | undefined;
 		if ( output === 'buffer' && included.length > 0 ) {
 
@@ -1013,8 +1032,8 @@ export class Downsampler {
 				if ( update === undefined ) {
 
 					const uniform = this.device.createBuffer( { label: 'downsampler output layout', size: outputLayoutBytes, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
-					this.device.queue.writeBuffer( uniform, 0, words );
 					buffers.push( uniform );
+					this.device.queue.writeBuffer( uniform, 0, words );
 					entries.push( { binding: outputLayoutBinding, resource: { buffer: uniform } } );
 
 				} else entries.push( uniformEntry( outputLayoutBinding, slot( words ), outputLayoutBytes ) );
@@ -1042,10 +1061,10 @@ export class Downsampler {
 		if ( slots.length > 0 ) {
 
 			const uniform = this.device.createBuffer( { label: 'downsampler region', size: slots.length * slotBytes, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+			buffers.push( uniform );
 			const data = new Uint32Array( slots.length * slotBytes / 4 );
 			slots.forEach( ( words, i ) => data.set( words, i * slotBytes / 4 ) );
 			this.device.queue.writeBuffer( uniform, 0, data );
-			buffers.push( uniform );
 			for ( const { entry, offset, size } of pending ) entry.resource = { buffer: uniform, offset, size };
 
 		}
