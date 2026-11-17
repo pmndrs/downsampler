@@ -1,7 +1,7 @@
 import { bufferWritable, formats, isIntFormat, isSupportedFormat, sampleKind, srgbViewFormat, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { outputBufferLayout, planBatches, type Batch, type BatchKernel, type OddSizePolicy } from '../core/plan.js';
 import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
-import { layersProblem, planRegions, rectProblem, type BatchRegion, type Rect } from '../core/region.js';
+import { layersProblem, planRegions, rectProblem, type Rect } from '../core/region.js';
 import { isCompatibilityTexture } from './compat.js';
 import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, regionBinding, regionBytes, srgbTable, srgbTableBinding, usesSrgbTable, type F16Rounding, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
 import { requiredLimits } from './limits.js';
@@ -438,6 +438,8 @@ export class Downsampler {
 	private readonly scratch = new WeakMap<GPUTexture, Map<number, GPUTexture>>();
 	private readonly pipelines = new Map<string, GPUComputePipeline>();
 	private readonly renderPipelines = new Map<string, GPURenderPipeline>();
+	private readonly pipelinePromises = new Map<string, Promise<GPUComputePipeline>>();
+	private readonly renderPipelinePromises = new Map<string, Promise<GPURenderPipeline>>();
 	private readonly layouts = new Map<string, GPUBindGroupLayout>();
 	private readonly plans = new WeakMap<GPUTexture, Map<string, CachedPlan>>();
 	/** Partial-update plans per texture, least recently used first. */
@@ -788,8 +790,33 @@ export class Downsampler {
 
 	}
 
+	/**
+	 * Compile the pipelines used by encode/generate for this real texture and option set.
+	 * Await before interactive use. No commands, bindings, scratch or region uniforms are
+	 * allocated. Concurrent requests share compilation; a rejected pipeline can be retried.
+	 * Encoding stays synchronous and can fall back to synchronous creation if not awaited.
+	 */
+	async warmup( texture: GPUTexture, options: EncodeOptions = {} ): Promise<void> {
+
+		const pending: Promise<unknown>[] = [];
+		try {
+
+			this.plan( texture, options, true, pending );
+
+		} catch ( error ) {
+
+			// Discovery may fail after earlier compiles have started. Observe every one
+			// before propagating the discovery error (no orphaned rejections).
+			await Promise.allSettled( pending );
+			throw error;
+
+		}
+		await Promise.all( pending );
+
+	}
+
 	/** The cached plan of a chain: `prepare()`'s batches, or the render path's levels. */
-	private plan( texture: GPUTexture, options: EncodeOptions, encoding = false ): CachedPlan {
+	private plan( texture: GPUTexture, options: EncodeOptions, encoding = false, warming?: Promise<unknown>[] ): CachedPlan {
 
 		const reason = this.unsupportedReason( texture );
 		if ( reason !== null ) throw new Error( `downsampler: ${ reason }.` );
@@ -818,6 +845,8 @@ export class Downsampler {
 
 		if ( options.rect === undefined && options.layers === undefined ) {
 
+			if ( warming !== undefined ) return this.warmPipelines( texture, parameters, null, false, warming );
+
 			let cache = this.plans.get( texture );
 			if ( cache === undefined ) this.plans.set( texture, cache = new Map() );
 			const cached = cache.get( key );
@@ -844,6 +873,7 @@ export class Downsampler {
 		const rect = { x, y, width, height };
 		// Only storage without compatibility copies uses the private dynamic binding contract.
 		const dynamic = encoding && path === 'storage' && ! this.usesCompatibility( texture );
+		if ( warming !== undefined ) return this.warmPipelines( texture, parameters, { rect, layers }, dynamic, warming );
 		const regionKey = `${ key }|${ layers.join() }|${ x },${ y },${ width },${ height }`;
 		const regionCache = dynamic ? this.encodeRegionPlans : this.regionPlans;
 		let cache = regionCache.get( texture );
@@ -986,10 +1016,79 @@ export class Downsampler {
 		}
 	}
 
+	/** Shared resource-free topology and exact pipeline keys for warmup and execution. */
+	private computeTopology( texture: GPUTexture, parameters: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null, dynamic: boolean ) {
+
+		const { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel, srgb } = parameters;
+		const format = srgb ?? texture.format as SupportedFormat;
+		const dimension = bindingViewDimension( texture );
+		const output = parameters.path as OutputPath;
+		const levelsPerDispatch = output === 'buffer' && this.output === 'auto' ? this.bufferLevelsPerDispatch : this.levelsPerDispatch;
+		const sourceWidth = source === undefined ? undefined : mipSize( source.texture.width, sourceMipLevel ), sourceHeight = source === undefined ? undefined : mipSize( source.texture.height, sourceMipLevel );
+		const copySource = source !== undefined && sourceWidth === mipSize( texture.width, baseMipLevel ) && sourceHeight === mipSize( texture.height, baseMipLevel );
+		const { tailMaxTile } = this;
+		// Under 'spd', a resampled source is its own 1-level batch, like a copy.
+		const resample = source?.resample === 'area';
+		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch, oddSizes, fromSource: source !== undefined, copySource: copySource || resample, tail: oddSizes !== 'spd' && this.tail, tailMaxTile, exactMinTile: this.exactTile, ...this.haloPlan( format, oddSizes ) } );
+		const regions = region === null ? null : planRegions( planned, region.rect, texture.width, texture.height, sourceWidth, sourceHeight );
+		const sourceSize = ( batch: Batch ): [ number, number ] => batch.sourceMipLevel === null ? [ sourceWidth!, sourceHeight! ] : [ mipSize( texture.width, batch.sourceMipLevel ), mipSize( texture.height, batch.sourceMipLevel ) ];
+		const odd = ( size: number ) => size > 1 && size % 2 === 1;
+		const included = planned.map( ( batch, index ) => {
+
+			const external = batch.sourceMipLevel === null;
+			const sourceFormat = external ? source!.texture.format : format;
+			// A same-size converting copy loads: a sampler at texel centers isn't exact on every
+			// GPU (Intel truncates the coordinate a hair below the center and blends in 1/256 of a
+			// neighbor; results/windows/correctness.md).
+			// Area-weighted batches load: a resampled source (any reduction), and under 'box' the
+			// averages that read an odd level, or reduce odd levels in a tail. The others are
+			// the 'exact' kernels: an even step is the same 2×2 box, and folds are the same.
+			const [ sw, sh ] = sourceSize( batch );
+			const boxFirst = batch.kernel !== 'clamp' && oddSizes === 'box' && reduction === 'average' && ( batch.kernel === 'tail' || odd( sw ) || odd( sh ) );
+			// A halo batch under 'box' takes area weights at its odd steps, whatever its first output's source.
+			const box = boxFirst || ( batch.halo !== undefined && oddSizes === 'box' && reduction === 'average' );
+			const area = boxFirst || ( batch.kernel !== 'clamp' && external && resample );
+			const access = area || ( external && copySource && batch.firstMipLevel === baseMipLevel ) ? 'load' : this.access( reduction, sourceFormat );
+			const kernel: BatchKernelKey = { format, dimension, count: batch.count, access, reduction, sourceFormat, output, kind: batch.kernel, tile: batch.tile, area, box, region: region !== null, dynamic, ...( batch.halo ? { halo: batch.halo } : {} ) };
+			return { batch, index, kernel };
+
+		} ).filter( ( { index } ) => regions === null || regions[ index ].groupsX * regions[ index ].groupsY > 0 );
+		return { planned, regions, included };
+
+	}
+
+	private warmPipelines( texture: GPUTexture, parameters: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null, dynamic: boolean, pending: Promise<unknown>[] ): CachedPlan {
+
+		if ( parameters.path === 'render' ) {
+
+			const { baseMipLevel, mipLevelCount, oddSizes } = parameters;
+			const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch: 1, oddSizes } );
+			const regions = region === null ? null : planRegions( planned, region.rect, texture.width, texture.height );
+			planned.forEach( ( batch, index ) => {
+
+				if ( regions === null || regions[ index ].levels[ 0 ] !== null ) pending.push( this.renderPipelineAsync( this.renderOptions( texture, parameters, batch.firstMipLevel ) ) );
+
+			} );
+
+		} else {
+
+			// Dynamic encode constructs its invariant template for the whole source, including
+			// pipelines for batches a particular dirty rectangle may leave untouched.
+			const [ width, height ] = parameters.source === undefined ? [ mipSize( texture.width, parameters.baseMipLevel ), mipSize( texture.height, parameters.baseMipLevel ) ] : levelSizeOf( parameters.source );
+			const discoveryRegion = dynamic ? { rect: { x: 0, y: 0, width, height }, layers: [ 0, texture.depthOrArrayLayers ] as const } : region;
+			const { included } = this.computeTopology( texture, parameters, discoveryRegion, dynamic );
+			for ( const { kernel } of included ) pending.push( this.pipelineAsync( kernel ) );
+			if ( included.length > 0 && parameters.path === 'storage' && this.usesCompatibility( texture ) ) pending.push( this.pipelineAsync( this.compatKernel( texture, region !== null ) ) );
+
+		}
+		return { source: undefined, scratch: undefined, batches: [], buffers: [] };
+
+	}
+
 	private buildCompute( texture: GPUTexture, parameters: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null, buffers: GPUBuffer[], dynamicBindings?: RegionTemplate['bindings'] ): CachedPlan {
 
 		if ( parameters.path === 'render' ) return this.buildRender( texture, parameters, region );
-		const { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel, scratch: scratchBuffer, srgb } = parameters;
+		const { source, baseMipLevel, scratch: scratchBuffer, srgb } = parameters;
 
 		// colorSpace 'srgb': reduced as the sRGB format, read through sRGB views (named usage: the
 		// texture's STORAGE_BINDING isn't valid for an sRGB view), written through its own.
@@ -999,20 +1098,9 @@ export class Downsampler {
 		const read = srgb === undefined ? view : ( level: number ) => texture.createView( { label: `downsampler mip ${ level } (sRGB)`, format: srgb, usage: GPUTextureUsage.TEXTURE_BINDING, dimension, baseMipLevel: level, mipLevelCount: 1 } );
 
 		const output = parameters.path as OutputPath;
-		const levelsPerDispatch = output === 'buffer' && this.output === 'auto' ? this.bufferLevelsPerDispatch : this.levelsPerDispatch;
-		const sourceWidth = source === undefined ? undefined : mipSize( source.texture.width, sourceMipLevel ), sourceHeight = source === undefined ? undefined : mipSize( source.texture.height, sourceMipLevel );
-		const copySource = source !== undefined && sourceWidth === mipSize( texture.width, baseMipLevel ) && sourceHeight === mipSize( texture.height, baseMipLevel );
-		const { tailMaxTile } = this;
-		// Under 'spd', a resampled source is its own 1-level batch, like a copy.
-		const resample = source?.resample === 'area';
-		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch, oddSizes, fromSource: source !== undefined, copySource: copySource || resample, tail: oddSizes !== 'spd' && this.tail, tailMaxTile, exactMinTile: this.exactTile, ...this.haloPlan( format, oddSizes ) } );
+		const { planned, regions, included } = this.computeTopology( texture, parameters, region, dynamicBindings !== undefined );
 		const layerCount = texture.depthOrArrayLayers;
 		const layers: readonly [ number, number ] = region?.layers ?? [ 0, layerCount ];
-		const regions: BatchRegion[] | null = region === null ? null : planRegions( planned, region.rect, texture.width, texture.height, sourceWidth, sourceHeight );
-		// A partial update leaves out batches that write nothing (possible under 'spd' only).
-		const included = planned.map( ( batch, index ) => ( { batch, index } ) ).filter( ( { index } ) => regions === null || regions[ index ].groupsX * regions[ index ].groupsY > 0 );
-		const sourceSize = ( batch: Batch ): [ number, number ] => batch.sourceMipLevel === null ? [ sourceWidth!, sourceHeight! ] : [ mipSize( texture.width, batch.sourceMipLevel ), mipSize( texture.height, batch.sourceMipLevel ) ];
-		const odd = ( size: number ) => size > 1 && size % 2 === 1;
 
 		// Buffer path: one scratch buffer, sized for the largest batch, serves every
 		// batch in turn (each batch's copies are recorded before the next dispatch).
@@ -1078,23 +1166,10 @@ export class Downsampler {
 		// Bind groups are created after the uniform buffer.
 		const deferred: ( () => void )[] = [];
 
-		let batches = included.map( ( { batch, index } ): PreparedBatch => {
+		let batches = included.map( ( { batch, index, kernel } ): PreparedBatch => {
 
 			const external = batch.sourceMipLevel === null;
-			const sourceFormat = external ? source!.texture.format : format;
-			// A same-size converting copy loads: a sampler at texel centers isn't exact on every
-			// GPU (Intel truncates the coordinate a hair below the center and blends in 1/256 of a
-			// neighbor; results/windows/correctness.md).
-			// Area-weighted batches load: a resampled source (any reduction), and under 'box' the
-			// averages that read an odd level, or reduce odd levels in a tail. The others are
-			// the 'exact' kernels: an even step is the same 2×2 box, and folds are the same.
-			const [ sw, sh ] = sourceSize( batch );
-			const boxFirst = batch.kernel !== 'clamp' && oddSizes === 'box' && reduction === 'average' && ( batch.kernel === 'tail' || odd( sw ) || odd( sh ) );
-			// A halo batch under 'box' takes area weights at its odd steps, whatever its first output's source.
-			const box = boxFirst || ( batch.halo !== undefined && oddSizes === 'box' && reduction === 'average' );
-			const area = boxFirst || ( batch.kernel !== 'clamp' && external && resample );
-			const access = area || ( external && copySource && batch.firstMipLevel === baseMipLevel ) ? 'load' : this.access( reduction, sourceFormat );
-			const kernel: BatchKernelKey = { format, dimension, count: batch.count, access, reduction, sourceFormat, output, kind: batch.kernel, tile: batch.tile, area, box, region: region !== null, dynamic: dynamicBindings !== undefined, ...( batch.halo ? { halo: batch.halo } : {} ) };
+			const { access } = kernel;
 			const layout = this.layout( kernel );
 			const pipeline = this.pipeline( kernel );
 			const entries: GPUBindGroupEntry[] = access === 'sample' ? [ { binding: 0, resource: this.sampler } ] : [];
@@ -1180,14 +1255,12 @@ export class Downsampler {
 		const layers: readonly [ number, number ] = region?.layers ?? [ 0, texture.depthOrArrayLayers ];
 		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch: 1, oddSizes } );
 		const regions = region === null ? null : planRegions( planned, region.rect, texture.width, texture.height );
-		const odd = ( size: number ) => size > 1 && size % 2 === 1;
 		const render: RenderLevel[] = [];
 		planned.forEach( ( { firstMipLevel: level }, index ) => {
 
 			const scissor = regions === null ? null : regions[ index ].levels[ 0 ];
 			if ( regions !== null && scissor === null ) return;
-			const area = oddSizes === 'box' && ( odd( mipSize( texture.width, level - 1 ) ) || odd( mipSize( texture.height, level - 1 ) ) );
-			const options: RenderKernelOptions = { format, dimension, access: area ? 'load' : this.access( 'average', format ), area, f16Rounding: this.f16Rounding, srgbRounding: this.srgbRounding };
+			const options = this.renderOptions( texture, { oddSizes, srgb }, level );
 			const pipeline = this.renderPipeline( options );
 			const entries: GPUBindGroupEntry[] = options.access === 'sample' ? [ { binding: 0, resource: this.sampler } ] : [];
 			// An sRGB view of colorSpace 'srgb' names its usage: the texture's STORAGE_BINDING isn't valid for it.
@@ -1205,18 +1278,58 @@ export class Downsampler {
 
 	}
 
-	private renderPipeline( options: RenderKernelOptions ): GPURenderPipeline {
+	private renderOptions( texture: GPUTexture, { oddSizes, srgb }: Pick<PlanParameters, 'oddSizes' | 'srgb'>, level: number ): RenderKernelOptions {
+
+		const format = srgb ?? texture.format as SupportedFormat;
+		const odd = ( size: number ) => size > 1 && size % 2 === 1;
+		const area = oddSizes === 'box' && ( odd( mipSize( texture.width, level - 1 ) ) || odd( mipSize( texture.height, level - 1 ) ) );
+		return { format, dimension: bindingViewDimension( texture ), access: area ? 'load' : this.access( 'average', format ), area, f16Rounding: this.f16Rounding, srgbRounding: this.srgbRounding };
+
+	}
+
+	private renderPipelineId( options: RenderKernelOptions ): string {
 
 		const { format, dimension, access, area = false, f16Rounding = 'nearest', srgbRounding = 'exact' } = options;
-		const id = `${ format }:${ dimension }:${ access }${ area ? ':box' : '' }:${ f16Rounding }:${ srgbRounding }`;
-		let pipeline = this.renderPipelines.get( id );
-		if ( pipeline !== undefined ) return pipeline;
-		const label = `downsampler render ${ id }`;
+		return `${ format }:${ dimension }:${ access }${ area ? ':box' : '' }:${ f16Rounding }:${ srgbRounding }`;
+
+	}
+
+	private renderDescriptor( options: RenderKernelOptions ): GPURenderPipelineDescriptor {
+
+		const label = `downsampler render ${ this.renderPipelineId( options ) }`;
 		const module = this.device.createShaderModule( { label, code: createRenderKernel( options ) } );
 		const layout = this.device.createPipelineLayout( { label, bindGroupLayouts: [ this.device.createBindGroupLayout( { label, entries: renderLayoutEntries( options ) } ) ] } );
-		pipeline = this.device.createRenderPipeline( { label, layout, vertex: { module, entryPoint: 'ds_vertex' }, fragment: { module, entryPoint: 'ds_fragment', targets: [ { format } ] }, primitive: { topology: 'triangle-list' } } );
-		this.renderPipelines.set( id, pipeline );
+		return { label, layout, vertex: { module, entryPoint: 'ds_vertex' }, fragment: { module, entryPoint: 'ds_fragment', targets: [ { format: options.format } ] }, primitive: { topology: 'triangle-list' } };
+
+	}
+
+	private renderPipeline( options: RenderKernelOptions ): GPURenderPipeline {
+
+		const id = this.renderPipelineId( options );
+		let pipeline = this.renderPipelines.get( id );
+		if ( pipeline === undefined ) this.renderPipelines.set( id, pipeline = this.device.createRenderPipeline( this.renderDescriptor( options ) ) );
 		return pipeline;
+
+	}
+
+	private async renderPipelineAsync( options: RenderKernelOptions ): Promise<GPURenderPipeline> {
+
+		const id = this.renderPipelineId( options );
+		const cached = this.renderPipelines.get( id );
+		if ( cached !== undefined ) return Promise.resolve( cached );
+		let pending = this.renderPipelinePromises.get( id );
+		if ( pending === undefined ) {
+
+			pending = this.device.createRenderPipelineAsync( this.renderDescriptor( options ) ).then( pipeline => {
+
+				if ( ! this.renderPipelines.has( id ) ) this.renderPipelines.set( id, pipeline );
+				return this.renderPipelines.get( id )!;
+
+			} ).finally( () => { this.renderPipelinePromises.delete( id ); } );
+			this.renderPipelinePromises.set( id, pending );
+
+		}
+		return pending;
 
 	}
 
@@ -1271,6 +1384,13 @@ export class Downsampler {
 	 * output (an exact copy; an average could turn an Inf neighbor into NaN).
 	 * A partial update copies only each level's region of the layers in range.
 	 */
+	private compatKernel( texture: GPUTexture, region: boolean ): BatchKernelKey {
+
+		const format = texture.format as SupportedFormat;
+		return { format, dimension: bindingViewDimension( texture ), count: 1, access: 'load', reduction: 'max', sourceFormat: format, output: 'storage', kind: 'exact', tile: 8, area: false, box: false, region };
+
+	}
+
 	private compatCopies( texture: GPUTexture, batch: PreparedBatch, dimension: ViewDimension, view: ( level: number ) => GPUTextureView, partial: {
 		slot: ( words: ArrayLike<number> ) => number;
 		regionWords: ( groupX: number, groupY: number, levels: readonly ( Rect | null )[] ) => number[];
@@ -1278,8 +1398,7 @@ export class Downsampler {
 		deferred: ( () => void )[];
 	} | null ): PreparedBatch[] {
 
-		const format = texture.format as SupportedFormat;
-		const kernel: BatchKernelKey = { format, dimension, count: 1, access: 'load', reduction: 'max', sourceFormat: format, output: 'storage', kind: 'exact', tile: 8, area: false, box: false, region: partial !== null };
+		const kernel = this.compatKernel( texture, partial !== null );
 		const layout = this.layout( kernel );
 		const pipeline = this.pipeline( kernel );
 		const tile = 8;
@@ -1373,18 +1492,50 @@ export class Downsampler {
 
 	}
 
-	private pipeline( key: BatchKernelKey ): GPUComputePipeline {
+	private pipelineId( key: BatchKernelKey ): string {
 
 		const { format, dimension, count, access, reduction, sourceFormat, output, kind, tile, area, box, region, halo, dynamic } = key;
-		const id = `${ kind }${ kind === 'clamp' ? '' : tile }${ box ? ':box' : area ? ':area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }:${ output }${ region ? ':region' : '' }${ dynamic ? ':dynamic' : '' }${ halo ? `:halo${ area ? 'a' : '' }${ halo.x.join( '.' ) }/${ halo.y.join( '.' ) }` : '' }`;
-		let pipeline = this.pipelines.get( id );
-		if ( pipeline !== undefined ) return pipeline;
+		return `${ kind }${ kind === 'clamp' ? '' : tile }${ box ? ':box' : area ? ':area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }:${ output }${ region ? ':region' : '' }${ dynamic ? ':dynamic' : '' }${ halo ? `:halo${ area ? 'a' : '' }${ halo.x.join( '.' ) }/${ halo.y.join( '.' ) }` : '' }`;
+
+	}
+
+	private pipelineDescriptor( key: BatchKernelKey ): GPUComputePipelineDescriptor {
+
+		const { format, dimension, count, access, reduction, sourceFormat, output, kind, area, box, region } = key;
 		const label = `downsampler ${ kind }${ box ? ' box' : area ? ' area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ typeof reduction === 'string' ? reduction : 'custom' }:${ output }${ region ? ':region' : '' }`;
 		const module = this.device.createShaderModule( { label, code: createKernel( this.kernelOptions( key ) ) } );
 		const layout = this.device.createPipelineLayout( { label, bindGroupLayouts: [ this.layout( key ) ] } );
-		pipeline = this.device.createComputePipeline( { label, layout, compute: { module, entryPoint: 'main' } } );
-		this.pipelines.set( id, pipeline );
+		return { label, layout, compute: { module, entryPoint: 'main' } };
+
+	}
+
+	private pipeline( key: BatchKernelKey ): GPUComputePipeline {
+
+		const id = this.pipelineId( key );
+		let pipeline = this.pipelines.get( id );
+		if ( pipeline === undefined ) this.pipelines.set( id, pipeline = this.device.createComputePipeline( this.pipelineDescriptor( key ) ) );
 		return pipeline;
+
+	}
+
+	private async pipelineAsync( key: BatchKernelKey ): Promise<GPUComputePipeline> {
+
+		const id = this.pipelineId( key );
+		const cached = this.pipelines.get( id );
+		if ( cached !== undefined ) return Promise.resolve( cached );
+		let pending = this.pipelinePromises.get( id );
+		if ( pending === undefined ) {
+
+			pending = this.device.createComputePipelineAsync( this.pipelineDescriptor( key ) ).then( pipeline => {
+
+				if ( ! this.pipelines.has( id ) ) this.pipelines.set( id, pipeline );
+				return this.pipelines.get( id )!;
+
+			} ).finally( () => { this.pipelinePromises.delete( id ); } );
+			this.pipelinePromises.set( id, pending );
+
+		}
+		return pending;
 
 	}
 

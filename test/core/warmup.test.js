@@ -1,0 +1,175 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { Downsampler } from '../../dist/webgpu/downsampler.js';
+
+// Host scheduling/cache tests: no adapter or shader compiler is involved.
+globalThis.GPUTextureUsage = { COPY_SRC: 1, COPY_DST: 2, TEXTURE_BINDING: 4, STORAGE_BINDING: 8, RENDER_ATTACHMENT: 16 };
+globalThis.GPUBufferUsage = { COPY_SRC: 4, COPY_DST: 8, UNIFORM: 64, STORAGE: 128 };
+globalThis.GPUShaderStage = { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 };
+
+function fixture( { defer = false, fail = false } = {} ) {
+
+	const calls = { compute: [], render: [], sync: [], resources: [], layouts: [] };
+	const waiting = [];
+	const pipeline = descriptor => ( { descriptor, getBindGroupLayout: () => ( {} ) } );
+	const asyncPipeline = ( kind, descriptor ) => {
+
+		calls[ kind ].push( descriptor );
+		if ( fail ) { fail = false; return Promise.reject( new Error( 'compile failed' ) ); }
+		if ( defer ) return new Promise( resolve => waiting.push( () => resolve( pipeline( descriptor ) ) ) );
+		return Promise.resolve( pipeline( descriptor ) );
+
+	};
+	const texture = ( overrides = {} ) => ( {
+		width: 133, height: 75, depthOrArrayLayers: 1, mipLevelCount: 8, format: 'rgba8unorm', dimension: '2d', sampleCount: 1, usage: 31,
+		createView: descriptor => { calls.resources.push( 'view' ); return { descriptor }; }, destroy() {}, ...overrides
+	} );
+	const device = {
+		features: new Set( [ 'core-features-and-limits' ] ),
+		limits: { maxStorageTexturesPerShaderStage: 6, maxComputeInvocationsPerWorkgroup: 256, maxComputeWorkgroupSizeX: 256, maxComputeWorkgroupStorageSize: 32768, maxStorageBufferBindingSize: 1e9, maxBufferSize: 1e9 },
+		createSampler: () => ( {} ),
+		createShaderModule: descriptor => descriptor,
+		createBindGroupLayout: descriptor => { calls.layouts.push( descriptor ); return descriptor; },
+		createPipelineLayout: descriptor => descriptor,
+		createComputePipelineAsync: descriptor => asyncPipeline( 'compute', descriptor ),
+		createRenderPipelineAsync: descriptor => asyncPipeline( 'render', descriptor ),
+		createComputePipeline: descriptor => { calls.sync.push( descriptor ); return pipeline( descriptor ); },
+		createRenderPipeline: descriptor => { calls.sync.push( descriptor ); return pipeline( descriptor ); },
+		createBindGroup: descriptor => { calls.resources.push( 'bindGroup' ); return descriptor; },
+		createBuffer: descriptor => { calls.resources.push( 'buffer' ); return { ...descriptor, destroy() {} }; },
+		createTexture: descriptor => { calls.resources.push( 'texture' ); return texture( { ...descriptor, mipLevelCount: 1 } ); },
+		queue: { writeBuffer() {}, onSubmittedWorkDone: () => Promise.resolve() }
+	};
+	const pass = { setPipeline() {}, setBindGroup() {}, dispatchWorkgroups() {}, draw() {}, setScissorRect() {}, end() {} };
+	const encoder = { beginComputePass: () => pass, beginRenderPass: () => pass, copyBufferToTexture() {} };
+	return { calls, device, texture, encoder, resolve: () => { for ( const resolve of waiting.splice( 0 ) ) resolve(); } };
+
+}
+
+for ( const [ name, config, textureOptions, options ] of [
+	[ 'storage', {}, {}, {} ],
+	[ 'dynamic rect', {}, {}, { rect: { x: 3, y: 5, width: 11, height: 9 } } ],
+	[ 'dynamic dropped SPD edge', {}, {}, { oddSizes: 'spd', rect: { x: 132, y: 74, width: 1, height: 1 } } ],
+	[ 'layer range', {}, { depthOrArrayLayers: 3 }, { layers: [ 1, 1 ], oddSizes: 'box' } ],
+	[ 'buffer', { output: 'buffer' }, {}, {} ],
+	[ 'buffer rect', { output: 'buffer' }, {}, { rect: { x: 5, y: 3, width: 7, height: 9 } } ],
+	[ 'compat', { compatibility: true }, {}, {} ],
+	[ 'compat rect', { compatibility: true }, {}, { rect: { x: 5, y: 3, width: 7, height: 9 } } ],
+	[ 'sRGB render', {}, { format: 'rgba8unorm-srgb' }, { oddSizes: 'box' } ],
+	[ 'render rect', { output: 'render' }, {}, { rect: { x: 5, y: 3, width: 7, height: 9 } } ],
+	[ 'halo box', { halo: true }, {}, { oddSizes: 'box' } ]
+] ) test( `warmup covers encode pipelines without allocating execution resources: ${ name }`, async () => {
+
+	const f = fixture(), ds = new Downsampler( f.device, config ), texture = f.texture( textureOptions );
+	await ds.warmup( texture, options );
+	assert.deepEqual( f.calls.resources, [] );
+	const count = f.calls.compute.length + f.calls.render.length;
+	assert.ok( count > 0 );
+	ds.encode( f.encoder, texture, options );
+	assert.equal( f.calls.sync.length, 0, 'encode must use the exact warmed keys/layouts' );
+	await ds.warmup( texture, options );
+	assert.equal( f.calls.compute.length + f.calls.render.length, count );
+	ds.release( texture );
+	await ds.warmup( texture, options );
+	assert.equal( f.calls.compute.length + f.calls.render.length, count, 'release retains pipelines' );
+
+} );
+
+test( 'warmup shares in-flight requests and snapshots mutable options', async () => {
+
+	const f = fixture( { defer: true } ), ds = new Downsampler( f.device ), texture = f.texture();
+	const options = { rect: { x: 1, y: 2, width: 3, height: 4 }, oddSizes: 'box' };
+	const first = ds.warmup( texture, options );
+	const count = f.calls.compute.length;
+	const second = ds.warmup( texture, options );
+	assert.equal( f.calls.compute.length, count );
+	options.oddSizes = 'spd';
+	options.rect.width = 20;
+	f.resolve();
+	await Promise.all( [ first, second ] );
+	ds.encode( f.encoder, texture, { rect: { x: 1, y: 2, width: 3, height: 4 }, oddSizes: 'box' } );
+	assert.equal( f.calls.sync.length, 0 );
+
+} );
+
+for ( const output of [ 'storage', 'render' ] ) test( `warmup retries rejected ${ output } pipelines`, async () => {
+
+	const f = fixture( { fail: true } ), ds = new Downsampler( f.device, { output } ), texture = f.texture();
+	await assert.rejects( ds.warmup( texture ), /compile failed/ );
+	const calls = output === 'render' ? f.calls.render : f.calls.compute;
+	const before = calls.length;
+	await ds.warmup( texture );
+	assert.equal( calls.length, before + 1, 'only the rejected variant is retried' );
+	ds.encode( f.encoder, texture );
+	assert.equal( f.calls.sync.length, 0 );
+
+} );
+
+test( 'synchronous encode while warmup is pending keeps its pipeline and public prepare binding contract', async () => {
+
+	const f = fixture( { defer: true } ), ds = new Downsampler( f.device ), texture = f.texture();
+	const options = { rect: { x: 1, y: 2, width: 3, height: 4 } };
+	const pending = ds.warmup( texture, options );
+	ds.encode( f.encoder, texture, options );
+	assert.ok( f.calls.sync.length > 0 );
+	const sync = f.calls.sync.length;
+	f.resolve();
+	await pending;
+	ds.encode( f.encoder, texture, options );
+	assert.equal( f.calls.sync.length, sync );
+	const batches = ds.prepare( texture, options );
+	assert.ok( batches.length > 0 );
+	assert.ok( batches.every( batch => batch.dynamicOffsets === undefined ) );
+	assert.equal( ds.prepare( texture, options ), batches );
+	const staticRegionLayouts = f.calls.layouts.filter( layout => layout.entries.some( entry => entry.buffer?.type === 'uniform' && ! entry.buffer.hasDynamicOffset ) );
+	assert.ok( staticRegionLayouts.length > 0, 'prepare retains static layouts distinct from encode' );
+
+} );
+
+test( 'warmup has no pipelines for empty updates and rejects invalid options', async () => {
+
+	const f = fixture(), ds = new Downsampler( f.device ), texture = f.texture();
+	await ds.warmup( texture, { rect: { x: 0, y: 0, width: 0, height: 0 } } );
+	await assert.rejects( ds.warmup( texture, { mipLevelCount: 20 } ), /mip range/ );
+	await assert.rejects( ds.warmup( texture, { layers: [ 4, 1 ] } ), /layer/ );
+	await assert.rejects( ds.warmup( texture, { oddSizes: 'spd', reduction: 'max' } ), /average/ );
+	assert.equal( f.calls.compute.length, 0 );
+	assert.deepEqual( f.calls.resources, [] );
+
+} );
+
+test( 'warmup covers a resampled separate source and colorSpace sRGB alias', async () => {
+
+	for ( const kind of [ 'source', 'srgb' ] ) {
+
+		const f = fixture(), ds = new Downsampler( f.device ), texture = f.texture();
+		const options = kind === 'source' ? { source: { texture: f.texture( { width: 79, height: 51 } ), resample: 'area' }, reduction: 'max' } : { colorSpace: 'srgb' };
+		await ds.warmup( texture, options );
+		assert.deepEqual( f.calls.resources, [] );
+		ds.encode( f.encoder, texture, options );
+		assert.equal( f.calls.sync.length, 0 );
+
+	}
+
+} );
+
+test( 'warmup observes earlier rejections when a later descriptor throws synchronously', async () => {
+
+	const f = fixture( { fail: true } ), ds = new Downsampler( f.device ), texture = f.texture();
+	const create = f.device.createShaderModule;
+	let modules = 0;
+	f.device.createShaderModule = descriptor => {
+
+		if ( ++ modules === 2 ) throw new Error( 'descriptor failed' );
+		return create( descriptor );
+
+	};
+	await assert.rejects( ds.warmup( texture ), /compile failed|descriptor failed/ );
+	// node:test fails on any unhandled rejection after this test.
+	await new Promise( resolve => setImmediate( resolve ) );
+	f.device.createShaderModule = create;
+	await ds.warmup( texture );
+	ds.encode( f.encoder, texture );
+	assert.equal( f.calls.sync.length, 0 );
+
+} );

@@ -15,6 +15,7 @@ import { validatePayload } from './validate-payload.js';
 import { validateRegion } from './validate-region.js';
 import { validateSrgb } from './validate-srgb.js';
 import { validateWide } from './validate-wide.js';
+import { validateWarmup } from './validate-warmup.js';
 import { assignShards, digest, Selection } from '../ci/shard.js';
 
 // [ width, height, layers?, viewDimension? ]: 1×1, 1D tails, odd sizes, partial
@@ -503,6 +504,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 				results.push( ...await validateSource( device, { quick, onProgress, select } ) );
 				results.push( ...await select.run( 'downsampler/options', () => validateOptions( device ) ) );
+				results.push( ...await select.run( 'downsampler/warmup', () => validateWarmup( device ) ) );
 				results.push( ...await select.run( 'downsampler/float32-sample', () => validateFloat32Sample( device, { quick } ) ) );
 				results.push( ...await select.run( 'downsampler/mipmap', () => validateMipmap( device, { quick } ) ) );
 				results.push( ...await validateRegion( device, { quick, onProgress, select } ) );

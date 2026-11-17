@@ -14,10 +14,11 @@ The first release.
 - Separate sources (depth → Hi-Z, format conversion, any float-sampleable 2D texture): same size, half size, or any size with `resample: 'area'` (power-of-two Hi-Z; ratio cap `maxResampleRatio`, default 8).
 - Partial updates: `layers: [ first, count ]` and `rect`, bit-identical to a full recompute; an empty rect is a no-op.
 - `halo` (opt-in): `'exact'` and `'box'` chains carry odd steps inside a batch, one dispatch fewer at many render sizes (`planBatches` `halo`, `batchHalo` in core).
-- `encode`, `encodePass` (into your compute pass), `generate`, `prepare` (the planned dispatches, for self-dispatch) and `release`.
-- Two output paths (storage textures, or a buffer and copies for formats that can't be storage textures) and a compatibility-mode path, all bit-identical.
+- `warmup(texture, options)` compiles the compute or render pipelines for the next `encode` or `generate` asynchronously. `prepare` returns batches for manual dispatch. A rejected plan replacement preserves the previously prepared batches.
+- On the core storage path, `encode` and `encodePass` reuse views and bind groups across moving rectangles. Each recorded dispatch keeps its own immutable region parameters.
+- Storage textures, buffer output with copies, and render attachments. Renderable sRGB color textures use the render path by default. Compatibility mode supports its own copy path.
 - Identical results on every GPU where it matters: `f16Rounding: 'nearest'` (default) rounds float16 levels in the shader; `averageAccess: 'load'` replaces the sampler's vendor-specific weights.
-- Formats: `rgba8unorm`, `rgba8snorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, `rgb9e5ufloat`; with `texture-formats-tier1` the 8- and 16-bit one- and two-channel formats, the 16-bit normalized formats, `rg11b10ufloat` and `rgb10a2unorm` storage; `bgra8unorm` with `bgra8unorm-storage`; `rgba8unorm-srgb` and `bgra8unorm-srgb` through the buffer path (an optional shared `scratch` buffer); integer formats with exact averages (round to nearest, ties to even) and bitwise folds.
+- Formats: `rgba8unorm`, `rgba8snorm`, `rgba16float`, `r32float`, `rg32float`, `rgba32float`, `rgb9e5ufloat`; with `texture-formats-tier1` the 8- and 16-bit one- and two-channel formats, the 16-bit normalized formats, `rg11b10ufloat` and `rgb10a2unorm` storage; `bgra8unorm` with `bgra8unorm-storage`; `rgba8unorm-srgb` and `bgra8unorm-srgb` through the render or buffer path (an optional shared `scratch` buffer on the buffer path); integer formats with exact averages (round to nearest, ties to even) and bitwise folds.
 
 ### Tool kernels (`downsampler/webgpu`)
 

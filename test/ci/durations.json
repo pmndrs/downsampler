@@ -5,7 +5,8 @@
 		"run": "--quick --adapter=swiftshader",
 		"adapter": "swiftshader",
 		"merged": "2026-11-13",
-		"from": "14 CI shards"
+		"from": "14 CI shards",
+		"updatedGroups": { "downsampler/warmup": "2026-11-17, Windows Chrome, --quick --adapter=swiftshader" }
 	},
 	"groups": {
 		"box/options": {
@@ -1090,6 +1091,10 @@
 		},
 		"downsampler/rgba8unorm/storage/L4/tail-minmax": {
 			"ms": 3277,
+			"cases": 5
+		},
+		"downsampler/warmup": {
+			"ms": 7102,
 			"cases": 5
 		},
 		"fixtures/1129x635": {
