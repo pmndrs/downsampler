@@ -17,14 +17,14 @@
 			texels it covers. The chain is recorded with <code>encodePass</code> into a compute pass of the same encoder.
 		</p>
 		<p>
-			Odd sizes (720 → 360 → 180 → 90 → 45 → 22 …) include the extra row or column, so every texel bounds all the depth
+			Odd sizes (635 → 317 → 158 → 79 → 39 → 19 …) include the extra row or column, so every texel bounds all the depth
 			texels under it: the pyramid is conservative, which is what occlusion culling needs (an object is hidden if its
 			nearest depth is behind the tile's <code>max</code>; with reverse-Z, compare with <code>min</code>). The readout checks
 			this independently of the library, and shows what an SPD-style max pyramid (last odd row or column dropped) would miss.
 			For a power-of-two pyramid from the same depth buffer (<code>source.resample: 'area'</code>), see
 			<a href="hi-z-pow2.html">hi-z-pow2.html</a>.
 		</p>
-		<pre><code>const hiZ = device.createTexture( { format: 'rg32float', size: [ 1280, 720 ], mipLevelCount: 11,
+		<pre><code>const hiZ = device.createTexture( { format: 'rg32float', size: [ width, height ], mipLevelCount,
 	usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING } );
 const pass = encoder.beginComputePass();
 downsampler.encodePass( pass, hiZ, { source: depth, reduction: 'minmax' } );  // r = min, g = max
@@ -34,6 +34,18 @@ pass.end();</code></pre>
 		<h2>Readout</h2>
 		<ul id="readout"></ul>
 
+		<h2>Candidate draws beside a thin occluder</h2>
+		<p>A fixed three-pixel strip and a broad rectangle are depth occluders in the upper half; seeded sloped rectangles
+			fill the lower half. Candidate rectangles have a constant nearest depth. CPU code tests the GPU pyramid readback
+			at mip 4, using every overlapped tile's maximum, and compares each decision with every covered full-resolution depth
+			pixel. Green outlines are kept; gray outlines are culled. Keeping a hidden object is conservative extra work;
+			culling a visible object is a failure. These are candidate draw decisions, not measured render draw calls.</p>
+		<div class="controls"><label>Depth size <select id="size">
+			<option value="257x255">257 × 255</option><option value="1129x635" selected>1129 × 635</option>
+			<option value="1280x720">1280 × 720</option>
+		</select></label></div>
+		<figure><canvas class="level" id="objects"></canvas><figcaption id="occlusion-caption"></figcaption></figure>
+		<table id="decisions"></table>
 		<h2>Levels</h2>
 		<div class="levels" id="levels"></div>
 		<div class="view">
@@ -50,19 +62,31 @@ pass.end();</code></pre>
 			try {
 
 				const { device } = await initDevice();
-				const width = 1280, height = 720;
+				const params = new URLSearchParams( location.search );
+				if ( params.has( 'size' ) ) document.getElementById( 'size' ).value = params.get( 'size' );
+				const [ width, height ] = document.getElementById( 'size' ).value.split( 'x' ).map( Number );
+				document.getElementById( 'size' ).addEventListener( 'change', event => { params.set( 'size', event.target.value ); location.search = params.toString(); } );
 
 				// 1. Depth: sloped rectangles at random positions, rasterized at fractional texel edges.
 				const depth = device.createTexture( { label: 'example depth', format: 'depth32float', size: [ width, height ], usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC } );
-				const count = 48;
+				const count = 50;
 				const rects = new Float32Array( count * 8 );
 				let seed = 7;
 				const random = () => ( seed = ( seed * 1664525 + 1013904223 ) >>> 0 ) / 2 ** 32;
-				for ( let i = 0; i < count; i ++ ) {
+				for ( let i = 0; i < count - 2; i ++ ) {
 
-					const x = random() * 2 - 1.1, y = random() * 2 - 1.1, w = 0.02 + random() * 0.4, h = 0.02 + random() * 0.4;
+					const x = random() * 2 - 1.1, y = random() - 1.1, w = 0.02 + random() * 0.4, h = 0.02 + random() * 0.2;
 					const near = 0.25 + random() * 0.6;
 					rects.set( [ x, y, x + w, y + h, near, near + ( random() - 0.5 ) * 0.2, 0, 0 ], i * 8 );
+
+				}
+
+				// Pixel-aligned fixed occluders leave reproducible visible and hidden candidates.
+				const strip = { x: Math.floor( width * 0.2 ), y: Math.floor( height * 0.12 ), width: Math.floor( width * 0.6 ), height: 3 };
+				const block = { x: Math.floor( width * 0.12 ), y: Math.floor( height * 0.3 ), width: Math.floor( width * 0.3 ), height: Math.floor( height * 0.15 ) };
+				for ( const [ i, rect ] of [ strip, block ].entries() ) {
+
+					rects.set( [ rect.x / width * 2 - 1, 1 - ( rect.y + rect.height ) / height * 2, ( rect.x + rect.width ) / width * 2 - 1, 1 - rect.y / height * 2, 0.3, 0.3, 0, 0 ], ( count - 2 + i ) * 8 );
 
 				}
 
@@ -154,6 +178,48 @@ pass.end();</code></pre>
 				const spdMisses = spd.map( level => maxViolations( depthMax, width, height, level.values, level.width, level.height ) );
 				const total = spdMisses.reduce( ( a, b ) => a + b, 0 );
 				checks.push( { name: `for comparison, SPD-style max levels 1–${ spd.length } (not a valid Hi-Z)`, ok: true, detail: `${ total } non-conservative texels (${ spdMisses.join( ', ' ) } per level)` } );
+				// Readbacks already completed above. A coarse query may keep extra draws, never hide visible ones.
+				const candidates = [
+					{ name: 'behind broad occluder', x: block.x + Math.floor( block.width * 0.375 ), y: block.y + Math.floor( block.height * 0.375 ), width: Math.max( 2, Math.floor( block.width / 4 ) ), height: Math.max( 2, Math.floor( block.height / 4 ) ), z: 0.7 },
+					{ name: 'behind thin strip (conservative keep)', x: strip.x + 10, y: strip.y, width: 18, height: 2, z: 0.7 },
+					{ name: 'straddles thin strip', x: strip.x + 35, y: strip.y - 2, width: 18, height: 7, z: 0.7 },
+					{ name: 'in front of strip', x: strip.x + 60, y: strip.y, width: 18, height: 2, z: 0.2 },
+					{ name: 'last odd column and row', x: width - 1, y: height - 3, width: 1, height: 3, z: 0.9 },
+				];
+				const coarse = levels[ 4 ];
+				const maximum = ( level, x0, y0, x1, y1, channel ) => {
+
+					let result = - Infinity;
+					for ( let y = y0; y < y1; y ++ ) for ( let x = x0; x < x1; x ++ ) result = Math.max( result, level.values[ ( y * level.width + x ) * 4 + channel ] );
+					return result;
+
+				};
+				const decisions = candidates.map( object => {
+
+					const { x, y, width: w, height: h, z } = object;
+					const fullMax = maximum( base, x, y, x + w, y + h, 0 );
+					const coarseMax = maximum( coarse, Math.floor( x * coarse.width / width ), Math.floor( y * coarse.height / height ), Math.ceil( ( x + w ) * coarse.width / width ), Math.ceil( ( y + h ) * coarse.height / height ), 1 );
+					return { ...object, fullMax, coarseMax, directCulled: z > fullMax, culled: z > coarseMax };
+
+				} );
+				const culled = decisions.filter( object => object.culled ).length;
+				const falseCulls = decisions.filter( object => object.culled && ! object.directCulled ).length;
+				const extraDraws = decisions.filter( object => ! object.culled && object.directCulled ).length;
+				window.hizOcclusion = { width, height, mip: 4, decisions, culled, falseCulls, extraDraws };
+				checks.push( { name: 'candidate draws: visible objects never disappear vs direct full-resolution depth', ok: falseCulls === 0, detail: `${ culled }/${ decisions.length } culled; ${ decisions.length - culled } kept; ${ falseCulls } false culls; ${ extraDraws } conservative extra draws` } );
+				checks.push( { name: 'occlusion demonstration includes hidden, visible and conservative kept objects', ok: culled > 0 && decisions.some( object => ! object.directCulled ) && extraDraws > 0 } );
+				document.getElementById( 'decisions' ).innerHTML = '<tr><th>Candidate</th><th>Nearest depth</th><th>Full-res max</th><th>Mip 4 max</th><th>Direct test</th><th>Hi-Z decision</th></tr>' + decisions.map( object => `<tr><td>${ object.name }</td><td>${ object.z.toFixed( 2 ) }</td><td>${ object.fullMax.toFixed( 2 ) }</td><td>${ object.coarseMax.toFixed( 2 ) }</td><td>${ object.directCulled ? 'hidden' : 'visible' }</td><td>${ object.culled ? 'culled' : object.directCulled ? 'kept (conservative)' : 'kept' }</td></tr>` ).join( '' );
+				const canvas = document.getElementById( 'objects' );
+				drawLevel( canvas, base, ( values, i ) => Array( 3 ).fill( 1 - values[ i ] ) );
+				const context = canvas.getContext( '2d' );
+				context.lineWidth = 1;
+				for ( const object of decisions ) {
+
+					context.strokeStyle = object.culled ? '#888' : '#00dd88';
+					context.strokeRect( object.x, object.y, object.width, object.height );
+
+				}
+				document.getElementById( 'occlusion-caption' ).textContent = `${ width } × ${ height }: ${ culled } candidate draws culled, ${ falseCulls } visible objects lost, ${ extraDraws } hidden objects conservatively kept`;
 				report( checks );
 
 				// 4. Viewer: nearer is brighter.

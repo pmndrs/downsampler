@@ -19,6 +19,8 @@ const only = value( 'only' )?.split( ',' );
 const variants = [
 	'mip-chain.html?odd=spd', 'mip-chain.html?size=1129x635&odd=spd', 'mip-chain.html?size=255x257&tail=0', 'mip-chain.html?size=31x31',
 	'partial-update.html?odd=box', 'partial-update.html?size=257x255&odd=spd', 'partial-update.html?size=1920x1080',
+	'partial-update.html?size=257x255&benchmark=1', 'partial-update.html?size=257x255&benchmark=1&timestamps=0',
+	'hi-z.html?size=257x255',
 	'odd-sizes.html?size=31x31', 'odd-sizes.html?size=1477x831',
 	'hi-z-pow2.html?hiz=2048x1024', 'hi-z-pow2.html?size=1129x635&hiz=512x256', 'hi-z-pow2.html?hiz=1024x1024',
 ];
@@ -79,6 +81,23 @@ try {
 
 				await page.waitForFunction( () => window.exampleResult !== undefined, { timeout: 120000 } );
 				result = await page.evaluate( () => window.exampleResult );
+				if ( file.startsWith( 'partial-update.html' ) && file.includes( 'benchmark=1' ) ) {
+
+					const replay = await page.evaluate( () => window.brushBenchmark );
+					const fallback = file.includes( 'timestamps=0' );
+					const valid = replay?.agreement && replay.strokes === 40 && ( ! fallback || replay.timestamps === false ) && [ 'partial', 'full' ].every( mode => replay.samples[ mode ].cpu.length === 40 && replay.samples[ mode ].gpu.length === ( replay.timestamps ? 40 : 0 ) );
+					result.checks.push( { name: 'smoke: paired replay publishes samples and pixel agreement, including timestamp fallback', ok: !! valid } );
+					result.ok &&= !! valid;
+
+				}
+				if ( file.startsWith( 'hi-z.html' ) ) {
+
+					const culling = await page.evaluate( () => window.hizOcclusion );
+					const valid = culling?.falseCulls === 0 && culling.culled > 0 && culling.extraDraws > 0 && culling.decisions.some( object => ! object.directCulled && ! object.culled );
+					result.checks.push( { name: 'smoke: actual Hi-Z decisions keep visible objects and exercise conservative extra draws', ok: !! valid } );
+					result.ok &&= !! valid;
+
+				}
 
 			}
 

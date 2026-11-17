@@ -47,7 +47,15 @@ downsampler.encode( encoder, faces, { layers: [ 4, 1 ], rect } );          // a 
 				<option value="spd">'spd'</option>
 			</select></label>
 			<button id="replay">Replay brush</button>
+			<button id="benchmark">Benchmark identical brush path</button>
 		</div>
+		<p class="muted">Benchmark: 40 deterministic moving/clipped strokes, starting from the same image. Both modes upload
+			the same bytes; their order alternates each stroke. CPU measures only <code>encodePass</code>; GPU timestamps
+			bracket only its compute pass. Uploads, submission, waits, timestamp resolve, rendering and pixel checks are outside
+			the intervals. Pipelines are warmed first. This measures warm encoding and GPU work, not frame latency;
+			short CPU samples may round to zero. Without timestamp-query, CPU and pixel checks still run.
+			Use <code>?benchmark=1</code> to run on load; <code>&amp;timestamps=0</code> exercises the fallback.</p>
+		<table id="timings"></table>
 		<div class="levels" id="levels"></div>
 		<div class="view">
 			<figure><canvas class="level" id="paint"></canvas><figcaption>Level 0: paint here</figcaption></figure>
@@ -68,7 +76,7 @@ downsampler.encode( encoder, faces, { layers: [ 4, 1 ], rect } );          // a 
 			import { Downsampler } from '../dist/webgpu/index.js';
 			import { drawLevel, drawLevelScaled, fail, initDevice, levelButtons, makeImage, mipLevels, outlineRects, readLevels, report, setText } from './common.js';
 
-			const { device } = await initDevice();
+			const { device } = await initDevice( { timestamps: new URLSearchParams( location.search ).get( 'timestamps' ) !== '0' } );
 			const downsampler = new Downsampler( device );
 			const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC;
 			const params = new URLSearchParams( location.search );
@@ -90,10 +98,16 @@ downsampler.encode( encoder, faces, { layers: [ 4, 1 ], rect } );          // a 
 
 			function setup() {
 
-				state?.painted.destroy();
-				state?.reference.destroy();
+				if ( state ) for ( const texture of [ state.painted, state.reference ] ) {
+
+					downsampler.release( texture );
+					texture.destroy();
+
+				}
 				const [ width, height ] = document.getElementById( 'size' ).value.split( 'x' ).map( Number );
 				const oddSizes = document.getElementById( 'odd' ).value;
+				document.getElementById( 'timings' ).replaceChildren();
+				hue = 0;
 				const data = makeImage( width, height );
 				const create = label => device.createTexture( { label, format: 'rgba8unorm', size: [ width, height ], mipLevelCount: mipLevels( width, height ), usage } );
 				const painted = create( 'painted (partial updates)' ), reference = create( 'reference (full recompute)' );
@@ -160,8 +174,6 @@ downsampler.encode( encoder, faces, { layers: [ 4, 1 ], rect } );          // a 
 				state.written += regions.slice( 1 ).flat().reduce( ( sum, r ) => sum + area( r ), 0 );
 				state.flushes ++;
 
-				// Each new rect creates a small uniform buffer: the 16 most recent are cached, and evicted
-				// ones are destroyed once the queue has finished the work submitted so far. No cleanup needed.
 
 				const context = document.getElementById( 'paint' ).getContext( '2d' );
 				const image = context.createImageData( rect.width, rect.height );
@@ -249,17 +261,121 @@ downsampler.encode( encoder, faces, { layers: [ 4, 1 ], rect } );          // a 
 
 			}
 
-			const run = async () => {
+			// Each sample is one real pass. Queries are resolved and mapped after the timed work.
+			async function benchmark() {
 
 				setup();
-				await scriptedBrush();
-				report( [ ...await check(), ...faceChecks ] );
+				const { width, height, oddSizes, painted, reference, data } = state;
+				// Warm the real partial path too; its pipeline can differ from full generation.
+				const warm = device.createCommandEncoder();
+				const warmPass = warm.beginComputePass();
+				downsampler.encodePass( warmPass, painted, { oddSizes, rect: { x: 0, y: 0, width: 32, height: 32 } } );
+				warmPass.end();
+				device.queue.submit( [ warm.finish() ] );
+				await device.queue.onSubmittedWorkDone();
+				const timed = device.features.has( 'timestamp-query' );
+				const querySet = timed ? device.createQuerySet( { type: 'timestamp', count: 2 } ) : null;
+				const resolve = timed ? device.createBuffer( { size: 16, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC } ) : null;
+				const readback = timed ? device.createBuffer( { size: 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ } ) : null;
+				const samples = { partial: { cpu: [], gpu: [] }, full: { cpu: [], gpu: [] } };
+				try {
+
+					for ( let f = 0; f < 40; f ++ ) {
+
+						const t = f / 36;
+						// Same moving path as the interactive replay, including three clipped edge strokes.
+						if ( f <= 36 ) {
+
+							stamp( width * ( 0.08 + 0.84 * t ), height * ( 0.5 + 0.32 * Math.sin( t * Math.PI * 3 ) ) );
+							stamp( width * ( 0.08 + 0.84 * t ) + 4, height * ( 0.5 + 0.32 * Math.sin( t * Math.PI * 3 + 0.05 ) ) );
+
+						} else stamp( ...[ [ width - 2, height - 2 ], [ width - 1, height * 0.3 ], [ width * 0.3, height - 1 ] ][ f - 37 ], 5 );
+						const rect = state.dirty;
+						state.dirty = null;
+						for ( const mode of f % 2 ? [ 'full', 'partial' ] : [ 'partial', 'full' ] ) {
+
+							const texture = mode === 'partial' ? painted : reference;
+							device.queue.writeTexture( { texture, origin: [ rect.x, rect.y ] }, data, { offset: ( rect.y * width + rect.x ) * 4, bytesPerRow: width * 4 }, [ rect.width, rect.height ] );
+							const encoder = device.createCommandEncoder();
+							const pass = encoder.beginComputePass( timed ? { timestampWrites: { querySet, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 } } : {} );
+							const options = mode === 'partial' ? { oddSizes, rect } : { oddSizes };
+							const start = performance.now();
+							downsampler.encodePass( pass, texture, options );
+							samples[ mode ].cpu.push( performance.now() - start );
+							pass.end();
+							if ( timed ) {
+
+								encoder.resolveQuerySet( querySet, 0, 2, resolve, 0 );
+								encoder.copyBufferToBuffer( resolve, 0, readback, 0, 16 );
+
+							}
+							device.queue.submit( [ encoder.finish() ] );
+							await device.queue.onSubmittedWorkDone();
+							if ( timed ) {
+
+								await readback.mapAsync( GPUMapMode.READ );
+								const times = new BigUint64Array( readback.getMappedRange() );
+								samples[ mode ].gpu.push( Number( times[ 1 ] - times[ 0 ] ) / 1e6 );
+								readback.unmap();
+
+							}
+
+						}
+						state.flushes ++;
+						if ( f % 8 === 0 ) await nextFrame();
+
+					}
+					const percentile = ( values, p ) => [ ...values ].sort( ( a, b ) => a - b )[ Math.ceil( values.length * p ) - 1 ];
+					const format = ( values, p ) => values.length ? ( percentile( values, p ) * 1000 ).toFixed( 1 ) + ' µs' : 'unavailable (timestamp-query not enabled)';
+					document.getElementById( 'timings' ).innerHTML = '<tr><th>40 strokes</th><th>CPU encode median</th><th>CPU encode p95</th><th>GPU pass median</th><th>GPU pass p95</th></tr>' + Object.entries( samples ).map( ( [ mode, { cpu, gpu } ] ) => `<tr><td>${ mode }</td><td>${ format( cpu, 0.5 ) }</td><td>${ format( cpu, 0.95 ) }</td><td>${ format( gpu, 0.5 ) }</td><td>${ format( gpu, 0.95 ) }</td></tr>` ).join( '' );
+					// Final full-chain reference and both readbacks are outside every timing interval.
+					downsampler.generate( reference, { oddSizes } );
+					const checks = await check();
+					const agreement = checks.find( check => check.name.includes( 'bit for bit' ) );
+					// Future interactive strokes start their own region-work counters.
+					state.flushes = 0;
+					state.written = 0;
+					window.brushBenchmark = { strokes: 40, samples, timestamps: timed, agreement: agreement.ok, width, height, oddSizes };
+					drawLevel( document.getElementById( 'paint' ), { width, height, values: Float32Array.from( data, v => v / 255 ) } );
+					await show();
+					return [ ...checks.filter( check => ! check.name.startsWith( 'texels rewritten' ) ), { name: 'benchmark replay: 40 paired CPU samples; GPU timestamps when enabled', ok: Object.values( samples ).every( sample => sample.cpu.length === 40 && sample.cpu.every( Number.isFinite ) && sample.gpu.length === ( timed ? 40 : 0 ) && sample.gpu.every( value => Number.isFinite( value ) && value >= 0 ) ), detail: timed ? 'actual compute-pass timestamps, µs' : 'GPU time unavailable; CPU encoding and pixel agreement checked' } ];
+
+				} finally {
+
+					querySet?.destroy();
+					resolve?.destroy();
+					readback?.destroy();
+
+				}
+
+			}
+
+			const run = async () => {
+
+				if ( params.get( 'benchmark' ) === '1' ) report( [ ...await benchmark(), ...faceChecks ] );
+				else {
+
+					setup();
+					await scriptedBrush();
+					report( [ ...await check(), ...faceChecks ] );
+
+				}
 
 			};
 
 			// Pointer painting: stamps between frames, one update per frame.
 			const paint = document.getElementById( 'paint' );
-			let painting = false;
+			let painting = false, busy = false;
+			async function exclusive( action ) {
+
+				if ( busy ) return;
+				busy = true;
+				const controls = [ ...document.querySelectorAll( '.controls button, .controls select' ) ];
+				controls.forEach( control => control.disabled = true );
+				try { while ( showing ) await nextFrame(); await action(); } catch ( error ) { fail( error ); }
+				finally { busy = false; controls.forEach( control => control.disabled = false ); }
+
+			}
 			const toTexel = event => {
 
 				const bounds = paint.getBoundingClientRect();
@@ -271,11 +387,12 @@ downsampler.encode( encoder, faces, { layers: [ 4, 1 ], rect } );          // a 
 			};
 			let frame = 0;
 			const schedule = () => { frame ||= requestAnimationFrame( () => { frame = 0; flush(); } ); };
-			paint.addEventListener( 'pointerdown', event => { painting = true; state.stroke = []; paint.setPointerCapture( event.pointerId ); stamp( ...toTexel( event ) ); schedule(); } );
+			paint.addEventListener( 'pointerdown', event => { if ( busy ) return; painting = true; state.stroke = []; paint.setPointerCapture( event.pointerId ); stamp( ...toTexel( event ) ); schedule(); } );
 			paint.addEventListener( 'pointermove', event => { if ( painting ) { stamp( ...toTexel( event ) ); schedule(); } } );
-			paint.addEventListener( 'pointerup', () => { painting = false; requestAnimationFrame( async () => { flush(); report( [ ...await check(), ...faceChecks ] ); } ); } );
-			document.getElementById( 'replay' ).addEventListener( 'click', () => scriptedBrush().then( check ).then( checks => report( [ ...checks, ...faceChecks ] ) ).catch( fail ) );
-			for ( const id of [ 'size', 'odd' ] ) document.getElementById( id ).addEventListener( 'change', () => run().catch( fail ) );
+			paint.addEventListener( 'pointerup', () => { if ( busy ) return; painting = false; requestAnimationFrame( async () => { flush(); report( [ ...await check(), ...faceChecks ] ); } ); } );
+			document.getElementById( 'benchmark' ).addEventListener( 'click', () => exclusive( async () => report( [ ...await benchmark(), ...faceChecks ] ) ) );
+			document.getElementById( 'replay' ).addEventListener( 'click', () => exclusive( async () => { await scriptedBrush(); report( [ ...await check(), ...faceChecks ] ); } ) );
+			for ( const id of [ 'size', 'odd' ] ) document.getElementById( id ).addEventListener( 'change', () => exclusive( run ) );
 
 			// --- One face of a 6-layer array -----------------------------------------
 
@@ -345,7 +462,7 @@ downsampler.encode( encoder, faces, { layers: [ 4, 1 ], rect } );          // a 
 			try {
 
 				await faces();
-				await run();
+				await exclusive( run );
 
 			} catch ( error ) {
 
