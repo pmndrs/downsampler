@@ -30,6 +30,19 @@ The archived halo runs show why dispatch count is an incomplete score. At 1920×
 
 Likewise, the Windows dispatch benchmark found essentially equal GPU times for separate compute passes and one shared pass at a fixed dispatch count. AMD’s native SPD algorithm coordinates the last group using a globally coherent counter and mip. Retain the portable multi-dispatch implementation as the reference. Compare odd-size color averages and conservative depth folds against their own oracles. A faster chain that drops an edge texel answers a different question for occlusion culling. [FidelityFX SPD manual](https://gpuopen.com/manuals/fidelityfx_sdk/techniques/single-pass-downsampler/)
 
+### Windows follow-up · Capped halo
+
+With the cap at its current default, the NVIDIA RTX 3060 Laptop benefited most on the odd-size box reductions. Intel UHD showed gains and losses across the same inputs. Each cell is capped-halo GPU time divided by plain GPU time. The median and range summarize 16 paired size/format ratios, from 960×540 through 3840×2160 with RGBA8 and RGBA16F. Each timing is the median of 11 rotating rounds with 16 repetitions in Chrome 148.0.7778.97. Drivers were NVIDIA 592.00 and Intel 31.0.101.5333. GPU clocks were not logged for this pass; the pairs within each run are the comparison.
+
+| Windows GPU | Policy | Median | Range | 1080p RGBA8 / RGBA16F |
+| --- | --- | ---: | ---: | ---: |
+| RTX 3060 Laptop | Exact | 0.956 | 0.866–1.002 | 0.940 / 0.935 |
+| RTX 3060 Laptop | Box | 0.915 | 0.731–1.002 | 0.834 / 0.880 |
+| Intel UHD | Exact | 0.997 | 0.920–1.082 | 1.022 / 0.941 |
+| Intel UHD | Box | 1.011 | 0.981–1.113 | 0.983 / 1.055 |
+
+The cap remains opt-in. The owner’s M5 decision still needs the paired Apple measurements. [Mac commands](docs/M5-HANDOFF-SRGB.md#capped-halo-on-apple-m5-pro) · [NVIDIA exact](results/windows/round2/handoff-halo-high-exact.json) · [NVIDIA box](results/windows/round2/handoff-halo-high-box.json) · [Intel exact](results/windows/round2/handoff-halo-low-exact.json) · [Intel box](results/windows/round2/handoff-halo-low-box.json)
+
 ## DS5  Put the tradeoff in the existing examples
 
 Give `examples/partial-update.html` a benchmark mode that replays the same brush path in partial and full modes. Collect CPU encode time and GPU timestamps with the reference recompute and readback outside the timed interval. Keep the existing byte comparison available after replay. Extend the Hi-Z page with objects near a thin occluder and show how many draws are culled and whether any visible object disappears. That gives the min/max guarantee a visible consequence.
