@@ -52,7 +52,7 @@ exported for it. [correctness.md](../results/windows/correctness.md)
    `GenerateMips`, Vulkan blit) show the same deviation, so the cause is the hardware sampler, not our kernel. Fix: the
    oracle models samplers (`ReferenceOptions.weights: 'sampler'`, 1.5 weight steps of 1/256 per axis × local contrast).
    Probes: `sampler-weights`, `sampler-2d-weights`, `sampler-ramp`, `kernel-ramp`.
-3. **Same-size converting copies sampled at texel centres**, which isn't exact on Intel (cause 2). They now load the
+3. **Same-size converting copies sampled at texel centers**, which isn't exact on Intel (cause 2). They now load the
    texel.
 
 **Are the results identical on every GPU?** Not with the default `averageAccess: 'sample'`: the sampler's weights are
@@ -122,7 +122,7 @@ shard. They touch seven files in `src/` (about 220 lines; `git diff origin/m2-re
 | Change | Files | Why | Owner decision |
 |---|---|---|---|
 | `f16Rounding: 'nearest' \| 'device'` (Downsampler, Reducer; default `'nearest'`) | `kernel.ts`, `downsampler.ts`, `reducer.ts`, `index.ts` | D3D12 truncates f16 | 2026-11-12 |
-| Converting copies load instead of sampling | `kernel.ts` | Intel sampler at texel centres | Part of the same fix |
+| Converting copies load instead of sampling | `kernel.ts` | Intel sampler at texel centers | Part of the same fix |
 | `ReferenceOptions.weights: 'sampler' \| 'shader'` | `core/reference.ts`, `core/spd.ts` | Oracle for vendor samplers | Keep `'sample'` default, document `'load'` |
 | `exactTile` (default 32 / 8), derived level sizes | `core/plan.ts`, `kernel.ts`, `downsampler.ts` | Intel 1.6×, RTX 1.3× | Not asked: same bits; reported 2026-11-13 |
 

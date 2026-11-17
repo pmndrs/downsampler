@@ -515,7 +515,7 @@ async function validateCombineOnly( device, { quick } ) {
 }
 
 // FSR-style auto-exposure (SPEC §14 luma pyramid): the load hook takes the log
-// luma of an rgba16float HDR colour texture from the tool's group 1; finish
+// luma of an rgba16float HDR color texture from the tool's group 1; finish
 // smooths it over time into the tool's state buffer and a 1×1 rgba32float
 // storage texture, reading the previous value from the state buffer.
 export const exposureBindings = {

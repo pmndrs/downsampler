@@ -38,7 +38,7 @@ falls back to render passes there.
   is the contract that holds on all three GPUs. Intel rgba8 chains stay at 2.
 - **rgba16float, RTX 1129×635.** Level 1 only (an odd 1129 → 564 step, sampled by both paths): 7,861 values
   1.058 steps apart, none at ties; later levels ≤ 0.125. Most likely NVIDIA's coarse bilinear weights at slightly
-  different sample positions (interpolated UVs against computed texel centres), the same precision limit as the
+  different sample positions (interpolated UVs against computed texel centers), the same precision limit as the
   sampled-sRGB failure in our own suite.
 - **rgba16float, Intel 1920×1080.** Level 1 is an even 2:1 step, and 948,331 values differ by up to 1.058 steps
   (then 0.87, 0.50 … down the chain). Our compute even levels are exact 2×2 averages with round-to-nearest-even,

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { integerDomains, roundHalfEven, toHalf, fromHalf, quantize } from '../../dist/index.js';
+import { formats, integerDomains, roundHalfEven, srgbViewFormat, toHalf, fromHalf, quantize } from '../../dist/index.js';
 
 test( 'roundHalfEven breaks exact ties to even', () => {
 
@@ -52,5 +52,21 @@ test( 'normalized quantization: every stored integer round-trips, ties go to eve
 
 	assert.equal( quantize( - 2.5 / 127, 'snorm8' ) * 127, - 2 );
 	assert.equal( quantize( - 3.5 / 127, 'snorm8' ) * 127, - 4 );
+
+} );
+
+test( 'srgbViewFormat: the 8-bit unorm color formats map to the sRGB format with the same bytes, nothing else does', () => {
+
+	assert.equal( srgbViewFormat( 'rgba8unorm' ), 'rgba8unorm-srgb' );
+	assert.equal( srgbViewFormat( 'bgra8unorm' ), 'bgra8unorm-srgb' );
+	for ( const format of Object.keys( formats ).filter( format => format !== 'rgba8unorm' && format !== 'bgra8unorm' ) ) assert.equal( srgbViewFormat( format ), undefined, format );
+	for ( const format of [ 'rgba8unorm', 'bgra8unorm' ] ) {
+
+		const srgb = formats[ srgbViewFormat( format ) ];
+		assert.equal( srgb.bytesPerTexel, formats[ format ].bytesPerTexel );
+		assert.equal( srgb.channels, formats[ format ].channels );
+		assert.equal( srgb.quantization, 'srgb8' );
+
+	}
 
 } );

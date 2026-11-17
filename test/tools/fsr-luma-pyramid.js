@@ -7,7 +7,7 @@
 // ffx_fsr3upscaler_luma_pyramid.h (SpdLoadSourceImage, SpdLoad, SpdStore),
 // ffx_fsr3upscaler_common.h (constants, ComputeAutoExposureFromLavg) and the
 // resource callbacks of ffx_fsr3upscaler_callbacks_hlsl.h.
-// Copyright (C) 2026 Advanced Micro Devices, Inc. MIT licence; full notice in ./spd.js.
+// Copyright (C) 2026 Advanced Micro Devices, Inc. MIT license; full notice in ./spd.js.
 import { spdConstants, spdReference, spdSetup, spdWgsl } from './spd.js';
 import { compile, createTexture, readBuffer, readTexture, uniformBuffer } from './gpu.js';
 import { f16, f32, fromHalfBits, halfUlp } from './half.js';

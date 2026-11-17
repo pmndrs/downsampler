@@ -1,0 +1,20 @@
+took the bench lock (C:\Users\denni\AppData\Local\Temp\ddgi-gpu-bench.lock) for "srgb alias vs render vs buffer"
+GPU at 49 C, below 70 C: starting
+{"vendor":"nvidia","architecture":"ampere","device":"","description":"","isFallbackAdapter":false,"timestamps":true,"features":["texture-formats-tier1","bgra8unorm-storage"],"compatibility":false,"maxStorageTexturesPerShaderStage":6,"subgroupMinSize":32,"subgroupMaxSize":128,"adapterFeatures":["bgra8unorm-storage","chromium-experimental-multi-draw-indirect","chromium-experimental-timestamp-query-inside-passes","clip-distances","core-features-and-limits","depth-clip-control","depth32float-stencil8","dual-source-blending","float32-blendable","float32-filterable","indirect-first-instance","primitive-index","rg11b10ufloat-renderable","shader-f16","subgroups","texture-component-swizzle","texture-compression-bc","texture-compression-bc-sliced-3d","texture-formats-tier1","texture-formats-tier2","timestamp-query"],"maxTextureDimension2D":8192}
+load average (1, 5, 15 min): before 0.0 0.0 0.0, after 0.0 0.0 0.0
+validation passed: 0 cases, 0 pattern runs, 0 ms
+┌─────────┬─────────────┬───────────────────┬─────────────────────┬────────────────────┬────────────────────┐
+│ (index) │ size        │ format            │ render              │ buffer             │ alias              │
+├─────────┼─────────────┼───────────────────┼─────────────────────┼────────────────────┼────────────────────┤
+│ 0       │ '960x540'   │ 'rgba8unorm-srgb' │ '0.0250 ×0.38 [9]'  │ '0.0661 ×1.00 [4]' │ '0.0477 ×0.72 [4]' │
+│ 1       │ '1129x635'  │ 'rgba8unorm-srgb' │ '0.0352 ×0.43 [10]' │ '0.0809 ×1.00 [5]' │ '0.0609 ×0.75 [5]' │
+│ 2       │ '1280x720'  │ 'rgba8unorm-srgb' │ '0.0389 ×0.53 [10]' │ '0.0737 ×1.00 [3]' │ '0.0571 ×0.78 [3]' │
+│ 3       │ '1707x960'  │ 'rgba8unorm-srgb' │ '0.0522 ×0.56 [10]' │ '0.0938 ×1.00 [4]' │ '0.0761 ×0.81 [4]' │
+│ 4       │ '1920x1080' │ 'rgba8unorm-srgb' │ '0.0558 ×0.55 [10]' │ '0.1024 ×1.00 [4]' │ '0.0720 ×0.70 [4]' │
+│ 5       │ '2560x1440' │ 'rgba8unorm-srgb' │ '0.0915 ×0.66 [11]' │ '0.1387 ×1.00 [3]' │ '0.0971 ×0.70 [3]' │
+│ 6       │ '1024x1024' │ 'rgba8unorm-srgb' │ '0.0335 ×0.59 [10]' │ '0.0572 ×1.00 [2]' │ '0.0460 ×0.81 [2]' │
+│ 7       │ '4096x4096' │ 'rgba8unorm-srgb' │ '0.3690 ×0.69 [12]' │ '0.5376 ×1.00 [2]' │ '0.4265 ×0.79 [2]' │
+└─────────┴─────────────┴───────────────────┴─────────────────────┴────────────────────┴────────────────────┘
+GPU clock over 84 samples: SM min 210 / median 1440 / max 2070 MHz, memory min 405 / median 7151 / max 7151 MHz; under load (10 samples at 70%+ use): SM min 1417 / median 1507 / max 1552 MHz, memory min 7151 / median 7151 / max 7151 MHz
+Timing VALID: started at 49 C, thermal throttling in 0% of 10 loaded samples. SM clock median under load 1507 MHz (information only). Power limit in 100% of loaded samples.
+released the bench lock (C:\Users\denni\AppData\Local\Temp\ddgi-gpu-bench.lock)

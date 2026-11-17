@@ -1,0 +1,23 @@
+
+> downsampler@0.1.0 bench
+> npm run build && node test/run.js --bench --compare=srgb --skip-validation --strategies=render,buffer,colorSpace,renderPath,renderDevice --rounds=11 --repeats=32 --output=results/m5/m5-pro-srgb-renderpath.json
+
+
+> downsampler@0.1.0 build
+> tsc -p tsconfig.json
+
+{"vendor":"apple","architecture":"metal-3","device":"","description":"","isFallbackAdapter":false,"timestamps":true,"features":["texture-formats-tier1","bgra8unorm-storage"],"compatibility":false,"maxStorageTexturesPerShaderStage":6,"subgroupMinSize":32,"subgroupMaxSize":32,"adapterFeatures":["bgra8unorm-storage","chromium-experimental-subgroup-matrix","clip-distances","core-features-and-limits","depth-clip-control","depth32float-stencil8","dual-source-blending","float32-blendable","float32-filterable","indirect-first-instance","primitive-index","rg11b10ufloat-renderable","shader-f16","subgroups","texture-component-swizzle","texture-compression-astc","texture-compression-astc-sliced-3d","texture-compression-bc","texture-compression-bc-sliced-3d","texture-compression-etc2","texture-formats-tier1","texture-formats-tier2","timestamp-query"],"maxTextureDimension2D":8192}
+load average (1, 5, 15 min): before 5.2 7.1 6.7, after 4.8 6.9 6.6
+validation passed: 0 cases, 0 pattern runs, 0 ms
+┌─────────┬─────────────┬───────────────────┬─────────────────────┬────────────────────┬──────────────────────┬─────────────────────┬─────────────────────┐
+│ (index) │ size        │ format            │ render              │ buffer             │ colorSpace           │ renderPath          │ renderDevice        │
+├─────────┼─────────────┼───────────────────┼─────────────────────┼────────────────────┼──────────────────────┼─────────────────────┼─────────────────────┤
+│ 0       │ '960x540'   │ 'rgba8unorm-srgb' │ '0.1014 ×0.98 [9]'  │ '0.1047 ×1.00 [4]' │ '0.0000 ×0.00 [4]'   │ '0.1027 ×0.98 [9]'  │ '0.0981 ×0.98 [9]'  │
+│ 1       │ '1129x635'  │ 'rgba8unorm-srgb' │ '0.1263 ×1.31 [10]' │ '0.0927 ×1.00 [5]' │ '0.0000 ×0.00 [5]'   │ '0.1297 ×1.30 [10]' │ '0.1227 ×1.30 [10]' │
+│ 2       │ '1280x720'  │ 'rgba8unorm-srgb' │ '0.1221 ×1.44 [10]' │ '0.0817 ×1.00 [3]' │ '0.0000 ×0.00 [3]'   │ '0.1327 ×1.46 [10]' │ '0.1230 ×1.42 [10]' │
+│ 3       │ '1707x960'  │ 'rgba8unorm-srgb' │ '0.1239 ×1.14 [10]' │ '0.1055 ×1.00 [4]' │ '-0.0000 ×-0.00 [4]' │ '0.1256 ×1.19 [10]' │ '0.1213 ×1.19 [10]' │
+│ 4       │ '1920x1080' │ 'rgba8unorm-srgb' │ '0.1238 ×0.99 [10]' │ '0.1248 ×1.00 [4]' │ '-0.0000 ×-0.00 [4]' │ '0.1363 ×1.09 [10]' │ '0.1288 ×1.05 [10]' │
+│ 5       │ '2560x1440' │ 'rgba8unorm-srgb' │ '0.1365 ×0.77 [11]' │ '0.1764 ×1.00 [3]' │ '-0.0000 ×-0.00 [3]' │ '0.1415 ×0.80 [11]' │ '0.1347 ×0.76 [11]' │
+│ 6       │ '1024x1024' │ 'rgba8unorm-srgb' │ '0.1270 ×2.18 [10]' │ '0.0582 ×1.00 [2]' │ '-0.0000 ×-0.00 [2]' │ '0.1269 ×2.23 [10]' │ '0.1289 ×2.21 [10]' │
+│ 7       │ '4096x4096' │ 'rgba8unorm-srgb' │ '0.4631 ×0.80 [12]' │ '0.5805 ×1.00 [2]' │ '0.0000 ×0.00 [2]'   │ '0.4815 ×0.82 [12]' │ '0.4624 ×0.80 [12]' │
+└─────────┴─────────────┴───────────────────┴─────────────────────┴────────────────────┴──────────────────────┴─────────────────────┴─────────────────────┘

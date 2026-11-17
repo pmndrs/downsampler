@@ -124,7 +124,7 @@ downsampler.encode( encoder, texture, { oddSizes: 'spd' } ); // SPD semantics (a
 				levelButtons( document.getElementById( 'levels' ), levels.length, level => {
 
 					drawLevel( document.getElementById( 'canvas' ), levels[ level ] );
-					document.getElementById( 'caption' ).textContent = `Level ${ level }: ${ mipSize( width, level ) } × ${ mipSize( height, level ) } (shown scaled, nearest neighbour)`;
+					document.getElementById( 'caption' ).textContent = `Level ${ level }: ${ mipSize( width, level ) } × ${ mipSize( height, level ) } (shown scaled, nearest neighbor)`;
 
 				}, Math.min( 3, levels.length - 1 ) );
 

@@ -32,7 +32,7 @@ ivec2 levelSize(int level) { return imageSize(imageMipLevels[level]); }
 
 void loadReduce4(in ivec2 srcTexelCoord, in int srcLevel, out vec4 out_)
 {
-	// The exact centre of the 2x2 square, as nvpro's preamble samples it.
+	// The exact center of the 2x2 square, as nvpro's preamble samples it.
 	vec2 normCoord = (vec2(srcTexelCoord) + vec2(1)) / vec2(imageSize(imageMipLevels[srcLevel]));
 	out_ = textureLod(srcTex, normCoord, srcLevel);
 }

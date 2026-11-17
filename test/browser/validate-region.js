@@ -502,7 +502,7 @@ async function validateRegionSources( device, { quick, onProgress, select } ) {
 
 						const rect = update.rect, range = update.layers ?? [ 0, layers ];
 						values = merge( values, valuesOf( 500 + u ), width, height, layers, rect, range );
-						// A depth buffer is rendered again; a colour source gets the rect written.
+						// A depth buffer is rendered again; a color source gets the rect written.
 						if ( depth ) { source.texture.destroy(); source = await makeSource( device, sourceFormat, width, height, layers, values ); } else { uploadRect( device, source.texture, values, rect, range ); source.floats = toFloats( values, sourceFormat ); }
 						const run = { ...options, source: { texture: source.texture, ...area }, rect, ...( update.layers ? { layers: update.layers } : {} ) };
 						const tag = `${ label } ${ JSON.stringify( update ) }`;

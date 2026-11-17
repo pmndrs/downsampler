@@ -1,0 +1,31 @@
+{"vendor":"nvidia","architecture":"ampere","device":"","description":"","isFallbackAdapter":false,"timestamps":true,"features":["texture-formats-tier1","bgra8unorm-storage","float32-filterable"],"compatibility":false,"maxStorageTexturesPerShaderStage":6,"subgroupMinSize":32,"subgroupMaxSize":128,"adapterFeatures":["bgra8unorm-storage","chromium-experimental-multi-draw-indirect","chromium-experimental-timestamp-query-inside-passes","clip-distances","core-features-and-limits","depth-clip-control","depth32float-stencil8","dual-source-blending","float32-blendable","float32-filterable","indirect-first-instance","primitive-index","rg11b10ufloat-renderable","shader-f16","subgroups","texture-component-swizzle","texture-compression-bc","texture-compression-bc-sliced-3d","texture-formats-tier1","texture-formats-tier2","timestamp-query"],"maxTextureDimension2D":8192}
+load average (1, 5, 15 min): before 0.0 0.0 0.0, after 0.0 0.0 0.0
+validation passed: 0 cases, 0 pattern runs, 0 ms
+┌─────────┬───────────────┬───────────────┬─────────┬──────────┬───────────┬─────────────────────┬───────────────────────┐
+│ (index) │ size          │ format        │ passes  │ load ms  │ sample ms │ undefined vs render │ undefined vs compute4 │
+├─────────┼───────────────┼───────────────┼─────────┼──────────┼───────────┼─────────────────────┼───────────────────────┤
+│ 0       │ '960x540x1'   │ 'r32float'    │ '4 / 4' │ '0.0257' │ '0.0217'  │ 'NaN×'              │ 'NaN×'                │
+│ 1       │ '1129x635x1'  │ 'r32float'    │ '5 / 5' │ '0.0376' │ '0.0314'  │ 'NaN×'              │ 'NaN×'                │
+│ 2       │ '1280x720x1'  │ 'r32float'    │ '3 / 3' │ '0.0376' │ '0.0323'  │ 'NaN×'              │ 'NaN×'                │
+│ 3       │ '1707x960x1'  │ 'r32float'    │ '4 / 4' │ '0.0572' │ '0.0505'  │ 'NaN×'              │ 'NaN×'                │
+│ 4       │ '1920x1080x1' │ 'r32float'    │ '4 / 4' │ '0.0614' │ '0.0551'  │ 'NaN×'              │ 'NaN×'                │
+│ 5       │ '2560x1440x1' │ 'r32float'    │ '3 / 3' │ '0.0820' │ '0.0770'  │ 'NaN×'              │ 'NaN×'                │
+│ 6       │ '1024x1024x1' │ 'r32float'    │ '2 / 2' │ '0.0474' │ '0.0406'  │ 'NaN×'              │ 'NaN×'                │
+│ 7       │ '4096x4096x1' │ 'r32float'    │ '2 / 2' │ '0.3591' │ '0.3465'  │ 'NaN×'              │ 'NaN×'                │
+│ 8       │ '960x540x1'   │ 'rg32float'   │ '4 / 4' │ '0.0456' │ '0.0336'  │ 'NaN×'              │ 'NaN×'                │
+│ 9       │ '1129x635x1'  │ 'rg32float'   │ '5 / 5' │ '0.0577' │ '0.0486'  │ 'NaN×'              │ 'NaN×'                │
+│ 10      │ '1280x720x1'  │ 'rg32float'   │ '3 / 3' │ '0.0505' │ '0.0468'  │ 'NaN×'              │ 'NaN×'                │
+│ 11      │ '1707x960x1'  │ 'rg32float'   │ '4 / 4' │ '0.0876' │ '0.0805'  │ 'NaN×'              │ 'NaN×'                │
+│ 12      │ '1920x1080x1' │ 'rg32float'   │ '4 / 4' │ '0.1192' │ '0.1073'  │ 'NaN×'              │ 'NaN×'                │
+│ 13      │ '2560x1440x1' │ 'rg32float'   │ '3 / 3' │ '0.1766' │ '0.1668'  │ 'NaN×'              │ 'NaN×'                │
+│ 14      │ '1024x1024x1' │ 'rg32float'   │ '2 / 2' │ '0.0644' │ '0.0594'  │ 'NaN×'              │ 'NaN×'                │
+│ 15      │ '4096x4096x1' │ 'rg32float'   │ '2 / 2' │ '0.5831' │ '0.6572'  │ 'NaN×'              │ 'NaN×'                │
+│ 16      │ '960x540x1'   │ 'rgba32float' │ '4 / 4' │ '0.0509' │ '0.0474'  │ 'NaN×'              │ 'NaN×'                │
+│ 17      │ '1129x635x1'  │ 'rgba32float' │ '5 / 5' │ '0.0753' │ '0.0726'  │ 'NaN×'              │ 'NaN×'                │
+│ 18      │ '1280x720x1'  │ 'rgba32float' │ '3 / 3' │ '0.0732' │ '0.0726'  │ 'NaN×'              │ 'NaN×'                │
+│ 19      │ '1707x960x1'  │ 'rgba32float' │ '4 / 4' │ '0.1426' │ '0.1393'  │ 'NaN×'              │ 'NaN×'                │
+│ 20      │ '1920x1080x1' │ 'rgba32float' │ '4 / 4' │ '0.1582' │ '0.1552'  │ 'NaN×'              │ 'NaN×'                │
+│ 21      │ '2560x1440x1' │ 'rgba32float' │ '3 / 3' │ '0.2528' │ '0.2510'  │ 'NaN×'              │ 'NaN×'                │
+│ 22      │ '1024x1024x1' │ 'rgba32float' │ '2 / 2' │ '0.0772' │ '0.0772'  │ 'NaN×'              │ 'NaN×'                │
+│ 23      │ '4096x4096x1' │ 'rgba32float' │ '2 / 2' │ '1.0964' │ '1.0952'  │ 'NaN×'              │ 'NaN×'                │
+└─────────┴───────────────┴───────────────┴─────────┴──────────┴───────────┴─────────────────────┴───────────────────────┘

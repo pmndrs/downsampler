@@ -276,6 +276,6 @@ From reading `src/index.ts` at `adc666e` and from the probes. "Ours" is this rep
 - **Mip chains that must match render-pass mipmaps (three.js, engines switching paths):** ours (`'exact'`).
 - **Tools fusing a reduction into their own pass (FSR-style luminance pyramids, exposure, denoiser weights):** ours (`Reducer`, `ScalarReduction`).
 - **Integer textures, rgb10a2, or sub-rectangle updates today:** webgpu-spd, with `maxMipsPerPass: 6`. On the read-write texture path that WGSL guarantees no more than the buffer path, so stay on 6 mips per pass there too.
-- **A small drop-in for colour mips where SPD's odd-size behaviour is acceptable:** either. webgpu-spd is smaller and simpler (again with `maxMipsPerPass: 6`); our `oddSizes: 'spd'` was faster here.
+- **A small drop-in for color mips where SPD's odd-size behavior is acceptable:** either. webgpu-spd is smaller and simpler (again with `maxMipsPerPass: 6`); our `oddSizes: 'spd'` was faster here.
 
 **Not measured:** other GPUs (NVIDIA, AMD, Intel, mobile), other browsers, devices with ≥ 12 storage textures (true single-dispatch 4096²), `texture-formats-tier2` (read-write mip 6 for rgba8/rgba16f), and webgpu-spd's sub-rect timing.

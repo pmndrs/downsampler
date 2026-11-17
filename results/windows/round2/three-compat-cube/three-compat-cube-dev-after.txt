@@ -1,0 +1,131 @@
+adapters: [ 'intel gen-12lp ', 'intel gen-12lp ', 'intel gen-12lp ' ]
+
+== ?compat | intel gen-12lp  | compat true | core-features false | errors [] | textureBindingViewDimension reported {"cube":"cube","2d-array":"2d-array"}
+33² L1 16²: cube vs array max 0 (0/6144) | vs ref: cube 0.506 (0 >1), array 0.506 (0 >1)
+33² L2 8²: cube vs array max 0 (0/1536) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+33² L3 4²: cube vs array max 0 (0/384) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+33² L4 2²: cube vs array max 0 (0/96) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+33² L5 1²: cube vs array max 0 (0/24) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1) | cube equals texel (0,0),(1,0),(0,1),(1,1) of 2²: 3/2/0/4 of 24
+32² L1 16²: cube vs array max 0 (0/6144) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+32² L2 8²: cube vs array max 0 (0/1536) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+32² L3 4²: cube vs array max 0 (0/384) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+32² L4 2²: cube vs array max 0 (0/96) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+32² L5 1²: cube vs array max 0 (0/24) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1) | cube equals texel (0,0),(1,0),(0,1),(1,1) of 2²: 3/5/1/1 of 24
+31² L1 15²: cube vs array max 0 (0/5400) | vs ref: cube 1.493 (58 >1), array 1.493 (58 >1)
+31² L2 7²: cube vs array max 0 (0/1176) | vs ref: cube 1 (0 >1), array 1 (0 >1)
+31² L3 3²: cube vs array max 0 (0/216) | vs ref: cube 0.667 (0 >1), array 0.667 (0 >1)
+31² L4 1²: cube vs array max 0 (0/24) | vs ref: cube 0 (0 >1), array 0 (0 >1)
+17² L1 8²: cube vs array max 0 (0/1536) | vs ref: cube 0.504 (0 >1), array 0.504 (0 >1)
+17² L2 4²: cube vs array max 0 (0/384) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+17² L3 2²: cube vs array max 0 (0/96) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+17² L4 1²: cube vs array max 0 (0/24) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1) | cube equals texel (0,0),(1,0),(0,1),(1,1) of 2²: 0/0/1/0 of 24
+65² L1 32²: cube vs array max 0 (0/24576) | vs ref: cube 0.507 (0 >1), array 0.507 (0 >1)
+65² L2 16²: cube vs array max 0 (0/6144) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+65² L3 8²: cube vs array max 0 (0/1536) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+65² L4 4²: cube vs array max 0 (0/384) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+65² L5 2²: cube vs array max 0 (0/96) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+65² L6 1²: cube vs array max 0 (0/24) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1) | cube equals texel (0,0),(1,0),(0,1),(1,1) of 2²: 3/4/5/6 of 24
+64² L1 32²: cube vs array max 0 (0/24576) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+64² L2 16²: cube vs array max 0 (0/6144) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+64² L3 8²: cube vs array max 0 (0/1536) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+64² L4 4²: cube vs array max 0 (0/384) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+64² L5 2²: cube vs array max 0 (0/96) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+64² L6 1²: cube vs array max 0 (0/24) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1) | cube equals texel (0,0),(1,0),(0,1),(1,1) of 2²: 1/6/3/5 of 24
+63² L1 31²: cube vs array max 0 (0/23064) | vs ref: cube 1.564 (205 >1), array 1.564 (205 >1)
+63² L2 15²: cube vs array max 0 (0/5400) | vs ref: cube 1.24 (11 >1), array 1.24 (11 >1)
+63² L3 7²: cube vs array max 0 (0/1176) | vs ref: cube 0.857 (0 >1), array 0.857 (0 >1)
+63² L4 3²: cube vs array max 0 (0/216) | vs ref: cube 0.667 (0 >1), array 0.667 (0 >1)
+63² L5 1²: cube vs array max 0 (0/24) | vs ref: cube 0 (0 >1), array 0 (0 >1)
+
+== - | intel gen-12lp  | compat false | core-features true | errors [] | textureBindingViewDimension reported {"cube":"undefined","2d-array":"undefined"}
+33² L1 16²: cube vs array max 0 (0/6144) | vs ref: cube 0.506 (0 >1), array 0.506 (0 >1)
+33² L2 8²: cube vs array max 0 (0/1536) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+33² L3 4²: cube vs array max 0 (0/384) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+33² L4 2²: cube vs array max 0 (0/96) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+33² L5 1²: cube vs array max 0 (0/24) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1) | cube equals texel (0,0),(1,0),(0,1),(1,1) of 2²: 3/2/0/4 of 24
+32² L1 16²: cube vs array max 0 (0/6144) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+32² L2 8²: cube vs array max 0 (0/1536) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+32² L3 4²: cube vs array max 0 (0/384) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+32² L4 2²: cube vs array max 0 (0/96) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+32² L5 1²: cube vs array max 0 (0/24) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1) | cube equals texel (0,0),(1,0),(0,1),(1,1) of 2²: 3/5/1/1 of 24
+31² L1 15²: cube vs array max 0 (0/5400) | vs ref: cube 1.493 (58 >1), array 1.493 (58 >1)
+31² L2 7²: cube vs array max 0 (0/1176) | vs ref: cube 1 (0 >1), array 1 (0 >1)
+31² L3 3²: cube vs array max 0 (0/216) | vs ref: cube 0.667 (0 >1), array 0.667 (0 >1)
+31² L4 1²: cube vs array max 0 (0/24) | vs ref: cube 0 (0 >1), array 0 (0 >1)
+17² L1 8²: cube vs array max 0 (0/1536) | vs ref: cube 0.504 (0 >1), array 0.504 (0 >1)
+17² L2 4²: cube vs array max 0 (0/384) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+17² L3 2²: cube vs array max 0 (0/96) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+17² L4 1²: cube vs array max 0 (0/24) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1) | cube equals texel (0,0),(1,0),(0,1),(1,1) of 2²: 0/0/1/0 of 24
+65² L1 32²: cube vs array max 0 (0/24576) | vs ref: cube 0.507 (0 >1), array 0.507 (0 >1)
+65² L2 16²: cube vs array max 0 (0/6144) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+65² L3 8²: cube vs array max 0 (0/1536) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+65² L4 4²: cube vs array max 0 (0/384) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+65² L5 2²: cube vs array max 0 (0/96) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+65² L6 1²: cube vs array max 0 (0/24) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1) | cube equals texel (0,0),(1,0),(0,1),(1,1) of 2²: 3/4/5/6 of 24
+64² L1 32²: cube vs array max 0 (0/24576) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+64² L2 16²: cube vs array max 0 (0/6144) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+64² L3 8²: cube vs array max 0 (0/1536) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+64² L4 4²: cube vs array max 0 (0/384) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+64² L5 2²: cube vs array max 0 (0/96) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+64² L6 1²: cube vs array max 0 (0/24) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1) | cube equals texel (0,0),(1,0),(0,1),(1,1) of 2²: 1/6/3/5 of 24
+63² L1 31²: cube vs array max 0 (0/23064) | vs ref: cube 1.564 (205 >1), array 1.564 (205 >1)
+63² L2 15²: cube vs array max 0 (0/5400) | vs ref: cube 1.24 (11 >1), array 1.24 (11 >1)
+63² L3 7²: cube vs array max 0 (0/1176) | vs ref: cube 0.857 (0 >1), array 0.857 (0 >1)
+63² L4 3²: cube vs array max 0 (0/216) | vs ref: cube 0.667 (0 >1), array 0.667 (0 >1)
+63² L5 1²: cube vs array max 0 (0/24) | vs ref: cube 0 (0 >1), array 0 (0 >1)
+
+== ?compat&sizes=256,512 | intel gen-12lp  | compat true | core-features false | errors [] | textureBindingViewDimension reported {"cube":"cube","2d-array":"2d-array"}
+256² L1 128²: cube vs array max 0 (0/393216) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+256² L2 64²: cube vs array max 0 (0/98304) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+256² L3 32²: cube vs array max 0 (0/24576) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+256² L4 16²: cube vs array max 0 (0/6144) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+256² L5 8²: cube vs array max 0 (0/1536) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+256² L6 4²: cube vs array max 0 (0/384) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+256² L7 2²: cube vs array max 0 (0/96) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+256² L8 1²: cube vs array max 0 (0/24) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1) | cube equals texel (0,0),(1,0),(0,1),(1,1) of 2²: 11/9/14/15 of 24
+512² L1 256²: cube vs array max 0 (0/1572864) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+512² L2 128²: cube vs array max 0 (0/393216) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+512² L3 64²: cube vs array max 0 (0/98304) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+512² L4 32²: cube vs array max 0 (0/24576) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+512² L5 16²: cube vs array max 0 (0/6144) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+512² L6 8²: cube vs array max 0 (0/1536) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+512² L7 4²: cube vs array max 0 (0/384) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+512² L8 2²: cube vs array max 0 (0/96) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1)
+512² L9 1²: cube vs array max 0 (0/24) | vs ref: cube 0.5 (0 >1), array 0.5 (0 >1) | cube equals texel (0,0),(1,0),(0,1),(1,1) of 2²: 18/15/19/17 of 24
+
+== ?compat&format=rgba16float | intel gen-12lp  | compat true | core-features false | errors [] | textureBindingViewDimension reported {"cube":"cube","2d-array":"2d-array"}
+33² L1 16²: cube vs array max 0 (0/6144) | vs ref: cube 0.124 (0 >1), array 0.124 (0 >1)
+33² L2 8²: cube vs array max 0 (0/1536) | vs ref: cube 0.121 (0 >1), array 0.121 (0 >1)
+33² L3 4²: cube vs array max 0 (0/384) | vs ref: cube 0.109 (0 >1), array 0.109 (0 >1)
+33² L4 2²: cube vs array max 0 (0/96) | vs ref: cube 0.109 (0 >1), array 0.109 (0 >1)
+33² L5 1²: cube vs array max 0 (0/24) | vs ref: cube 0.093 (0 >1), array 0.093 (0 >1) | cube equals texel (0,0),(1,0),(0,1),(1,1) of 2²: 1/0/0/0 of 24
+32² L1 16²: cube vs array max 0 (0/6144) | vs ref: cube 0.124 (0 >1), array 0.124 (0 >1)
+32² L2 8²: cube vs array max 0 (0/1536) | vs ref: cube 0.117 (0 >1), array 0.117 (0 >1)
+32² L3 4²: cube vs array max 0 (0/384) | vs ref: cube 0.109 (0 >1), array 0.109 (0 >1)
+32² L4 2²: cube vs array max 0 (0/96) | vs ref: cube 0.109 (0 >1), array 0.109 (0 >1)
+32² L5 1²: cube vs array max 0 (0/24) | vs ref: cube 0.109 (0 >1), array 0.109 (0 >1) | cube equals texel (0,0),(1,0),(0,1),(1,1) of 2²: 1/2/0/0 of 24
+31² L1 15²: cube vs array max 0 (0/5400) | vs ref: cube 1.292 (11 >1), array 1.292 (11 >1)
+31² L2 7²: cube vs array max 0 (0/1176) | vs ref: cube 0.534 (0 >1), array 0.534 (0 >1)
+31² L3 3²: cube vs array max 0 (0/216) | vs ref: cube 0.374 (0 >1), array 0.374 (0 >1)
+31² L4 1²: cube vs array max 0 (0/24) | vs ref: cube 0 (0 >1), array 0 (0 >1)
+17² L1 8²: cube vs array max 0 (0/1536) | vs ref: cube 0.124 (0 >1), array 0.124 (0 >1)
+17² L2 4²: cube vs array max 0 (0/384) | vs ref: cube 0.117 (0 >1), array 0.117 (0 >1)
+17² L3 2²: cube vs array max 0 (0/96) | vs ref: cube 0.109 (0 >1), array 0.109 (0 >1)
+17² L4 1²: cube vs array max 0 (0/24) | vs ref: cube 0.109 (0 >1), array 0.109 (0 >1) | cube equals texel (0,0),(1,0),(0,1),(1,1) of 2²: 0/0/0/0 of 24
+65² L1 32²: cube vs array max 0 (0/24576) | vs ref: cube 0.124 (0 >1), array 0.124 (0 >1)
+65² L2 16²: cube vs array max 0 (0/6144) | vs ref: cube 0.124 (0 >1), array 0.124 (0 >1)
+65² L3 8²: cube vs array max 0 (0/1536) | vs ref: cube 0.109 (0 >1), array 0.109 (0 >1)
+65² L4 4²: cube vs array max 0 (0/384) | vs ref: cube 0.109 (0 >1), array 0.109 (0 >1)
+65² L5 2²: cube vs array max 0 (0/96) | vs ref: cube 0.109 (0 >1), array 0.109 (0 >1)
+65² L6 1²: cube vs array max 0 (0/24) | vs ref: cube 0.109 (0 >1), array 0.109 (0 >1) | cube equals texel (0,0),(1,0),(0,1),(1,1) of 2²: 0/0/2/0 of 24
+64² L1 32²: cube vs array max 0 (0/24576) | vs ref: cube 0.124 (0 >1), array 0.124 (0 >1)
+64² L2 16²: cube vs array max 0 (0/6144) | vs ref: cube 0.121 (0 >1), array 0.121 (0 >1)
+64² L3 8²: cube vs array max 0 (0/1536) | vs ref: cube 0.109 (0 >1), array 0.109 (0 >1)
+64² L4 4²: cube vs array max 0 (0/384) | vs ref: cube 0.109 (0 >1), array 0.109 (0 >1)
+64² L5 2²: cube vs array max 0 (0/96) | vs ref: cube 0.109 (0 >1), array 0.109 (0 >1)
+64² L6 1²: cube vs array max 0 (0/24) | vs ref: cube 0.109 (0 >1), array 0.109 (0 >1) | cube equals texel (0,0),(1,0),(0,1),(1,1) of 2²: 0/1/0/0 of 24
+63² L1 31²: cube vs array max 0 (0/23064) | vs ref: cube 1.275 (22 >1), array 1.275 (22 >1)
+63² L2 15²: cube vs array max 0 (0/5400) | vs ref: cube 1.08 (1 >1), array 1.08 (1 >1)
+63² L3 7²: cube vs array max 0 (0/1176) | vs ref: cube 0.623 (0 >1), array 0.623 (0 >1)
+63² L4 3²: cube vs array max 0 (0/216) | vs ref: cube 0.311 (0 >1), array 0.311 (0 >1)
+63² L5 1²: cube vs array max 0 (0/24) | vs ref: cube 0 (0 >1), array 0 (0 >1)

@@ -2,7 +2,7 @@
 // the CPU reference, computed from the GPU's own previous level so permitted
 // rounding differences do not accumulate along the chain.
 import { areaReference, boxReference, bufferWritable, copyReference, formats, maxViolations, fromHalf, isIntegerDomain, isIntQuantization, isPackedQuantization, levelSize, pyramidTolerance, quantize, reducePyramid, reduceReference, sampledChannels, spdReference, storageWritable, toHalf, tolerance } from '/dist/index.js';
-import { Downsampler, Reducer, requiredLimits } from '/dist/webgpu/index.js';
+import { Downsampler, Reducer, requiredFeatures, requiredLimits } from '/dist/webgpu/index.js';
 import * as three from '/dist/three/index.js';
 import { createDepthSource, createTexture, makeData, poison, readMip, readMips, toFloats, trackBuffers, upload } from './gpu.js';
 import { validateBox } from './validate-box.js';
@@ -210,7 +210,7 @@ export const compatibility = device => ! device.features.has( 'core-features-and
  * listing's size and digest, so the shards of one suite can be checked against each other.
  * `groups` (ids) runs exactly those case groups, in suite order (debugging, bisection).
  */
-export async function validate( device, { onProgress = () => {}, quick = false, only, shard, durations = {}, list = false, keepGoing = false, groups } = {} ) {
+export async function validate( device, { onProgress = () => {}, quick = false, only, shard, durations = {}, isolate = [], list = false, keepGoing = false, groups } = {} ) {
 
 	failures = keepGoing ? [] : null;
 	let select = new Selection();
@@ -230,7 +230,7 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 		} else {
 
-			shards = assignShards( listing.ids, shard.total, durations );
+			shards = assignShards( listing.ids, shard.total, durations, isolate );
 			select = new Selection( { assigned: shards[ shard.index - 1 ] } );
 
 		}
@@ -503,6 +503,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 				results.push( ...await validateSource( device, { quick, onProgress, select } ) );
 				results.push( ...await select.run( 'downsampler/options', () => validateOptions( device ) ) );
+				results.push( ...await select.run( 'downsampler/float32-sample', () => validateFloat32Sample( device, { quick } ) ) );
 				results.push( ...await select.run( 'downsampler/mipmap', () => validateMipmap( device, { quick } ) ) );
 				results.push( ...await validateRegion( device, { quick, onProgress, select } ) );
 				results.push( ...await validatePacked( device, { quick, onProgress, part: 'downsampler', select } ) );
@@ -681,6 +682,13 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 								const mips = await readMips( device, destination, 0 );
 								const label = `${ sourceFormat } ${ width }x${ height }x${ layers } -> ${ format } ${ relation } ${ reduction } ${ pattern } L${ downsampler.levelsPerDispatch } ${ mode }`;
 								const unormSource = /unorm/.test( sourceFormat ) ? 2 ** - 21 : 0;
+								// A sampled sRGB source into a float destination: NVIDIA's filtered sRGB decode is coarser than
+								// the exact table (RTX 3060: up to 0.64 % of the value, e.g. 0.9765625 = 1000/1024 for 0.97363;
+								// Intel and the M5 are within the sampler tolerance). Render passes read it the same way, so the
+								// levels the sampler reads from the source get 2^-7 of the value (owner, 2026-11-16: widen the
+								// tolerance rather than load). A missing decode is tens of percent off, still caught.
+								const sampledSrgb = sourceFormat.endsWith( '-srgb' ) && ! format.endsWith( '-srgb' ) && reduction === 'average' ? 2 ** - 7 : 0;
+								const sourceSlack = unormSource + sampledSrgb;
 
 								if ( mode === 'spd' ) {
 
@@ -699,7 +707,7 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 										spdReference( from, sw, sh, layers, quantization, reduction, batch.count, { weights: 'sampler' } ).forEach( ( level, i ) => {
 
 											const mip = batch.firstMipLevel + i;
-											check( mips[ mip ], level, quantization, `${ label } mip ${ mip }`, reduction, channels, external ? unormSource : 0 );
+											check( mips[ mip ], level, quantization, `${ label } mip ${ mip }`, reduction, channels, external ? sourceSlack : 0 );
 
 										} );
 
@@ -717,7 +725,7 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 
 									const quantizedInput = level > 0 || formats[ sourceFormat ]?.quantization === quantization;
 									const expected = level === 0 && dw === width && dh === height ? copyReference( previous, w, h, layers, quantization ) : ( box ? boxReference : reduceReference )( previous, w, h, layers, quantization, reduction, { quantizedInput, weights: firstOutputs.has( level ) ? 'sampler' : 'shader' } );
-									const slack = level === 0 && /unorm/.test( sourceFormat ) ? 2 ** - 21 : 0;
+									const slack = level === 0 ? sourceSlack : 0;
 									check( mips[ level ], expected, quantization, `${ label } mip ${ level }`, reduction, channels, slack );
 									previous = mips[ level ]; w = expected.width; h = expected.height;
 
@@ -754,6 +762,93 @@ async function validateSource( device, { quick, onProgress, select, packedOnly =
 
 }
 
+/**
+ * float32 averages through the sampler (DIVERGES #13). The suite's device leaves `float32-filterable`
+ * off, so float32 formats load everywhere else; this group takes a device with it (on the same adapter
+ * and feature level), where 'average' samples float32 as it does every filterable format. Each level
+ * against the oracle from the GPU's level above: a batch's first output with the sampler's weight
+ * tolerance, in-tile and tail levels with shader weights. Skipped where the adapter lacks the feature.
+ */
+async function validateFloat32Sample( device, { quick } ) {
+
+	const compat = compatibility( device );
+	const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance', ...( compat ? { featureLevel: 'compatibility' } : {} ) } );
+	if ( ! adapter?.features.has( 'float32-filterable' ) ) return [ { option: 'float32-sample', skipped: 'the adapter has no float32-filterable' } ];
+	// The device an app gets from requiredFeatures( adapter ): it must include float32-filterable here.
+	const features = requiredFeatures( adapter );
+	if ( ! features.includes( 'float32-filterable' ) || features.some( feature => ! adapter.features.has( feature ) ) ) throw new Error( `requiredFeatures: ${ features.join( ', ' ) } for an adapter with float32-filterable` );
+	const filterable = await adapter.requestDevice( { requiredFeatures: features, requiredLimits: requiredLimits( adapter ) } );
+	const errors = [];
+	filterable.addEventListener( 'uncapturederror', event => errors.push( event.error.message ) );
+	const shapes = [ [ 255, 257, 1 ], [ 192, 108, 1 ], [ 33, 17, 3 ], [ 64, 64, 1 ], [ 7, 1, 1 ], [ 1, 128, 1 ], ...( quick ? [] : [ [ 1920, 1080, 1 ], [ 1129, 635, 1 ] ] ) ];
+	const variants = [
+		{ name: 'tail', downsampler: new Downsampler( filterable ) },
+		{ name: 'no tail', downsampler: new Downsampler( filterable, { tail: false } ) },
+		{ name: 'box', downsampler: new Downsampler( filterable ), oddSizes: 'box' }
+	];
+	let levels = 0, chains = 0;
+	try {
+
+		for ( const format of [ 'r32float', 'rg32float', 'rgba32float' ] ) {
+
+			if ( compat && format === 'rg32float' ) continue; // no storage in compatibility mode (the buffer path; covered by the main matrix)
+			const { quantization, channels } = formats[ format ];
+			for ( const [ width, height, layers ] of shapes ) {
+
+				const texture = createTexture( filterable, { width, height, layers, format } );
+				try {
+
+					const data = makeData( width, height, layers, format, 'random', 7 );
+					const floats = toFloats( data, format );
+					for ( const { name, downsampler, oddSizes } of variants ) {
+
+						const options = oddSizes === undefined ? {} : { oddSizes };
+						const batches = downsampler.prepare( texture, options );
+						// The chain must take the sample path: its first outputs sample, as for any filterable format
+						// ('box' loads every odd level, so a chain can load throughout).
+						if ( oddSizes === undefined && ! batches.some( batch => batch.pipeline.label.includes( ':sample:' ) ) ) throw new Error( `float32 sample ${ format } ${ width }x${ height }x${ layers } ${ name }: no batch samples (${ batches.map( batch => batch.pipeline.label ).join( '; ' ) })` );
+						upload( filterable, texture, data );
+						poison( filterable, texture );
+						downsampler.generate( texture, options );
+						const mips = await readMips( filterable, texture, 1 );
+						const sampled = new Set( batches.filter( batch => batch.pipeline.label.includes( ':sample:' ) ).map( batch => batch.firstMipLevel ) );
+						let previous = floats, w = width, h = height;
+						for ( let level = 1; level < texture.mipLevelCount; level ++ ) {
+
+							const expected = ( oddSizes === 'box' ? boxReference : reduceReference )( previous, w, h, layers, quantization, 'average', { weights: sampled.has( level ) ? 'sampler' : 'shader' } );
+							check( mips[ level - 1 ], expected, quantization, `float32 sample ${ format } ${ width }x${ height }x${ layers } ${ name } mip ${ level }`, 'average', channels );
+							previous = mips[ level - 1 ]; w = expected.width; h = expected.height;
+							levels ++;
+
+						}
+
+						chains ++;
+						downsampler.release( texture );
+
+					}
+
+				} finally {
+
+					texture.destroy();
+
+				}
+
+			}
+
+		}
+
+		await filterable.queue.onSubmittedWorkDone();
+		if ( errors.length > 0 ) throw new Error( `float32 sample: GPU errors: ${ errors.slice( 0, 3 ).join( ' | ' ) }` );
+		return [ { option: 'float32-sample', chains, levels } ];
+
+	} finally {
+
+		filterable.destroy();
+
+	}
+
+}
+
 async function validateOptions( device ) {
 
 	const results = [];
@@ -785,7 +880,7 @@ async function validateOptions( device ) {
 	// Unsupported textures are reported, not silently processed.
 	const unsupported = [
 		device.createTexture( { size: [ 16, 16 ], format: 'rgba8unorm', mipLevelCount: 5, usage: GPUTextureUsage.TEXTURE_BINDING } ),
-		device.createTexture( { size: [ 16, 16 ], format: 'rgba8unorm-srgb', mipLevelCount: 5, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT } )
+		device.createTexture( { size: [ 16, 16 ], format: 'rgba8unorm-srgb', mipLevelCount: 5, usage: GPUTextureUsage.TEXTURE_BINDING } )
 	];
 	for ( const texture of unsupported ) {
 
@@ -1088,6 +1183,10 @@ async function validateThree( device ) {
 	if ( three.getDownsampler( renderer ) !== shared || three.getDownsampler( renderer, {} ) !== shared ) throw new Error( 'three: getDownsampler must share one Downsampler per device and option set' );
 	const load = three.getDownsampler( renderer, { averageAccess: 'load', f16Rounding: 'device' } );
 	if ( load === shared || load !== three.getDownsampler( renderer, { f16Rounding: 'device', averageAccess: 'load' } ) || load.averageAccess !== 'load' || load.f16Rounding !== 'device' ) throw new Error( 'three: getDownsampler options must select their own shared Downsampler, whatever the key order' );
+	// Non-finite options get their own key (JSON would write Infinity as null, which the constructor rejects).
+	const never = three.getDownsampler( renderer, { renderPathMinTexels: Infinity } );
+	// (null means the default, as for every option; a key of null for Infinity would hand back that one.)
+	if ( never.renderPathMinTexels !== Infinity || never === three.getDownsampler( renderer, { renderPathMinTexels: 0 } ) || never === three.getDownsampler( renderer, { renderPathMinTexels: null } ) ) throw new Error( 'three: renderPathMinTexels Infinity must select its own Downsampler' );
 
 	const [ unallocated, single, noStorage, chain ] = [ {}, {}, {}, {} ];
 	gpuTextures.set( single, device.createTexture( { size: [ 4, 4 ], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING } ) );

@@ -2,7 +2,7 @@
 // atomic last-workgroup handoff, built to measure against the library's
 // dispatch-per-batch plans (SPEC.md §2.2, DIVERGES.md #1).
 //
-// It relies on behaviour WGSL does not guarantee. Each workgroup reduces its
+// It relies on behavior WGSL does not guarantee. Each workgroup reduces its
 // 64×64 source tile to levels 1–6 (the library's 'clamp' tile kernel, so the
 // same SPD semantics as `oddSizes: 'spd'`), publishes its level-6 texel with
 // atomicStore, runs storageBarrier() and increments a global counter. The

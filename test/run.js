@@ -26,13 +26,16 @@
 //                                        then the same by timestamps and whether both order them alike
 //       [--window=1000] [--pacing=queue|raf] [--in-flight=2] [--batch-ms=8] [--max-batch=1024] [--textures=1]
 //       [--no-timestamps] skip the timestamp check; [--no-timestamp-query] a device without timestamp-query
-//   --compare=storage-usage              sampling a texture with vs without STORAGE_BINDING (--strategies=fullscreen,material,write)
+//   --compare=storage-usage              sampling a texture with vs without STORAGE_BINDING (--strategies=fullscreen,material,write;
+//                                        --formats=rgba8unorm-srgb: an sRGB texture vs an aliased rgba8unorm one)
 //   --compare=subgroups                  upper bound for a subgroup kernel (--strategies=lds,slot,shuffle,nosync)
 //   --compare=f16                        averaging in f16 vs f32, with the precision cost (--strategies=f32,f16,f16safe)
 //   --compare=trim                       the 'exact' kernel with cheaper per-value arithmetic, same bits (--strategies=round,mul,trim)
 //   --throughput with --compare=storage-usage|subgroups|f16 adds per-frame throughput to the timestamps
 //   --compare=partial                    rect and one-layer updates against the full chain (test/bench/partial.js)
 //   --compare=dispatch                   the cost of one dependent compute dispatch (test/bench/dispatch.js)
+//   --compare=srgb-cost                  where an sRGB chain's time goes, timing only (test/bench/srgb.js)
+//   --compare=float32                    float32 averages sampled vs loaded, on a device with float32-filterable (test/bench/float32.js)
 //   --strategies=a,b,c                   time a subset (any --compare mode; the ratios' reference is always kept)
 // Shards (test/ci/README.md):
 //   node test/run.js --quick --adapter=swiftshader --shard=2/8   one of 8 disjoint shards, balanced by test/ci/durations.json
@@ -40,6 +43,8 @@
 //   node test/run.js --quick --adapter=swiftshader --list --shard=2/8    the case groups of one shard
 //   node test/run.js --quick --adapter=swiftshader --record-durations    rewrite test/ci/durations.json (sharded: merge)
 //   node test/run.js ... --timing=ci-timing.json                         per-group timing and the listing, for the CI aggregate
+//   node test/run.js ... --shard=17/18 --isolate-devices                 the groups that open a second device get the last shards,
+//                                                                        one each (Intel UHD loses the device otherwise)
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { loadavg, tmpdir } from 'node:os';
@@ -47,7 +52,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer';
 import { gpuChoiceArgs } from './gpu-choice.js';
-import { assignShards, parseShard, partitionProblems, shardLoads } from './ci/shard.js';
+import { assignShards, parseShard, partitionProblems, secondDeviceGroups, shardLoads } from './ci/shard.js';
 import { createServer } from './serve.js';
 
 const args = process.argv.slice( 2 );
@@ -86,6 +91,9 @@ const recorded = existsSync( durationsPath ) ? JSON.parse( readFileSync( duratio
 const durations = Object.fromEntries( Object.entries( recorded.groups ).map( ( [ id, group ] ) => [ id, group.ms ] ) );
 const list = args.includes( '--list' );
 if ( value( 'shard' ) ) Object.assign( options, { shard: parseShard( value( 'shard' ) ), durations } );
+// --isolate-devices: each case group that opens a second device gets a shard of its own (Intel UHD).
+const isolate = args.includes( '--isolate-devices' ) ? secondDeviceGroups : [];
+if ( isolate.length ) options.isolate = isolate;
 if ( list ) options.list = true;
 const recordPath = args.includes( '--record-durations' ) ? durationsPath : value( 'record-durations' );
 const timingPath = value( 'timing' );
@@ -224,7 +232,7 @@ try {
 			...Object.fromEntries( names.map( name => [ name, `${ row.gpuMs[ name ].toFixed( 4 ) } (${ ( row.gpuMs[ name ] / row.gpuMs[ name.endsWith( 'Max' ) ? 'exactMax' : 'exact' ] ).toFixed( 2 ) })` ] ) )
 		} ) ) );
 
-	} else if ( timing?.results.length && ( options.compare === 'webgpu-spd' || options.compare === 'render' || options.compare === 'srgb' || options.compare === 'partial' || options.compare === 'dispatch' ) ) {
+	} else if ( timing?.results.length && ( options.compare === 'webgpu-spd' || options.compare === 'render' || options.compare === 'srgb' || options.compare === 'srgb-cost' || options.compare === 'float32' || options.compare === 'partial' || options.compare === 'dispatch' ) ) {
 
 		// Paired per-round ratios to 'exact' (averages) and 'exactMax' (max); 'render': to render passes.
 		console.table( timing.results.map( row => ( {
@@ -345,7 +353,7 @@ function listShards( ids ) {
 
 	for ( const total of counts ) {
 
-		const shards = assignShards( ids, total, durations );
+		const shards = assignShards( ids, total, durations, isolate );
 		const problems = partitionProblems( ids, shards );
 		const loads = shardLoads( shards, durations );
 		console.log( `\n${ total } shards: ${ problems.length ? `PARTITION BROKEN\n  ${ problems.join( '\n  ' ) }` : 'disjoint, cover every group' }` );

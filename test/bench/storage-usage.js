@@ -18,7 +18,7 @@
 // Timing: `repeats` passes into the target, the first and last carrying timestampWrites
 // (never empty passes), rotated order per round, medians, and the storage ÷ plain ratio paired
 // per round. Without timestamp-query (or with `throughput`), wall-clock throughput per pass too.
-import { createTexture, makeData, median, upload } from '../browser/gpu.js';
+import { createTexture, makeData, median, mipLevels } from '../browser/gpu.js';
 import { measureUnits } from './throughput.js';
 
 export const storageUsageSizes = [ [ 960, 540 ], [ 1129, 635 ], [ 1280, 720 ], [ 1707, 960 ], [ 1920, 1080 ], [ 2560, 1440 ], [ 1024, 1024 ], [ 4096, 4096 ] ];
@@ -81,6 +81,12 @@ const sampleCode = {
 
 const filterable = format => format !== 'r32float';
 
+// rgba8unorm-srgb compares the texture three.js makes today (plain) with the aliased one the
+// compute path could write (`storage`: rgba8unorm with STORAGE_BINDING and
+// viewFormats ['rgba8unorm-srgb'], every pass through its sRGB view; DIVERGES #16).
+const aliased = format => format === 'rgba8unorm-srgb';
+const view = ( texture, format, descriptor = {} ) => texture.createView( { format, usage: texture.usage & ~ GPUTextureUsage.STORAGE_BINDING, ...descriptor } );
+
 export async function storageUsage( device, { sizes = storageUsageSizes, formats = storageUsageFormats, rounds = 11, repeats = 16, shaders = storageUsageShaders, throughput = null, onProgress = () => {} } = {} ) {
 
 	const unknown = shaders.filter( name => ! storageUsageShaders.includes( name ) );
@@ -111,13 +117,13 @@ export async function storageUsage( device, { sizes = storageUsageSizes, formats
 	};
 
 	// Level 0 drawn (or uploaded), levels 1+ rendered from the level above, both textures alike.
-	const fill = ( texture, content, data ) => {
+	const fill = ( texture, content, data, format ) => {
 
 		const encoder = device.createCommandEncoder();
-		const level = mip => texture.createView( { baseMipLevel: mip, mipLevelCount: 1 } );
-		if ( content === 'rendered' ) pass( encoder, level( 0 ), pipeline( `fill:${ texture.format }`, () => renderPipeline( modules.fill, texture.format ) ) );
-		else device.queue.writeTexture( { texture }, data, { bytesPerRow: texture.width * { rgba8unorm: 4, rgba16float: 8, r32float: 4 }[ texture.format ], rowsPerImage: texture.height }, [ texture.width, texture.height ] );
-		const mip = pipeline( `mip:${ texture.format }`, () => renderPipeline( modules.mip, texture.format, device.createPipelineLayout( { bindGroupLayouts: [ mipLayout ] } ) ) );
+		const level = mip => view( texture, format, { baseMipLevel: mip, mipLevelCount: 1 } );
+		if ( content === 'rendered' ) pass( encoder, level( 0 ), pipeline( `fill:${ format }`, () => renderPipeline( modules.fill, format ) ) );
+		else device.queue.writeTexture( { texture }, data, { bytesPerRow: texture.width * { rgba8unorm: 4, 'rgba8unorm-srgb': 4, rgba16float: 8, r32float: 4 }[ texture.format ], rowsPerImage: texture.height }, [ texture.width, texture.height ] );
+		const mip = pipeline( `mip:${ format }`, () => renderPipeline( modules.mip, format, device.createPipelineLayout( { bindGroupLayouts: [ mipLayout ] } ) ) );
 		for ( let m = 1; m < texture.mipLevelCount; m ++ ) pass( encoder, level( m ), mip, device.createBindGroup( { layout: mipLayout, entries: [ { binding: 0, resource: level( m - 1 ) } ] } ) );
 		device.queue.submit( [ encoder.finish() ] );
 
@@ -151,7 +157,9 @@ export async function storageUsage( device, { sizes = storageUsageSizes, formats
 
 			const textures = {
 				plain: createTexture( device, { width, height, format, storage: false, render: true } ),
-				storage: createTexture( device, { width, height, format, storage: true, render: true } )
+				storage: aliased( format )
+					? device.createTexture( { label: `storage-usage alias ${ width }x${ height }`, size: [ width, height ], format: 'rgba8unorm', viewFormats: [ format ], mipLevelCount: mipLevels( width, height ), usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST } )
+					: createTexture( device, { width, height, format, storage: true, render: true } )
 			};
 			const target = device.createTexture( { size: [ width, height ], format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT } );
 			const targetView = target.createView();
@@ -161,7 +169,7 @@ export async function storageUsage( device, { sizes = storageUsageSizes, formats
 				for ( const content of [ 'rendered', 'noise' ] ) {
 
 					const data = content === 'noise' ? makeData( width, height, 1, format, 'random', 1337 ) : null;
-					for ( const texture of Object.values( textures ) ) fill( texture, content, data );
+					for ( const texture of Object.values( textures ) ) fill( texture, content, data, format );
 					for ( const shader of shaders ) {
 
 						if ( shader === 'write' && content !== 'rendered' ) continue;
@@ -170,14 +178,14 @@ export async function storageUsage( device, { sizes = storageUsageSizes, formats
 
 							if ( shader === 'write' ) {
 
-								const view = texture.createView( { baseMipLevel: 0, mipLevelCount: 1 } ), pipe = pipeline( `fill:${ format }`, () => renderPipeline( modules.fill, format ) );
-								record[ name ] = ( encoder, timestampWrites ) => pass( encoder, view, pipe, null, timestampWrites );
+								const target0 = view( texture, format, { baseMipLevel: 0, mipLevelCount: 1 } ), pipe = pipeline( `fill:${ format }`, () => renderPipeline( modules.fill, format ) );
+								record[ name ] = ( encoder, timestampWrites ) => pass( encoder, target0, pipe, null, timestampWrites );
 
 							} else {
 
 								const layout = sampleLayout( format );
 								const pipe = pipeline( `${ shader }:${ format }`, () => renderPipeline( modules[ shader ], 'rgba8unorm', device.createPipelineLayout( { bindGroupLayouts: [ layout ] } ) ) );
-								const bindGroup = device.createBindGroup( { layout, entries: [ { binding: 0, resource: texture.createView() }, { binding: 1, resource: filterable( format ) ? samplers.filtering : samplers.nearest } ] } );
+								const bindGroup = device.createBindGroup( { layout, entries: [ { binding: 0, resource: view( texture, format ) }, { binding: 1, resource: filterable( format ) ? samplers.filtering : samplers.nearest } ] } );
 								record[ name ] = ( encoder, timestampWrites ) => pass( encoder, targetView, pipe, bindGroup, timestampWrites );
 
 							}

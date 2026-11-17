@@ -22,3 +22,24 @@ export function requiredLimits( adapter: GPUAdapter ): Record<string, number> {
 	return limits;
 
 }
+
+/** The optional features {@link requiredFeatures} asks for, where the adapter has them. */
+export const optionalFeatures = [ 'float32-filterable', 'texture-formats-tier1', 'bgra8unorm-storage' ] as const;
+
+/**
+ * Optional device features the library uses, as
+ * `adapter.requestDevice( { requiredFeatures: requiredFeatures( adapter ) } )`: the ones the
+ * adapter has, of
+ * - `float32-filterable`: 'average' chains of r32float, rg32float and rgba32float sample instead of
+ *   loading, like every other filterable format: 0.74–1.00× the time on an RTX 3060 and 0.69–1.00×
+ *   on Intel UHD (DIVERGES.md #13);
+ * - `texture-formats-tier1`: storage for r8unorm, rg8unorm, r16float, rg16float, the 16-bit
+ *   normalized formats and more, so they don't need the buffer path or aren't rejected;
+ * - `bgra8unorm-storage`: storage for bgra8unorm.
+ * Everything works without them. Add your own features to the list.
+ */
+export function requiredFeatures( adapter: GPUAdapter ): GPUFeatureName[] {
+
+	return optionalFeatures.filter( feature => adapter.features.has( feature ) ) as GPUFeatureName[];
+
+}

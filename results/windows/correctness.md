@@ -20,7 +20,7 @@ own hooks store f16 with `textureStore`, which truncates on D3D12. Not library c
 
 What changed (the sections below are the investigation that led here):
 1. `f16Rounding: 'nearest'` (default): float16 levels round to nearest even in the shader.
-2. Same-size converting copies load instead of sampling (the sampler isn't exact at texel centres on Intel).
+2. Same-size converting copies load instead of sampling (the sampler isn't exact at texel centers on Intel).
 3. The oracle models hardware samplers (`ReferenceOptions.weights: 'sampler'`): 1.5 weight steps of 1/256 per axis times
    the local contrast, including the texel below the footprint, where a truncating sampler lands when a weight is exactly
    0 (Intel, reproduced to 2×10⁻⁴ on the first failing texel). Shader weights (`'load'`, in-tile levels) stay strict.
@@ -73,7 +73,7 @@ The native D3D12 render-pass chain, `render-rtonly` and the Vulkan blit show the
 
 Intel fails the checks of 1 (132) and many more filtered ones: odd and even shapes (3×7 … 1920×1080 in the probe; 15×17,
 31×33, 192×108, 255×257 in the suite), levels 1–4, `'exact'`, `'spd'` and the tail, rg11b10ufloat up to 17 % (values span
-2^−14 … 2^10, so a weight step times a large neighbour is large), and a same-size `'spd'` copy (8/255 where 0 is due).
+2^−14 … 2^10, so a weight step times a large neighbor is large), and a same-size `'spd'` copy (8/255 where 0 is due).
 
 ### Why 2 and 3: how each sampler weights (probes, 2026-11-12)
 
@@ -94,7 +94,7 @@ the RTX, 10437 on Intel): it applies the weights in the shader. Our kernel arith
 differ, and the native platforms' own mip paths differ with them.
 
 Still open on Intel: `packed/buffer-path`, "rgb9e5 from a separate source: level 0 is not the quantized copy" (a
-same-size converting copy, so likely the truncated weight at a texel centre, not yet confirmed). The first full-suite
+same-size converting copy, so likely the truncated weight at a texel center, not yet confirmed). The first full-suite
 attempt on Intel also lost the device after 580 s (log: [logs/correctness-low.log](logs/correctness-low.log), first run);
 the quick runs did not.
 

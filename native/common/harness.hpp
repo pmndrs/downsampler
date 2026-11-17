@@ -45,10 +45,11 @@ inline std::vector<std::string> split( const std::string & text ) {
 
 }
 
-/** The formats the native runs cover: average for the two colour formats, max (Hi-Z) for r32float. */
-enum class Format { rgba8unorm, rgba16float, r32float };
+/** The formats the native runs cover: average for the color formats, max (Hi-Z) for r32float.
+ *  rgba8unorm_srgb (d3d12-mips only): 8-bit sRGB color, linear alpha; averaged in linear light. */
+enum class Format { rgba8unorm, rgba16float, r32float, rgba8unorm_srgb };
 
-inline const char * formatName( Format format ) { return format == Format::rgba8unorm ? "rgba8unorm" : format == Format::rgba16float ? "rgba16float" : "r32float"; }
+inline const char * formatName( Format format ) { return format == Format::rgba8unorm ? "rgba8unorm" : format == Format::rgba16float ? "rgba16float" : format == Format::rgba8unorm_srgb ? "rgba8unorm-srgb" : "r32float"; }
 inline uint32_t formatBytes( Format format ) { return format == Format::rgba16float ? 8 : 4; }
 inline bool formatIsMax( Format format ) { return format == Format::r32float; }
 
@@ -103,20 +104,29 @@ inline std::vector<uint8_t> makeData( uint32_t width, uint32_t height, Format fo
 	uint32_t state = 1337;
 	auto next = [ & ]() { state ^= state << 13; state ^= state >> 17; state ^= state << 5; return float( state >> 8 ) / 16777216.0f; };
 	const size_t texels = size_t( width ) * height;
-	if ( format == Format::rgba8unorm ) for ( size_t i = 0; i < texels * 4; i ++ ) data[ i ] = uint8_t( std::min( 255.0f, std::floor( next() * 256.0f ) ) );
+	if ( format == Format::rgba8unorm || format == Format::rgba8unorm_srgb ) for ( size_t i = 0; i < texels * 4; i ++ ) data[ i ] = uint8_t( std::min( 255.0f, std::floor( next() * 256.0f ) ) );
 	else if ( format == Format::rgba16float ) for ( size_t i = 0; i < texels * 4; i ++ ) { const uint16_t h = floatToHalf( next() ); memcpy( &data[ i * 2 ], &h, 2 ); }
 	else for ( size_t i = 0; i < texels; i ++ ) { const float f = next(); memcpy( &data[ i * 4 ], &f, 4 ); }
 	return data;
 
 }
 
-/** One row of texels in the texture's format to RGBA float32 (r32float: r, 0, 0, 1). */
+/** The exact sRGB decode of an 8-bit code, as the f32 nearest it (the library's srgbDecodeTable). */
+inline float srgbDecode( uint8_t code ) {
+
+	const double c = code / 255.0;
+	return float( c <= 0.04045 ? c / 12.92 : std::pow( ( c + 0.055 ) / 1.055, 2.4 ) );
+
+}
+
+/** One row of texels in the texture's format to RGBA float32 (r32float: r, 0, 0, 1; sRGB: linear r, g, b). */
 inline void decodeRow( const uint8_t * row, uint32_t width, Format format, float * out ) {
 
 	for ( uint32_t x = 0; x < width; x ++ ) {
 
 		float * texel = out + size_t( x ) * 4;
 		if ( format == Format::rgba8unorm ) for ( int c = 0; c < 4; c ++ ) texel[ c ] = row[ x * 4 + c ] / 255.0f;
+		else if ( format == Format::rgba8unorm_srgb ) { for ( int c = 0; c < 3; c ++ ) texel[ c ] = srgbDecode( row[ x * 4 + c ] ); texel[ 3 ] = row[ x * 4 + 3 ] / 255.0f; }
 		else if ( format == Format::rgba16float ) for ( int c = 0; c < 4; c ++ ) { uint16_t h; memcpy( &h, row + x * 8 + c * 2, 2 ); texel[ c ] = halfToFloat( h ); }
 		else { float f; memcpy( &f, row + x * 4, 4 ); texel[ 0 ] = f; texel[ 1 ] = 0; texel[ 2 ] = 0; texel[ 3 ] = 1; }
 

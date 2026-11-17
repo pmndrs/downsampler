@@ -103,11 +103,11 @@ function decodeTexel( buffer, offset, format ) {
 }
 
 /**
- * Draw RGBA float values (`width` × `height`) into a canvas. `toColour( values,
+ * Draw RGBA float values (`width` × `height`) into a canvas. `toColor( values,
  * i )` returns [ r, g, b ] in 0…1 for the texel at value index `i`; default:
  * the texel's own rgb.
  */
-export function drawLevel( canvas, { width, height, values }, toColour = ( v, i ) => [ v[ i ], v[ i + 1 ], v[ i + 2 ] ] ) {
+export function drawLevel( canvas, { width, height, values }, toColor = ( v, i ) => [ v[ i ], v[ i + 1 ], v[ i + 2 ] ] ) {
 
 	canvas.width = width;
 	canvas.height = height;
@@ -115,7 +115,7 @@ export function drawLevel( canvas, { width, height, values }, toColour = ( v, i 
 	const image = context.createImageData( width, height );
 	for ( let i = 0; i < width * height; i ++ ) {
 
-		const [ r, g, b ] = toColour( values, i * 4 );
+		const [ r, g, b ] = toColor( values, i * 4 );
 		image.data.set( [ r, g, b ].map( c => Math.round( Math.min( 1, Math.max( 0, c ) ) * 255 ) ), i * 4 );
 		image.data[ i * 4 + 3 ] = 255;
 
@@ -127,14 +127,14 @@ export function drawLevel( canvas, { width, height, values }, toColour = ( v, i 
 
 /**
  * Like `drawLevel`, scaled up by a whole factor so the canvas is at least
- * `minSize` texels on its longer side (nearest neighbour). Returns the factor,
+ * `minSize` texels on its longer side (nearest neighbor). Returns the factor,
  * for drawing outlines over texels: texel x spans canvas pixels x·scale … (x + 1)·scale.
  */
-export function drawLevelScaled( canvas, level, toColour, minSize = 512 ) {
+export function drawLevelScaled( canvas, level, toColor, minSize = 512 ) {
 
 	const scale = Math.max( 1, Math.floor( minSize / Math.max( level.width, level.height ) ) );
 	const texels = document.createElement( 'canvas' );
-	drawLevel( texels, level, toColour );
+	drawLevel( texels, level, toColor );
 	canvas.width = level.width * scale;
 	canvas.height = level.height * scale;
 	const context = canvas.getContext( '2d' );
@@ -145,10 +145,10 @@ export function drawLevelScaled( canvas, level, toColour, minSize = 512 ) {
 }
 
 /** Outline texel rectangles `{ x, y, width, height }` on a canvas drawn at `scale`. */
-export function outlineRects( canvas, rects, scale, colour = '#ff2d55' ) {
+export function outlineRects( canvas, rects, scale, color = '#ff2d55' ) {
 
 	const context = canvas.getContext( '2d' );
-	context.strokeStyle = colour;
+	context.strokeStyle = color;
 	context.lineWidth = Math.max( 1, Math.min( 3, canvas.width / 400 ) );
 	for ( const { x, y, width, height } of rects ) context.strokeRect( x * scale + 0.5, y * scale + 0.5, width * scale - 1, height * scale - 1 );
 
@@ -180,7 +180,7 @@ export function levelButtons( container, count, onSelect, initial = 0 ) {
 
 /**
  * A procedural rgba8unorm test image: smooth gradients, fine rings that alias
- * without mipmaps, coloured discs, and one-texel bright lines every 97 texels and
+ * without mipmaps, colored discs, and one-texel bright lines every 97 texels and
  * on the last row and column (they show how odd sizes handle the edges).
  */
 export function makeImage( width, height ) {
@@ -192,9 +192,9 @@ export function makeImage( width, height ) {
 		const dx = u - 0.5, dy = ( v - 0.5 ) * height / width;
 		const rings = 0.5 + 0.5 * Math.cos( Math.sqrt( dx * dx + dy * dy ) * width * 0.9 );
 		let r = 0.15 + 0.6 * u, g = 0.2 + 0.5 * v, b = 0.35 + 0.4 * rings;
-		for ( const [ cx, cy, radius, colour ] of discs ) {
+		for ( const [ cx, cy, radius, color ] of discs ) {
 
-			if ( ( u - cx ) ** 2 + ( ( v - cy ) * height / width ) ** 2 < radius * radius ) [ r, g, b ] = colour;
+			if ( ( u - cx ) ** 2 + ( ( v - cy ) * height / width ) ** 2 < radius * radius ) [ r, g, b ] = color;
 
 		}
 

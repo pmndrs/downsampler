@@ -36,11 +36,12 @@ your project. `three` is optional and only needed for `downsampler/three`.
 ## Quick start
 
 ```js
-import { Downsampler, requiredLimits } from 'downsampler/webgpu';
+import { Downsampler, requiredFeatures, requiredLimits } from 'downsampler/webgpu';
 
 const adapter = await navigator.gpu.requestAdapter();
-// requiredLimits asks for six storage textures, so one dispatch can write six levels.
-const device = await adapter.requestDevice( { requiredLimits: requiredLimits( adapter ) } );
+// requiredLimits asks for six storage textures, so one dispatch can write six levels;
+// requiredFeatures for the optional features that make some formats faster or available.
+const device = await adapter.requestDevice( { requiredFeatures: requiredFeatures( adapter ), requiredLimits: requiredLimits( adapter ) } );
 
 const texture = device.createTexture( {
 	format: 'rgba8unorm',
@@ -81,7 +82,7 @@ await renderer.init();
 generateMipmaps( renderer, texture ); // false if the texture isn't supported; three's own mipmaps still work then
 ```
 
-This works today for `StorageTexture`s and sRGB colour textures. A built-in `mipmapGeneration: 'compute'` option for
+This works today for `StorageTexture`s and sRGB color textures. A built-in `mipmapGeneration: 'compute'` option for
 three.js itself is in progress.
 
 ## How fast is it?
@@ -95,8 +96,10 @@ GPU time for a full chain, against one render pass per level:
 | 1920×1080 | 3× faster | |
 
 On an NVIDIA RTX 3060 Laptop, from 960×540 to 2560×1440, it takes 5–20 % less time than render passes in rgba8 and up
-to 20 % less in rgba16float; a 512² cube map is 3–4× faster. The exception is sRGB colour textures, which compute
-shaders can't write directly: on the RTX, render passes are 2–3× faster for those.
+to 20 % less in rgba16float; a 512² cube map is 3–4× faster. The exception is sRGB color textures, which compute
+shaders can't write directly. The library draws those with render passes too, but rounds every level exactly, which
+plain render passes don't: they stay 1.05–1.6× faster on the RTX and about 5× on Intel. `srgbRounding: 'device'` skips
+the exact rounding and matches them.
 
 The big wins are small textures and cube maps, where the cost of starting many render passes dominates. Very large
 textures (4096²) are limited by memory bandwidth, so every method takes about the same time there. If you can accept

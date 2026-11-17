@@ -1,7 +1,7 @@
 # sRGB lookup tables on D3D12 (round 2, 2026-11-14)
 
 RTX 3060 Laptop (nvidia ampere, driver 592.00), Chrome 148 headless, D3D12, `--power=high`, on AC, Turbo plan.
-GPU idle apart from the desktop (Cursor, Chrome, Camera Hub open; 0 % utilisation, 62 °C at the start).
+GPU idle apart from the desktop (Cursor, Chrome, Camera Hub open; 0 % utilization, 62 °C at the start).
 
 ## What happened
 

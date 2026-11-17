@@ -94,7 +94,7 @@ function encode( value, quantization, channel = 0 ) {
 
 }
 
-/** A stored value as a read returns it; sRGB colour channels through the exact decode table (alpha is linear). */
+/** A stored value as a read returns it; sRGB color channels through the exact decode table (alpha is linear). */
 function decode( stored, quantization, channel = 0 ) {
 
 	if ( quantization === 'srgb8' ) return channel === 3 ? Math.fround( stored / 255 ) : srgbDecodeTable[ stored ];

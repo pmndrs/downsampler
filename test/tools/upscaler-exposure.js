@@ -1,5 +1,5 @@
 // pmndrs/upscaler's exposure pass ('upscaler/exposure'): one invocation takes
-// 32×32 bilinear taps of the scene colour, averages log2 luma and eases the
+// 32×32 bilinear taps of the scene color, averages log2 luma and eases the
 // exposure. Dispatched as UpscalerCore does: one 8×8 workgroup.
 import { LUMINANCE_PYRAMID_SHADER } from './upscaler-wgsl.js';
 import { compile, createTexture, readTexture, uniformBuffer } from './gpu.js';

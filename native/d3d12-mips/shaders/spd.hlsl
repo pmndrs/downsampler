@@ -10,6 +10,15 @@
 //   SPD_MAX                       max instead of average (Hi-Z)
 //   SPD_UNORM                     destinations declared `unorm float4` (rgba8unorm)
 //   SPD_CHANNELS                  1 keeps only red in LDS (r32float), else 4
+//   SPD_SRGB                      rgba8unorm-srgb, averaged in linear light: the source is read
+//                                 through an _SRGB SRV (the hardware decodes; the sampler filters
+//                                 in linear), LDS holds linear values, every store encodes in the
+//                                 shader to a UNORM UAV, and mip 6 read back is decoded
+//   SPD_SRGB_AMD                  rgba8unorm-srgb as AMD's SPD sample and FidelityFX SDK 1.x do it:
+//                                 the linear sampler path encodes the sampled (decoded, filtered)
+//                                 value with ffxSrgbFromLinear and SPD then averages encoded
+//                                 values; the load path reads the codes through a UNORM view
+//                                 (no decode at all). Stores write the encoded values as they are.
 //
 // Which levels a dispatch writes is set on the CPU (see main.cpp): `mips` <= 6 never
 // touches the counter, so the same shader also runs as 6 levels per dispatch.
@@ -45,6 +54,23 @@ SamplerState srcSampler : register(s0);
 
 groupshared uint spdCounter;
 
+#ifdef SPD_SRGB
+// IEC 61966-2-1, as the library's oracle (srgb.ts); the UNORM store rounds to the nearest code.
+float SrgbEncode(float v)
+{
+	v = saturate(v);
+	return v <= 0.0031308 ? v * 12.92 : 1.055 * pow(v, 1.0 / 2.4) - 0.055;
+}
+
+float SrgbDecode(float c)
+{
+	return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+}
+
+float4 SrgbEncode4(float4 v) { return float4(SrgbEncode(v.r), SrgbEncode(v.g), SrgbEncode(v.b), v.a); }
+float4 SrgbDecode4(float4 c) { return float4(SrgbDecode(c.r), SrgbDecode(c.g), SrgbDecode(c.b), c.a); }
+#endif
+
 void SpdIncreaseAtomicCounter(uint slice)
 {
 	InterlockedAdd(spdGlobalAtomic[0], 1, spdCounter);
@@ -70,9 +96,14 @@ groupshared float spdIntermediateA[16][16];
 float4 SpdLoadSourceImage(int2 p, uint slice)
 {
 #ifdef SPD_LINEAR_SAMPLER
-	// p is the top-left texel of a 2x2 quad: sample its centre.
+	// p is the top-left texel of a 2x2 quad: sample its center.
 	float2 uv = float2(p) * invInputSize + invInputSize;
-	return imgSrc.SampleLevel(srcSampler, uv, 0);
+	float4 result = imgSrc.SampleLevel(srcSampler, uv, 0);
+#ifdef SPD_SRGB_AMD
+	// AMD's SpdLoadSourceImage with the linear sampler (FidelityFX SDK 1.1.4 ffx_spd_callbacks_hlsl.h).
+	result = float4(ffxSrgbFromLinear(result.x), ffxSrgbFromLinear(result.y), ffxSrgbFromLinear(result.z), result.w);
+#endif
+	return result;
 #else
 	return imgSrc[p];
 #endif
@@ -80,11 +111,18 @@ float4 SpdLoadSourceImage(int2 p, uint slice)
 
 float4 SpdLoad(int2 p, uint slice)
 {
+#ifdef SPD_SRGB
+	return SrgbDecode4(imgDst6[p]);
+#else
 	return imgDst6[p];
+#endif
 }
 
 void SpdStore(int2 p, float4 value, uint mip, uint slice)
 {
+#ifdef SPD_SRGB
+	value = SrgbEncode4(value);
+#endif
 	if (mip == 5)
 	{
 		imgDst6[p] = value;

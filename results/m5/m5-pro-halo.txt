@@ -1,0 +1,31 @@
+
+> downsampler@0.1.0 bench
+> npm run build && node test/run.js --bench --compare=render --skip-validation --strategies=render,tail,halo,haloAny --output=results/m5/m5-pro-halo.json
+
+
+> downsampler@0.1.0 build
+> tsc -p tsconfig.json
+
+{"vendor":"apple","architecture":"metal-3","device":"","description":"","isFallbackAdapter":false,"timestamps":true,"features":["texture-formats-tier1","bgra8unorm-storage"],"compatibility":false,"maxStorageTexturesPerShaderStage":6,"subgroupMinSize":32,"subgroupMaxSize":32,"adapterFeatures":["bgra8unorm-storage","chromium-experimental-subgroup-matrix","clip-distances","core-features-and-limits","depth-clip-control","depth32float-stencil8","dual-source-blending","float32-blendable","float32-filterable","indirect-first-instance","primitive-index","rg11b10ufloat-renderable","shader-f16","subgroups","texture-component-swizzle","texture-compression-astc","texture-compression-astc-sliced-3d","texture-compression-bc","texture-compression-bc-sliced-3d","texture-compression-etc2","texture-formats-tier1","texture-formats-tier2","timestamp-query"],"maxTextureDimension2D":8192}
+load average (1, 5, 15 min): before 4.8 6.8 6.6, after 4.7 6.8 6.6
+validation passed: 0 cases, 0 pattern runs, 0 ms
+┌─────────┬─────────────┬───────────────┬─────────────────────┬────────────────────┬────────────────────┬────────────────────┐
+│ (index) │ size        │ format        │ render              │ tail               │ halo               │ haloAny            │
+├─────────┼─────────────┼───────────────┼─────────────────────┼────────────────────┼────────────────────┼────────────────────┤
+│ 0       │ '960x540'   │ 'rgba8unorm'  │ '0.0804 ×1.00 [9]'  │ '0.0143 ×0.19 [4]' │ '0.0127 ×0.17 [3]' │ '0.0127 ×0.17 [3]' │
+│ 1       │ '1129x635'  │ 'rgba8unorm'  │ '0.1208 ×1.00 [10]' │ '0.0204 ×0.17 [5]' │ '0.0189 ×0.15 [4]' │ '0.0190 ×0.16 [3]' │
+│ 2       │ '1280x720'  │ 'rgba8unorm'  │ '0.1202 ×1.00 [10]' │ '0.0172 ×0.15 [3]' │ '0.0169 ×0.15 [3]' │ '0.0166 ×0.14 [3]' │
+│ 3       │ '1707x960'  │ 'rgba8unorm'  │ '0.1256 ×1.00 [10]' │ '0.0317 ×0.26 [4]' │ '0.0315 ×0.25 [4]' │ '0.0314 ×0.27 [3]' │
+│ 4       │ '1920x1080' │ 'rgba8unorm'  │ '0.1280 ×1.00 [10]' │ '0.0322 ×0.27 [4]' │ '0.0326 ×0.26 [3]' │ '0.0326 ×0.26 [3]' │
+│ 5       │ '2560x1440' │ 'rgba8unorm'  │ '0.1382 ×1.00 [11]' │ '0.0500 ×0.38 [3]' │ '0.0486 ×0.35 [3]' │ '0.0501 ×0.36 [3]' │
+│ 6       │ '1024x1024' │ 'rgba8unorm'  │ '0.1238 ×1.00 [10]' │ '0.0138 ×0.11 [2]' │ '0.0152 ×0.13 [2]' │ '0.0140 ×0.11 [2]' │
+│ 7       │ '4096x4096' │ 'rgba8unorm'  │ '0.4601 ×1.00 [12]' │ '0.3457 ×0.75 [2]' │ '0.3493 ×0.76 [2]' │ '0.3488 ×0.75 [2]' │
+│ 8       │ '960x540'   │ 'rgba16float' │ '0.0946 ×1.00 [9]'  │ '0.0218 ×0.24 [4]' │ '0.0208 ×0.22 [3]' │ '0.0199 ×0.22 [3]' │
+│ 9       │ '1129x635'  │ 'rgba16float' │ '0.1259 ×1.00 [10]' │ '0.0329 ×0.27 [5]' │ '0.0337 ×0.27 [4]' │ '0.0317 ×0.25 [3]' │
+│ 10      │ '1280x720'  │ 'rgba16float' │ '0.1291 ×1.00 [10]' │ '0.0277 ×0.22 [3]' │ '0.0286 ×0.23 [3]' │ '0.0293 ×0.23 [3]' │
+│ 11      │ '1707x960'  │ 'rgba16float' │ '0.1305 ×1.00 [10]' │ '0.0541 ×0.42 [4]' │ '0.0547 ×0.43 [4]' │ '0.0578 ×0.45 [3]' │
+│ 12      │ '1920x1080' │ 'rgba16float' │ '0.1349 ×1.00 [10]' │ '0.0643 ×0.48 [4]' │ '0.0632 ×0.48 [3]' │ '0.0670 ×0.51 [3]' │
+│ 13      │ '2560x1440' │ 'rgba16float' │ '0.1999 ×1.00 [11]' │ '0.1447 ×0.70 [3]' │ '0.1396 ×0.70 [3]' │ '0.1396 ×0.69 [3]' │
+│ 14      │ '1024x1024' │ 'rgba16float' │ '0.1275 ×1.00 [10]' │ '0.0295 ×0.23 [2]' │ '0.0280 ×0.22 [2]' │ '0.0281 ×0.22 [2]' │
+│ 15      │ '4096x4096' │ 'rgba16float' │ '0.8297 ×1.00 [12]' │ '0.6545 ×0.79 [2]' │ '0.6528 ×0.79 [2]' │ '0.6540 ×0.79 [2]' │
+└─────────┴─────────────┴───────────────┴─────────────────────┴────────────────────┴────────────────────┴────────────────────┘

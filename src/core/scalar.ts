@@ -184,7 +184,7 @@ interface Exact {
 }
 
 /**
- * Normalises a GPU-order total and an exact total into a result, with the
+ * Normalizes a GPU-order total and an exact total into a result, with the
  * error bound for `depth` roundings (see {@link scalarReference}). `count` is
  * the texel count; `inputs` the number of inputs that carry `absolute` error.
  */
@@ -276,7 +276,7 @@ function exactOf( ops: readonly ScalarOp[], length: number, term: ( i: number, c
  * - 'weighted': (γ_{D+1} · Σ|w·v| + |r| · γ_D · Σ|w|) / W + u·|r|: the product
  *   rounds once more, and the denominator carries its own sum error.
  * - 'min', 'max': exact (they select a value).
- * Input error adds `(absolute · n + relative · A) / normaliser` to sum-like
+ * Input error adds `(absolute · n + relative · A) / normalizer` to sum-like
  * channels and `absolute + relative · |r|` to min and max.
  */
 export function scalarReference( texels: ArrayLike<number>, width: number, height: number, layers: number, reduction: ScalarReduce = 'average', options: ScalarReferenceOptions = {} ): ScalarReferenceResult[] {

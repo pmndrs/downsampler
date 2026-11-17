@@ -90,7 +90,7 @@ test( 'clamp tile kernels can sample averages at the 2×2 corner', () => {
 
 test( 'spd reference: clamp blocks, ⌊n/2⌋ sizes, quantized once per level', () => {
 
-	// 3 → 1: the last column is dropped (render passes sample the centre texel).
+	// 3 → 1: the last column is dropped (render passes sample the center texel).
 	const [ one ] = spdReference( rgba( [ 0, 0.5, 1 ] ), 3, 1, 1, 'float32', 'average', 1 );
 	assert.equal( one.values[ 0 ], 0.25 );
 	assert.equal( reduceReference( rgba( [ 0, 0.5, 1 ] ), 3, 1, 1, 'float32' ).values[ 0 ], 0.5 );

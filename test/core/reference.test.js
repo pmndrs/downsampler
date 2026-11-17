@@ -18,7 +18,7 @@ test( 'even sizes are an exact 2x2 box', () => {
 
 test( 'odd sizes use normalized-coordinate bilinear weights', () => {
 
-	// 3 -> 1: sample at x = 1.0, i.e. exactly the centre texel.
+	// 3 -> 1: sample at x = 1.0, i.e. exactly the center texel.
 	const level = reduceReference( rgba( [ 0, 0.5, 1 ] ), 3, 1, 1, 'float16' );
 	assert.equal( level.values[ 0 ], 0.5 );
 

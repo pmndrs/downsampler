@@ -17,16 +17,20 @@ runnable page in [examples/](../examples/) that checks its own output. For the f
 ## Set up a device
 
 ```js
-import { Downsampler, requiredLimits } from 'downsampler/webgpu';
+import { Downsampler, requiredFeatures, requiredLimits } from 'downsampler/webgpu';
 
 const adapter = await navigator.gpu.requestAdapter();
-const device = await adapter.requestDevice( { requiredLimits: requiredLimits( adapter ) } );
+const device = await adapter.requestDevice( { requiredFeatures: requiredFeatures( adapter ), requiredLimits: requiredLimits( adapter ) } );
 const downsampler = new Downsampler( device );
 ```
 
 Each level a dispatch writes needs its own storage texture binding, and WebGPU allows only four unless you ask for
 more. `requiredLimits( adapter )` asks for up to six, plus the larger workgroups some kernels use, but never for more
 than the adapter has. Without it everything still works, just with fewer levels per dispatch.
+
+`requiredFeatures( adapter )` asks for the optional features the library can use, if the adapter has them: more
+storage formats, and filtering for float32 formats, which cuts their chains' time by up to 30 %. Add your own features
+to the list.
 
 Make one `Downsampler` per device and keep it. It caches its compiled pipelines, so the first chain of each format
 pays a compile and later ones don't.
@@ -56,9 +60,9 @@ downsampler.encodePass( pass, texture );   // dispatches inside your compute pas
 ```
 
 The texture needs `STORAGE_BINDING` so the shader can write the levels. A few formats can't be storage textures at
-all (sRGB colour, `rgb9e5ufloat`); those need `COPY_DST` instead, and the library writes them through a buffer and
-copies them in. You don't have to do anything different for them, except that `encodePass` can't record those copies:
-use `encode`.
+all (sRGB color, `rgb9e5ufloat`). sRGB textures with `RENDER_ATTACHMENT` are drawn with render passes; otherwise these
+formats need `COPY_DST`, and the library writes them through a buffer and copies them in. You don't have to do anything
+different for them, except that `encodePass` can't record render passes or copies: use `encode`.
 
 Array textures and cube maps (as 6-layer `'2d-array'` textures) work the same way. Every layer goes through the same
 dispatches, which is where most of the speed-up over render passes comes from.
@@ -75,7 +79,7 @@ because 15 doesn't split into pairs. Every mipmap generator has to decide what t
 
 | `oddSizes` | What it does | Use it for |
 |---|---|---|
-| `'exact'` (default) | What render passes and WebGL do: one bilinear sample at each output texel's centre. | Colour textures, anything that should look like normal mipmaps. |
+| `'exact'` (default) | What render passes and WebGL do: one bilinear sample at each output texel's center. | Color textures, anything that should look like normal mipmaps. |
 | `'box'` | A true area average: every texel counts by how much of it the output covers. Every level keeps the image's mean. | Lighting, irradiance and roughness chains, anything where the average matters. |
 | `'spd'` | AMD SPD's shortcut: drop the last odd row or column. Fewest dispatches. | Bloom and other effects where speed matters more than the exact values. Averages only. |
 
@@ -85,7 +89,7 @@ downsampler.generate( irradiance, { oddSizes: 'box' } );
 
 How far apart they are: on a 1129 × 635 test image, the average error against a true area average over all levels is
 2.1 steps of 255 for `'exact'`, 5.1 for `'spd'` and 0.3 for `'box'`. And a 31 × 31 texture under `'exact'` ends in a
-1 × 1 that is just its centre texel, as render passes give you; under `'box'` it is the mean of all 961.
+1 × 1 that is just its center texel, as render passes give you; under `'box'` it is the mean of all 961.
 
 ## Depth pyramids for occlusion culling
 
@@ -200,11 +204,12 @@ if ( ! generateMipmaps( renderer, texture ) ) console.warn( unsupportedReason( r
 `generateMipmaps` takes the same options as `encode`, plus `encoder` to record into your own. It returns `false` and
 does nothing when it can't handle a texture, so three's own mipmaps remain your fallback.
 
-It works for `StorageTexture`s and for sRGB colour textures. Other regular three.js textures don't get the storage
+It works for `StorageTexture`s and for sRGB color textures. Other regular three.js textures don't get the storage
 usage it needs; a built-in compute option for three.js itself is in progress.
 
-For sRGB textures on NVIDIA, three's own mipmaps are 2–3× faster (compute shaders can't write sRGB directly, so the
-library takes a slower path), so leave those to three there.
+sRGB textures are drawn with render passes, like three's own mipmaps, but every level is rounded exactly, so the
+results are the same on every GPU. That rounding costs: three's mipmaps are 1.05–1.6× faster on an RTX 3060 and about
+5× on Intel UHD. For their speed, create the `Downsampler` with `srgbRounding: 'device'` ([guide](guide.md#srgb-color)).
 
 ## When a texture isn't supported
 

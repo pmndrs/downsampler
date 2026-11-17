@@ -1,0 +1,65 @@
+
+> downsampler@0.1.0 bench
+> npm run build && node test/run.js --bench --compare=storage-usage --formats=rgba8unorm-srgb --skip-validation --output=results/m5/m5-pro-srgb-alias-sampling.json
+
+
+> downsampler@0.1.0 build
+> tsc -p tsconfig.json
+
+{"vendor":"apple","architecture":"metal-3","device":"","description":"","isFallbackAdapter":false,"timestamps":true,"features":["texture-formats-tier1","bgra8unorm-storage"],"compatibility":false,"maxStorageTexturesPerShaderStage":6,"subgroupMinSize":32,"subgroupMaxSize":32,"adapterFeatures":["bgra8unorm-storage","chromium-experimental-subgroup-matrix","clip-distances","core-features-and-limits","depth-clip-control","depth32float-stencil8","dual-source-blending","float32-blendable","float32-filterable","indirect-first-instance","primitive-index","rg11b10ufloat-renderable","shader-f16","subgroups","texture-component-swizzle","texture-compression-astc","texture-compression-astc-sliced-3d","texture-compression-bc","texture-compression-bc-sliced-3d","texture-compression-etc2","texture-formats-tier1","texture-formats-tier2","timestamp-query"],"maxTextureDimension2D":8192}
+load average (1, 5, 15 min): before 4.8 6.9 6.6, after 4.8 6.9 6.6
+validation passed: 0 cases, 0 pattern runs, 0 ms
+┌─────────┬─────────────┬───────────────────┬────────────┬──────────────┬──────────┬────────────┬─────────────────┐
+│ (index) │ size        │ format            │ content    │ shader       │ plain ms │ storage ms │ storage ÷ plain │
+├─────────┼─────────────┼───────────────────┼────────────┼──────────────┼──────────┼────────────┼─────────────────┤
+│ 0       │ '960x540'   │ 'rgba8unorm-srgb' │ 'rendered' │ 'fullscreen' │ '0.0285' │ '0.0285'   │ '1.005'         │
+│ 1       │ '960x540'   │ 'rgba8unorm-srgb' │ 'rendered' │ 'material'   │ '0.0414' │ '0.0413'   │ '1.000'         │
+│ 2       │ '960x540'   │ 'rgba8unorm-srgb' │ 'rendered' │ 'write'      │ '0.0069' │ '0.0068'   │ '1.024'         │
+│ 3       │ '960x540'   │ 'rgba8unorm-srgb' │ 'noise'    │ 'fullscreen' │ '0.0071' │ '0.0070'   │ '0.987'         │
+│ 4       │ '960x540'   │ 'rgba8unorm-srgb' │ 'noise'    │ 'material'   │ '0.0414' │ '0.0415'   │ '1.001'         │
+│ 5       │ '1129x635'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'fullscreen' │ '0.0078' │ '0.0078'   │ '1.005'         │
+│ 6       │ '1129x635'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'material'   │ '0.0561' │ '0.0562'   │ '1.000'         │
+│ 7       │ '1129x635'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'write'      │ '0.0074' │ '0.0074'   │ '0.999'         │
+│ 8       │ '1129x635'  │ 'rgba8unorm-srgb' │ 'noise'    │ 'fullscreen' │ '0.0080' │ '0.0080'   │ '1.004'         │
+│ 9       │ '1129x635'  │ 'rgba8unorm-srgb' │ 'noise'    │ 'material'   │ '0.0562' │ '0.0563'   │ '1.000'         │
+│ 10      │ '1280x720'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'fullscreen' │ '0.0095' │ '0.0095'   │ '1.001'         │
+│ 11      │ '1280x720'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'material'   │ '0.0713' │ '0.0713'   │ '1.001'         │
+│ 12      │ '1280x720'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'write'      │ '0.0090' │ '0.0090'   │ '1.000'         │
+│ 13      │ '1280x720'  │ 'rgba8unorm-srgb' │ 'noise'    │ 'fullscreen' │ '0.0097' │ '0.0097'   │ '0.999'         │
+│ 14      │ '1280x720'  │ 'rgba8unorm-srgb' │ 'noise'    │ 'material'   │ '0.0718' │ '0.0716'   │ '0.998'         │
+│ 15      │ '1707x960'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'fullscreen' │ '0.0151' │ '0.0152'   │ '1.002'         │
+│ 16      │ '1707x960'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'material'   │ '0.1236' │ '0.1236'   │ '1.001'         │
+│ 17      │ '1707x960'  │ 'rgba8unorm-srgb' │ 'rendered' │ 'write'      │ '0.0146' │ '0.0146'   │ '1.000'         │
+│ 18      │ '1707x960'  │ 'rgba8unorm-srgb' │ 'noise'    │ 'fullscreen' │ '0.0194' │ '0.0195'   │ '1.002'         │
+│ 19      │ '1707x960'  │ 'rgba8unorm-srgb' │ 'noise'    │ 'material'   │ '0.1251' │ '0.1247'   │ '0.997'         │
+│ 20      │ '1920x1080' │ 'rgba8unorm-srgb' │ 'rendered' │ 'fullscreen' │ '0.0185' │ '0.0185'   │ '0.999'         │
+│ 21      │ '1920x1080' │ 'rgba8unorm-srgb' │ 'rendered' │ 'material'   │ '0.1565' │ '0.1540'   │ '0.986'         │
+│ 22      │ '1920x1080' │ 'rgba8unorm-srgb' │ 'rendered' │ 'write'      │ '0.0179' │ '0.0179'   │ '1.000'         │
+│ 23      │ '1920x1080' │ 'rgba8unorm-srgb' │ 'noise'    │ 'fullscreen' │ '0.0246' │ '0.0250'   │ '1.042'         │
+│ 24      │ '1920x1080' │ 'rgba8unorm-srgb' │ 'noise'    │ 'material'   │ '0.1562' │ '0.1561'   │ '1.003'         │
+│ 25      │ '2560x1440' │ 'rgba8unorm-srgb' │ 'rendered' │ 'fullscreen' │ '0.0309' │ '0.0310'   │ '1.005'         │
+│ 26      │ '2560x1440' │ 'rgba8unorm-srgb' │ 'rendered' │ 'material'   │ '0.2730' │ '0.2731'   │ '1.000'         │
+│ 27      │ '2560x1440' │ 'rgba8unorm-srgb' │ 'rendered' │ 'write'      │ '0.0303' │ '0.0304'   │ '1.001'         │
+│ 28      │ '2560x1440' │ 'rgba8unorm-srgb' │ 'noise'    │ 'fullscreen' │ '0.0763' │ '0.0775'   │ '1.017'         │
+│ 29      │ '2560x1440' │ 'rgba8unorm-srgb' │ 'noise'    │ 'material'   │ '0.2872' │ '0.2876'   │ '0.996'         │
+│ 30      │ '1024x1024' │ 'rgba8unorm-srgb' │ 'rendered' │ 'fullscreen' │ '0.0103' │ '0.0104'   │ '1.000'         │
+│ 31      │ '1024x1024' │ 'rgba8unorm-srgb' │ 'rendered' │ 'material'   │ '0.0782' │ '0.0783'   │ '1.000'         │
+│ 32      │ '1024x1024' │ 'rgba8unorm-srgb' │ 'rendered' │ 'write'      │ '0.0099' │ '0.0099'   │ '1.000'         │
+│ 33      │ '1024x1024' │ 'rgba8unorm-srgb' │ 'noise'    │ 'fullscreen' │ '0.0110' │ '0.0107'   │ '0.970'         │
+│ 34      │ '1024x1024' │ 'rgba8unorm-srgb' │ 'noise'    │ 'material'   │ '0.0787' │ '0.0786'   │ '0.999'         │
+│ 35      │ '4096x4096' │ 'rgba8unorm-srgb' │ 'rendered' │ 'fullscreen' │ '0.1418' │ '0.1427'   │ '1.010'         │
+│ 36      │ '4096x4096' │ 'rgba8unorm-srgb' │ 'rendered' │ 'material'   │ '1.2155' │ '1.2167'   │ '1.000'         │
+│ 37      │ '4096x4096' │ 'rgba8unorm-srgb' │ 'rendered' │ 'write'      │ '0.1324' │ '0.1324'   │ '1.003'         │
+│ 38      │ '4096x4096' │ 'rgba8unorm-srgb' │ 'noise'    │ 'fullscreen' │ '0.4405' │ '0.4421'   │ '0.997'         │
+│ 39      │ '4096x4096' │ 'rgba8unorm-srgb' │ 'noise'    │ 'material'   │ '1.4002' │ '1.3989'   │ '0.997'         │
+└─────────┴─────────────┴───────────────────┴────────────┴──────────────┴──────────┴────────────┴─────────────────┘
+median storage ÷ plain over sizes (min–max):
+┌─────────┬───────────────────────────────────────┬─────────┬───────────────┐
+│ (index) │ case                                  │ median  │ range         │
+├─────────┼───────────────────────────────────────┼─────────┼───────────────┤
+│ 0       │ 'rgba8unorm-srgb rendered fullscreen' │ '1.005' │ '0.999–1.010' │
+│ 1       │ 'rgba8unorm-srgb rendered material'   │ '1.000' │ '0.986–1.001' │
+│ 2       │ 'rgba8unorm-srgb rendered write'      │ '1.000' │ '0.999–1.024' │
+│ 3       │ 'rgba8unorm-srgb noise fullscreen'    │ '1.002' │ '0.970–1.042' │
+│ 4       │ 'rgba8unorm-srgb noise material'      │ '0.999' │ '0.996–1.003' │
+└─────────┴───────────────────────────────────────┴─────────┴───────────────┘

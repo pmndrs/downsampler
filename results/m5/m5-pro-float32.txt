@@ -1,0 +1,39 @@
+
+> downsampler@0.1.0 bench
+> npm run build && node test/run.js --bench --compare=float32 --skip-validation --output=results/m5/m5-pro-float32.json
+
+
+> downsampler@0.1.0 build
+> tsc -p tsconfig.json
+
+{"vendor":"apple","architecture":"metal-3","device":"","description":"","isFallbackAdapter":false,"timestamps":true,"features":["texture-formats-tier1","bgra8unorm-storage","float32-filterable"],"compatibility":false,"maxStorageTexturesPerShaderStage":6,"subgroupMinSize":32,"subgroupMaxSize":32,"adapterFeatures":["bgra8unorm-storage","chromium-experimental-subgroup-matrix","clip-distances","core-features-and-limits","depth-clip-control","depth32float-stencil8","dual-source-blending","float32-blendable","float32-filterable","indirect-first-instance","primitive-index","rg11b10ufloat-renderable","shader-f16","subgroups","texture-component-swizzle","texture-compression-astc","texture-compression-astc-sliced-3d","texture-compression-bc","texture-compression-bc-sliced-3d","texture-compression-etc2","texture-formats-tier1","texture-formats-tier2","timestamp-query"],"maxTextureDimension2D":8192}
+load average (1, 5, 15 min): before 4.8 6.9 6.6, after 4.7 6.8 6.6
+validation passed: 0 cases, 0 pattern runs, 0 ms
+┌─────────┬─────────────┬───────────────┬────────────────────┬────────────────────┐
+│ (index) │ size        │ format        │ load               │ sample             │
+├─────────┼─────────────┼───────────────┼────────────────────┼────────────────────┤
+│ 0       │ '960x540'   │ 'r32float'    │ '0.0390 ×1.00 [4]' │ '0.0291 ×0.73 [4]' │
+│ 1       │ '1129x635'  │ 'r32float'    │ '0.0235 ×1.00 [5]' │ '0.0194 ×0.83 [5]' │
+│ 2       │ '1280x720'  │ 'r32float'    │ '0.0332 ×1.00 [3]' │ '0.0231 ×0.71 [3]' │
+│ 3       │ '1707x960'  │ 'r32float'    │ '0.1133 ×1.00 [4]' │ '0.0854 ×0.74 [4]' │
+│ 4       │ '1920x1080' │ 'r32float'    │ '0.0419 ×1.00 [4]' │ '0.0327 ×0.81 [4]' │
+│ 5       │ '2560x1440' │ 'r32float'    │ '0.0562 ×1.00 [3]' │ '0.0476 ×0.82 [3]' │
+│ 6       │ '1024x1024' │ 'r32float'    │ '0.0206 ×1.00 [2]' │ '0.0166 ×0.75 [2]' │
+│ 7       │ '4096x4096' │ 'r32float'    │ '0.3341 ×1.00 [2]' │ '0.3354 ×1.00 [2]' │
+│ 8       │ '960x540'   │ 'rg32float'   │ '0.0211 ×1.00 [4]' │ '0.0160 ×0.76 [4]' │
+│ 9       │ '1129x635'  │ 'rg32float'   │ '0.0347 ×1.00 [5]' │ '0.0279 ×0.82 [5]' │
+│ 10      │ '1280x720'  │ 'rg32float'   │ '0.0267 ×1.00 [3]' │ '0.0246 ×0.92 [3]' │
+│ 11      │ '1707x960'  │ 'rg32float'   │ '0.0553 ×1.00 [4]' │ '0.0484 ×0.87 [4]' │
+│ 12      │ '1920x1080' │ 'rg32float'   │ '0.0613 ×1.00 [4]' │ '0.0606 ×1.01 [4]' │
+│ 13      │ '2560x1440' │ 'rg32float'   │ '0.1443 ×1.00 [3]' │ '0.1419 ×0.98 [3]' │
+│ 14      │ '1024x1024' │ 'rg32float'   │ '0.0290 ×1.00 [2]' │ '0.0256 ×0.87 [2]' │
+│ 15      │ '4096x4096' │ 'rg32float'   │ '0.6551 ×1.00 [2]' │ '0.6542 ×1.00 [2]' │
+│ 16      │ '960x540'   │ 'rgba32float' │ '0.0360 ×1.00 [4]' │ '0.0307 ×0.84 [4]' │
+│ 17      │ '1129x635'  │ 'rgba32float' │ '0.0526 ×1.00 [5]' │ '0.0456 ×0.85 [5]' │
+│ 18      │ '1280x720'  │ 'rgba32float' │ '0.0468 ×1.00 [3]' │ '0.0457 ×0.97 [3]' │
+│ 19      │ '1707x960'  │ 'rgba32float' │ '0.1473 ×1.00 [4]' │ '0.1370 ×0.93 [4]' │
+│ 20      │ '1920x1080' │ 'rgba32float' │ '0.1754 ×1.00 [4]' │ '0.1685 ×0.96 [4]' │
+│ 21      │ '2560x1440' │ 'rgba32float' │ '0.2951 ×1.00 [3]' │ '0.2971 ×1.01 [3]' │
+│ 22      │ '1024x1024' │ 'rgba32float' │ '0.0570 ×1.00 [2]' │ '0.0544 ×0.97 [2]' │
+│ 23      │ '4096x4096' │ 'rgba32float' │ '1.3372 ×1.00 [2]' │ '1.3676 ×1.01 [2]' │
+└─────────┴─────────────┴───────────────┴────────────────────┴────────────────────┘

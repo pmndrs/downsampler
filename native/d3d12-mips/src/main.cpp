@@ -11,6 +11,11 @@
 //   d3d11-generatemips                    ID3D11DeviceContext::GenerateMips, the driver's own path
 //   empty                                 two timestamps with nothing between (timer overhead)
 //
+// rgba8unorm-srgb (--formats=rgba8unorm-srgb): SPD on an R8G8B8A8_TYPELESS texture, read through
+// an _SRGB SRV, written through UNORM UAVs with the encode in the shader, averaging in linear
+// light; spd-amdsrgb-atomic-wave-<load|linear> is AMD's own sRGB handling (shaders/spd.hlsl);
+// render passes through _SRGB RTVs and SRVs; GenerateMips on an _SRGB texture.
+//
 // Timing: GPU timestamps around `repeats` back-to-back chains, one sample per submit, variants in
 // rotating order each round, median over `rounds` rounds. Same method as test/bench/timing.js
 // (16 repeats per sample), without its marker passes.
@@ -66,17 +71,21 @@ struct Options {
 
 struct FormatInfo {
 	const char * name;
-	DXGI_FORMAT dxgi;
+	DXGI_FORMAT dxgi;      // SRVs, RTVs, render-target-only and D3D11 textures
 	uint32_t bytes;
 	bool unorm;
 	bool max;        // Hi-Z: max reduction, SPD only
 	Format id;
+	DXGI_FORMAT typeless;  // textures that also allow UAV (sRGB: typeless, so UNORM UAVs can alias it)
+	DXGI_FORMAT uavView;   // UAVs (sRGB: UNORM, the shader encodes; D3D12 has no sRGB UAVs)
+	bool srgb = false;
 };
 
 static const FormatInfo formatInfos[] = {
-	{ "rgba8unorm", DXGI_FORMAT_R8G8B8A8_UNORM, 4, true, false, Format::rgba8unorm },
-	{ "rgba16float", DXGI_FORMAT_R16G16B16A16_FLOAT, 8, false, false, Format::rgba16float },
-	{ "r32float", DXGI_FORMAT_R32_FLOAT, 4, false, true, Format::r32float },
+	{ "rgba8unorm", DXGI_FORMAT_R8G8B8A8_UNORM, 4, true, false, Format::rgba8unorm, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM },
+	{ "rgba16float", DXGI_FORMAT_R16G16B16A16_FLOAT, 8, false, false, Format::rgba16float, DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16G16B16A16_FLOAT },
+	{ "r32float", DXGI_FORMAT_R32_FLOAT, 4, false, true, Format::r32float, DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R32_FLOAT },
+	{ "rgba8unorm-srgb", DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, 4, true, false, Format::rgba8unorm_srgb, DXGI_FORMAT_R8G8B8A8_TYPELESS, DXGI_FORMAT_R8G8B8A8_UNORM, true },
 };
 
 static const FormatInfo * findFormat( const std::string & name ) {
@@ -93,6 +102,7 @@ struct Texture {
 	ComPtr<ID3D12Resource> resource;
 	uint32_t width = 0, height = 0, levels = 0;
 	const FormatInfo * format = nullptr;
+	DXGI_FORMAT srvFormat = DXGI_FORMAT_UNKNOWN, uavFormat = DXGI_FORMAT_UNKNOWN;
 	std::vector<D3D12_RESOURCE_STATES> state;     // per level, as recorded so far
 };
 
@@ -210,7 +220,7 @@ struct Gpu {
 	void srv( uint32_t index, Texture & texture, uint32_t level ) {
 
 		D3D12_SHADER_RESOURCE_VIEW_DESC desc {};
-		desc.Format = texture.format->dxgi;
+		desc.Format = texture.srvFormat;
 		desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 		desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 		desc.Texture2D.MostDetailedMip = level;
@@ -222,21 +232,23 @@ struct Gpu {
 	void uav( uint32_t index, Texture & texture, int level ) {
 
 		D3D12_UNORDERED_ACCESS_VIEW_DESC desc {};
-		desc.Format = texture.format->dxgi;
+		desc.Format = texture.uavFormat;
 		desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 		desc.Texture2D.MipSlice = level < 0 ? 0 : UINT( level );
 		device->CreateUnorderedAccessView( level < 0 ? nullptr : texture.resource.Get(), nullptr, &desc, viewCpu( index ) );
 
 	}
 
+	/** A texture with every level; one that allows UAV is created as `format.typeless` (sRGB: R8G8B8A8_TYPELESS). */
 	Texture createTexture( uint32_t width, uint32_t height, const FormatInfo & format, D3D12_RESOURCE_FLAGS flags ) {
 
 		Texture texture;
 		texture.width = width; texture.height = height; texture.levels = mipCount( width, height ); texture.format = &format;
+		texture.srvFormat = format.dxgi; texture.uavFormat = format.uavView;
 		D3D12_RESOURCE_DESC desc {};
 		desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 		desc.Width = width; desc.Height = height; desc.DepthOrArraySize = 1; desc.MipLevels = UINT16( texture.levels );
-		desc.Format = format.dxgi; desc.SampleDesc.Count = 1; desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN; desc.Flags = flags;
+		desc.Format = ( flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS ) ? format.typeless : format.dxgi; desc.SampleDesc.Count = 1; desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN; desc.Flags = flags;
 		D3D12_HEAP_PROPERTIES heap { D3D12_HEAP_TYPE_DEFAULT };
 		CHECK( device->CreateCommittedResource( &heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS( &texture.resource ) ) );
 		texture.state.assign( texture.levels, D3D12_RESOURCE_STATE_COPY_DEST );
@@ -499,7 +511,7 @@ struct Pipelines {
 static std::string spdShaderName( bool wave, bool linear, const FormatInfo & format ) {
 
 	if ( format.max ) return std::string( "spd-max-" ) + ( wave ? "wave" : "lds" );
-	return std::string( "spd-" ) + ( wave ? "wave" : "lds" ) + "-" + ( linear ? "linear" : "load" ) + "-" + ( format.unorm ? "unorm" : "float" );
+	return std::string( "spd-" ) + ( wave ? "wave" : "lds" ) + "-" + ( linear ? "linear" : "load" ) + "-" + ( format.srgb ? "srgb" : format.unorm ? "unorm" : "float" );
 
 }
 
@@ -743,21 +755,33 @@ int main( int argc, char ** argv ) {
 			std::vector<Variant> variants;
 
 			// AMD SPD: atomic single dispatch and 6 levels per dispatch, wave or LDS, load or linear sampler.
+			// sRGB: the same variants averaging in linear light (SPD_SRGB), plus AMD's own sRGB handling
+			// (spd-amdsrgb-*, SPD_SRGB_AMD; its load path reads the codes through a UNORM SRV).
+			struct SpdVariant { std::string name, shader; bool atomicHandoff; DXGI_FORMAT srvFormat; };
+			std::vector<SpdVariant> spdVariants;
 			for ( const bool atomicHandoff : { true, false } ) for ( const bool wave : { true, false } ) for ( const bool linear : { false, true } ) {
 
 				if ( format.max && linear ) continue;
-				std::string name = std::string( "spd-" ) + ( atomicHandoff ? "atomic" : "split" ) + "-" + ( wave ? "wave" : "lds" ) + ( format.max ? "" : linear ? "-linear" : "-load" );
-				if ( ! selected( options, name ) ) continue;
+				spdVariants.push_back( { std::string( "spd-" ) + ( atomicHandoff ? "atomic" : "split" ) + "-" + ( wave ? "wave" : "lds" ) + ( format.max ? "" : linear ? "-linear" : "-load" ), spdShaderName( wave, linear, format ), atomicHandoff, format.dxgi } );
+
+			}
+			if ( format.srgb ) for ( const bool linear : { false, true } ) spdVariants.push_back( { std::string( "spd-amdsrgb-atomic-wave-" ) + ( linear ? "linear" : "load" ), std::string( "spd-wave-" ) + ( linear ? "linear" : "load" ) + "-amdsrgb", true, linear ? format.dxgi : format.uavView } );
+
+			for ( const SpdVariant & spd : spdVariants ) {
+
+				const bool atomicHandoff = spd.atomicHandoff;
+				if ( ! selected( options, spd.name ) ) continue;
 				Variant variant;
-				variant.name = name;
+				variant.name = spd.name;
 				variant.method = "spd";
 				variant.texture = gpu.createTexture( size.width, size.height, format, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS | ( format.max ? D3D12_RESOURCE_FLAG_NONE : D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET ) );
+				variant.texture.srvFormat = spd.srvFormat;
 				gpu.upload( variant.texture, data );
 				std::vector<SpdDispatch> dispatches;
 				if ( atomicHandoff ) dispatches.push_back( spdDispatch( gpu, variant.texture, atomic, 0, outputs ) );
 				else for ( uint32_t base = 0; base < outputs; base += 6 ) dispatches.push_back( spdDispatch( gpu, variant.texture, atomic, base, std::min( 6u, outputs - base ) ) );
 				variant.dispatches = uint32_t( dispatches.size() );
-				ID3D12PipelineState * pso = spdPipeline( gpu, pipelines, shaderFolder, spdShaderName( wave, linear, format ) );
+				ID3D12PipelineState * pso = spdPipeline( gpu, pipelines, shaderFolder, spd.shader );
 				variants.push_back( std::move( variant ) );
 				// Captures the vector and an index: later push_backs move the variants.
 				variants.back().encode = [ &gpu, pso, dispatches, index = variants.size() - 1, &variants ]() {
@@ -807,7 +831,7 @@ int main( int argc, char ** argv ) {
 
 						gpu.srv( firstSrv + level, variant.texture, level );
 						D3D12_RENDER_TARGET_VIEW_DESC rtv {};
-						rtv.Format = format.dxgi;
+						rtv.Format = format.dxgi;   // sRGB: _SRGB RTV and SRV, the hardware encodes and decodes
 						rtv.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
 						rtv.Texture2D.MipSlice = level;
 						gpu.device->CreateRenderTargetView( variant.texture.resource.Get(), &rtv, gpu.rtvCpu( firstRtv + level ) );

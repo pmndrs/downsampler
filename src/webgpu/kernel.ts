@@ -1,4 +1,4 @@
-import { channelDomain, formats, intDomains, isIntegerDomain, isIntQuantization, isPackedQuantization, isSupportedFormat, sampledChannels, type FormatInfo, type SupportedFormat } from '../core/formats.js';
+import { channelDomain, formats, intDomains, isIntegerDomain, isIntQuantization, isPackedQuantization, isSupportedFormat, sampledChannels, type FormatInfo, type Quantization, type SupportedFormat } from '../core/formats.js';
 import { srgbBounds, srgbDecodeTable } from '../core/srgb.js';
 import { tailTile, tileSize, workgroupSide } from '../core/plan.js';
 import { checkLevels } from '../core/pyramid.js';
@@ -92,7 +92,7 @@ export interface KernelOptions {
 	/**
 	 * Default 'exact' (mip chains: render-pass parity, a batch per odd size).
 	 * 'zero-weight' and 'clamp' select the tile kernel: every level of the dispatch
-	 * in one tile, no intermediate rounding, sums unnormalised until emitted.
+	 * in one tile, no intermediate rounding, sums unnormalized until emitted.
 	 */
 	edges?: EdgePolicy;
 	/**
@@ -255,13 +255,19 @@ fn ds_unpack11_11_10(bits: u32) -> vec3f { return vec3f(ds_from_ufloat(bits & 0x
 }
 
 /**
- * WGSL for sRGB colour (`src/core/srgb.ts`), shared by every kernel that reads or writes it:
+ * WGSL for sRGB color (`src/core/srgb.ts`), shared by every kernel that reads or writes it:
  * - `ds_srgb_code(v: f32) -> u32`: the 8-bit code of a linear value, rounded to nearest: a
  *   `pow` estimate, then one step against the exact thresholds (the smallest f32 above each,
  *   `srgbBounds`), so it is correctly rounded for its f32 input, as core `srgbCode` is.
  *   NaN and values below 0 → 0, above 1 → 255.
  * - `ds_srgb_quantize(v: vec3f) -> vec3f`: linear values as stored and read back,
  *   decode(encode(v)), with the exact decode table (`srgbDecodeTable`).
+ * - `ds_srgb_stored_code(v: f32) -> u32`: the code of a value that is already exactly
+ *   decode(k) (every value an exact kernel stores has been through `quantize`): the `pow`
+ *   estimate alone, without the correction step. Over all 256 codes the estimate misses k by at
+ *   most 0.000016 of a step in f32, so it is k on any GPU; 16–21 % less time for an sRGB chain
+ *   on an RTX 3060 (results/windows/round2/srgb-cost.md). Tile kernels store unrounded values
+ *   and use `ds_srgb_code`.
  * Hardware decoding isn't exact everywhere (Apple M5: 12-bit linear values, up to 0.39 of a
  * code step off; results/probes/srgb-probe.mjs), so loads snap through `ds_srgb_quantize`.
  *
@@ -281,6 +287,10 @@ fn ds_srgb_code(v: f32) -> u32 {
 	var k = u32(clamp(round(e * 255.0), 0.0, 255.0));
 	if (k < 255u && c >= ds_srgb_table[256u + k]) { k += 1u; } else if (k > 0u && c < ds_srgb_table[255u + k]) { k -= 1u; }
 	return k;
+}
+fn ds_srgb_stored_code(v: f32) -> u32 {
+	let c = clamp(v, 0.0, 1.0);
+	return u32(round(select(1.055 * pow(c, 1.0 / 2.4) - 0.055, 12.92 * c, c <= 0.0031308) * 255.0));
 }
 fn ds_srgb_quantize(v: vec3f) -> vec3f {
 	return vec3f(ds_srgb_table[ds_srgb_code(v.x)], ds_srgb_table[ds_srgb_code(v.y)], ds_srgb_table[ds_srgb_code(v.z)]);
@@ -401,10 +411,12 @@ function packedWords( format: SupportedFormat, normalized = false ): string[] {
 
 	if ( quantization === 'srgb8' ) {
 
-		// Linear colour encoded to codes; alpha in integer units (exact kernels) or normalized (pack4x8unorm's rounding).
+		// Linear color encoded to codes; alpha in integer units (exact kernels) or normalized (pack4x8unorm's rounding).
 		const [ r, g, b ] = format === 'bgra8unorm-srgb' ? [ 'z', 'y', 'x' ] : [ 'x', 'y', 'z' ];
 		const alpha = normalized ? 'u32(floor(clamp(v.w, 0.0, 1.0) * 255.0 + 0.5))' : 'u32(v.w)';
-		return [ `ds_srgb_code(v.${ r }) | (ds_srgb_code(v.${ g }) << 8u) | (ds_srgb_code(v.${ b }) << 16u) | (${ alpha } << 24u)` ];
+		// Exact kernels' values are already exact codes (ds_srgb_stored_code); tile kernels' aren't.
+		const code = normalized ? 'ds_srgb_code' : 'ds_srgb_stored_code';
+		return [ `${ code }(v.${ r }) | (${ code }(v.${ g }) << 8u) | (${ code }(v.${ b }) << 16u) | (${ alpha } << 24u)` ];
 
 	}
 
@@ -612,6 +624,176 @@ ${ average ? `fn ds_area_weight(t: u32, x: u32, s: u32, n: u32) -> f32 {
 
 }
 
+/**
+ * WGSL for the working values of an exact kernel's format: `SCALE` and `fn quantize(value: vec4f)
+ * -> vec4f`, which gives a value as it is stored and read back. Intermediate levels are quantized
+ * exactly as they would be stored. Normalized values stay in integer units (value × scale) so 2:1
+ * averages are exact and ties round to even; with k/255 floats, float error turns ties into
+ * round-ups that drift by several steps along long 1D tails. WGSL's round() is ties to even (Metal
+ * rint, HLSL round_ne, SPIR-V RoundEven); it replaced a floor/compare/select version with the same
+ * results, 0.91× (RTX 3060) and 0.76× (Intel UHD) of an rgba8 chain (results/windows/round2/trim.md).
+ */
+export function quantizeWgsl( quantization: Quantization ): string {
+
+	const integer = isIntegerDomain( quantization );
+	const srgb = quantization === 'srgb8';
+	let code = '';
+	if ( integer ) {
+
+		// Per-channel units: a scalar, or a vector for rgb10a2unorm (2-bit alpha).
+		const domains = [ 0, 1, 2, 3 ].map( c => channelDomain( quantization, c ) );
+		const units = ( key: 'scale' | 'min' | 'max' ) => domains.every( domain => domain[ key ] === domains[ 0 ][ key ] ) ? `${ domains[ 0 ][ key ] }.0` : `vec4f(${ domains.map( domain => `${ domain[ key ] }.0` ).join( ', ' ) })`;
+		const vector = ( key: 'min' | 'max' ) => units( key ).startsWith( 'vec4f' ) ? units( key ) : `vec4f(${ units( key ) })`;
+		code += `
+const SCALE = ${ units( 'scale' ) };
+fn quantize(value: vec4f) -> vec4f { return round(clamp(value, ${ vector( 'min' ) }, ${ vector( 'max' ) })); }
+`;
+
+	} else if ( quantization === 'float16' ) {
+
+		code += `
+const SCALE = 1.0;
+fn quantize(value: vec4f) -> vec4f { return ds_round_f16(value); }
+`;
+
+	} else if ( srgb ) {
+
+		// Color stored as its code and read back through the exact decode table; alpha
+		// in integer units, rounded half to even as unorm8. The storage path (a scratch
+		// texture of the linear alias format) stores codes / 255.
+		code += `
+const SCALE = vec4f(1.0, 1.0, 1.0, 255.0);
+fn quantize(value: vec4f) -> vec4f { return vec4f(ds_srgb_quantize(value.xyz), round(clamp(value.w, 0.0, 255.0))); }
+fn ds_srgb_store(v: vec4f) -> vec4f { return vec4f(f32(ds_srgb_stored_code(v.x)), f32(ds_srgb_stored_code(v.y)), f32(ds_srgb_stored_code(v.z)), v.w) / 255.0; }
+`;
+
+	} else if ( isPackedQuantization( quantization ) ) {
+
+		// Packed floats: r, g and b packed and unpacked as stored; alpha reads as 1.
+		const [ pack, unpack ] = quantization === 'rgb9e5ufloat' ? [ 'ds_pack9e5', 'ds_unpack9e5' ] : [ 'ds_pack11_11_10', 'ds_unpack11_11_10' ];
+		code += `
+${ packedFloatWgsl( quantization ) }const SCALE = 1.0;
+fn quantize(value: vec4f) -> vec4f { return vec4f(${ unpack }(${ pack }(value.xyz)), 1.0); }
+`;
+
+	} else {
+
+		code += `
+const SCALE = 1.0;
+fn quantize(value: vec4f) -> vec4f { return value; }
+`;
+
+	}
+
+	return code;
+
+}
+
+/**
+ * WGSL for `fn first(pos: vec2u, size: vec2u, layer: u32) -> vec4f`: the exact rule's value of
+ * output texel `pos` of a level of `size`, read from `source`, quantized and in `SCALE` units
+ * (with `load` for 'load' access, and the area helpers when asked). Shared by the exact compute
+ * kernels and the render path's fragment shader (`createRenderKernel`).
+ */
+export function firstWgsl( { access, array, splat, srgbSource, exactLoads, srgb, average, area, areaHelpers }: { access: SourceAccess; array: boolean; splat: string; srgbSource: boolean; exactLoads: boolean; srgb: boolean; average: boolean; area: boolean; areaHelpers: boolean } ): string {
+
+	let code = '';
+	if ( access === 'load' ) {
+
+		// Normalized texels are rounded back to exact integer units so later sums are exact.
+		// sRGB sources snap the hardware's decode to the exact table (Apple decodes to 12 bits).
+		const texel = `textureLoad(source, vec2i(p)${ array ? ', i32(layer)' : '' }, 0)${ splat }`;
+		code += `
+fn load(p: vec2u, layer: u32) -> vec4f {
+	${ srgbSource ? `let t = ${ texel };
+	let v = vec4f(ds_srgb_quantize(t.xyz), t.w) * SCALE;` : `let v = ${ texel } * SCALE;` }
+	return ${ exactLoads ? 'round(v)' : srgb && srgbSource ? 'vec4f(v.xyz, round(v.w))' : 'v' };
+}
+`;
+
+	}
+
+	if ( areaHelpers ) code += areaWgsl( average );
+
+	code += `
+fn first(pos: vec2u, size: vec2u, layer: u32) -> vec4f {
+`;
+
+	if ( area ) {
+
+		// Every texel of [pos·S/n, (pos+1)·S/n) per axis, at any ratio S/n (a same-size
+		// source reads its texel alone, with weight 1).
+		code += `	let sourceSize = textureDimensions(source);
+	let lo = ds_area_first(pos, sourceSize, size);
+	let hi = ds_area_last(pos, sourceSize, size);
+${ average ? `	var sum = vec4f(0.0);
+	for (var y = lo.y; y <= hi.y; y++) {
+		var row = vec4f(0.0);
+		for (var x = lo.x; x <= hi.x; x++) { row += ds_area_weight(x, pos.x, sourceSize.x, size.x) * load(vec2u(x, y), layer); }
+		sum += ds_area_weight(y, pos.y, sourceSize.y, size.y) * row;
+	}
+	return quantize(sum);
+` : `	var v = load(lo, layer);
+	for (var y = lo.y; y <= hi.y; y++) {
+		for (var x = lo.x; x <= hi.x; x++) { v = fold(v, load(vec2u(x, y), layer)); }
+	}
+	return quantize(v);
+` }`;
+
+	} else if ( access === 'sample' ) {
+
+		code += `	let uv = (vec2f(pos) + 0.5) / vec2f(size);
+	return quantize(textureSampleLevel(source, imageSampler, uv${ array ? ', i32(layer)' : '' }, 0.0)${ splat } * SCALE);
+`;
+
+	} else if ( average ) {
+
+		// Bilinear weights at the output texel center, as the sampler would apply
+		// them but without its fixed-point weight rounding. The sample position
+		// (x + 0.5) * S / n - 0.5 is ((2x + 1) * S - n) / 2n: integer math keeps
+		// the base texel exact (float division isn't correctly rounded on GPUs),
+		// and gives weights of exactly 0 or 0.5 for copies and even sizes. A same-size
+		// level (a converting copy) reads its texel alone: a zero weight on an Inf
+		// neighbor would still give NaN.
+		code += `	let sourceSize = textureDimensions(source);
+	if (all(sourceSize == size)) { return quantize(load(pos, layer)); }
+	let last = sourceSize - vec2u(1);
+	let numerator = (2u * pos + vec2u(1)) * sourceSize - size;
+	let denominator = 2u * size;
+	let lo = min(numerator / denominator, last);
+	let hi = min(lo + vec2u(1), last);
+	let f = vec2f(numerator % denominator) / vec2f(denominator);
+	let top = mix(load(lo, layer), load(vec2u(hi.x, lo.y), layer), f.x);
+	let bottom = mix(load(vec2u(lo.x, hi.y), layer), load(hi, layer), f.x);
+	return quantize(mix(top, bottom, f.y));
+`;
+
+	} else {
+
+		// The footprint: 2x and 2x + 1, plus 2x + 2 along odd source dimensions.
+		// A same-size source (separate source copied into the first level) reads
+		// one texel per axis.
+		code += `	let sourceSize = textureDimensions(source);
+	let last = sourceSize - vec2u(1);
+	let same = sourceSize == size;
+	let lo = select(min(pos * 2u, last), pos, same);
+	let hi = select(min(lo + vec2u(1), last), lo, same);
+	var v = fold(fold(load(lo, layer), load(vec2u(hi.x, lo.y), layer)), fold(load(vec2u(lo.x, hi.y), layer), load(hi, layer)));
+	let odd = ((sourceSize & vec2u(1)) == vec2u(1)) & (sourceSize > vec2u(1)) & !same;
+	let far = min(lo + vec2u(2), last);
+	if (odd.x) { v = fold(v, fold(load(vec2u(far.x, lo.y), layer), load(vec2u(far.x, hi.y), layer))); }
+	if (odd.y) { v = fold(v, fold(load(vec2u(lo.x, far.y), layer), load(vec2u(hi.x, far.y), layer))); }
+	if (odd.x && odd.y) { v = fold(v, load(far, layer)); }
+	return quantize(v);
+`;
+
+	}
+
+	code += '}\n';
+	return code;
+
+}
+
 const builtinFolds = {
 	min: 'min(a, b)',
 	max: 'max(a, b)',
@@ -672,7 +854,7 @@ function createExactKernel( { format, dimension, count, reduction = 'average', a
 	const quantization = formats[ format ].quantization;
 	const integer = isIntegerDomain( quantization );
 	const exactLoads = integer && isSupportedFormat( sourceFormat ) && formats[ sourceFormat ].quantization === quantization;
-	// sRGB: colour is linear in the tile, alpha in integer units (src/core/srgb.ts).
+	// sRGB: color is linear in the tile, alpha in integer units (src/core/srgb.ts).
 	const srgb = quantization === 'srgb8';
 	const srgbSource = isSupportedFormat( sourceFormat ) && formats[ sourceFormat ].quantization === 'srgb8';
 	const splat = sampledChannels( sourceFormat ) === 1 ? '.xxxx' : '';
@@ -696,60 +878,7 @@ var<workgroup> tile: array<vec4f, ${ tileW * tileH }>;
 	if ( buffer ) code += bufferOutputWgsl( format, false, false );
 	else for ( let i = 0; i < count; i ++ ) code += `@group(0) @binding(${ i + 2 }) var mip${ i }: texture_storage_2d${ suffix }<${ srgbScratchFormat( format ) }, write>;\n`;
 	if ( region ) code += regionWgsl();
-
-	// Intermediate levels are quantized exactly as they would be stored.
-	// Normalized values stay in integer units (value × scale) so 2:1 averages are
-	// exact and ties round to even; with k/255 floats, float error turns ties into
-	// round-ups that drift by several steps along long 1D tails. WGSL's round() is
-	// ties to even (Metal rint, HLSL round_ne, SPIR-V RoundEven); it replaced a
-	// floor/compare/select version with the same results, 0.91× (RTX 3060) and 0.76×
-	// (Intel UHD) of an rgba8 chain (results/windows/round2/trim.md).
-	if ( integer ) {
-
-		// Per-channel units: a scalar, or a vector for rgb10a2unorm (2-bit alpha).
-		const domains = [ 0, 1, 2, 3 ].map( c => channelDomain( quantization, c ) );
-		const units = ( key: 'scale' | 'min' | 'max' ) => domains.every( domain => domain[ key ] === domains[ 0 ][ key ] ) ? `${ domains[ 0 ][ key ] }.0` : `vec4f(${ domains.map( domain => `${ domain[ key ] }.0` ).join( ', ' ) })`;
-		const vector = ( key: 'min' | 'max' ) => units( key ).startsWith( 'vec4f' ) ? units( key ) : `vec4f(${ units( key ) })`;
-		code += `
-const SCALE = ${ units( 'scale' ) };
-fn quantize(value: vec4f) -> vec4f { return round(clamp(value, ${ vector( 'min' ) }, ${ vector( 'max' ) })); }
-`;
-
-	} else if ( quantization === 'float16' ) {
-
-		code += `
-const SCALE = 1.0;
-fn quantize(value: vec4f) -> vec4f { return ds_round_f16(value); }
-`;
-
-	} else if ( srgb ) {
-
-		// Colour stored as its code and read back through the exact decode table; alpha
-		// in integer units, rounded half to even as unorm8. The storage path (a scratch
-		// texture of the linear alias format) stores codes / 255.
-		code += `
-const SCALE = vec4f(1.0, 1.0, 1.0, 255.0);
-fn quantize(value: vec4f) -> vec4f { return vec4f(ds_srgb_quantize(value.xyz), round(clamp(value.w, 0.0, 255.0))); }
-fn ds_srgb_store(v: vec4f) -> vec4f { return vec4f(f32(ds_srgb_code(v.x)), f32(ds_srgb_code(v.y)), f32(ds_srgb_code(v.z)), v.w) / 255.0; }
-`;
-
-	} else if ( isPackedQuantization( quantization ) ) {
-
-		// Packed floats: r, g and b packed and unpacked as stored; alpha reads as 1.
-		const [ pack, unpack ] = quantization === 'rgb9e5ufloat' ? [ 'ds_pack9e5', 'ds_unpack9e5' ] : [ 'ds_pack11_11_10', 'ds_unpack11_11_10' ];
-		code += `
-${ packedFloatWgsl( quantization ) }const SCALE = 1.0;
-fn quantize(value: vec4f) -> vec4f { return vec4f(${ unpack }(${ pack }(value.xyz)), 1.0); }
-`;
-
-	} else {
-
-		code += `
-const SCALE = 1.0;
-fn quantize(value: vec4f) -> vec4f { return value; }
-`;
-
-	}
+	code += quantizeWgsl( quantization );
 
 	if ( ! average ) {
 
@@ -759,98 +888,7 @@ fn quantize(value: vec4f) -> vec4f { return value; }
 
 	}
 
-	if ( access === 'load' ) {
-
-		// Normalized texels are rounded back to exact integer units so later sums are exact.
-		// sRGB sources snap the hardware's decode to the exact table (Apple decodes to 12 bits).
-		const texel = `textureLoad(source, vec2i(p)${ array ? ', i32(layer)' : '' }, 0)${ splat }`;
-		code += `
-fn load(p: vec2u, layer: u32) -> vec4f {
-	${ srgbSource ? `let t = ${ texel };
-	let v = vec4f(ds_srgb_quantize(t.xyz), t.w) * SCALE;` : `let v = ${ texel } * SCALE;` }
-	return ${ exactLoads ? 'round(v)' : srgb && srgbSource ? 'vec4f(v.xyz, round(v.w))' : 'v' };
-}
-`;
-
-	}
-
-	if ( area || ( halo !== null && box && average ) ) code += areaWgsl( average );
-
-	code += `
-fn first(pos: vec2u, size: vec2u, layer: u32) -> vec4f {
-`;
-
-	if ( area ) {
-
-		// Every texel of [pos·S/n, (pos+1)·S/n) per axis, at any ratio S/n (a same-size
-		// source reads its texel alone, with weight 1).
-		code += `	let sourceSize = textureDimensions(source);
-	let lo = ds_area_first(pos, sourceSize, size);
-	let hi = ds_area_last(pos, sourceSize, size);
-${ average ? `	var sum = vec4f(0.0);
-	for (var y = lo.y; y <= hi.y; y++) {
-		var row = vec4f(0.0);
-		for (var x = lo.x; x <= hi.x; x++) { row += ds_area_weight(x, pos.x, sourceSize.x, size.x) * load(vec2u(x, y), layer); }
-		sum += ds_area_weight(y, pos.y, sourceSize.y, size.y) * row;
-	}
-	return quantize(sum);
-` : `	var v = load(lo, layer);
-	for (var y = lo.y; y <= hi.y; y++) {
-		for (var x = lo.x; x <= hi.x; x++) { v = fold(v, load(vec2u(x, y), layer)); }
-	}
-	return quantize(v);
-` }`;
-
-	} else if ( access === 'sample' ) {
-
-		code += `	let uv = (vec2f(pos) + 0.5) / vec2f(size);
-	return quantize(textureSampleLevel(source, imageSampler, uv${ array ? ', i32(layer)' : '' }, 0.0)${ splat } * SCALE);
-`;
-
-	} else if ( average ) {
-
-		// Bilinear weights at the output texel centre, as the sampler would apply
-		// them but without its fixed-point weight rounding. The sample position
-		// (x + 0.5) * S / n - 0.5 is ((2x + 1) * S - n) / 2n: integer math keeps
-		// the base texel exact (float division isn't correctly rounded on GPUs),
-		// and gives weights of exactly 0 or 0.5 for copies and even sizes. A same-size
-		// level (a converting copy) reads its texel alone: a zero weight on an Inf
-		// neighbour would still give NaN.
-		code += `	let sourceSize = textureDimensions(source);
-	if (all(sourceSize == size)) { return quantize(load(pos, layer)); }
-	let last = sourceSize - vec2u(1);
-	let numerator = (2u * pos + vec2u(1)) * sourceSize - size;
-	let denominator = 2u * size;
-	let lo = min(numerator / denominator, last);
-	let hi = min(lo + vec2u(1), last);
-	let f = vec2f(numerator % denominator) / vec2f(denominator);
-	let top = mix(load(lo, layer), load(vec2u(hi.x, lo.y), layer), f.x);
-	let bottom = mix(load(vec2u(lo.x, hi.y), layer), load(hi, layer), f.x);
-	return quantize(mix(top, bottom, f.y));
-`;
-
-	} else {
-
-		// The footprint: 2x and 2x + 1, plus 2x + 2 along odd source dimensions.
-		// A same-size source (separate source copied into the first level) reads
-		// one texel per axis.
-		code += `	let sourceSize = textureDimensions(source);
-	let last = sourceSize - vec2u(1);
-	let same = sourceSize == size;
-	let lo = select(min(pos * 2u, last), pos, same);
-	let hi = select(min(lo + vec2u(1), last), lo, same);
-	var v = fold(fold(load(lo, layer), load(vec2u(hi.x, lo.y), layer)), fold(load(vec2u(lo.x, hi.y), layer), load(hi, layer)));
-	let odd = ((sourceSize & vec2u(1)) == vec2u(1)) & (sourceSize > vec2u(1)) & !same;
-	let far = min(lo + vec2u(2), last);
-	if (odd.x) { v = fold(v, fold(load(vec2u(far.x, lo.y), layer), load(vec2u(far.x, hi.y), layer))); }
-	if (odd.y) { v = fold(v, fold(load(vec2u(lo.x, far.y), layer), load(vec2u(hi.x, far.y), layer))); }
-	if (odd.x && odd.y) { v = fold(v, load(far, layer)); }
-	return quantize(v);
-`;
-
-	}
-
-	code += '}\n';
+	code += firstWgsl( { access, array, splat, srgbSource, exactLoads, srgb, average, area, areaHelpers: area || ( halo !== null && box && average ) } );
 
 	// Level i of the batch: its size, and the store of one texel. The buffer path
 	// derives sizes from the first output's (exact batches halve, floored, at least 1).
@@ -1145,8 +1183,8 @@ fn main(@builtin(local_invocation_id) local: vec3u, ${ entry }
  * Identifiers starting with `ds_` are reserved, as are the entry point `main`
  * and the hook names.
  *
- * Workgroup memory holds unnormalised accumulations per channel (sums, weighted
- * sums, min/max or a custom combine); a level is normalised only when it is
+ * Workgroup memory holds unnormalized accumulations per channel (sums, weighted
+ * sums, min/max or a custom combine); a level is normalized only when it is
  * emitted. Nothing is rounded between levels: each emitted level is the
  * reduction of its source block (`reducePyramid` in core is the oracle).
  */
@@ -1208,7 +1246,7 @@ fn ds_size() -> vec2u { return textureDimensions(ds_source); }
 	}
 
 	// Combine two accumulations, prepare a loaded texel (weighted channels carry
-	// w·v), and normalise an accumulation for emission.
+	// w·v), and normalize an accumulation for emission.
 	let prepare = ( v: string ) => v;
 	let emitted = false;
 	if ( resolved.custom !== undefined ) {

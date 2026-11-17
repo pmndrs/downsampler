@@ -37,7 +37,7 @@ test( 'encode inverts the decode table: every code round-trips, so min/max of de
 
 } );
 
-test( 'encode rounds to nearest: against the standard\'s encode formula at 200000 random values and every threshold neighbourhood', () => {
+test( 'encode rounds to nearest: against the standard\'s encode formula at 200000 random values and every threshold neighborhood', () => {
 
 	let state = 7;
 	for ( let i = 0; i < 200000; i ++ ) {
@@ -61,6 +61,26 @@ test( 'encode rounds to nearest: against the standard\'s encode formula at 20000
 		assert.equal( srgbCode( t * ( 1 - 1e-12 ) ), k );
 
 	}
+
+} );
+
+test( 'stores: the shader pow estimate alone (ds_srgb_stored_code) rounds every decoded code back to its code, with a wide margin', () => {
+
+	// Exact kernels store only values that are already decode(k); they skip the correction step.
+	// Mirrors the WGSL in f32: select(1.055 * pow(c, 1 / 2.4) - 0.055, 12.92 * c, c <= 0.0031308).
+	const f = Math.fround;
+	let worst = 0;
+	for ( let k = 0; k < 256; k ++ ) {
+
+		const c = f( srgbDecodeTable[ k ] );
+		const e = c <= f( 0.0031308 ) ? f( f( 12.92 ) * c ) : f( f( f( 1.055 ) * f( Math.pow( c, f( 1 / 2.4 ) ) ) ) - f( 0.055 ) );
+		assert.equal( Math.round( f( e * 255 ) ), k, `code ${ k }` );
+		worst = Math.max( worst, Math.abs( e * 255 - k ) );
+
+	}
+
+	// GPU pow is far more accurate than this (WGSL: exp2/log2 error bounds); 0.5 would be a wrong code.
+	assert.ok( worst < 1e-3, `largest miss ${ worst } of a step` );
 
 } );
 
@@ -117,7 +137,7 @@ test( 'formats: rgba8unorm-srgb and bgra8unorm-srgb are srgb8, never storage; qu
 
 } );
 
-test( 'reference averages colour in linear light, alpha as unorm8 (ties to even)', () => {
+test( 'reference averages color in linear light, alpha as unorm8 (ties to even)', () => {
 
 	// Black and white side by side: the linear mean 0.5 is code 188, not the encoded-space mean (128).
 	const source = Float32Array.from( [ 0, 0, 0, 0, 1, 1, 1, 1 ] );
@@ -134,7 +154,7 @@ test( 'reference averages colour in linear light, alpha as unorm8 (ties to even)
 
 } );
 
-test( 'reference: in-tile levels pair colour in float32 (the kernel\'s order), then encode; folds select codes', () => {
+test( 'reference: in-tile levels pair color in float32 (the kernel\'s order), then encode; folds select codes', () => {
 
 	const codes = [ 3, 200, 17, 255, 90, 91, 0, 128 ];
 	const source = Float32Array.from( codes.flatMap( code => [ srgbDecodeTable[ code ], srgbDecodeTable[ 255 - code ], srgbDecodeTable[ code >> 1 ], code / 255 ] ) );
@@ -172,7 +192,7 @@ test( 'reference: box, area, spd and copy oracles quantize sRGB texels the same 
 
 } );
 
-test( 'tolerance: two codes around the value for colour, unorm8 steps for alpha; the texel is required', () => {
+test( 'tolerance: two codes around the value for color, unorm8 steps for alpha; the texel is required', () => {
 
 	assert.throws( () => tolerance( 0.5, 'srgb8' ), /texel/ );
 	const value = srgbDecodeTable[ 188 ];

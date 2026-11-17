@@ -7,7 +7,7 @@ Native D3D12, D3D11 and Vulkan mip-chain timings on the same GPU as the WebGPU r
 | [`d3d12-mips/`](d3d12-mips/) | D3D12, D3D11 | AMD FidelityFX SPD (its own `ffx_spd.h`): atomic single dispatch and 6 levels per dispatch, quad-wave or LDS, load or linear sampler; a render-pass chain; D3D11 `GenerateMips` | FidelityFX SDK `7539ae8` (FSR 3.1.6) |
 | [`vk-mips/`](vk-mips/) | Vulkan | NVIDIA nvpro_pyramid (fast + general pipelines); `vkCmdBlitImage` chain | vk_compute_mipmaps `6c248f5` |
 
-Both use the same input (uniform random, xorshift32 seed 1337), the same sizes (960×540, 1129×635, 1280×720, 1707×960, 1920×1080, 2560×1440, 1024², 4096²), the same formats (rgba8unorm and rgba16float average; r32float max for Hi-Z) and the same timing: GPU timestamps around 16 back-to-back chains per submit, variants rotated each round, median over 128 rounds, after 8 warm-up rounds. That is test/bench/timing.js's method without its marker passes. Shared code is in [`common/harness.hpp`](common/harness.hpp).
+Both use the same input (uniform random, xorshift32 seed 1337), the same sizes (960×540, 1129×635, 1280×720, 1707×960, 1920×1080, 2560×1440, 1024², 4096²), the same formats (rgba8unorm and rgba16float average; r32float max for Hi-Z; `d3d12-mips` also takes rgba8unorm-srgb, averaged in linear light, when asked for it) and the same timing: GPU timestamps around 16 back-to-back chains per submit, variants rotated each round, median over 128 rounds, after 8 warm-up rounds. That is test/bench/timing.js's method without its marker passes. Shared code is in [`common/harness.hpp`](common/harness.hpp).
 
 ## Build (Windows)
 
@@ -30,7 +30,7 @@ native/d3d12-mips/build/Release/d3d12-mips.exe --power=high --output=results/win
 native/vk-mips/build/Release/vk-mips.exe --power=high --output=results/windows/native-vk-rtx3060.json
 ```
 
-Options (both): `--power=high|low` (D3D12: DXGI GPU preference; Vulkan: discrete or integrated; `vk-mips --gpu=<name part>` overrides), `--sizes=WxH,…`, `--formats=rgba8unorm,rgba16float,r32float`, `--rounds=128`, `--repeats=16`, `--warmup=8`, `--only=<name parts>`, `--no-timing`, `--dump=<folder> [--dump-sizes=1129x635]`. Debugging: `d3d12-mips --debug` (D3D12 debug layer, messages on stderr), `vk-mips --validation`.
+Options (both): `--power=high|low` (D3D12: DXGI GPU preference; Vulkan: discrete or integrated; `vk-mips --gpu=<name part>` overrides), `--sizes=WxH,…`, `--formats=rgba8unorm,rgba16float,r32float` (`d3d12-mips` also `rgba8unorm-srgb`), `--rounds=128`, `--repeats=16`, `--warmup=8`, `--only=<name parts>`, `--no-timing`, `--dump=<folder> [--dump-sizes=1129x635]`. Debugging: `d3d12-mips --debug` (D3D12 debug layer, messages on stderr), `vk-mips --validation`.
 
 `results/windows/run-benches.sh` runs both with the WebGPU benchmarks in one session under the shared GPU lock.
 
@@ -48,6 +48,7 @@ node native/d3d12-mips/check-dump.mjs tmp/dump --json=results/windows/native-sem
 |---|---|
 | `spd-*` | `spdChainReference( …, levelsPerDispatch 6 )`: our `oddSizes: 'spd'` |
 | `render*`, `d3d11-generatemips`, `blit` | `'exact'` level by level (`reduceReference`) |
+| rgba8unorm-srgb (any variant) | the same oracle with `'srgb8'` (linear-light average, nearest code); color differences in codes |
 | `nvpro-*` | `'box'` level by level: nvpro's area weights, defined in the script (the library's `'box'` is planned for M2.5) |
 
 It reports the largest difference in storage steps and the values outside the library's `tolerance()`.

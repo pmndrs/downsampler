@@ -19,8 +19,8 @@ explained and the owner decided what to change.
   `textureStore` and `pack2x16float` (NVIDIA and Intel), so float16 levels drifted low. Levels now round to nearest even
   in the shader (one f32 add and subtract; bit-exact against core `toHalf` on both GPUs). Cost against `'device'`: noise
   on the RTX, 14 % on Intel. Owner decision 2026-11-12.
-- **Converting copies load.** A same-size level from a separate source used the sampler at texel centres, which isn't exact
-  on Intel (it truncates the coordinate a hair low and blends in 1/256 of the neighbour). It now reads the texel.
+- **Converting copies load.** A same-size level from a separate source used the sampler at texel centers, which isn't exact
+  on Intel (it truncates the coordinate a hair low and blends in 1/256 of the neighbor). It now reads the texel.
 - **Sampler tolerance model** (`src/core/reference.ts`, `spd.ts`): `ReferenceOptions.weights: 'sampler' | 'shader'`.
   Sampled levels allow 1.5 weight steps of 1/256 per axis times the local contrast, at any weight, including the texel
   below the footprint (NVIDIA rounds each 2D tap weight; Intel truncates axis weights, even at exact halves and zeros). Shader weights (`averageAccess: 'load'`, in-tile and

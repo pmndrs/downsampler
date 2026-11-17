@@ -80,10 +80,10 @@ export interface PyramidLevel {
 	width: number;
 	height: number;
 	layers: number;
-	/** Values (`channels` per texel), layer-major then row-major, as emitted (normalised). */
+	/** Values (`channels` per texel), layer-major then row-major, as emitted (normalized). */
 	values: Float64Array;
 	/**
-	 * Per value, the magnitude of the terms behind it, normalised like the value
+	 * Per value, the magnitude of the terms behind it, normalized like the value
 	 * (Σ|v| for a sum, Σ|v|/n for an average, Σ|w·v|/Σw for a weighted mean, 0
 	 * for min/max and custom folds). Float error scales with it.
 	 */

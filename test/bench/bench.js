@@ -14,7 +14,8 @@ import { measureUnits, orderAgreement, throughputOptions } from './throughput.js
 import { compareSpdSizes, firstUnitStep, webgpuSpdVariants } from './webgpu-spd.js';
 import { storageUsage } from './storage-usage.js';
 import { kernelVariants } from './kernel-variants.js';
-import { srgbFormats, srgbStrategies } from './srgb.js';
+import { srgbCostStrategies, srgbFormats, srgbStrategies } from './srgb.js';
+import { float32Formats, float32Strategies } from './float32.js';
 import { partialSizes, partialStrategies } from './partial.js';
 import { dispatchFit, dispatchFormats, dispatchSizes, dispatchStrategies } from './dispatch.js';
 
@@ -85,7 +86,7 @@ export const renderCompareSizes = [ [ 960, 540 ], [ 1129, 635 ], [ 1280, 720 ], 
 /**
  * `compare: 'render'` (DIVERGES #17): where render passes beat 'exact' compute.
  * `hybrid<K>` renders levels 1..K and finishes with 'exact' from level K: the same
- * results as both (render passes sample texel centres with normalized coordinates,
+ * results as both (render passes sample texel centers with normalized coordinates,
  * as 'exact' does). `hybridSpd1` finishes with 'spd' instead (different semantics).
  * `renderL1` / `exactL1` write only level 1, isolating the largest level; `exactBuffer`
  * writes through the buffer output path, isolating storage-texture writes.
@@ -300,7 +301,10 @@ export async function benchmark( device, { sizes, formats: benchFormats, rounds,
 	if ( compare === 'storage-usage' ) return storageUsage( device, { sizes, formats: benchFormats, rounds: rounds ?? 11, repeats, shaders: only, throughput: throughput || ! timestamps ? tp : null, onProgress } );
 	if ( compare === 'subgroups' || compare === 'f16' || compare === 'trim' ) return kernelVariants( device, { probe: compare, sizes, formats: benchFormats, rounds: rounds ?? 11, repeats, variants: only, throughput: throughput || ! timestamps ? tp : null, onProgress } );
 	// sRGB output paths (test/bench/srgb.js): ratios paired against the buffer path.
+	if ( compare === 'srgb-cost' ) return timestamps ? measure( device, pickStrategies( srgbCostStrategies( device ), only, [ 'buffer' ] ), { sizes: sizes ?? renderCompareSizes, benchFormats: benchFormats ?? srgbFormats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
 	if ( compare === 'srgb' ) return timestamps ? measure( device, pickStrategies( srgbStrategies( device ), only, [ 'buffer' ] ), { sizes: sizes ?? renderCompareSizes, benchFormats: benchFormats ?? srgbFormats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
+	// float32 averages, sampled vs loaded (test/bench/float32.js; the device has float32-filterable).
+	if ( compare === 'float32' ) return timestamps ? measure( device, pickStrategies( float32Strategies( device ), only, [ 'load' ] ), { sizes: sizes ?? renderCompareSizes, benchFormats: benchFormats ?? float32Formats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
 	// Partial updates (test/bench/partial.js): rect and layer updates paired against the full chain.
 	if ( compare === 'partial' ) return timestamps ? measure( device, pickStrategies( partialStrategies( device ), only, [ 'full' ] ), { sizes: sizes ?? partialSizes, benchFormats: benchFormats ?? defaultFormats, rounds: rounds ?? 11, repeats, onProgress } ) : { timestamps: false, results: [] };
 	// The cost of one dependent dispatch (test/bench/dispatch.js): the same chain at 1–6 levels per dispatch.
@@ -352,7 +356,7 @@ export async function benchmark( device, { sizes, formats: benchFormats, rounds,
 
 	}
 
-	if ( compare ) throw new Error( `unknown --compare=${ compare }; expected spd, render, webgpu-spd, throughput, storage-usage, subgroups, f16 or srgb` );
+	if ( compare ) throw new Error( `unknown --compare=${ compare }; expected spd, render, webgpu-spd, throughput, storage-usage, subgroups, f16, srgb, srgb-cost or float32` );
 	const strategies = { render: createRenderBaseline( device ) };
 	for ( const levels of [ 4, limit ].filter( ( value, index, all ) => all.indexOf( value ) === index ) ) {
 
@@ -523,7 +527,10 @@ async function measure( device, { strategies, exact, reference }, { sizes, bench
 
 						const texture = textures[ name === 'marker' ? baselineName : name ];
 						const encode = name === 'marker' ? () => {} : encoder => strategies[ name ].encode( encoder, texture );
-						samples[ name ].push( await timeGpu( device, texture, encode, repeats ) );
+						// The markers bracket the texture a strategy writes (`target`, when it isn't the bench
+						// texture): with no dependency on the work, Metal ran the end marker early (time ≈ 0).
+						const written = name === 'marker' ? texture : strategies[ name ].target?.( texture ) ?? texture;
+						samples[ name ].push( await timeGpu( device, written, encode, repeats ) );
 
 					}
 

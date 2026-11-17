@@ -1,10 +1,11 @@
-import { bufferWritable, formats, isIntFormat, isSupportedFormat, sampleKind, type FormatInfo, type SupportedFormat } from '../core/formats.js';
+import { bufferWritable, formats, isIntFormat, isSupportedFormat, sampleKind, srgbViewFormat, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { outputBufferLayout, planBatches, type Batch, type BatchKernel, type OddSizePolicy } from '../core/plan.js';
 import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
 import { layersProblem, planRegions, rectProblem, type BatchRegion, type Rect } from '../core/region.js';
 import { isCompatibilityTexture } from './compat.js';
 import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, regionBinding, regionBytes, srgbTable, srgbTableBinding, usesSrgbTable, type F16Rounding, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
 import { requiredLimits } from './limits.js';
+import { createRenderKernel, renderFormats, renderLayoutEntries, usesTables, type RenderKernelOptions, type SrgbRounding } from './render.js';
 import { asTextureLevel, bindingViewDimension, levelSizeOf, sourceShapeReason, sourceTextureReason, sourceView, type TextureLevel } from './source.js';
 import { retireBuffers } from './tool.js';
 import { kernelDefaults } from '../mipmap.js';
@@ -31,12 +32,21 @@ export interface DownsamplerOptions {
 	 *   per level. Needs COPY_DST usage and a format with 4-byte-multiple texels;
 	 *   writes formats that can't be storage textures, and isn't limited by
 	 *   maxStorageTexturesPerShaderStage. Can't record into a caller's compute pass.
-	 * - 'auto' (default): storage whenever the device can write the format as a
-	 *   storage texture (the texture then needs STORAGE_BINDING); the buffer path
-	 *   only for formats it can't: rgb9e5ufloat, rg11b10ufloat without
-	 *   texture-formats-tier1, rg32float in compatibility mode.
+	 * - 'render': one render pass per level and layer, its fragment shader the
+	 *   exact kernel's rule and rounding, so the same bits as the other paths. Needs
+	 *   RENDER_ATTACHMENT usage and a color-renderable float format; covers
+	 *   'average' with oddSizes 'exact' or 'box', in place. Can't record into a
+	 *   compute pass, nor be returned by `prepare()`.
+	 * - 'auto' (default): sRGB chains (sRGB formats, and `colorSpace: 'srgb'`) take
+	 *   the render path when the texture has RENDER_ATTACHMENT usage, the chain is
+	 *   one it covers and its first level has at least `renderPathMinTexels` texels
+	 *   (DIVERGES.md #16). Otherwise storage whenever the device
+	 *   can write the format as a storage texture (the texture then needs
+	 *   STORAGE_BINDING); the buffer path only for formats it can't: sRGB,
+	 *   rgb9e5ufloat, rg11b10ufloat without texture-formats-tier1, rg32float in
+	 *   compatibility mode.
 	 */
-	output?: 'auto' | OutputPath;
+	output?: 'auto' | ChainPath;
 	/**
 	 * How 'average' reads the source level of each batch: one hardware bilinear
 	 * sample, or four `textureLoad`s with weights computed in the shader. Default
@@ -94,6 +104,29 @@ export interface DownsamplerOptions {
 	 */
 	f16Rounding?: F16Rounding;
 	/**
+	 * sRGB levels on the render path: 'exact' (default) rounds each level to its code in the
+	 * shader, the same bits as the compute paths on every GPU; 'device' lets the attachment encode
+	 * the linear value and reads through the hardware's decode, as plain render-pass mipmaps do:
+	 * no tables, and plain render passes' speed, but codes differ by up to 2 from the exact ones and
+	 * between GPUs (DIVERGES.md #16). Compute paths always round exactly.
+	 */
+	srgbRounding?: SrgbRounding;
+	/**
+	 * Under output 'auto', the smallest sRGB chain that takes the render path, in texels per
+	 * layer of its first source level (the base level, or a partial update's rect). Default
+	 * {@link defaultRenderPathMinTexels} (1920 × 1080). Smaller chains take the compute path they
+	 * would take without RENDER_ATTACHMENT (sRGB formats the buffer path, `colorSpace: 'srgb'` its
+	 * storage path), unless only the render path can write the texture. Both apply the same rule
+	 * and rounding per level; a multi-level compute batch computes its in-tile levels with other
+	 * float arithmetic, so a value within float error of a rounding threshold can differ by a code
+	 * (an M5 Pro, 1920 × 1080 with averageAccess 'load': 2 values).
+	 * A render pass costs about the same at any size on Apple GPUs, so there the render path is
+	 * slower than the buffer path below 1080p (1.25–2.2× on an M5 Pro) and faster above it; on an
+	 * RTX 3060 and Intel UHD it is faster at every size (DIVERGES.md #16). 0: the render path at
+	 * any size; Infinity: never under 'auto'. The other `output` values ignore it.
+	 */
+	renderPathMinTexels?: number;
+	/**
 	 * 'exact' batches: the smallest output tile per workgroup, 8, 16 or 32. Default 32
 	 * (16 × 16 invocations, each writing 2 × 2 first-level texels) where a workgroup can
 	 * have 256 invocations, 16 on Apple GPUs, else 8; also 8 on fallback (software)
@@ -137,6 +170,13 @@ export interface SourceOptions extends TextureLevel {
 
 /** Default of {@link DownsamplerOptions.maxResampleRatio}: the largest source ÷ destination ratio per axis with `resample: 'area'` (at most 9 taps per axis). */
 export const maxResampleRatio = 8;
+
+/**
+ * Default of {@link DownsamplerOptions.renderPathMinTexels}: 1920 × 1080. Where the render path
+ * stops losing to the buffer path on an Apple M5 Pro (a tie at 1080p, 0.79–0.83× from 1440p);
+ * NVIDIA and Intel gain at every size (DIVERGES.md #16).
+ */
+export const defaultRenderPathMinTexels = 1920 * 1080;
 
 /** A separate source with its defaults filled in. */
 interface ResolvedSource {
@@ -231,7 +271,24 @@ export interface EncodeOptions {
 	 * Downsampler. Ignored on the storage path.
 	 */
 	scratch?: GPUBuffer;
+	/**
+	 * 'srgb': the texture is rgba8unorm or bgra8unorm and holds sRGB color, created with its
+	 * sRGB format in `viewFormats` (`viewFormats: [ 'rgba8unorm-srgb' ]`). Levels are averaged in
+	 * linear light and stored as sRGB codes, exactly as for an rgba8unorm-srgb texture with the
+	 * same bytes, but written directly: by render passes when the texture has RENDER_ATTACHMENT
+	 * usage (as for sRGB formats, {@link DownsamplerOptions.output}), else as storage textures, with
+	 * no buffer and no copies (19–30 % less time than the buffer path on an RTX 3060), and then
+	 * `encodePass` works. Sample it through an sRGB view
+	 * (`createView( { format: 'rgba8unorm-srgb', usage: GPUTextureUsage.TEXTURE_BINDING } )`), so
+	 * filtering decodes first. Not with `oddSizes: 'spd'`, nor on the compatibility path
+	 * (compatibility mode has no `viewFormats`). 'linear' (default): the texture's own format
+	 * decides; sRGB formats are always sRGB. See DIVERGES.md #16.
+	 */
+	colorSpace?: 'srgb' | 'linear';
 }
+
+/** How a chain's levels are written: compute dispatches ('storage', 'buffer') or render passes ('render'). */
+export type ChainPath = OutputPath | 'render';
 
 /** A `copyBufferToTexture` of one level, after a buffer-path batch. */
 export interface BufferCopy {
@@ -280,8 +337,19 @@ export interface PreparedBatch extends Batch {
 	groupY?: number;
 }
 
+/** One level of a render-path plan: a pass per layer of `targets`, drawing instance `layer`. */
+interface RenderLevel {
+	pipeline: GPURenderPipeline;
+	bindGroup: GPUBindGroup;
+	targets: { layer: number; view: GPUTextureView }[];
+	/** A partial update: the level's texels to write (the scissor), else null. */
+	scissor: Rect | null;
+}
+
 interface CachedPlan {
 	source: GPUTexture | undefined;
+	/** Render path: the levels, in order (`batches` is then empty). */
+	render?: RenderLevel[];
 	/** The caller's scratch buffer the plan writes (EncodeOptions.scratch), if any. */
 	scratch: GPUBuffer | undefined;
 	batches: PreparedBatch[];
@@ -324,6 +392,10 @@ interface PlanParameters {
 	reduction: Reduction;
 	sourceMipLevel: number;
 	scratch: GPUBuffer | undefined;
+	/** `colorSpace: 'srgb'` on an rgba8unorm or bgra8unorm texture: the sRGB format it is reduced as, read through views of. */
+	srgb: 'rgba8unorm-srgb' | 'bgra8unorm-srgb' | undefined;
+	/** How the chain is written ({@link Downsampler.chainPath}). */
+	path: ChainPath;
 }
 
 /**
@@ -350,8 +422,8 @@ export class Downsampler {
 	readonly levelsPerDispatch: number;
 	/** Levels per dispatch on the buffer path: `levelsPerDispatch` if given, else 6 (4 below 256 invocations per workgroup). */
 	readonly bufferLevelsPerDispatch: number;
-	/** The `output` option: 'auto', 'storage' or 'buffer'. {@link Downsampler.outputPath} resolves it per texture. */
-	readonly output: 'auto' | OutputPath;
+	/** The `output` option: 'auto', 'storage', 'buffer' or 'render'. {@link Downsampler.outputPath} resolves it per texture. */
+	readonly output: 'auto' | ChainPath;
 	/** How 'average' reads filterable sources (resolved `averageAccess` option, default 'sample'). */
 	readonly averageAccess: SourceAccess;
 	/** The `compatibility` option. {@link Downsampler.usesCompatibility} resolves it per texture. */
@@ -364,6 +436,10 @@ export class Downsampler {
 	private readonly haloMaxOutput: number;
 	/** How float16 levels are rounded (resolved `f16Rounding` option). */
 	readonly f16Rounding: F16Rounding;
+	/** How the render path rounds sRGB levels (resolved `srgbRounding` option). */
+	readonly srgbRounding: SrgbRounding;
+	/** Under 'auto', the smallest sRGB chain (texels per layer of its first level) that takes the render path (resolved `renderPathMinTexels` option). */
+	readonly renderPathMinTexels: number;
 	/** Smallest first-output tile of 'exact' batches (resolved `exactTile` option: 8, 16 or 32). */
 	readonly exactTile: number;
 	/** Largest source ÷ destination ratio per axis with `resample: 'area'` (resolved `maxResampleRatio` option, default 8). */
@@ -372,6 +448,7 @@ export class Downsampler {
 	private readonly tailMaxTile: number;
 	private readonly scratch = new WeakMap<GPUTexture, Map<number, GPUTexture>>();
 	private readonly pipelines = new Map<string, GPUComputePipeline>();
+	private readonly renderPipelines = new Map<string, GPURenderPipeline>();
 	private readonly layouts = new Map<string, GPUBindGroupLayout>();
 	private readonly plans = new WeakMap<GPUTexture, Map<string, CachedPlan>>();
 	/** Partial-update plans per texture, least recently used first. */
@@ -394,7 +471,7 @@ export class Downsampler {
 	constructor( device: GPUDevice, options: DownsamplerOptions = {} ) {
 
 		const output = options.output ?? 'auto';
-		if ( output !== 'auto' && output !== 'storage' && output !== 'buffer' ) throw new Error( 'downsampler: output must be "auto", "storage" or "buffer".' );
+		if ( output !== 'auto' && output !== 'storage' && output !== 'buffer' && output !== 'render' ) throw new Error( 'downsampler: output must be "auto", "storage", "buffer" or "render".' );
 		// The device's defaults (`kernelDefaults`, shared with `downsampler/mipmap`). 5 and 6 levels
 		// take 16 × 16 invocations; compatibility mode defaults to 128. Software adapters
 		// (SwiftShader) keep 8×8 'exact' tiles: they take 30 s or more to compile a 32×32-tile pipeline.
@@ -424,6 +501,12 @@ export class Downsampler {
 		const f16Rounding = options.f16Rounding ?? 'nearest';
 		if ( f16Rounding !== 'nearest' && f16Rounding !== 'device' ) throw new Error( 'downsampler: f16Rounding must be "nearest" or "device".' );
 		this.f16Rounding = f16Rounding;
+		const srgbRounding = options.srgbRounding ?? 'exact';
+		if ( srgbRounding !== 'exact' && srgbRounding !== 'device' ) throw new Error( 'downsampler: srgbRounding must be "exact" or "device".' );
+		this.srgbRounding = srgbRounding;
+		const renderPathMinTexels = options.renderPathMinTexels ?? defaultRenderPathMinTexels;
+		if ( typeof renderPathMinTexels !== 'number' || ! ( renderPathMinTexels >= 0 ) ) throw new Error( 'downsampler: renderPathMinTexels must be a number from 0 (the render path at any size) to Infinity (never under output "auto").' );
+		this.renderPathMinTexels = renderPathMinTexels;
 		const exactTile = options.exactTile ?? defaults.exactTile;
 		if ( exactTile !== 8 && ( exactTile !== 16 && exactTile !== 32 || invocations < 6 ) ) throw new Error( 'downsampler: exactTile must be 8, or 16 or 32 on devices with 256 invocations per workgroup.' );
 		this.exactTile = exactTile;
@@ -454,6 +537,9 @@ export class Downsampler {
 		const bufferReason = ! bufferWritable( format ) ? `format ${ format } has ${ info.bytesPerTexel }-byte texels, and the buffer output path writes 4-byte words` : 'texture needs COPY_DST usage for the buffer output path';
 		if ( this.output === 'storage' ) return storageReason;
 		if ( this.output === 'buffer' ) return bufferReason;
+		if ( this.output === 'render' ) return this.renderReason( texture, format );
+		// sRGB: the render path, else the buffer path.
+		if ( info.quantization === 'srgb8' && formatReason !== null && bufferWritable( format ) ) return `${ storageReason }, so it takes the render path (${ this.renderReason( texture, format ) }) or the buffer output path (${ bufferReason })`;
 		// 'auto' takes the buffer path only for formats the device can't store.
 		if ( formatReason === null ) return bufferWritable( format ) ? `${ storageReason } (or COPY_DST usage with output 'buffer')` : storageReason;
 		return bufferWritable( format ) ? `${ storageReason }, so it takes the buffer output path, and the ${ bufferReason.replace( 'texture needs ', 'texture needs ' ) }` : storageReason;
@@ -461,21 +547,114 @@ export class Downsampler {
 	}
 
 	/**
-	 * How levels of `texture` are written: 'storage' (storage textures) or
-	 * 'buffer' (a storage buffer and copies), or null when neither applies (see
-	 * {@link Downsampler.unsupportedReason}). Follows the `output` option; 'auto'
-	 * takes the buffer path only for formats the device can't write as storage
-	 * textures, never for a texture that merely lacks STORAGE_BINDING usage.
+	 * How levels of `texture` are written by default: 'storage' (storage textures),
+	 * 'buffer' (a storage buffer and copies) or 'render' (render passes), or null
+	 * when none applies (see {@link Downsampler.unsupportedReason}). Follows the
+	 * `output` option; 'auto' takes the render path for sRGB formats that can be
+	 * render attachments from `renderPathMinTexels` texels (the whole texture's
+	 * chain; smaller ones, or any size where no compute path can write it), and the
+	 * buffer path only for formats the device can't write as storage textures,
+	 * never for a texture that merely lacks STORAGE_BINDING usage. Under 'auto', a
+	 * chain the render path doesn't cover (folds, 'spd', a separate source) takes the
+	 * buffer path instead, a chain whose first level is smaller than
+	 * `renderPathMinTexels` (a sub-range, a rect) the compute path, and
+	 * `colorSpace: 'srgb'` chains take the render path when the texture can.
 	 */
-	outputPath( texture: GPUTexture ): OutputPath | null {
+	outputPath( texture: GPUTexture ): ChainPath | null {
 
 		if ( ! isSupportedFormat( texture.format ) ) return null;
-		const storageFormat = this.storageFormatReason( texture ) === null;
-		const storage = storageFormat && ( texture.usage & GPUTextureUsage.STORAGE_BINDING ) !== 0;
-		const buffer = bufferWritable( texture.format ) && ( texture.usage & GPUTextureUsage.COPY_DST ) !== 0;
-		if ( this.output === 'storage' ) return storage ? 'storage' : null;
-		if ( this.output === 'buffer' ) return buffer ? 'buffer' : null;
-		return storageFormat ? ( storage ? 'storage' : null ) : buffer ? 'buffer' : null;
+		if ( this.output === 'render' ) return this.renderReason( texture, texture.format ) === null ? 'render' : null;
+		if ( this.output === 'storage' ) return this.storageFormatReason( texture ) === null && ( texture.usage & GPUTextureUsage.STORAGE_BINDING ) !== 0 ? 'storage' : null;
+		if ( this.output === 'buffer' ) return bufferWritable( texture.format ) && ( texture.usage & GPUTextureUsage.COPY_DST ) !== 0 ? 'buffer' : null;
+		return this.autoPath( texture, undefined, null, texture.width * texture.height );
+
+	}
+
+	/** The path 'auto' takes without the render path: storage where the device can store the format, else the buffer path; null where the texture lacks the usage. */
+	private computePath( texture: GPUTexture ): 'storage' | 'buffer' | null {
+
+		if ( this.storageFormatReason( texture ) === null ) return ( texture.usage & GPUTextureUsage.STORAGE_BINDING ) !== 0 ? 'storage' : null;
+		return bufferWritable( texture.format as SupportedFormat ) && ( texture.usage & GPUTextureUsage.COPY_DST ) !== 0 ? 'buffer' : null;
+
+	}
+
+	/**
+	 * Under 'auto', the path of a chain whose first level has `texels` per layer: the render path for
+	 * sRGB (the format's, or `srgb` for `colorSpace: 'srgb'`) when the chain is covered (`chain` null),
+	 * the texture can render, and the chain is at least `renderPathMinTexels` or no compute path can
+	 * write it; else {@link Downsampler.computePath} (null: no path).
+	 */
+	private autoPath( texture: GPUTexture, srgb: string | undefined, chain: string | null, texels: number ): ChainPath | null {
+
+		const compute = this.computePath( texture );
+		const renderFormat = srgb ?? ( formats[ texture.format as SupportedFormat ].quantization === 'srgb8' ? texture.format : undefined );
+		if ( renderFormat !== undefined && chain === null && this.renderReason( texture, renderFormat ) === null && ( compute === null || texels >= this.renderPathMinTexels ) ) return 'render';
+		return compute;
+
+	}
+
+	/** Texels per layer of a chain's first source level: the rect of a partial update, else the base level. */
+	private static chainTexels( texture: GPUTexture, options: EncodeOptions ): number {
+
+		if ( options.rect !== undefined ) return options.rect.width * options.rect.height;
+		const level = options.baseMipLevel ?? 0;
+		return mipSize( texture.width, level ) * mipSize( texture.height, level );
+
+	}
+
+	/**
+	 * Why `texture` can't take the render path as `format` (its own, or the sRGB view format of
+	 * `colorSpace: 'srgb'`), or null.
+	 */
+	private renderReason( texture: GPUTexture, format: string ): string | null {
+
+		if ( ! renderFormats.has( format ) ) return `format ${ format } isn't on the render path`;
+		if ( ( texture.usage & GPUTextureUsage.RENDER_ATTACHMENT ) === 0 ) return 'texture needs RENDER_ATTACHMENT usage for the render path';
+		if ( usesTables( format, this.srgbRounding ) ) {
+
+			// The sRGB tables are a storage buffer in the fragment stage (compatibility mode allows none by default).
+			const limits = this.device.limits as GPUSupportedLimits & { maxStorageBuffersInFragmentStage?: number };
+			if ( ( limits.maxStorageBuffersInFragmentStage ?? limits.maxStorageBuffersPerShaderStage ) < 1 ) return 'the render path reads the sRGB tables from a storage buffer in the fragment stage, and this device allows none (maxStorageBuffersInFragmentStage)';
+
+		}
+
+		return null;
+
+	}
+
+	/** Why the render path doesn't cover a chain with these options, or null. */
+	private static renderChainReason( oddSizes: OddSizePolicy, reduction: Reduction, source: ResolvedSource | undefined ): string | null {
+
+		if ( oddSizes === 'spd' ) return "oddSizes 'spd'";
+		if ( reduction !== 'average' ) return "reductions other than 'average'";
+		if ( source !== undefined ) return 'a separate source';
+		return null;
+
+	}
+
+	/**
+	 * The path of one chain: the render path where `output` asks for it or 'auto' picks it (sRGB
+	 * that can render, a chain it covers, and `texels` per layer at its first level of at least
+	 * `renderPathMinTexels`), else {@link Downsampler.outputPath}.
+	 */
+	private chainPath( texture: GPUTexture, srgb: 'rgba8unorm-srgb' | 'bgra8unorm-srgb' | undefined, oddSizes: OddSizePolicy, reduction: Reduction, source: ResolvedSource | undefined, texels: number ): ChainPath {
+
+		const path = this.outputPath( texture )!;
+		const chain = Downsampler.renderChainReason( oddSizes, reduction, source );
+		if ( this.output === 'render' ) {
+
+			if ( chain !== null ) throw new Error( `downsampler: the render path doesn't cover ${ chain }; it reduces 'average' chains in place with oddSizes 'exact' or 'box'. Use output 'auto', 'storage' or 'buffer'.` );
+			const reason = srgb === undefined ? null : this.renderReason( texture, srgb );
+			if ( reason !== null ) throw new Error( `downsampler: ${ reason }.` );
+			return 'render';
+
+		}
+
+		if ( this.output !== 'auto' ) return path;
+		const auto = this.autoPath( texture, srgb, chain, texels );
+		if ( auto !== null ) return auto;
+		// Only the render path can write the texture, and it doesn't cover the chain.
+		throw new Error( `downsampler: ${ texture.format } chains with ${ chain } take the buffer output path (the render path covers 'average' in place with oddSizes 'exact' or 'box'), which needs COPY_DST usage.` );
 
 	}
 
@@ -539,7 +718,9 @@ export class Downsampler {
 	 */
 	scratchSize( texture: GPUTexture, options: EncodeOptions = {} ): number {
 
-		if ( this.outputPath( texture ) !== 'buffer' ) return 0;
+		const chain = Downsampler.renderChainReason( options.oddSizes ?? 'exact', options.reduction ?? 'average', options.source === undefined ? undefined : resolveSource( options.source ) );
+		const path = this.output === 'auto' && isSupportedFormat( texture.format ) ? this.autoPath( texture, undefined, chain, Downsampler.chainTexels( texture, options ) ) : this.outputPath( texture );
+		if ( path === 'storage' || path === 'render' && chain === null ) return 0;
 		const baseMipLevel = options.baseMipLevel ?? 0;
 		const end = options.mipLevelCount === undefined ? texture.mipLevelCount : baseMipLevel + options.mipLevelCount;
 		const first = options.source === undefined ? baseMipLevel + 1 : baseMipLevel;
@@ -551,7 +732,24 @@ export class Downsampler {
 	/** Record the mip chain into an encoder. Throws for unsupported textures. */
 	encode( encoder: GPUCommandEncoder, texture: GPUTexture, options: EncodeOptions = {} ): void {
 
-		for ( const batch of this.prepare( texture, options ) ) {
+		const plan = this.plan( texture, options );
+		for ( const level of plan.render ?? [] ) {
+
+			for ( const { layer, view } of level.targets ) {
+
+				// Whole levels are cleared (every texel is drawn); a partial update keeps the rest.
+				const pass = encoder.beginRenderPass( { label: 'downsampler', colorAttachments: [ { view, loadOp: level.scissor === null ? 'clear' : 'load', clearValue: [ 0, 0, 0, 0 ], storeOp: 'store' } ] } );
+				pass.setPipeline( level.pipeline );
+				pass.setBindGroup( 0, level.bindGroup );
+				if ( level.scissor !== null ) pass.setScissorRect( level.scissor.x, level.scissor.y, level.scissor.width, level.scissor.height );
+				pass.draw( 3, 1, 0, layer );
+				pass.end();
+
+			}
+
+		}
+
+		for ( const batch of plan.batches ) {
 
 			const pass = encoder.beginComputePass( { label: 'downsampler' } );
 			pass.setPipeline( batch.pipeline );
@@ -574,7 +772,8 @@ export class Downsampler {
 	 * batch. Dispatches in a compute pass are separate usage scopes, so each batch
 	 * reads what the previous one wrote. Use it to share one pass (and one pair of
 	 * timestamp writes) with other dispatches. Throws for unsupported textures,
-	 * and on the buffer output path, whose copies can't be recorded in a pass.
+	 * on the buffer output path, whose copies can't be recorded in a pass, and on
+	 * the render path.
 	 */
 	encodePass( pass: GPUComputePassEncoder, texture: GPUTexture, options: EncodeOptions = {} ): void {
 
@@ -616,6 +815,15 @@ export class Downsampler {
 	 */
 	prepare( texture: GPUTexture, options: EncodeOptions = {} ): readonly PreparedBatch[] {
 
+		const plan = this.plan( texture, options );
+		if ( plan.render !== undefined ) throw new Error( `downsampler: this ${ texture.format } chain takes the render path (render passes, not dispatches), which prepare() and encodePass() can't express; use encode(), or output 'storage' or 'buffer'.` );
+		return plan.batches;
+
+	}
+
+	/** The cached plan of a chain: `prepare()`'s batches, or the render path's levels. */
+	private plan( texture: GPUTexture, options: EncodeOptions ): CachedPlan {
+
 		const reason = this.unsupportedReason( texture );
 		if ( reason !== null ) throw new Error( `downsampler: ${ reason }.` );
 		const baseMipLevel = options.baseMipLevel ?? 0;
@@ -635,21 +843,23 @@ export class Downsampler {
 		if ( needsTileEdges( reduction ) ) throw new Error( 'downsampler: sums, per-channel reductions and custom sums have no \'exact\' mip-chain meaning; use a Reducer (edges \'zero-weight\' or \'clamp\').' );
 		if ( oddSizes === 'spd' && isIntFormat( texture.format as SupportedFormat ) ) throw new Error( `downsampler: oddSizes 'spd' isn't available for integer formats (${ texture.format }): its batches carry unrounded float sums between levels, which can't hold 32-bit integers exactly. Use oddSizes 'exact' (the default) or 'box', which reduce integers exactly.` );
 		if ( oddSizes === 'spd' && reduction !== 'average' ) throw new Error( 'downsampler: oddSizes \'spd\' is for \'average\' only. It drops the last odd row or column, so min/max/minmax and custom folds would not be a conservative Hi-Z; use oddSizes \'exact\' (the default), or a Reducer with edges \'zero-weight\' (⌈n/2⌉ sizes, every texel counted).' );
+		const srgb = this.srgbAlias( texture, options.colorSpace, oddSizes );
 		const sourceMipLevel = source?.mipLevel ?? 0;
-		const parameters: PlanParameters = { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel, scratch: options.scratch };
-		const key = `${ baseMipLevel }:${ mipLevelCount }:${ oddSizes }:${ reductionKey( reduction ) }:${ source === undefined ? 'self' : `source:${ sourceMipLevel }${ source.resample === 'area' ? ':area' : '' }` }`;
+		const path = this.chainPath( texture, srgb, oddSizes, reduction, source, Downsampler.chainTexels( texture, options ) );
+		const parameters: PlanParameters = { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel, scratch: options.scratch, srgb, path };
+		const key = `${ baseMipLevel }:${ mipLevelCount }:${ oddSizes }:${ reductionKey( reduction ) }:${ source === undefined ? 'self' : `source:${ sourceMipLevel }${ source.resample === 'area' ? ':area' : '' }` }${ srgb === undefined ? '' : ':srgb' }`;
 
 		if ( options.rect === undefined && options.layers === undefined ) {
 
 			let cache = this.plans.get( texture );
 			if ( cache === undefined ) this.plans.set( texture, cache = new Map() );
 			const cached = cache.get( key );
-			if ( cached !== undefined && cached.source === source?.texture && cached.scratch === options.scratch ) return cached.batches;
+			if ( cached !== undefined && cached.source === source?.texture && cached.scratch === options.scratch ) return cached;
 			// A new source texture (e.g. a depth buffer recreated on resize) or scratch buffer replaces the plan.
 			if ( cached !== undefined ) retireBuffers( this.device, cached.buffers );
 			const plan = this.build( texture, parameters, null );
 			cache.set( key, plan );
-			return plan.batches;
+			return plan;
 
 		}
 
@@ -663,7 +873,7 @@ export class Downsampler {
 		if ( rectReason !== null ) throw new Error( `downsampler: ${ rectReason }${ source === undefined ? ` (level ${ baseMipLevel })` : ' (the source level)' }.` );
 		const { x, y, width, height } = options.rect ?? { x: 0, y: 0, width: rw, height: rh };
 		// An empty rect: nothing depends on it, so nothing is recorded (and nothing cached).
-		if ( width === 0 || height === 0 ) return [];
+		if ( width === 0 || height === 0 ) return { source: undefined, scratch: undefined, batches: [], buffers: [], ...( path === 'render' ? { render: [] } : {} ) };
 		const rect = { x, y, width, height };
 		const regionKey = `${ key }|${ layers.join() }|${ x },${ y },${ width },${ height }`;
 		let cache = this.regionPlans.get( texture );
@@ -673,7 +883,7 @@ export class Downsampler {
 		if ( cached !== undefined && cached.source === source?.texture && cached.scratch === options.scratch ) {
 
 			cache.set( regionKey, cached );
-			return cached.batches;
+			return cached;
 
 		}
 
@@ -690,25 +900,56 @@ export class Downsampler {
 
 		}
 
-		return plan.batches;
+		return plan;
+
+	}
+
+	/**
+	 * `colorSpace` checked against `texture`: the sRGB format an rgba8unorm or bgra8unorm texture is
+	 * reduced as with 'srgb', else undefined.
+	 */
+	private srgbAlias( texture: GPUTexture, colorSpace: unknown, oddSizes: OddSizePolicy ): 'rgba8unorm-srgb' | 'bgra8unorm-srgb' | undefined {
+
+		if ( colorSpace === undefined ) return undefined;
+		if ( colorSpace !== 'srgb' && colorSpace !== 'linear' ) throw new Error( `downsampler: colorSpace must be 'srgb' or 'linear', not ${ JSON.stringify( colorSpace ) }.` );
+		const format = texture.format as SupportedFormat;
+		if ( formats[ format ].quantization === 'srgb8' ) {
+
+			if ( colorSpace === 'linear' ) throw new Error( `downsampler: ${ format } is an sRGB format, so its color is always sRGB; colorSpace 'linear' would contradict it.` );
+			return undefined;
+
+		}
+
+		if ( colorSpace === 'linear' ) return undefined;
+		const srgb = srgbViewFormat( format );
+		if ( srgb === undefined ) throw new Error( `downsampler: colorSpace 'srgb' is for rgba8unorm and bgra8unorm textures created with their sRGB format in viewFormats, not ${ format }.` );
+		if ( oddSizes === 'spd' ) throw new Error( "downsampler: oddSizes 'spd' isn't available with colorSpace 'srgb'; use 'exact' (the default) or 'box', or an sRGB-format texture." );
+		if ( this.outputPath( texture ) === 'storage' && this.usesCompatibility( texture ) ) throw new Error( "downsampler: colorSpace 'srgb' can't take the compatibility path, whose scratch textures have no sRGB views (and compatibility mode has no viewFormats)." );
+		return srgb;
 
 	}
 
 	/** Prepares the batches of one plan; `region` makes it a partial update. */
-	private build( texture: GPUTexture, { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel, scratch: scratchBuffer }: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null ): CachedPlan {
+	private build( texture: GPUTexture, parameters: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null ): CachedPlan {
 
-		const format = texture.format as SupportedFormat;
+		if ( parameters.path === 'render' ) return this.buildRender( texture, parameters, region );
+		const { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel, scratch: scratchBuffer, srgb } = parameters;
+
+		// colorSpace 'srgb': reduced as the sRGB format, read through sRGB views (named usage: the
+		// texture's STORAGE_BINDING isn't valid for an sRGB view), written through its own.
+		const format = srgb ?? texture.format as SupportedFormat;
 		const dimension = bindingViewDimension( texture );
 		const view = ( level: number ) => texture.createView( { label: `downsampler mip ${ level }`, dimension, baseMipLevel: level, mipLevelCount: 1 } );
+		const read = srgb === undefined ? view : ( level: number ) => texture.createView( { label: `downsampler mip ${ level } (sRGB)`, format: srgb, usage: GPUTextureUsage.TEXTURE_BINDING, dimension, baseMipLevel: level, mipLevelCount: 1 } );
 
-		const output = this.outputPath( texture )!;
+		const output = parameters.path as OutputPath;
 		const levelsPerDispatch = output === 'buffer' && this.output === 'auto' ? this.bufferLevelsPerDispatch : this.levelsPerDispatch;
 		const sourceWidth = source === undefined ? undefined : mipSize( source.texture.width, sourceMipLevel ), sourceHeight = source === undefined ? undefined : mipSize( source.texture.height, sourceMipLevel );
 		const copySource = source !== undefined && sourceWidth === mipSize( texture.width, baseMipLevel ) && sourceHeight === mipSize( texture.height, baseMipLevel );
 		const { tailMaxTile } = this;
 		// Under 'spd', a resampled source is its own 1-level batch, like a copy.
 		const resample = source?.resample === 'area';
-		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch, oddSizes, fromSource: source !== undefined, copySource: copySource || resample, tail: oddSizes !== 'spd' && this.tail, tailMaxTile, exactMinTile: this.exactTile, ...this.haloPlan( texture.format as SupportedFormat, oddSizes ) } );
+		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch, oddSizes, fromSource: source !== undefined, copySource: copySource || resample, tail: oddSizes !== 'spd' && this.tail, tailMaxTile, exactMinTile: this.exactTile, ...this.haloPlan( format, oddSizes ) } );
 		const layerCount = texture.depthOrArrayLayers;
 		const layers: readonly [ number, number ] = region?.layers ?? [ 0, layerCount ];
 		const regions: BatchRegion[] | null = region === null ? null : planRegions( planned, region.rect, texture.width, texture.height, sourceWidth, sourceHeight );
@@ -750,7 +991,7 @@ export class Downsampler {
 		const compat = output === 'storage' && this.usesCompatibility( texture );
 		const firstWritten = source === undefined ? baseMipLevel + 1 : baseMipLevel;
 		const target = compat ? ( level: number ) => this.scratchView( texture, level, dimension ) : view;
-		const input = ( level: number ) => compat && region === null && level >= firstWritten ? this.scratchView( texture, level, dimension ) : view( level );
+		const input = ( level: number ) => compat && region === null && level >= firstWritten ? this.scratchView( texture, level, dimension ) : read( level );
 
 		// Partial updates: one uniform buffer, a 256-byte slot per region uniform (and per
 		// layout uniform on the buffer path), written once: plans are cached per region.
@@ -786,9 +1027,9 @@ export class Downsampler {
 
 			const external = batch.sourceMipLevel === null;
 			const sourceFormat = external ? source!.texture.format : format;
-			// A same-size converting copy loads: a sampler at texel centres isn't exact on every
-			// GPU (Intel truncates the coordinate a hair below the centre and blends in 1/256 of a
-			// neighbour; results/windows/correctness.md).
+			// A same-size converting copy loads: a sampler at texel centers isn't exact on every
+			// GPU (Intel truncates the coordinate a hair below the center and blends in 1/256 of a
+			// neighbor; results/windows/correctness.md).
 			// Area-weighted batches load: a resampled source (any reduction), and under 'box' the
 			// averages that read an odd level, or reduce odd levels in a tail. The others are
 			// the 'exact' kernels: an even step is the same 2×2 box, and folds are the same.
@@ -870,6 +1111,60 @@ export class Downsampler {
 	}
 
 	/**
+	 * A render-path plan: per level, the pipeline for its step ('box' odd steps load with area
+	 * weights; others the 'exact' rule with this Downsampler's access), a bind group reading the
+	 * level above, and an attachment view per layer. A partial update takes each level's region
+	 * from the same rule as one-level batches, as the scissor.
+	 */
+	private buildRender( texture: GPUTexture, { baseMipLevel, mipLevelCount, oddSizes, srgb }: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null ): CachedPlan {
+
+		const format = srgb ?? texture.format as SupportedFormat;
+		const dimension = bindingViewDimension( texture );
+		const viewFormat = srgb === undefined ? {} : { format: srgb };
+		const layers: readonly [ number, number ] = region?.layers ?? [ 0, texture.depthOrArrayLayers ];
+		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch: 1, oddSizes } );
+		const regions = region === null ? null : planRegions( planned, region.rect, texture.width, texture.height );
+		const odd = ( size: number ) => size > 1 && size % 2 === 1;
+		const render: RenderLevel[] = [];
+		planned.forEach( ( { firstMipLevel: level }, index ) => {
+
+			const scissor = regions === null ? null : regions[ index ].levels[ 0 ];
+			if ( regions !== null && scissor === null ) return;
+			const area = oddSizes === 'box' && ( odd( mipSize( texture.width, level - 1 ) ) || odd( mipSize( texture.height, level - 1 ) ) );
+			const options: RenderKernelOptions = { format, dimension, access: area ? 'load' : this.access( 'average', format ), area, f16Rounding: this.f16Rounding, srgbRounding: this.srgbRounding };
+			const pipeline = this.renderPipeline( options );
+			const entries: GPUBindGroupEntry[] = options.access === 'sample' ? [ { binding: 0, resource: this.sampler } ] : [];
+			// An sRGB view of colorSpace 'srgb' names its usage: the texture's STORAGE_BINDING isn't valid for it.
+			entries.push( { binding: 1, resource: texture.createView( { label: `downsampler mip ${ level - 1 }`, dimension, baseMipLevel: level - 1, mipLevelCount: 1, ...viewFormat, ...( srgb === undefined ? {} : { usage: GPUTextureUsage.TEXTURE_BINDING } ) } ) } );
+			if ( usesTables( format, this.srgbRounding ) ) entries.push( { binding: srgbTableBinding, resource: { buffer: srgbTable( this.device ) } } );
+			const bindGroup = this.device.createBindGroup( { label: 'downsampler render', layout: pipeline.getBindGroupLayout( 0 ), entries } );
+			const targets = Array.from( { length: layers[ 1 ] }, ( _, i ) => layers[ 0 ] + i ).map( layer => ( {
+				layer,
+				view: texture.createView( { label: `downsampler mip ${ level } layer ${ layer }`, dimension: '2d', baseMipLevel: level, mipLevelCount: 1, baseArrayLayer: layer, arrayLayerCount: 1, ...viewFormat, ...( srgb === undefined ? {} : { usage: GPUTextureUsage.RENDER_ATTACHMENT } ) } )
+			} ) );
+			render.push( { pipeline, bindGroup, targets, scissor } );
+
+		} );
+		return { source: undefined, scratch: undefined, batches: [], buffers: [], render };
+
+	}
+
+	private renderPipeline( options: RenderKernelOptions ): GPURenderPipeline {
+
+		const { format, dimension, access, area = false, f16Rounding = 'nearest', srgbRounding = 'exact' } = options;
+		const id = `${ format }:${ dimension }:${ access }${ area ? ':box' : '' }:${ f16Rounding }:${ srgbRounding }`;
+		let pipeline = this.renderPipelines.get( id );
+		if ( pipeline !== undefined ) return pipeline;
+		const label = `downsampler render ${ id }`;
+		const module = this.device.createShaderModule( { label, code: createRenderKernel( options ) } );
+		const layout = this.device.createPipelineLayout( { label, bindGroupLayouts: [ this.device.createBindGroupLayout( { label, entries: renderLayoutEntries( options ) } ) ] } );
+		pipeline = this.device.createRenderPipeline( { label, layout, vertex: { module, entryPoint: 'ds_vertex' }, fragment: { module, entryPoint: 'ds_fragment', targets: [ { format } ] }, primitive: { topology: 'triangle-list' } } );
+		this.renderPipelines.set( id, pipeline );
+		return pipeline;
+
+	}
+
+	/**
 	 * Drop cached bind groups for a destination texture (pipelines stay cached per
 	 * device), and destroy its buffer-path and partial-update buffers: call it after
 	 * submitting work that uses them.
@@ -915,7 +1210,7 @@ export class Downsampler {
 	 * dispatch. So a batch writes each level to a scratch texture of that
 	 * level's size, and one dispatch per level copies it into the destination:
 	 * the 1-level fold kernel on a same-size source, which reads one texel per
-	 * output (an exact copy; an average could turn an Inf neighbour into NaN).
+	 * output (an exact copy; an average could turn an Inf neighbor into NaN).
 	 * A partial update copies only each level's region of the layers in range.
 	 */
 	private compatCopies( texture: GPUTexture, batch: PreparedBatch, dimension: ViewDimension, view: ( level: number ) => GPUTextureView, partial: {
