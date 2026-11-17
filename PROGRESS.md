@@ -6,10 +6,11 @@ Live status board. SPEC.md holds the design and the reasons behind it; this file
 
 **For agents:** read this after SPEC.md. When you start a task, move it to *Now* with your branch. When you finish, tick it, add the commit, and log the verification run. Keep entries to one line and link SPEC sections instead of restating them. Anything that needs the owner goes under *Waiting on owner*.
 
-Last updated 2026-11-17. The Mac transfer branch `codex/web-performance-review` combines `srgb-store` through `b6e97c5` and the Windows review changes. [Handoff](docs/M5-HANDOFF-SRGB.md)
+Last updated 2026-11-18. `main` has `srgb-store` (PR #2, `0d91892`). Branch `web-performance-review` (was the local `codex/web-performance-review`) adds the Windows review changes on top and goes to the Mac next: [handoff](docs/M5-HANDOFF-SRGB.md)
 
 ## Now
 
+- [x] `srgb-store` merged into `main` (PR #2, `0d91892`, 2026-11-17, CI green). CI durations re-recorded from its `gpu-durations` artifact, plus the review's `downsampler/warmup`: 849 groups, 14 shards of ~2.1 min
 - [x] Combined review completed through runtime `ff785d9`. DS1 preserves plan retries, DS2 reuses moving-region bindings, DS3 warms pending pipelines, DS4 retains opt-in halo, and DS5 adds checked brush/Hi-Z examples. Build, typecheck and 161 core tests passed. RTX full 35,840 cases and Intel quick 21,791 had only the documented FSR failures. RTX compatibility passed 21,074 cases. All 24 example pages passed on each adapter. [Measured results](WEB-PERFORMANCE-REVIEW.md) · [Mac handoff](docs/M5-HANDOFF-SRGB.md)
 
 - [x] Windows runs (owner + a Windows agent, RTX 3060 + Intel UHD), merged from `f16-rounding` (`a3b9517`): branch `windows-testing`, handoff in `docs/WINDOWS-HANDOFF.md`. Verification, cross-vendor timings, and native D3D12/Vulkan matches (FidelityFX SPD, D3D11 `GenerateMips`, nvpro) for the same sizes
@@ -133,8 +134,7 @@ Last updated 2026-11-17. The Mac transfer branch `codex/web-performance-review` 
 
 ## Waiting on owner
 
-- **Merge `srgb-store` into `main`** (a PR, as with #1): 13 commits (sRGB render path, `colorSpace: 'srgb'`, `srgbRounding`, `renderPathMinTexels`, `requiredFeatures`, float32 sampling, Intel `--isolate-devices`). Every gate has passed: full matrix on the M5 (3238/3238) and the RTX (3238/3238), Intel quick, RTX compat quick; only the FSR fixtures fail
-- **The review branch `codex/web-performance-review`** (19 commits on `b6e97c5`, local, not pushed; [WEB-PERFORMANCE-REVIEW.md](WEB-PERFORMANCE-REVIEW.md) there): a new public `warmup()`, moving-rect binding reuse, plan-retry fix, brush and Hi-Z examples, README/guide rewrites. Windows gates passed (RTX full 3239/3239, Intel quick, compat quick, 161 core). Before it follows into `main`: the Metal acceptance in its Mac handoff, and the owner's OK on `warmup()` as public API
+- **The review branch `web-performance-review`** (pushed 2026-11-18; the review's 19 commits on `main`, merges cleanly; [WEB-PERFORMANCE-REVIEW.md](WEB-PERFORMANCE-REVIEW.md)): a new public `warmup()`, moving-rect binding reuse, plan-retry fix, brush and Hi-Z examples, README/guide rewrites. Windows gates passed (RTX full 3239/3239, Intel quick, compat quick, 161 core). Before it goes to `main` as PR #3: the Metal acceptance in [the Mac handoff](docs/M5-HANDOFF-SRGB.md), and the owner's OK on `warmup()` as public API
 - **three.js cube-mipmap fix upstream**: branch `fix-compat-cube-mipmaps` (`4bf8797c22`, on `dev`, local); PR text in [three-compat-cube-pr.md](results/windows/round2/three-compat-cube-pr.md). Push and file when ready
 - **three.js and `colorSpace: 'srgb'`**: it now meets the recommendation rule (beats the render path on the M5 at every size, sampling 1.00×). Should the three.js fork create 8-bit color textures as `rgba8unorm` + `viewFormats: ['rgba8unorm-srgb']` (core devices only; compat has no `viewFormats`)? That's what it takes for three.js to use it. The agent's suggestion: not yet: it changes how three.js creates every 8-bit color texture, compatibility mode can't, and the fork keeps render passes for sRGB, so nothing is lost by waiting; revisit as an opt-in
 - Publishing (owner-only step): turn on npm trusted publishing for pmndrs/downsampler on npmjs.com (decided over an `NPM_TOKEN` secret: no long-lived token), then run `release.yml` (dry run first). npm `downsampler` is free

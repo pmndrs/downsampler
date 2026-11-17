@@ -1,23 +1,12 @@
 # Mac handoff for the downsampler
 
-The portable bundle's `codex/web-performance-review` branch combines `srgb-store` through its Windows results commit `b6e97c5` (including
-`windows-3`) with the DS review fixes. To use it in a fresh checkout:
+Branch `web-performance-review` on GitHub: `main` (PR #2, the merged `srgb-store`) plus the DS review fixes. It was
+`codex/web-performance-review` in a bundle; use the GitHub branch instead.
 
 ```sh
-git clone -b codex/web-performance-review downsampler-mac-handoff.bundle downsampler-review
-cd downsampler-review
+git fetch && git checkout web-performance-review
 npm ci && npm run build && npm run test:core
 ```
-
-In an existing Mac checkout:
-
-```sh
-git fetch /path/to/downsampler-mac-handoff.bundle refs/heads/codex/web-performance-review:refs/remotes/handoff/downsampler
-git log --left-right --oneline HEAD...handoff/downsampler
-```
-
-The bundle carries both histories and works offline once dependencies are installed. Use an isolated checkout to
-accept the combined branch before integrating it into ongoing Mac work.
 
 ## Accept the new review changes on Metal
 
