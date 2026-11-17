@@ -131,3 +131,18 @@ equally close to the reference (rgba8 max 1.25 steps each). 32², 33², 64², 25
 Copy `three-compat-cube/compat-cube-mips.html` to `test/webgpu/` of a three.js checkout, then
 `node three-compat-cube/run-cube.mjs <three.js checkout> "?compat" "-"` (`?format=rgba16float`, `?sizes=33,32`;
 `run-cube.mjs` loads puppeteer from a fixed path, and the Intel LUID changes per boot: set `INTEL_LUID`).
+
+## On three's `dev` (2026-11-17)
+
+The same line cherry-picks cleanly onto `upstream/dev` (`0d2bd48586`): local branch `fix-compat-cube-mipmaps`
+(`4bf8797c22`), not pushed. Same repro on the Intel UHD (Chrome 156, D3D12, compatibility device):
+
+- Before: only the 1×1 level differs, 5–21 steps (17², 32², 33², 64², 65²), and it equals texel (1, 1) of the 2×2
+  level in 24 of 24 values ([dev-before](three-compat-cube/three-compat-cube-dev-before.txt)).
+- After: cube and 2d-array identical at every level: rgba8 at 17², 31²–33², 63²–65², 256², 512², and rgba16float
+  ([dev-after](three-compat-cube/three-compat-cube-dev-after.txt)).
+- `npx eslint` on the file clean; `npm run test-unit` 1999 pass.
+- Not run: the RTX, other browsers, other formats. On core devices Chrome reports no
+  `textureBindingViewDimension`, so three sends cubes down the 2d-array path; only compatibility devices reach `main_cube`.
+
+PR text: [three-compat-cube-pr.md](three-compat-cube-pr.md). Nothing filed.

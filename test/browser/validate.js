@@ -210,7 +210,7 @@ export const compatibility = device => ! device.features.has( 'core-features-and
  * listing's size and digest, so the shards of one suite can be checked against each other.
  * `groups` (ids) runs exactly those case groups, in suite order (debugging, bisection).
  */
-export async function validate( device, { onProgress = () => {}, quick = false, only, shard, durations = {}, list = false, keepGoing = false, groups } = {} ) {
+export async function validate( device, { onProgress = () => {}, quick = false, only, shard, durations = {}, isolate = [], list = false, keepGoing = false, groups } = {} ) {
 
 	failures = keepGoing ? [] : null;
 	let select = new Selection();
@@ -230,7 +230,7 @@ export async function validate( device, { onProgress = () => {}, quick = false, 
 
 		} else {
 
-			shards = assignShards( listing.ids, shard.total, durations );
+			shards = assignShards( listing.ids, shard.total, durations, isolate );
 			select = new Selection( { assigned: shards[ shard.index - 1 ] } );
 
 		}

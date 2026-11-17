@@ -43,6 +43,8 @@
 //   node test/run.js --quick --adapter=swiftshader --list --shard=2/8    the case groups of one shard
 //   node test/run.js --quick --adapter=swiftshader --record-durations    rewrite test/ci/durations.json (sharded: merge)
 //   node test/run.js ... --timing=ci-timing.json                         per-group timing and the listing, for the CI aggregate
+//   node test/run.js ... --shard=17/18 --isolate-devices                 the groups that open a second device get the last shards,
+//                                                                        one each (Intel UHD loses the device otherwise)
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { loadavg, tmpdir } from 'node:os';
@@ -50,7 +52,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer';
 import { gpuChoiceArgs } from './gpu-choice.js';
-import { assignShards, parseShard, partitionProblems, shardLoads } from './ci/shard.js';
+import { assignShards, parseShard, partitionProblems, secondDeviceGroups, shardLoads } from './ci/shard.js';
 import { createServer } from './serve.js';
 
 const args = process.argv.slice( 2 );
@@ -89,6 +91,9 @@ const recorded = existsSync( durationsPath ) ? JSON.parse( readFileSync( duratio
 const durations = Object.fromEntries( Object.entries( recorded.groups ).map( ( [ id, group ] ) => [ id, group.ms ] ) );
 const list = args.includes( '--list' );
 if ( value( 'shard' ) ) Object.assign( options, { shard: parseShard( value( 'shard' ) ), durations } );
+// --isolate-devices: each case group that opens a second device gets a shard of its own (Intel UHD).
+const isolate = args.includes( '--isolate-devices' ) ? secondDeviceGroups : [];
+if ( isolate.length ) options.isolate = isolate;
 if ( list ) options.list = true;
 const recordPath = args.includes( '--record-durations' ) ? durationsPath : value( 'record-durations' );
 const timingPath = value( 'timing' );
@@ -348,7 +353,7 @@ function listShards( ids ) {
 
 	for ( const total of counts ) {
 
-		const shards = assignShards( ids, total, durations );
+		const shards = assignShards( ids, total, durations, isolate );
 		const problems = partitionProblems( ids, shards );
 		const loads = shardLoads( shards, durations );
 		console.log( `\n${ total } shards: ${ problems.length ? `PARTITION BROKEN\n  ${ problems.join( '\n  ' ) }` : 'disjoint, cover every group' }` );
