@@ -131,6 +131,9 @@ Last updated: 2026-11-17 · Branch: `srgb-store` (M5 Pro pass of the sRGB render
 
 ## Waiting on owner
 
+- **Merge `srgb-store` into `main`** (a PR, as with #1): 13 commits (sRGB render path, `colorSpace: 'srgb'`, `srgbRounding`, `renderPathMinTexels`, `requiredFeatures`, float32 sampling, Intel `--isolate-devices`). Every gate has passed: full matrix on the M5 (3238/3238) and the RTX (3238/3238), Intel quick, RTX compat quick; only the FSR fixtures fail
+- **The review branch `codex/web-performance-review`** (19 commits on `b6e97c5`, local, not pushed; [WEB-PERFORMANCE-REVIEW.md](WEB-PERFORMANCE-REVIEW.md) there): a new public `warmup()`, moving-rect binding reuse, plan-retry fix, brush and Hi-Z examples, README/guide rewrites. Windows gates passed (RTX full 3239/3239, Intel quick, compat quick, 161 core). Before it follows into `main`: the Metal acceptance in its Mac handoff, and the owner's OK on `warmup()` as public API
+- **three.js cube-mipmap fix upstream**: branch `fix-compat-cube-mipmaps` (`4bf8797c22`, on `dev`, local); PR text in [three-compat-cube-pr.md](results/windows/round2/three-compat-cube-pr.md). Push and file when ready
 - **three.js and `colorSpace: 'srgb'`**: it now meets the recommendation rule (beats the render path on the M5 at every size, sampling 1.00×). Should the three.js fork create 8-bit color textures as `rgba8unorm` + `viewFormats: ['rgba8unorm-srgb']` (core devices only; compat has no `viewFormats`)? That's what it takes for three.js to use it. The agent's suggestion: not yet: it changes how three.js creates every 8-bit color texture, compatibility mode can't, and the fork keeps render passes for sRGB, so nothing is lost by waiting; revisit as an opt-in
 - Publishing (owner-only step): turn on npm trusted publishing for pmndrs/downsampler on npmjs.com (decided over an `NPM_TOKEN` secret: no long-lived token), then run `release.yml` (dry run first). npm `downsampler` is free
 
