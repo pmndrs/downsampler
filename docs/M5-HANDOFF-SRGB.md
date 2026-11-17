@@ -50,3 +50,5 @@ Background: [DIVERGES #16](../DIVERGES.md#16-srgb-through-the-buffer-output-path
 - **`colorSpace: 'srgb'`**: worth recommending only if it beats the render path somewhere and sampling stays at about 1.00×.
 
 Record results in PROGRESS (verification log) and DIVERGES #16.
+
+**Done on the M5 Pro (2026-11-17):** results and what they decided in [results/m5/srgb-m5.md](../results/m5/srgb-m5.md); the owner chose a size rule for the render-path default: `renderPathMinTexels`, 1920 × 1080 by default (DIVERGES #16).

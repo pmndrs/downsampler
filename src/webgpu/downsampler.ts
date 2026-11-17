@@ -38,8 +38,9 @@ export interface DownsamplerOptions {
 	 *   'average' with oddSizes 'exact' or 'box', in place. Can't record into a
 	 *   compute pass, nor be returned by `prepare()`.
 	 * - 'auto' (default): sRGB chains (sRGB formats, and `colorSpace: 'srgb'`) take
-	 *   the render path when the texture has RENDER_ATTACHMENT usage and the chain
-	 *   is one it covers (DIVERGES.md #16). Otherwise storage whenever the device
+	 *   the render path when the texture has RENDER_ATTACHMENT usage, the chain is
+	 *   one it covers and its first level has at least `renderPathMinTexels` texels
+	 *   (DIVERGES.md #16). Otherwise storage whenever the device
 	 *   can write the format as a storage texture (the texture then needs
 	 *   STORAGE_BINDING); the buffer path only for formats it can't: sRGB,
 	 *   rgb9e5ufloat, rg11b10ufloat without texture-formats-tier1, rg32float in
@@ -111,6 +112,21 @@ export interface DownsamplerOptions {
 	 */
 	srgbRounding?: SrgbRounding;
 	/**
+	 * Under output 'auto', the smallest sRGB chain that takes the render path, in texels per
+	 * layer of its first source level (the base level, or a partial update's rect). Default
+	 * {@link defaultRenderPathMinTexels} (1920 × 1080). Smaller chains take the compute path they
+	 * would take without RENDER_ATTACHMENT (sRGB formats the buffer path, `colorSpace: 'srgb'` its
+	 * storage path), unless only the render path can write the texture. Both apply the same rule
+	 * and rounding per level; a multi-level compute batch computes its in-tile levels with other
+	 * float arithmetic, so a value within float error of a rounding threshold can differ by a code
+	 * (an M5 Pro, 1920 × 1080 with averageAccess 'load': 2 values).
+	 * A render pass costs about the same at any size on Apple GPUs, so there the render path is
+	 * slower than the buffer path below 1080p (1.25–2.2× on an M5 Pro) and faster above it; on an
+	 * RTX 3060 and Intel UHD it is faster at every size (DIVERGES.md #16). 0: the render path at
+	 * any size; Infinity: never under 'auto'. The other `output` values ignore it.
+	 */
+	renderPathMinTexels?: number;
+	/**
 	 * 'exact' batches: the smallest output tile per workgroup, 8, 16 or 32. Default 32
 	 * (16 × 16 invocations, each writing 2 × 2 first-level texels) where a workgroup can
 	 * have 256 invocations, 16 on Apple GPUs, else 8; also 8 on fallback (software)
@@ -154,6 +170,13 @@ export interface SourceOptions extends TextureLevel {
 
 /** Default of {@link DownsamplerOptions.maxResampleRatio}: the largest source ÷ destination ratio per axis with `resample: 'area'` (at most 9 taps per axis). */
 export const maxResampleRatio = 8;
+
+/**
+ * Default of {@link DownsamplerOptions.renderPathMinTexels}: 1920 × 1080. Where the render path
+ * stops losing to the buffer path on an Apple M5 Pro (a tie at 1080p, 0.79–0.83× from 1440p);
+ * NVIDIA and Intel gain at every size (DIVERGES.md #16).
+ */
+export const defaultRenderPathMinTexels = 1920 * 1080;
 
 /** A separate source with its defaults filled in. */
 interface ResolvedSource {
@@ -415,6 +438,8 @@ export class Downsampler {
 	readonly f16Rounding: F16Rounding;
 	/** How the render path rounds sRGB levels (resolved `srgbRounding` option). */
 	readonly srgbRounding: SrgbRounding;
+	/** Under 'auto', the smallest sRGB chain (texels per layer of its first level) that takes the render path (resolved `renderPathMinTexels` option). */
+	readonly renderPathMinTexels: number;
 	/** Smallest first-output tile of 'exact' batches (resolved `exactTile` option: 8, 16 or 32). */
 	readonly exactTile: number;
 	/** Largest source ÷ destination ratio per axis with `resample: 'area'` (resolved `maxResampleRatio` option, default 8). */
@@ -479,6 +504,9 @@ export class Downsampler {
 		const srgbRounding = options.srgbRounding ?? 'exact';
 		if ( srgbRounding !== 'exact' && srgbRounding !== 'device' ) throw new Error( 'downsampler: srgbRounding must be "exact" or "device".' );
 		this.srgbRounding = srgbRounding;
+		const renderPathMinTexels = options.renderPathMinTexels ?? defaultRenderPathMinTexels;
+		if ( typeof renderPathMinTexels !== 'number' || ! ( renderPathMinTexels >= 0 ) ) throw new Error( 'downsampler: renderPathMinTexels must be a number from 0 (the render path at any size) to Infinity (never under output "auto").' );
+		this.renderPathMinTexels = renderPathMinTexels;
 		const exactTile = options.exactTile ?? defaults.exactTile;
 		if ( exactTile !== 8 && ( exactTile !== 16 && exactTile !== 32 || invocations < 6 ) ) throw new Error( 'downsampler: exactTile must be 8, or 16 or 32 on devices with 256 invocations per workgroup.' );
 		this.exactTile = exactTile;
@@ -523,23 +551,54 @@ export class Downsampler {
 	 * 'buffer' (a storage buffer and copies) or 'render' (render passes), or null
 	 * when none applies (see {@link Downsampler.unsupportedReason}). Follows the
 	 * `output` option; 'auto' takes the render path for sRGB formats that can be
-	 * render attachments, and the buffer path only for formats the device can't
-	 * write as storage textures, never for a texture that merely lacks
-	 * STORAGE_BINDING usage. Under 'auto', a chain the render path doesn't cover
-	 * (folds, 'spd', a separate source) takes the buffer path instead, and
+	 * render attachments from `renderPathMinTexels` texels (the whole texture's
+	 * chain; smaller ones, or any size where no compute path can write it), and the
+	 * buffer path only for formats the device can't write as storage textures,
+	 * never for a texture that merely lacks STORAGE_BINDING usage. Under 'auto', a
+	 * chain the render path doesn't cover (folds, 'spd', a separate source) takes the
+	 * buffer path instead, a chain whose first level is smaller than
+	 * `renderPathMinTexels` (a sub-range, a rect) the compute path, and
 	 * `colorSpace: 'srgb'` chains take the render path when the texture can.
 	 */
 	outputPath( texture: GPUTexture ): ChainPath | null {
 
 		if ( ! isSupportedFormat( texture.format ) ) return null;
 		if ( this.output === 'render' ) return this.renderReason( texture, texture.format ) === null ? 'render' : null;
-		if ( this.output === 'auto' && formats[ texture.format ].quantization === 'srgb8' && this.renderReason( texture, texture.format ) === null ) return 'render';
-		const storageFormat = this.storageFormatReason( texture ) === null;
-		const storage = storageFormat && ( texture.usage & GPUTextureUsage.STORAGE_BINDING ) !== 0;
-		const buffer = bufferWritable( texture.format ) && ( texture.usage & GPUTextureUsage.COPY_DST ) !== 0;
-		if ( this.output === 'storage' ) return storage ? 'storage' : null;
-		if ( this.output === 'buffer' ) return buffer ? 'buffer' : null;
-		return storageFormat ? ( storage ? 'storage' : null ) : buffer ? 'buffer' : null;
+		if ( this.output === 'storage' ) return this.storageFormatReason( texture ) === null && ( texture.usage & GPUTextureUsage.STORAGE_BINDING ) !== 0 ? 'storage' : null;
+		if ( this.output === 'buffer' ) return bufferWritable( texture.format ) && ( texture.usage & GPUTextureUsage.COPY_DST ) !== 0 ? 'buffer' : null;
+		return this.autoPath( texture, undefined, null, texture.width * texture.height );
+
+	}
+
+	/** The path 'auto' takes without the render path: storage where the device can store the format, else the buffer path; null where the texture lacks the usage. */
+	private computePath( texture: GPUTexture ): 'storage' | 'buffer' | null {
+
+		if ( this.storageFormatReason( texture ) === null ) return ( texture.usage & GPUTextureUsage.STORAGE_BINDING ) !== 0 ? 'storage' : null;
+		return bufferWritable( texture.format as SupportedFormat ) && ( texture.usage & GPUTextureUsage.COPY_DST ) !== 0 ? 'buffer' : null;
+
+	}
+
+	/**
+	 * Under 'auto', the path of a chain whose first level has `texels` per layer: the render path for
+	 * sRGB (the format's, or `srgb` for `colorSpace: 'srgb'`) when the chain is covered (`chain` null),
+	 * the texture can render, and the chain is at least `renderPathMinTexels` or no compute path can
+	 * write it; else {@link Downsampler.computePath} (null: no path).
+	 */
+	private autoPath( texture: GPUTexture, srgb: string | undefined, chain: string | null, texels: number ): ChainPath | null {
+
+		const compute = this.computePath( texture );
+		const renderFormat = srgb ?? ( formats[ texture.format as SupportedFormat ].quantization === 'srgb8' ? texture.format : undefined );
+		if ( renderFormat !== undefined && chain === null && this.renderReason( texture, renderFormat ) === null && ( compute === null || texels >= this.renderPathMinTexels ) ) return 'render';
+		return compute;
+
+	}
+
+	/** Texels per layer of a chain's first source level: the rect of a partial update, else the base level. */
+	private static chainTexels( texture: GPUTexture, options: EncodeOptions ): number {
+
+		if ( options.rect !== undefined ) return options.rect.width * options.rect.height;
+		const level = options.baseMipLevel ?? 0;
+		return mipSize( texture.width, level ) * mipSize( texture.height, level );
 
 	}
 
@@ -575,9 +634,10 @@ export class Downsampler {
 
 	/**
 	 * The path of one chain: the render path where `output` asks for it or 'auto' picks it (sRGB
-	 * that can render, and a chain it covers), else {@link Downsampler.outputPath}.
+	 * that can render, a chain it covers, and `texels` per layer at its first level of at least
+	 * `renderPathMinTexels`), else {@link Downsampler.outputPath}.
 	 */
-	private chainPath( texture: GPUTexture, srgb: 'rgba8unorm-srgb' | 'bgra8unorm-srgb' | undefined, oddSizes: OddSizePolicy, reduction: Reduction, source: ResolvedSource | undefined ): ChainPath {
+	private chainPath( texture: GPUTexture, srgb: 'rgba8unorm-srgb' | 'bgra8unorm-srgb' | undefined, oddSizes: OddSizePolicy, reduction: Reduction, source: ResolvedSource | undefined, texels: number ): ChainPath {
 
 		const path = this.outputPath( texture )!;
 		const chain = Downsampler.renderChainReason( oddSizes, reduction, source );
@@ -591,16 +651,10 @@ export class Downsampler {
 		}
 
 		if ( this.output !== 'auto' ) return path;
-		if ( path === 'render' && chain !== null ) {
-
-			// Not covered: the buffer path.
-			if ( bufferWritable( texture.format as SupportedFormat ) && ( texture.usage & GPUTextureUsage.COPY_DST ) !== 0 ) return 'buffer';
-			throw new Error( `downsampler: ${ texture.format } chains with ${ chain } take the buffer output path (the render path covers 'average' in place with oddSizes 'exact' or 'box'), which needs COPY_DST usage.` );
-
-		}
-
-		if ( srgb !== undefined && chain === null && this.renderReason( texture, srgb ) === null ) return 'render';
-		return path;
+		const auto = this.autoPath( texture, srgb, chain, texels );
+		if ( auto !== null ) return auto;
+		// Only the render path can write the texture, and it doesn't cover the chain.
+		throw new Error( `downsampler: ${ texture.format } chains with ${ chain } take the buffer output path (the render path covers 'average' in place with oddSizes 'exact' or 'box'), which needs COPY_DST usage.` );
 
 	}
 
@@ -664,8 +718,9 @@ export class Downsampler {
 	 */
 	scratchSize( texture: GPUTexture, options: EncodeOptions = {} ): number {
 
-		const path = this.outputPath( texture );
-		if ( path === 'storage' || path === 'render' && Downsampler.renderChainReason( options.oddSizes ?? 'exact', options.reduction ?? 'average', options.source === undefined ? undefined : resolveSource( options.source ) ) === null ) return 0;
+		const chain = Downsampler.renderChainReason( options.oddSizes ?? 'exact', options.reduction ?? 'average', options.source === undefined ? undefined : resolveSource( options.source ) );
+		const path = this.output === 'auto' && isSupportedFormat( texture.format ) ? this.autoPath( texture, undefined, chain, Downsampler.chainTexels( texture, options ) ) : this.outputPath( texture );
+		if ( path === 'storage' || path === 'render' && chain === null ) return 0;
 		const baseMipLevel = options.baseMipLevel ?? 0;
 		const end = options.mipLevelCount === undefined ? texture.mipLevelCount : baseMipLevel + options.mipLevelCount;
 		const first = options.source === undefined ? baseMipLevel + 1 : baseMipLevel;
@@ -790,7 +845,7 @@ export class Downsampler {
 		if ( oddSizes === 'spd' && reduction !== 'average' ) throw new Error( 'downsampler: oddSizes \'spd\' is for \'average\' only. It drops the last odd row or column, so min/max/minmax and custom folds would not be a conservative Hi-Z; use oddSizes \'exact\' (the default), or a Reducer with edges \'zero-weight\' (⌈n/2⌉ sizes, every texel counted).' );
 		const srgb = this.srgbAlias( texture, options.colorSpace, oddSizes );
 		const sourceMipLevel = source?.mipLevel ?? 0;
-		const path = this.chainPath( texture, srgb, oddSizes, reduction, source );
+		const path = this.chainPath( texture, srgb, oddSizes, reduction, source, Downsampler.chainTexels( texture, options ) );
 		const parameters: PlanParameters = { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel, scratch: options.scratch, srgb, path };
 		const key = `${ baseMipLevel }:${ mipLevelCount }:${ oddSizes }:${ reductionKey( reduction ) }:${ source === undefined ? 'self' : `source:${ sourceMipLevel }${ source.resample === 'area' ? ':area' : '' }` }${ srgb === undefined ? '' : ':srgb' }`;
 

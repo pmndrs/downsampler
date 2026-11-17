@@ -19,9 +19,11 @@
 // - the render path (`srgb/render`, `srgb/render-api`): render passes give the compute path's
 //   values (one-level batches, no tail: the same rule per level) for sRGB, colorSpace 'srgb' and
 //   the other render formats (float32 within a few ulp: no rounding step to absorb how each shader
-//   stage contracts its arithmetic), the load path's codes against the oracle, and the API.
+//   stage contracts its arithmetic), the load path's codes against the oracle, and the API, including
+//   `renderPathMinTexels` (`srgb/render-api`): which chains 'auto' sends to the render path by size, the
+//   fallbacks either side of it, and the same bits on both paths.
 import { boxReference, quantizeTexel, reducePyramid, reduceReference, srgbBounds, srgbCode, srgbDecodeTable, srgbThresholds, srgbViewFormat } from '/dist/index.js';
-import { Downsampler, Reducer, srgbTable, srgbTableBinding, srgbWgsl } from '/dist/webgpu/index.js';
+import { Downsampler, Reducer, defaultRenderPathMinTexels, srgbTable, srgbTableBinding, srgbWgsl } from '/dist/webgpu/index.js';
 import { createTexture, makeData, mipLevels, poison, readMips, upload } from './gpu.js';
 import { check, compatibility, expectThrow } from './validate.js';
 import { levelTextures, runCodec, runReducer } from './validate-packed.js';
@@ -650,10 +652,11 @@ async function validateRender( device, { quick, onProgress } ) {
 
 				if ( texture.mipLevelCount < ( mode.minLevels ?? 1 ) || Math.min( width, height ) < ( mode.minSize ?? 1 ) || layers < ( mode.minLayers ?? 1 ) ) continue;
 				if ( mode.float16 && ! format.endsWith( '16float' ) ) continue;
-				// sRGB: the default Downsampler ('auto'); other formats ask for the render path.
-				const renderer = new Downsampler( device, { ...mode.create, ...( kind === 'other' ? { output: 'render' } : {} ) } );
+				// sRGB: 'auto' with no size threshold (these shapes are below the default); other formats ask for the render path.
+				const renderer = new Downsampler( device, { ...mode.create, ...( kind === 'other' ? { output: 'render' } : { renderPathMinTexels: 0 } ) } );
 				const encode = { ...mode.encode, ...( kind === 'alias' ? { colorSpace: 'srgb' } : {} ) };
-				const path = kind === 'other' ? renderer.outputPath( texture ) : kind === 'srgb' ? renderer.outputPath( texture ) : 'render';
+				const path = kind === 'alias' ? 'render' : renderer.outputPath( texture );
+				if ( path !== 'render' && kind === 'srgb' ) throw new Error( `srgb render: ${ format } must take the render path (${ renderer.unsupportedReason( texture ) ?? `the path is ${ path }` })` );
 				if ( path !== 'render' ) { skipped.add( `${ format } (${ renderer.unsupportedReason( texture ) ?? 'not the render path' })` ); break; }
 				const planner = new Downsampler( device, { ...mode.create, output: kind === 'srgb' ? 'buffer' : 'storage', levelsPerDispatch: 1, tail: false } );
 				if ( planner.unsupportedReason( reference ) !== null ) { skipped.add( `${ format } (reference: ${ planner.unsupportedReason( reference ) })` ); break; }
@@ -683,11 +686,11 @@ async function validateRender( device, { quick, onProgress } ) {
 
 		// The load path's codes against the oracle, level by level from the level above (as validateNearExact).
 		let nearTies = 0, values = 0;
-		const load = new Downsampler( device, { averageAccess: 'load' } );
+		const load = new Downsampler( device, { averageAccess: 'load', renderPathMinTexels: 0 } );
 		for ( const [ width, height, layers ] of [ [ 255, 257, 1 ], [ 33, 17, 3 ], [ 7, 1, 1 ] ] ) {
 
 			const texture = track( createTexture( device, { width, height, layers, format: 'rgba8unorm-srgb', render: true } ) );
-			if ( load.outputPath( texture ) !== 'render' ) break;
+			if ( load.outputPath( texture ) !== 'render' ) throw new Error( `srgb render near-exact: must take the render path (${ load.unsupportedReason( texture ) })` );
 			upload( device, texture, codes( width, height, layers, 43 ) );
 			poison( device, texture );
 			load.generate( texture );
@@ -713,7 +716,7 @@ async function validateRender( device, { quick, onProgress } ) {
 		let deviceLevels = 0;
 		for ( const oddSizes of [ 'exact', 'box' ] ) for ( const [ width, height, layers ] of [ [ 255, 257, 1 ], [ 37, 21, 2 ], [ 7, 1, 1 ], ...( quick ? [] : [ [ 1129, 635, 1 ] ] ) ] ) {
 
-			const rounding = new Downsampler( device, { srgbRounding: 'device' } );
+			const rounding = new Downsampler( device, { srgbRounding: 'device', renderPathMinTexels: 0 } );
 			const texture = track( createTexture( device, { width, height, layers, format: 'rgba8unorm-srgb', render: true } ) );
 			if ( rounding.outputPath( texture ) !== 'render' ) throw new Error( `srgb render device: the render path needs no tables, so it must apply (${ rounding.unsupportedReason( texture ) })` );
 			upload( device, texture, codes( width, height, layers, 44 ) );
@@ -750,11 +753,14 @@ async function validateRenderApi( device ) {
 
 	const textures = [];
 	const track = texture => ( textures.push( texture ), texture );
-	const make = ( usage, format = 'rgba8unorm-srgb' ) => track( device.createTexture( { size: [ 37, 21 ], format, mipLevelCount: 6, usage } ) );
+	const make = ( usage, format = 'rgba8unorm-srgb', [ width, height ] = [ 37, 21 ] ) => track( device.createTexture( { size: [ width, height ], format, mipLevelCount: mipLevels( width, height ), usage } ) );
 	const { TEXTURE_BINDING, RENDER_ATTACHMENT, COPY_DST, COPY_SRC } = GPUTextureUsage;
 	try {
 
-		const downsampler = new Downsampler( device );
+		const threshold = await validateRenderThreshold( device, make );
+		if ( threshold.skipped ) return [ { srgb: 'render-api', skipped: threshold.skipped } ];
+		// The rest of the API on a small texture, with no size threshold.
+		const downsampler = new Downsampler( device, { renderPathMinTexels: 0 } );
 		const renderable = make( TEXTURE_BINDING | RENDER_ATTACHMENT | COPY_DST | COPY_SRC );
 		if ( downsampler.outputPath( renderable ) !== 'render' ) return [ { srgb: 'render-api', skipped: downsampler.unsupportedReason( renderable ) ?? `the path is ${ downsampler.outputPath( renderable ) }` } ];
 		// Without RENDER_ATTACHMENT: the buffer path, as before.
@@ -793,15 +799,133 @@ async function validateRenderApi( device ) {
 		if ( ! render.unsupportedReason( make( TEXTURE_BINDING | RENDER_ATTACHMENT, 'r32uint' ) )?.includes( 'render path' ) ) throw new Error( 'output render: r32uint must be unsupported' );
 		expectThrow( () => new Downsampler( device, { output: 'pixels' } ), 'output must be', 'output unknown' );
 		expectThrow( () => new Downsampler( device, { srgbRounding: 'fast' } ), 'srgbRounding', 'srgbRounding unknown' );
+		for ( const value of [ - 1, NaN, '5' ] ) expectThrow( () => new Downsampler( device, { renderPathMinTexels: value } ), 'renderPathMinTexels', `renderPathMinTexels ${ value }` );
 		// The plain linear formats keep their storage path under 'auto'.
 		if ( downsampler.outputPath( track( createTexture( device, { width: 8, height: 8, format: 'rgba8unorm', render: true } ) ) ) !== 'storage' ) throw new Error( "srgb render: 'auto' must keep rgba8unorm on the storage path" );
 		for ( const texture of textures ) downsampler.release( texture );
-		return [ { srgb: 'render-api' } ];
+		return [ { srgb: 'render-api', ...threshold } ];
 
 	} finally {
 
 		for ( const texture of textures ) texture.destroy();
 
 	}
+
+}
+
+/**
+ * `renderPathMinTexels` (DIVERGES #16): under 'auto', an sRGB chain takes the render path only when its
+ * first source level (the base level, or the rect of a partial update) has at least that many texels
+ * per layer (default 1920 × 1080), else the compute path it would take without RENDER_ATTACHMENT; a
+ * texture that only the render path can write takes it at any size. Both sides are exact under
+ * 'load': each level's codes equal the oracle's from the level above, except at near-ties (a
+ * multi-level compute batch averages in-tile levels with other float arithmetic than a render
+ * pass, so a value within float error of a rounding threshold may land either side).
+ */
+async function validateRenderThreshold( device, make ) {
+
+	const { TEXTURE_BINDING, STORAGE_BINDING, RENDER_ATTACHMENT, COPY_DST, COPY_SRC } = GPUTextureUsage;
+	const compat = compatibility( device );
+	const auto = new Downsampler( device );
+	if ( defaultRenderPathMinTexels !== 1920 * 1080 || auto.renderPathMinTexels !== defaultRenderPathMinTexels ) throw new Error( `srgb threshold: the default must be 1920 × 1080 texels, got ${ auto.renderPathMinTexels } (exported ${ defaultRenderPathMinTexels })` );
+	const usage = TEXTURE_BINDING | RENDER_ATTACHMENT | COPY_DST | COPY_SRC;
+	// Where no sRGB chain can render (compatibility mode without fragment storage buffers), there's nothing to steer.
+	const always = new Downsampler( device, { renderPathMinTexels: 0 } ), probe = make( usage );
+	if ( always.outputPath( probe ) !== 'render' ) return { skipped: always.unsupportedReason( probe ) ?? `the path is ${ always.outputPath( probe ) }` };
+	const hd = make( usage, 'rgba8unorm-srgb', [ 1920, 1080 ] );
+	const bufferOnly = ( batches, label ) => {
+
+		if ( batches.length === 0 || batches.some( batch => batch.output !== 'buffer' ) ) throw new Error( `srgb threshold: ${ label } must take the buffer path` );
+
+	};
+
+	// Below the threshold: the buffer path, as without RENDER_ATTACHMENT.
+	const small = make( usage );
+	if ( auto.outputPath( small ) !== 'buffer' ) throw new Error( `srgb threshold: 37×21 must take the buffer path, got ${ auto.outputPath( small ) }` );
+	bufferOnly( auto.prepare( small ), '37×21' );
+	if ( auto.scratchSize( small ) === 0 ) throw new Error( 'srgb threshold: a buffer-path chain needs a scratch buffer' );
+	const under = make( usage, 'rgba8unorm-srgb', [ 1920, 1079 ] );
+	if ( auto.outputPath( under ) !== 'buffer' ) throw new Error( `srgb threshold: 1920×1079 is one row under, so the buffer path, got ${ auto.outputPath( under ) }` );
+	// A texture only the render path can write takes it at any size.
+	const renderOnly = make( TEXTURE_BINDING | RENDER_ATTACHMENT | COPY_SRC );
+	if ( auto.outputPath( renderOnly ) !== 'render' || auto.unsupportedReason( renderOnly ) !== null ) throw new Error( `srgb threshold: a render-only 37×21 texture must take the render path, got ${ auto.outputPath( renderOnly ) } (${ auto.unsupportedReason( renderOnly ) })` );
+	auto.generate( renderOnly );
+
+	// At the threshold: the render path for the whole chain; a chain whose first level is smaller (a sub-range, a rect) takes the buffer path.
+	if ( auto.outputPath( hd ) !== 'render' ) throw new Error( `srgb threshold: 1920×1080 must take the render path, got ${ auto.outputPath( hd ) }` );
+	expectThrow( () => auto.prepare( hd ), 'render path', 'srgb threshold 1920×1080 prepare' );
+	if ( auto.scratchSize( hd ) !== 0 ) throw new Error( 'srgb threshold: a render-path chain needs no scratch buffer' );
+	bufferOnly( auto.prepare( hd, { baseMipLevel: 1 } ), '1920×1080 from level 1 (960×540)' );
+	if ( auto.scratchSize( hd, { baseMipLevel: 1 } ) === 0 ) throw new Error( 'srgb threshold: a sub-range below the threshold needs a scratch buffer' );
+	bufferOnly( auto.prepare( hd, { rect: { x: 64, y: 32, width: 256, height: 128 } } ), '1920×1080 with a 256×128 rect' );
+	if ( auto.scratchSize( hd, { rect: { x: 64, y: 32, width: 256, height: 128 } } ) === 0 ) throw new Error( 'srgb threshold: a rect below the threshold needs a scratch buffer' );
+
+	// The option moves the threshold either way.
+	if ( new Downsampler( device, { renderPathMinTexels: Infinity } ).outputPath( hd ) !== 'buffer' ) throw new Error( 'srgb threshold: Infinity must keep 1920×1080 on the buffer path' );
+	if ( new Downsampler( device, { renderPathMinTexels: 37 * 21 } ).outputPath( small ) !== 'render' ) throw new Error( 'srgb threshold: a threshold of 37 × 21 texels must send 37×21 to the render path' );
+	if ( new Downsampler( device, { renderPathMinTexels: 37 * 21 + 1 } ).outputPath( small ) !== 'buffer' ) throw new Error( 'srgb threshold: a threshold one texel above 37×21 must keep it on the buffer path' );
+	// Other formats keep their storage path: the threshold only steers sRGB chains.
+	const linear = make( TEXTURE_BINDING | STORAGE_BINDING | RENDER_ATTACHMENT | COPY_DST, 'rgba8unorm', [ 1920, 1080 ] );
+	if ( auto.outputPath( linear ) !== 'storage' ) throw new Error( `srgb threshold: rgba8unorm at 1920×1080 must keep the storage path, got ${ auto.outputPath( linear ) }` );
+
+	// colorSpace 'srgb': below the threshold its storage path, at it the render path.
+	let colorSpace = 0;
+	if ( ! compat ) {
+
+		const viewed = ( width, height ) => device.createTexture( { size: [ width, height ], format: 'rgba8unorm', viewFormats: [ 'rgba8unorm-srgb' ], mipLevelCount: mipLevels( width, height ), usage: TEXTURE_BINDING | STORAGE_BINDING | RENDER_ATTACHMENT | COPY_DST | COPY_SRC } );
+		const smallAlias = viewed( 37, 21 ), hdAlias = viewed( 1920, 1080 );
+		try {
+
+			if ( auto.prepare( smallAlias, { colorSpace: 'srgb' } ).some( batch => batch.output !== 'storage' ) ) throw new Error( 'srgb threshold: colorSpace srgb at 37×21 must take its storage path' );
+			expectThrow( () => auto.prepare( hdAlias, { colorSpace: 'srgb' } ), 'render path', 'srgb threshold colorSpace 1920×1080' );
+			expectThrow( () => new Downsampler( device, { renderPathMinTexels: 0 } ).prepare( smallAlias, { colorSpace: 'srgb' } ), 'render path', 'srgb threshold colorSpace 37×21, threshold 0' );
+			colorSpace = 2;
+
+		} finally {
+
+			smallAlias.destroy(); hdAlias.destroy();
+
+		}
+
+	}
+
+	// Exact either side: 'load' under the default and on the other path, each against the oracle.
+	let compared = 0, nearTies = 0, differing = 0;
+	for ( const [ width, height ] of [ [ 255, 257 ], [ 1920, 1080 ] ] ) {
+
+		const data = codes( width, height, 1, 45 );
+		const run = async downsampler => {
+
+			const texture = make( usage, 'rgba8unorm-srgb', [ width, height ] );
+			upload( device, texture, data );
+			poison( device, texture );
+			downsampler.generate( texture );
+			const mips = await readMips( device, texture, 0 );
+			const path = downsampler.outputPath( texture );
+			downsampler.release( texture );
+			for ( let level = 1; level < mips.length; level ++ ) {
+
+				const previous = mips[ level - 1 ], w = mipSize( width, level - 1 ), h = mipSize( height, level - 1 );
+				const expected = reduceReference( previous, w, h, 1, 'srgb8', 'average', { weights: 'shader' } );
+				const linear = reduceReference( previous, w, h, 1, 'float32', 'average', { quantizedInput: false, weights: 'shader' } );
+				const alpha = reduceReference( previous.map( ( value, i ) => i % 4 === 3 ? value * 255 : value ), w, h, 1, 'float32', 'average', { quantizedInput: false, weights: 'shader' } );
+				for ( let i = 3; i < linear.values.length; i += 4 ) linear.values[ i ] = alpha.values[ i ] / 255;
+				nearTies += nearExact( mips[ level ], expected, linear, `srgb threshold ${ path } ${ width }x${ height } mip ${ level }` );
+
+			}
+
+			return { mips, path };
+
+		};
+
+		const chosen = await run( new Downsampler( device, { averageAccess: 'load' } ) );
+		const other = await run( new Downsampler( device, { averageAccess: 'load', renderPathMinTexels: chosen.path === 'render' ? Infinity : 0 } ) );
+		if ( chosen.path === other.path ) throw new Error( `srgb threshold: ${ width }×${ height } compared ${ chosen.path } with itself` );
+		chosen.mips.forEach( ( level, l ) => level.forEach( ( value, i ) => { if ( value !== other.mips[ l ][ i ] ) differing ++; } ) );
+		compared ++;
+
+	}
+
+	return { thresholdChains: compared, thresholdColorSpace: colorSpace, thresholdNearTies: nearTies, thresholdDiffering: differing };
 
 }

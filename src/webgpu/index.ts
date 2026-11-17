@@ -1,4 +1,4 @@
-export { Downsampler, maxResampleRatio } from './downsampler.js';
+export { Downsampler, defaultRenderPathMinTexels, maxResampleRatio } from './downsampler.js';
 export { optionalFeatures, requiredFeatures, requiredLimits } from './limits.js';
 export { isCompatibilityTexture } from './compat.js';
 export type { BufferCopy, ChainPath, DownsamplerOptions, EncodeOptions, PreparedBatch, SourceOptions } from './downsampler.js';
