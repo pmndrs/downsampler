@@ -6,7 +6,7 @@ per-topic detail are in [results/windows/](../results/windows/), linked from eac
 
 The brief was [WINDOWS-HANDOFF.md](WINDOWS-HANDOFF.md). Everything here is on branch **`f16-rounding`**, which branches from
 `windows-testing` and changes `src/` under owner decisions (see [Library changes](#library-changes-that-came-out-of-this)).
-Until it merges, read that branch.
+These are the original measurement branches. The Mac handoff includes those library changes and subsequent review fixes. For the current sRGB decision, halo measurements and test coverage, see the [Windows review](../WEB-PERFORMANCE-REVIEW.md) and [Mac handoff](M5-HANDOFF-SRGB.md).
 
 **Round 2 (2026-11-14)** is [below](#round-2-2026-11-14): verification of the merged milestones, the defaults, halo batches
 and two D3D12-only issues (sRGB tables, an Intel device hang).

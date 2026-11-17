@@ -6,9 +6,11 @@ Live status board. SPEC.md holds the design and the reasons behind it; this file
 
 **For agents:** read this after SPEC.md. When you start a task, move it to *Now* with your branch. When you finish, tick it, add the commit, and log the verification run. Keep entries to one line and link SPEC sections instead of restating them. Anything that needs the owner goes under *Waiting on owner*.
 
-Last updated: 2026-11-17 · Branch: `srgb-store` (M5 Pro pass of the sRGB render path, and `renderPathMinTexels`; `windows-3` merged in; merge waits on the full matrix on the M5 and the RTX)
+Last updated 2026-11-17. The Mac transfer branch `codex/web-performance-review` combines `srgb-store` through `1ff808b` and the Windows review changes. [Handoff](docs/M5-HANDOFF-SRGB.md)
 
 ## Now
+
+- [ ] Finish combined Mac/Windows review verification on `codex/web-performance-review`. [Handoff](docs/M5-HANDOFF-SRGB.md)
 
 - [x] Windows runs (owner + a Windows agent, RTX 3060 + Intel UHD), merged from `f16-rounding` (`a3b9517`): branch `windows-testing`, handoff in `docs/WINDOWS-HANDOFF.md`. Verification, cross-vendor timings, and native D3D12/Vulkan matches (FidelityFX SPD, D3D11 `GenerateMips`, nvpro) for the same sizes
   - [x] Correctness: RTX full + quick + compat quick, Intel quick, all groups run; failures traced to f16 truncation and sampler precision, both explained by probes ([results/windows/correctness.md](results/windows/correctness.md))
@@ -51,10 +53,10 @@ Last updated: 2026-11-17 · Branch: `srgb-store` (M5 Pro pass of the sRGB render
 - [x] `colorSpace: 'srgb'` (DIVERGES #16): rgba8unorm / bgra8unorm textures with their sRGB view format are reduced as the sRGB format and written directly as storage; core `srgbViewFormat`, GPU group `srgb/alias` (86 chains bit-identical to sRGB textures, load path against the oracle, API); RTX 0.70–0.80× of the buffer path
 - [x] The render path (DIVERGES #16, branch `srgb-store`, [srgb-renderpath.md](results/windows/round2/srgb-renderpath.md)): `output: 'render'`, and `'auto'` for sRGB textures with `RENDER_ATTACHMENT` ('average' in place, 'exact' or 'box'; the rest keep the buffer path). One render pass per level and layer; the fragment shader is the compute kernel's `first()` (shared `firstWgsl`/`quantizeWgsl`, goldens unchanged), so the same bits per level. GPU groups `srgb/render` (151 chains on the RTX: sRGB, `colorSpace`, 9 other formats; float32 within a few ulp) and `srgb/render-api`. RTX 0.63–0.79× of the buffer path, Intel 0.74–0.92×
 - [x] `srgbRounding: 'device'` (opt-in): the render path without the exact sRGB rounding (attachment encodes, no tables): plain render passes' speed (RTX within 0–7 %, Intel 3–12 %), ~16 % (RTX) / 6 % (Intel) of bytes off by up to 3 / 2 codes
-- [ ] The M5 Pro ([docs/M5-HANDOFF-SRGB.md](docs/M5-HANDOFF-SRGB.md), also the halo default): `npm run bench -- --compare=srgb --skip-validation --strategies=render,buffer,colorSpace,renderPath,renderDevice`, the suite's `srgb/render` groups and the alias sampling cost. The three.js side is answered (2026-11-17, from `dev`): `WebGPUTextureUtils.createTexture` gives every texture that is neither compressed nor rgb9e5ufloat `RENDER_ATTACHMENT` (its own render-pass mipmaps need it), so three's sRGB color textures take the render path with no texture changes
+- [x] The M5 measurements settled the exact halo default (opt-in), sRGB selection by size, aliased sampling cost and float32 access. Three.js color textures receive `RENDER_ATTACHMENT`. [Measurements and decisions](results/m5/srgb-m5.md)
 - [x] Native D3D12 sRGB (2026-11-17, [native-srgb.md](results/windows/round2/native-srgb.md)): `d3d12-mips --formats=rgba8unorm-srgb` (SPD on a typeless texture with an in-shader encode, AMD's own sRGB handling for reference, render passes, `GenerateMips`; dump check against the `'srgb8'` oracles). RTX (VALID): native SPD sRGB 0.77–0.86× of native render passes; our render path 1.5–2.4× native render passes. Intel: native render passes win (SPD 1.5–1.7×); our render path 6.7–8.7× native, mostly the exact rounding
 - [x] Intel runs without the lost device (2026-11-17, harness only): `--isolate-devices` gives each case group that opens a second device its own shard (`secondDeviceGroups` in test/ci/shard.js, core tests in shard.test.js); Intel quick passes in one run ([isolate-intel-quick](results/windows/round2/isolate-intel-quick/summary.md)). The driver bug stays open ([intel-device-hung.md](results/windows/round2/intel-device-hung.md))
-- [x] float32 averages sample with `float32-filterable` (DIVERGES #13, [float32.md](results/windows/round2/float32.md)): the library already sampled with the feature; measured `--compare=float32` sample ÷ load 0.74–1.00× (RTX, VALID) and 0.69–1.00× (Intel), never slower. New `requiredFeatures( adapter )` asks for it (and tier1, bgra8unorm-storage); setup docs use it. New GPU group `downsampler/float32-sample` (RTX: 72 chains, 495 levels). M5 timing open
+- [x] float32 averages sample with `float32-filterable` (DIVERGES #13, [float32.md](results/windows/round2/float32.md)): the library already sampled with the feature; measured `--compare=float32` sample ÷ load 0.74–1.00× (RTX, VALID) and 0.69–1.00× (Intel), never slower. New `requiredFeatures( adapter )` asks for it (and tier1, bgra8unorm-storage); setup docs use it. New GPU group `downsampler/float32-sample` (RTX: 72 chains, 495 levels). M5 sample/load 0.71–1.01× ([Apple results](results/m5/srgb-m5.md))
 
 - [x] Per-dispatch cost (2026-11-15, new `--compare=dispatch`): a dependent dispatch costs 3–4 µs on the RTX and Intel; one compute pass vs a pass per dispatch identical; at 1080p ~15 µs of a ~50 µs RTX chain is dispatch overhead, so the lever left is small (halo ~4 µs, two dispatches ~8 µs) ([round2/dispatch.md](results/windows/round2/dispatch.md)). M5 not run
 
@@ -64,7 +66,7 @@ Last updated: 2026-11-17 · Branch: `srgb-store` (M5 Pro pass of the sRGB render
 
 ## Later
 
-- Rect updates without allocation: one ring buffer of region uniforms with dynamic offsets, for tools that change rects every frame (owner 2026-11-13: not now). Caveat to design around: more than N updates recorded before a submit would overwrite slots
+- DS2 implemented moving storage updates with immutable dynamic uniform slots (`db4c381`), including multiple unsubmitted encoders. [Measurements](WEB-PERFORMANCE-REVIEW.md)
 - **M3, dial in:** per-frame throughput benchmark; cross-vendor device lab runs (NVIDIA/D3D12 first); `STORAGE_BINDING` sampling cost; float32 sampler vs load; subgroup kernel with fallback (upper-bound test first); fp16
 - Maybe: linear rgba16float for color textures re-mipped every frame (canvas, video), as a three.js opt-in, so they take the compute path (DIVERGES #16, other options)
 - **M5, ship:** npm publish, the upscaler and other tools as consumers, three.js in-tree PR, the gpuweb#5253 comment

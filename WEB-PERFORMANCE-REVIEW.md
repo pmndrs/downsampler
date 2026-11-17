@@ -1,38 +1,34 @@
 # Downsampler performance and code review
 
-November 17, 2026 · Reviewed `d8368d0` · [Read in Pages](https://chatgpt.com/space/page_31c5c354d25c81918908d3903f124634)
+November 17, 2026 · Baseline `d8368d0` · Handoff branch `codex/web-performance-review` includes `windows-3` at `0210cd1` and the M5 work through `1ff808b`. [Review Page](https://chatgpt.com/space/page_31c5c354d25c81918908d3903f124634) · [Mac checkout and M5 tests](docs/M5-HANDOFF-SRGB.md)
 
-Fix the scratch-buffer retry before release. For speed, the clearest opportunity is a moving dirty rectangle: the GPU already does little work, but the host rebuilds bindings for every new brush position. For startup, measure first use of the actual format and path before changing kernels.
+## DS1 · Keep a working plan after a failed replacement
 
-## DS1  Preserve a working plan when a replacement fails
+On a 65×47 RGBA8 texture, replacing a working plan with a four-byte scratch buffer raised the expected error. Retrying the original options after editing the image then produced one WebGPU validation error and six stale mip levels. Full and partial caches now publish a replacement before retiring the previous buffers. On the RTX 3060 the retry preserved both plans, with zero errors and all six levels matching a fresh recompute. Implemented in `5c59385`. [Browser regression](test/browser/validate.js)
 
-Reproduced on Windows, Chrome 148, NVIDIA Ampere. Generate a valid chain with `output: 'buffer'`, then call `prepare` on the same texture with a four-byte scratch buffer. It throws the expected size error. After the queue settles, calling `generate` again with the original options produces a WebGPU validation error for a destroyed output-layout buffer. A caller that handles the initial exception loses its previously working chain.
+## DS2 · Reuse bindings as the brush moves
 
-`src/webgpu/downsampler.ts` line 804 schedules the old plan’s buffers for destruction before line 805 builds the replacement. On failure, the cache still points to the old plan. Build the replacement, publish it, then retire the previous buffers. Apply the same successful-replacement ordering to the region cache and release newly owned resources on a partial construction failure. A regression test should verify a successful retry with the original options using a validation scope and compare mip contents to a clean run. Queue completion covers previously submitted work. [WebGPU queue specification](https://www.w3.org/TR/webgpu/#dom-gpuqueue-onsubmittedworkdone)
+Moving a 32×32 brush 64 times across a warmed 1920×1080 texture previously created 64 uniform buffers and 256 bind groups. The same run on NVIDIA now creates two buffers and eight bind groups. A fixed brush creates zero of either. Storage encoding shares bindings and views while giving each recorded update its own immutable uniform data. Public `prepare()` keeps its existing batches. Implemented in `db4c381`. [Paired benchmark](results/probes/ds2-region.mjs)
 
-## DS2  Reuse bindings when a brush moves
+With default device limits and 320 moving strokes, CPU encode p95 fell from 70 to 20 µs on the RTX and from 75 to 20–25 µs on Intel. Moving strokes allocated 319 → 1 buffers, 1,595 → 5 bind groups and 4,785 → 0 views on each adapter. Intel’s fixed-brush GPU median rose by 0.60–1.50 µs across two runs. The storage regression records 514 updates over two layers and submits the two command buffers in reverse order. All mip contents matched a full recompute. [Region regression](test/browser/validate-region.js)
 
-In a fresh Chrome 148 run on NVIDIA Ampere, a warmed 1920×1080 `rgba8unorm` texture received 64 updates with a 32×32 brush. Moving the brush by one pixel each time created 64 uniform buffers, 256 bind groups and zero compute pipelines. Repeating one rectangle created zero of all three. Both runs of each case gave the same counts. CPU encode p95 was roughly 0.2 ms moving and 0.1 ms fixed, close to the timer resolution. The object counts are the stronger result.
+## DS3 · Compile pipelines before interactive use
 
-The per-texture cache key includes the rectangle’s exact coordinates. A new position goes through planning, texture-view creation and a uniform upload. The existing partial benchmark keeps its rectangle fixed. Its clock-validated RTX run measured 17.4 µs of GPU time for the 1080p 32×32 update versus 56.8 µs full-chain. That answers how much GPU work is saved. The new probe measured host work with a submit and queue completion between updates. See `src/webgpu/downsampler.ts` lines 823, 987 and 1044, `test/bench/partial.js` line 13 and `results/windows/round2/partial.md`.
+Call `await downsampler.warmup(texture, options)` before the first interactive `encode()` or `generate()` for that texture and path. The API shares in-flight native compiles, validates pipelines created synchronously and allows a retry after rejection. It uses the actual storage, buffer-copy, compatibility or render descriptors and leaves command submission to the caller. Implemented in `5702f5b` and `a7f3060`. Commits `7f96b7f` and `ff785d9` also verify size-based selection and render-only aliases through both WebGPU and three.js. [API guide](docs/guide.md) · [Probe and reproduction](results/probes/ds3-warmup.md)
 
-First cache invariant views and batch topology per texture and option set. Then test an internal encode path with immutable per-dispatch uniform slots and dynamic offsets. Preserve public `prepare()` batches and their existing binding contract. An encoder containing multiple brush strokes must see the correct coordinates for each dispatch. Check moving, repeated, disjoint and clipped rectangles, multiple encoders, layers and empty updates against full recomputation. Track creations, CPU encode p95 and GPU time separately.
+On fresh Chrome 157 profiles, the time from the first submission to queue completion fell on all three devices. Each value below is the median of three alternating A/B pairs for a 512×288 texture, in milliseconds. The last column is the time spent in `await warmup()` before submission. The operating system and driver caches were retained.
 
-## DS3  Move first use of pipelines off the interactive frame
+| Device | Storage, sync → warm | Buffer, sync → warm | sRGB render, sync → warm | Prior warmup, storage / buffer / render |
+| --- | ---: | ---: | ---: | ---: |
+| NVIDIA RTX 3060 Laptop | 128.0 → 3.2 | 174.5 → 10.6 | 48.9 → 2.6 | 70.5 / 120.4 / 42.8 |
+| Intel UHD | 128.1 → 4.1 | 173.5 → 4.0 | 42.3 → 4.7 | 73.7 / 93.1 / 41.5 |
+| SwiftShader | 414.8 → 19.2 | 488.9 → 30.8 | 58.2 → 44.7 | 365.4 / 480.2 / 13.6 |
 
-Compute and render pipelines are created synchronously on cache misses. `prepare()` can populate the compute cache ahead of time, but it is synchronous and throws for a render plan. A texture first encountered during a resize or material swap can therefore expose compilation in an interactive frame. See `src/webgpu/downsampler.ts` lines 761, 1106 and 1272. The repository already handled an expensive sRGB lookup-table compiler problem, so use the current shader as the baseline.
+All 108 page runs used one build under the shared GPU lock. Across 972 generated-mip readbacks, the A/B hashes matched and warmed first encode created zero pipelines. Both hardware arms showed two shader-compiler events per fresh-profile path and zero on reload. The main benefit is control over when the application pays the startup cost. [Full medians, frame gaps and compiler traces](results/windows/ds3/summary.md)
 
-Prototype a narrowly scoped async warm-up accepting the real texture and options. Share descriptor construction and in-flight pipeline promises across identical requests and remove failed promises so retry works. Keep encoding synchronous once warm. Measure cold first frame, warm revisit and actual compiler events for storage, sRGB render and buffer-copy chains. Include an integrated GPU and a software adapter before expanding the API.
+## DS4 · Capped halo stays opt-in
 
-## DS4  Keep kernel choices tied to the workload
-
-The archived halo runs show why dispatch count is an incomplete score. At 1920×1080 the capped halo reduced four dispatches to three. For rgba8 it took 0.92× the default time on the RTX and 1.00–1.01× on Intel. Uncapped halos took up to 1.52× default time on Intel at one tested odd size. Keep the cap and the opt-in setting pending the M5 comparison already requested by the project. A fixed-size win can be exposed to callers independently of a global default. See `results/windows/round2/halo.md` and `results/windows/round2/defaults.md`.
-
-Likewise, the Windows dispatch benchmark found essentially equal GPU times for separate compute passes and one shared pass at a fixed dispatch count. AMD’s native SPD algorithm coordinates the last group using a globally coherent counter and mip. Retain the portable multi-dispatch implementation as the reference. Compare odd-size color averages and conservative depth folds against their own oracles. A faster chain that drops an edge texel answers a different question for occlusion culling. [FidelityFX SPD manual](https://gpuopen.com/manuals/fidelityfx_sdk/techniques/single-pass-downsampler/)
-
-### Windows follow-up · Capped halo
-
-With the cap at its current default, the NVIDIA RTX 3060 Laptop benefited most on the odd-size box reductions. Intel UHD showed gains and losses across the same inputs. Each cell is capped-halo GPU time divided by plain GPU time. The median and range summarize 16 paired size/format ratios, from 960×540 through 3840×2160 with RGBA8 and RGBA16F. Each timing is the median of 11 rotating rounds with 16 repetitions in Chrome 148.0.7778.97. Drivers were NVIDIA 592.00 and Intel 31.0.101.5333. GPU clocks were not logged for this pass; the pairs within each run are the comparison.
+With the cap at its current default, the NVIDIA RTX 3060 Laptop benefited most on the odd-size box reductions. Intel UHD showed gains and losses across the same inputs. Each cell is capped-halo GPU time divided by plain GPU time. The median and range summarize 16 paired size/format ratios, from 960×540 through 3840×2160 with RGBA8 and RGBA16F. Each timing is the median of 11 rotating rounds with 16 repetitions in Chrome 148.0.7778.97. Drivers were NVIDIA 592.00 and Intel 31.0.101.5333. The ratios compare strategies within the same run. This pass did not record GPU clocks.
 
 | Windows GPU | Policy | Median | Range | 1080p RGBA8 / RGBA16F |
 | --- | --- | ---: | ---: | ---: |
@@ -41,41 +37,18 @@ With the cap at its current default, the NVIDIA RTX 3060 Laptop benefited most o
 | Intel UHD | Exact | 0.997 | 0.920–1.082 | 1.022 / 0.941 |
 | Intel UHD | Box | 1.011 | 0.981–1.113 | 0.983 / 1.055 |
 
-The cap remains opt-in. The owner’s M5 decision still needs the paired Apple measurements. [Mac commands](docs/M5-HANDOFF-SRGB.md#capped-halo-on-apple-m5-pro) · [NVIDIA exact](results/windows/round2/handoff-halo-high-exact.json) · [NVIDIA box](results/windows/round2/handoff-halo-high-box.json) · [Intel exact](results/windows/round2/handoff-halo-low-exact.json) · [Intel box](results/windows/round2/handoff-halo-low-box.json)
+On Apple M5 Pro, two independent exact-policy runs gave a median halo/plain ratio of 0.98–0.99. At 1024² RGBA8 the capped halo took 3–4% longer both times. It misses the owner’s requirement of a 5% gain and no regressions. The default decision is closed. Apple box timings would add policy-specific data if that workload becomes important. [M5 measurements](results/m5/srgb-m5.md#halo-batches) · [NVIDIA exact](results/windows/round2/handoff-halo-high-exact.json) · [NVIDIA box](results/windows/round2/handoff-halo-high-box.json) · [Intel exact](results/windows/round2/handoff-halo-low-exact.json) · [Intel box](results/windows/round2/handoff-halo-low-box.json)
 
-## DS5  Put the tradeoff in the existing examples
+## DS5 · Show what partial updates and Hi-Z buy
 
-Give `examples/partial-update.html` a benchmark mode that replays the same brush path in partial and full modes. Collect CPU encode time and GPU timestamps with the reference recompute and readback outside the timed interval. Keep the existing byte comparison available after replay. Extend the Hi-Z page with objects near a thin occluder and show how many draws are culled and whether any visible object disappears. That gives the min/max guarantee a visible consequence.
+The [brush example](examples/partial-update.html) replays the same 40 strokes in both modes, alternates measurement order and compares every edited mip with a full recompute outside the timing window. It reports CPU encode time and GPU timestamps separately and works on devices without timestamps. The [Hi-Z example](examples/hi-z.html) tests five objects against a thin occluder and a depth block. It compares the hierarchy’s decisions with full-resolution depth so a false cull is visible. Implemented in `f80f5a9`. [Setup from checkout](docs/getting-started.md)
 
-The README says the package is unpublished and immediately offers `npm install downsampler`. Until publication is confirmed, lead with a tested build-from-checkout path. Keep one setup example and a short table for ordinary color, exact sRGB, Hi-Z and dirty regions. Point historical findings to dated reports. For example, `docs/WINDOWS-REPORT.md` still lists the NVIDIA sRGB tolerance as open, while `windows-3` records the decision in `f7248a3`.
+## M5 and Windows sRGB selection
 
-## Verification
+The merged `renderPathMinTexels` option defaults to 1920 × 1080 texels per layer. On M5, exact render took 1.25–2.18× the buffer path below 1080p, reached parity at 1080p and won at larger sizes. Automatic selection uses the size of the source level or dirty rectangle, including for pipeline warmup. `renderPathMinTexels: 0` enables rendering at any size that supports it. [M5 report](results/m5/srgb-m5.md) · [Selection rules](docs/guide.md)
 
-Reviewed `windows-3` at `d8368d0`, including its opt-in halo implementation. Consulted the separate halo checkout at `f8f4064` and the Windows result files. The active Windows checkout has local harness and results work. The browser probe used its freshly built library, whose tracked `src` matched the reviewed commit. GPU measurements from the existing reports are identified above. The new probe covers one browser and adapter. The pinned worktree built successfully and passed all 129 core tests. The active checkout passed 130, including its additional local harness test.
+Windows is remeasuring `colorSpace` against buffer output with corrected timing markers under the shared GPU lock. The Apple measurements are complete.
 
-## Browser regression case for DS1
+## Windows verification
 
-Run on a WebGPU device with a mipmapped rgba8unorm texture that has TEXTURE_BINDING and COPY_DST usage. The initial call uses library-owned scratch. The expected result after a fix is a null validation error and the same mip contents as the initial chain.
-
-```js
-const ds = new Downsampler(device, { output: 'buffer' });
-ds.generate(texture);
-await device.queue.onSubmittedWorkDone();
-const small = device.createBuffer({
-  size: 4,
-  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-});
-try {
-  ds.prepare(texture, { scratch: small });
-} catch (error) {
-  console.log(error.message); // Expected size error on a 1920 × 1080 texture.
-}
-await device.queue.onSubmittedWorkDone();
-await new Promise(resolve => setTimeout(resolve, 0));
-device.pushErrorScope('validation');
-ds.generate(texture);
-await device.queue.onSubmittedWorkDone();
-console.log(await device.popErrorScope());
-small.destroy();
-ds.release(texture);
-```
+`ff785d9` built, typechecked and passed all **161 core tests**. Chrome 148 passed 21 targeted cases on each of the RTX 3060 and Intel UHD, including native deferred validation, threshold selection and nonconstant mip readback. SwiftShader passed eight cases and RTX compatibility mode passed seven. At the 1080p sRGB path boundary the RTX had two one-code differences among 84 near ties and Intel had one among 2,371. Full RTX and cross-adapter quick suites on the combined revision are still running. The 24 example pages and presets previously passed on the RTX.
