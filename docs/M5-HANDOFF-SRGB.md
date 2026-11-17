@@ -58,5 +58,4 @@ float32 and exact-policy halo. The [threshold matrix, part 1](../results/m5/thre
 - **Apple alias and float32 questions are answered.** Aliased sRGB sampling was 0.970–1.042 (medians about 1.00);
   `colorSpace`/buffer was 0.40–0.68. Float32 sample/load was 0.71–1.01. No outstanding Mac rerun is needed for these.
 
-The corrected-marker Windows `colorSpace` reruns and remaining Windows threshold validation belong to the
-[Windows round 3 handoff](WINDOWS-HANDOFF-3.md), not this Mac acceptance.
+The corrected Windows measurements and threshold validation are tracked in the [combined review](../WEB-PERFORMANCE-REVIEW.md#m5-and-windows-srgb-selection).

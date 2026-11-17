@@ -34,7 +34,7 @@ Last updated 2026-11-17. The Mac transfer branch `codex/web-performance-review` 
   - [x] float32 sample ÷ load 0.71–1.01× (DIVERGES #13 done on all three GPUs)
   - [x] Halo ÷ tail median 0.98–0.99 (0.89–1.04), 3–4 % loss at 1024² rgba8 → stays opt-in
   - [x] three.js compat cube fix on Metal: before, only the 1×1 levels differ (= texel (1,1), 24/24, the Intel numbers exactly); after, cube = 2d-array at every level, 96² too ([results/m5/three-compat-cube.md](results/m5/three-compat-cube.md))
-  - [ ] Re-run `--compare=srgb` on the RTX and Intel with the marker fix to confirm their `colorSpace` numbers (D3D12 ordering likely hid the flaw)
+  - [x] Re-ran `--compare=srgb` with corrected markers. Across eight sizes `colorSpace`/buffer was 0.726–0.841 on RTX and 0.771–0.927 on Intel. Three per-size ratios moved by more than 5%. [Review and raw reports](WEB-PERFORMANCE-REVIEW.md#m5-and-windows-srgb-selection)
   - [x] `renderPathMinTexels` (`c84a90b`; owner's size rule, 2026-11-17): GPU cases first (`srgb/render-api`: boundary 1920×1079/1080, sub-range, rect, render-only, `colorSpace`, option validation, both paths against the oracle; three adapter key for `Infinity`), then `src/webgpu/downsampler.ts`; `srgb/render` pinned to `renderPathMinTexels: 0` (it silently skipped when 'auto' didn't render). M5 full matrix passes (`srgb/render` 208 chains, none skipped); the RTX full matrix before merging ([docs/WINDOWS-HANDOFF-3.md](docs/WINDOWS-HANDOFF-3.md))
 
 ## Next (SPEC §11)

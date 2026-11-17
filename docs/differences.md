@@ -31,7 +31,7 @@ exactly, so the results are the same on every GPU; that rounding is what costs o
 render passes, with codes up to 3 steps apart between GPUs ([guide](guide.md#srgb-color)). On the M5 the rounding costs
 nothing; there, if you create the texture yourself, `colorSpace: 'srgb'` (an `rgba8unorm` texture with an sRGB view)
 takes 0.26–0.44× of render passes' time up to 1707×960 and at 1024², 0.56–0.59× at 1080p and 0.81–0.91× at 1440p
-and 4096². ([#16](../DIVERGES.md#16-srgb-through-the-buffer-output-path), [#17](../DIVERGES.md#17-compute-only-with-no-per-device-render-fallback))
+and 4096². Against buffer output, the same alias path took 0.73–0.84× on the RTX 3060 Laptop and 0.77–0.93× on Intel UHD in the corrected timing run. ([Windows results](../WEB-PERFORMANCE-REVIEW.md#m5-and-windows-srgb-selection), [#16](../DIVERGES.md#16-srgb-through-the-buffer-output-path), [#17](../DIVERGES.md#17-compute-only-with-no-per-device-render-fallback))
 
 **The texture needs `STORAGE_BINDING`.** That's how compute shaders write the levels. It costs nothing when you sample
 the texture later: we measured that on Apple, NVIDIA and Intel. ([#18](../DIVERGES.md#18-textures-need-storage_binding))
