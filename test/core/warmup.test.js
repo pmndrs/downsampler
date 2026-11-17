@@ -9,7 +9,7 @@ globalThis.GPUShaderStage = { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 };
 
 function fixture( { defer = false, fail = false } = {} ) {
 
-	const calls = { compute: [], render: [], sync: [], resources: [], layouts: [] };
+	const calls = { compute: [], render: [], sync: [], resources: [], layouts: [], used: [], usedGroups: [] };
 	const waiting = [];
 	const pipeline = descriptor => ( { descriptor, getBindGroupLayout: () => ( {} ) } );
 	const asyncPipeline = ( kind, descriptor ) => {
@@ -35,12 +35,12 @@ function fixture( { defer = false, fail = false } = {} ) {
 		createRenderPipelineAsync: descriptor => asyncPipeline( 'render', descriptor ),
 		createComputePipeline: descriptor => { calls.sync.push( descriptor ); return pipeline( descriptor ); },
 		createRenderPipeline: descriptor => { calls.sync.push( descriptor ); return pipeline( descriptor ); },
-		createBindGroup: descriptor => { calls.resources.push( 'bindGroup' ); return descriptor; },
+		createBindGroup: descriptor => { calls.resources.push( 'bindGroup' ); return { ...descriptor, invalid: descriptor.layout?.invalid === true }; },
 		createBuffer: descriptor => { calls.resources.push( 'buffer' ); return { ...descriptor, destroy() {} }; },
 		createTexture: descriptor => { calls.resources.push( 'texture' ); return texture( { ...descriptor, mipLevelCount: 1 } ); },
 		queue: { writeBuffer() {}, onSubmittedWorkDone: () => Promise.resolve() }
 	};
-	const pass = { setPipeline() {}, setBindGroup() {}, dispatchWorkgroups() {}, draw() {}, setScissorRect() {}, end() {} };
+	const pass = { setPipeline( pipeline ) { calls.used.push( pipeline ); }, setBindGroup( _, group ) { calls.usedGroups.push( group ); }, dispatchWorkgroups() {}, draw() {}, setScissorRect() {}, end() {} };
 	const encoder = { beginComputePass: () => pass, beginRenderPass: () => pass, copyBufferToTexture() {} };
 	return { calls, device, texture, encoder, resolve: () => { for ( const resolve of waiting.splice( 0 ) ) resolve(); } };
 
@@ -171,5 +171,100 @@ test( 'warmup observes earlier rejections when a later descriptor throws synchro
 	await ds.warmup( texture );
 	ds.encode( f.encoder, texture );
 	assert.equal( f.calls.sync.length, 0 );
+
+} );
+
+
+// WebGPU's synchronous creation reports validation errors through error scopes;
+// it returns an object even when that pipeline is invalid. Throw-only mocks miss this.
+function deferredInvalidSync( f, output ) {
+
+	const name = output === 'render' ? 'createRenderPipeline' : 'createComputePipeline';
+	const create = f.device[ name ];
+	let validation;
+	f.device.pushErrorScope = () => { validation = undefined; };
+	f.device.popErrorScope = async () => { await Promise.resolve(); return validation ?? null; };
+	f.device[ name ] = descriptor => {
+
+		const pipeline = create( descriptor );
+		pipeline.invalid = true;
+		pipeline.getBindGroupLayout = () => ( { invalid: true } );
+		queueMicrotask( () => { validation = { message: 'deferred validation failure' }; } );
+		return pipeline;
+
+	};
+
+}
+
+for ( const output of [ 'storage', 'render' ] ) {
+
+	test( `warmup rejects invalid sync-cached ${ output } objects, retries, and refreshes cached bindings`, async () => {
+
+		const f = fixture( { fail: true } ), ds = new Downsampler( f.device, { output } ), texture = f.texture();
+		deferredInvalidSync( f, output );
+		f.device.pushErrorScope( 'validation' );
+		ds.encode( f.encoder, texture );
+		assert.match( ( await f.device.popErrorScope() ).message, /deferred validation/ );
+		assert.ok( f.calls.used.every( pipeline => pipeline.invalid ) );
+		await assert.rejects( ds.warmup( texture ), /compile failed/ );
+		await ds.warmup( texture );
+		f.calls.used.length = 0; f.calls.usedGroups.length = 0;
+		ds.encode( f.encoder, texture );
+		assert.ok( f.calls.used.length > 0 );
+		assert.ok( f.calls.used.every( pipeline => ! pipeline.invalid ) );
+		assert.ok( f.calls.usedGroups.every( group => ! group.invalid ), 'render must rebuild invalid-layout bind groups' );
+		const count = f.calls.compute.length + f.calls.render.length;
+		await ds.warmup( texture );
+		assert.equal( f.calls.compute.length + f.calls.render.length, count, 'async-validated variants need no second compile' );
+
+	} );
+
+	test( `warmup replaces a deferred-invalid ${ output } sync fallback with its successful async result`, async () => {
+
+		const f = fixture( { defer: true } ), ds = new Downsampler( f.device, { output } ), texture = f.texture();
+		deferredInvalidSync( f, output );
+		const options = { rect: { x: 1, y: 2, width: 3, height: 4 } };
+		const pending = ds.warmup( texture, options );
+		f.device.pushErrorScope( 'validation' );
+		ds.encode( f.encoder, texture, options );
+		assert.match( ( await f.device.popErrorScope() ).message, /deferred validation/ );
+		f.resolve();
+		await pending;
+		f.calls.used.length = 0; f.calls.usedGroups.length = 0;
+		ds.encode( f.encoder, texture, options );
+		assert.ok( f.calls.used.length > 0 );
+		assert.ok( f.calls.used.every( pipeline => ! pipeline.invalid ) );
+		assert.ok( f.calls.usedGroups.every( group => ! group.invalid ) );
+
+	} );
+
+	test( `warmup keeps rejecting a permanently invalid ${ output } descriptor already cached by sync creation`, async () => {
+
+		const f = fixture(), ds = new Downsampler( f.device, { output } ), texture = f.texture();
+		deferredInvalidSync( f, output );
+		const name = output === 'render' ? 'createRenderPipelineAsync' : 'createComputePipelineAsync';
+		let attempts = 0;
+		f.device[ name ] = () => { attempts ++; return Promise.reject( new Error( 'GPUPipelineError: validation' ) ); };
+		ds.encode( f.encoder, texture );
+		await assert.rejects( ds.warmup( texture ), /GPUPipelineError/ );
+		const before = attempts;
+		await assert.rejects( ds.warmup( texture ), /GPUPipelineError/ );
+		assert.ok( attempts > before );
+
+	} );
+
+}
+
+test( 'warmup refreshes another texture holding an older shared sync pipeline and retains old prepared batches', async () => {
+
+	const f = fixture(), ds = new Downsampler( f.device ), first = f.texture(), second = f.texture();
+	deferredInvalidSync( f, 'storage' );
+	const old = ds.prepare( second );
+	await ds.warmup( first );
+	await ds.warmup( second );
+	const fresh = ds.prepare( second );
+	assert.notEqual( fresh, old );
+	assert.ok( fresh.every( batch => ! batch.pipeline.invalid ) );
+	assert.ok( old.every( batch => batch.pipeline.invalid ), 'already returned batches are not mutated' );
 
 } );

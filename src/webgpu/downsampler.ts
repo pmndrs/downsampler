@@ -440,6 +440,8 @@ export class Downsampler {
 	private readonly renderPipelines = new Map<string, GPURenderPipeline>();
 	private readonly pipelinePromises = new Map<string, Promise<GPUComputePipeline>>();
 	private readonly renderPipelinePromises = new Map<string, Promise<GPURenderPipeline>>();
+	/** Sync creation can return an invalid object and report its error later. */
+	private readonly pipelineStates = new WeakMap<GPUComputePipeline | GPURenderPipeline, 'validated' | 'superseded'>();
 	private readonly layouts = new Map<string, GPUBindGroupLayout>();
 	private readonly plans = new WeakMap<GPUTexture, Map<string, CachedPlan>>();
 	/** Partial-update plans per texture, least recently used first. */
@@ -812,6 +814,28 @@ export class Downsampler {
 
 		}
 		await Promise.all( pending );
+		this.refreshWarmedPlans( texture );
+
+	}
+
+	/** Drop bindings made with an unverified sync pipeline after async replacement.
+	 * Leave resources to GC: a caller may still hold prepared batches or an unsubmitted
+	 * command buffer. Render bind groups must be rebuilt too, since getBindGroupLayout
+	 * on an invalid synchronous render pipeline returns an invalid layout.
+	 */
+	private refreshWarmedPlans( texture: GPUTexture ): void {
+
+		const stale = ( plan: CachedPlan ) => plan.batches.some( batch => this.pipelineStates.get( batch.pipeline ) === 'superseded' ) || ( plan.render?.some( level => this.pipelineStates.get( level.pipeline ) === 'superseded' ) ?? false );
+		for ( const plans of [ this.plans, this.regionPlans, this.encodeRegionPlans ] ) {
+
+			const cache = plans.get( texture );
+			if ( cache === undefined ) continue;
+			for ( const [ key, plan ] of cache ) if ( stale( plan ) ) cache.delete( key );
+
+		}
+		const templates = this.regionTemplates.get( texture );
+		if ( templates === undefined ) return;
+		for ( const [ key, template ] of templates ) if ( stale( template.plan ) ) templates.delete( key );
 
 	}
 
@@ -1316,14 +1340,17 @@ export class Downsampler {
 
 		const id = this.renderPipelineId( options );
 		const cached = this.renderPipelines.get( id );
-		if ( cached !== undefined ) return Promise.resolve( cached );
+		if ( cached !== undefined && this.pipelineStates.get( cached ) === 'validated' ) return cached;
 		let pending = this.renderPipelinePromises.get( id );
 		if ( pending === undefined ) {
 
 			pending = this.device.createRenderPipelineAsync( this.renderDescriptor( options ) ).then( pipeline => {
 
-				if ( ! this.renderPipelines.has( id ) ) this.renderPipelines.set( id, pipeline );
-				return this.renderPipelines.get( id )!;
+				const previous = this.renderPipelines.get( id );
+				if ( previous !== undefined && previous !== pipeline ) this.pipelineStates.set( previous, 'superseded' );
+				this.renderPipelines.set( id, pipeline );
+				this.pipelineStates.set( pipeline, 'validated' );
+				return pipeline;
 
 			} ).finally( () => { this.renderPipelinePromises.delete( id ); } );
 			this.renderPipelinePromises.set( id, pending );
@@ -1522,14 +1549,17 @@ export class Downsampler {
 
 		const id = this.pipelineId( key );
 		const cached = this.pipelines.get( id );
-		if ( cached !== undefined ) return Promise.resolve( cached );
+		if ( cached !== undefined && this.pipelineStates.get( cached ) === 'validated' ) return cached;
 		let pending = this.pipelinePromises.get( id );
 		if ( pending === undefined ) {
 
 			pending = this.device.createComputePipelineAsync( this.pipelineDescriptor( key ) ).then( pipeline => {
 
-				if ( ! this.pipelines.has( id ) ) this.pipelines.set( id, pipeline );
-				return this.pipelines.get( id )!;
+				const previous = this.pipelines.get( id );
+				if ( previous !== undefined && previous !== pipeline ) this.pipelineStates.set( previous, 'superseded' );
+				this.pipelines.set( id, pipeline );
+				this.pipelineStates.set( pipeline, 'validated' );
+				return pipeline;
 
 			} ).finally( () => { this.pipelinePromises.delete( id ); } );
 			this.pipelinePromises.set( id, pending );
