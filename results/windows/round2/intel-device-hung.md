@@ -51,3 +51,6 @@ followed by that one group hang, with or without the shard's two rgb9e5ufloat gr
 the trigger is broader than rgb9e5ufloat: a second device's buffer-path work after a long run on the
 first. The code path is unchanged by recent work, and it passes alone. Until the driver is fixed or the
 two-device groups get their own shard on Intel, run such a shard in two pieces.
+
+Workaround in the harness (2026-11-17): `--isolate-devices` (test/run.js, passed through test/parallel.js) gives each
+case group that opens a second device (`secondDeviceGroups` in test/ci/shard.js) a shard, and so a Chrome, of its own.
