@@ -22,7 +22,7 @@ Last updated: 2026-11-15 (review of every entry after Windows round 2 and M3: su
 | # | Divergence | Source | Verdict | Quality | Performance |
 |---|---|---|---|---|---|
 | 1 | No single dispatch / atomic handoff | SPD, webgpu-spd | Keep | Converging risks stale levels (seen on Apple) | 2 dispatches beat the atomic probe (M5) and tie natively (D3D12) |
-| 2 | Batch ends at every odd size | SPD, nvpro | Done in part: tail kernel default; halo batches opt-in. **Open:** halo default (needs the M5) | None | Tail 0.82–0.90× (RTX), 0.97× (Intel), 0.81–1.02× (M5); halo 0.85–1.00× of that (RTX), neutral (Intel) |
+| 2 | Batch ends at every odd size | SPD, nvpro | Done in part: tail kernel default; halo batches stay opt-in (owner, 2026-11-17: the M5 gained under 5 %) | None | Tail 0.82–0.90× (RTX), 0.97× (Intel), 0.81–1.02× (M5); halo 0.85–1.00× of that (RTX), neutral (Intel), median 0.98–0.99× with a 3–4 % loss at 1024² rgba8 (M5) |
 | 3 | Odd sizes match render passes | SPD, nvpro | Keep default; `'spd'` and `'box'` opt-ins (Done) | `'spd'` drifts and isn't a conservative Hi-Z | `'spd'` 1.3–2× faster at render sizes; `'box'` 1.45–2.15× of `'exact'` (Windows), 1.23–1.28× (M5) |
 | 4 | Conservative min/max at odd edges | SPD | Keep | SPD's Hi-Z can false-cull | One extra load per odd edge texel |
 | 5 | Clamped edges, no zero reads | SPD | Keep | AMD's own SPD reads zeros at the 1×1 | ~None |
@@ -84,7 +84,7 @@ Last updated: 2026-11-15 (review of every entry after Windows round 2 and M3: su
   - The gap is real, though. The `'spd'` structure, 2 dispatches with no batch ends, is 0.47–0.73× for rgba8 and 0.62–0.94× for rgba16f at render sizes up to 1440p.
   - It isn't pass overhead: one compute pass for all batches (`encodePass`) measured 0.94–1.03×.
   - Part of it was the exact kernel's arithmetic: `'spd'` was 0.81× at 1024² rgba8 with the same 2 dispatches, and 0.63× for max. The tie rounding is now one WGSL `round()` (2026-11-15, same bits): rgba8 chains 0.91× / 0.96× (squares / render sizes) on the RTX, 0.76× / 0.73× on Intel ([results/windows/round2/trim.md](results/windows/round2/trim.md)).
-- **Open:** halo batches as the default. The rule is ≥ 5 % on both measured vendors; the RTX qualifies, Intel is neutral, the M5 is unmeasured (owner, PROGRESS *Waiting on owner*).
+- **Decided (owner, 2026-11-17): halo batches stay opt-in.** The rule was ≥ 5 % on the M5 and no loss anywhere; the M5's median was 0.98–0.99× with a 3–4 % loss at 1024² rgba8 ([results/m5/srgb-m5.md](results/m5/srgb-m5.md)). The RTX gains 8–15 % at render sizes, so it stays worth turning on there.
   - In absolute terms, `'spd'` saves 13–29 µs per render-size chain up to 1080p on the loaded machine.
 
 ## Odd sizes and edges
