@@ -540,8 +540,8 @@ export class Downsampler {
 
 	}
 
-	/** Why a texture cannot be a destination, or null if it can. */
-	unsupportedReason( texture: GPUTexture ): string | null {
+	/** Shape and sampling requirements shared by every destination path. */
+	private destinationShapeReason( texture: GPUTexture ): string | null {
 
 		if ( ! isSupportedFormat( texture.format ) ) return `format ${ texture.format } is not supported`;
 		if ( texture.dimension !== '2d' ) return `dimension ${ texture.dimension } is not supported`;
@@ -549,10 +549,19 @@ export class Downsampler {
 		if ( ( texture.usage & GPUTextureUsage.TEXTURE_BINDING ) === 0 ) return 'texture needs TEXTURE_BINDING usage';
 		const viewDimension = ( texture as GPUTexture & { textureBindingViewDimension?: string } ).textureBindingViewDimension;
 		if ( viewDimension !== undefined && viewDimension !== '2d' && viewDimension !== '2d-array' ) return `textureBindingViewDimension ${ viewDimension } is not supported`;
+		return null;
+
+	}
+
+	/** Why a texture cannot be a destination, or null if it can. */
+	unsupportedReason( texture: GPUTexture ): string | null {
+
+		const shape = this.destinationShapeReason( texture );
+		if ( shape !== null ) return shape;
 		if ( this.outputPath( texture ) !== null ) return null;
 
 		// Why no path applies.
-		const format = texture.format;
+		const format = texture.format as SupportedFormat;
 		const info: FormatInfo = formats[ format ];
 		const formatReason = this.storageFormatReason( texture );
 		const storageReason = formatReason ?? 'texture needs STORAGE_BINDING usage';
@@ -741,7 +750,8 @@ export class Downsampler {
 	scratchSize( texture: GPUTexture, options: EncodeOptions = {} ): number {
 
 		const chain = Downsampler.renderChainReason( options.oddSizes ?? 'exact', options.reduction ?? 'average', options.source === undefined ? undefined : resolveSource( options.source ) );
-		const path = this.output === 'auto' && isSupportedFormat( texture.format ) ? this.autoPath( texture, undefined, chain, Downsampler.chainTexels( texture, options ) ) : this.outputPath( texture );
+		const srgb = this.output === 'auto' && options.colorSpace === 'srgb' && isSupportedFormat( texture.format ) ? this.srgbAlias( texture, options.colorSpace, options.oddSizes ?? 'exact' ) : undefined;
+		const path = this.output === 'auto' && isSupportedFormat( texture.format ) ? this.autoPath( texture, srgb, chain, Downsampler.chainTexels( texture, options ) ) : this.outputPath( texture );
 		if ( path === 'storage' || path === 'render' && chain === null ) return 0;
 		const baseMipLevel = options.baseMipLevel ?? 0;
 		const end = options.mipLevelCount === undefined ? texture.mipLevelCount : baseMipLevel + options.mipLevelCount;
@@ -898,7 +908,14 @@ export class Downsampler {
 	private plan( texture: GPUTexture, options: EncodeOptions, encoding = false, warming?: Promise<unknown>[] ): CachedPlan {
 
 		const reason = this.unsupportedReason( texture );
-		if ( reason !== null ) throw new Error( `downsampler: ${ reason }.` );
+		if ( reason !== null ) {
+
+			// The option-blind query describes the linear texture. A valid sRGB alias
+			// can still render under auto when that texture has no storage usage.
+			const alias = this.output === 'auto' && options.colorSpace === 'srgb' && this.destinationShapeReason( texture ) === null ? srgbViewFormat( texture.format as SupportedFormat ) : undefined;
+			if ( alias === undefined || this.usesCompatibility( texture ) || this.renderReason( texture, alias ) !== null ) throw new Error( `downsampler: ${ reason }.` );
+
+		}
 		const baseMipLevel = options.baseMipLevel ?? 0;
 		const mipLevelCount = options.mipLevelCount ?? texture.mipLevelCount - baseMipLevel;
 		if ( baseMipLevel < 0 || mipLevelCount < 1 || baseMipLevel + mipLevelCount > texture.mipLevelCount ) throw new Error( 'downsampler: mip range is outside the texture.' );

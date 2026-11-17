@@ -55,7 +55,7 @@ for ( const [ name, config, textureOptions, options ] of [
 	[ 'buffer rect', { output: 'buffer' }, {}, { rect: { x: 5, y: 3, width: 7, height: 9 } } ],
 	[ 'compat', { compatibility: true }, {}, {} ],
 	[ 'compat rect', { compatibility: true }, {}, { rect: { x: 5, y: 3, width: 7, height: 9 } } ],
-	[ 'sRGB render', {}, { format: 'rgba8unorm-srgb' }, { oddSizes: 'box' } ],
+	[ 'sRGB render', { renderPathMinTexels: 0 }, { format: 'rgba8unorm-srgb' }, { oddSizes: 'box' } ],
 	[ 'render rect', { output: 'render' }, {}, { rect: { x: 5, y: 3, width: 7, height: 9 } } ],
 	[ 'halo box', { halo: true }, {}, { oddSizes: 'box' } ]
 ] ) test( `warmup covers encode pipelines without allocating execution resources: ${ name }`, async () => {
@@ -266,5 +266,83 @@ test( 'warmup refreshes another texture holding an older shared sync pipeline an
 	assert.notEqual( fresh, old );
 	assert.ok( fresh.every( batch => ! batch.pipeline.invalid ) );
 	assert.ok( old.every( batch => batch.pipeline.invalid ), 'already returned batches are not mutated' );
+
+} );
+
+
+for ( const alias of [ false, true ] ) test( `warmup follows auto threshold as updates cross it (${ alias ? 'sRGB alias dynamic storage' : 'sRGB buffer' })`, async () => {
+
+	const f = fixture(), ds = new Downsampler( f.device, { renderPathMinTexels: 64 } );
+	const texture = f.texture( { format: alias ? 'rgba8unorm' : 'rgba8unorm-srgb', depthOrArrayLayers: 3 } );
+	const base = { oddSizes: 'box', ...( alias ? { colorSpace: 'srgb' } : {} ) };
+	await ds.warmup( texture, base );
+	assert.ok( f.calls.render.length > 0, 'the whole chain renders above the threshold' );
+	assert.equal( f.calls.compute.length, 0 );
+	ds.encode( f.encoder, texture, base );
+	assert.equal( f.calls.sync.length, 0 );
+
+	const small = { ...base, rect: { x: 123, y: 66, width: 7, height: 9 }, layers: [ 1, 1 ] };
+	await ds.warmup( texture, small );
+	assert.ok( f.calls.compute.length > 0, '63 texels use compute despite a renderable full texture' );
+	const computeCount = f.calls.compute.length, renderCount = f.calls.render.length;
+	f.calls.used.length = 0;
+	ds.encode( f.encoder, texture, small );
+	assert.ok( f.calls.used.every( pipeline => pipeline.descriptor.compute !== undefined ) );
+	assert.equal( f.calls.sync.length, 0, 'dynamic full-size template must retain the small rect storage path' );
+	if ( alias ) assert.ok( f.calls.layouts.some( layout => layout.entries.some( entry => entry.buffer?.hasDynamicOffset ) ), 'sRGB alias uses the private dynamic-region layout' );
+
+	// Clipped edge footprint: the supplied rect remains in bounds, while workgroups
+	// and deeper dependency regions clip against the texture. Reuse warmed keys.
+	const clipped = { ...base, rect: { x: 128, y: 68, width: 5, height: 7 }, layers: [ 2, 1 ] };
+	await ds.warmup( texture, clipped );
+	ds.encode( f.encoder, texture, clipped );
+	assert.equal( f.calls.compute.length, computeCount );
+	assert.equal( f.calls.render.length, renderCount );
+	assert.equal( f.calls.sync.length, 0 );
+
+	const boundary = { ...base, rect: { x: 125, y: 67, width: 8, height: 8 }, layers: [ 0, 1 ] };
+	await ds.warmup( texture, boundary );
+	f.calls.used.length = 0;
+	ds.encode( f.encoder, texture, boundary );
+	assert.ok( f.calls.used.every( pipeline => pipeline.descriptor.fragment !== undefined ), 'exactly 64 texels render' );
+	assert.equal( f.calls.compute.length, computeCount );
+	assert.equal( f.calls.render.length, renderCount, 'full render warm-up covers boundary rect' );
+	await ds.warmup( texture, small );
+	ds.encode( f.encoder, texture, small );
+	assert.equal( f.calls.compute.length, computeCount );
+	assert.equal( f.calls.render.length, renderCount );
+	assert.equal( f.calls.sync.length, 0 );
+
+} );
+
+
+for ( const threshold of [ 0, 64, Infinity ] ) test( `auto warms a render-only sRGB alias at threshold ${ threshold } without changing option-blind queries`, async () => {
+
+	const f = fixture(), ds = new Downsampler( f.device, { renderPathMinTexels: threshold } );
+	const texture = f.texture( { usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST } );
+	assert.equal( ds.outputPath( texture ), null );
+	assert.match( ds.unsupportedReason( texture ), /STORAGE_BINDING/ );
+	await assert.rejects( ds.warmup( texture ), /STORAGE_BINDING/ );
+	const options = { colorSpace: 'srgb', oddSizes: 'box' };
+	assert.equal( ds.scratchSize( texture, options ), 0 );
+	await ds.warmup( texture, options );
+	ds.encode( f.encoder, texture, options );
+	const count = f.calls.render.length;
+	const partial = { ...options, rect: { x: 128, y: 68, width: 5, height: 7 } };
+	assert.equal( ds.scratchSize( texture, partial ), 0 );
+	await ds.warmup( texture, partial );
+	ds.encode( f.encoder, texture, partial );
+	assert.equal( f.calls.render.length, count );
+	assert.equal( f.calls.compute.length, 0 );
+	assert.equal( f.calls.sync.length, 0 );
+	await assert.rejects( new Downsampler( f.device, { output: 'storage' } ).warmup( texture, options ), /STORAGE_BINDING/ );
+	await assert.rejects( ds.warmup( texture, { ...options, reduction: 'max' } ), /buffer output path/ );
+	await assert.rejects( ds.warmup( texture, { colorSpace: 'srgb', oddSizes: 'spd' } ), /spd/ );
+	for ( const [ overrides, message ] of [
+		[ { dimension: '3d' }, /dimension/ ],
+		[ { sampleCount: 4 }, /multisampled/ ],
+		[ { usage: GPUTextureUsage.RENDER_ATTACHMENT }, /TEXTURE_BINDING/ ],
+		[ { textureBindingViewDimension: 'cube' }, /textureBindingViewDimension/ ]
+	] ) await assert.rejects( ds.warmup( f.texture( { ...texture, ...overrides } ), options ), message );
 
 } );
