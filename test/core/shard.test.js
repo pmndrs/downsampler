@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { assignShards, digest, parseShard, partitionProblems, Selection, shardLoads } from '../ci/shard.js';
+import { assignShards, digest, parseShard, partitionProblems, secondDeviceGroups, Selection, shardLoads } from '../ci/shard.js';
 
 const recorded = JSON.parse( readFileSync( new URL( '../ci/durations.json', import.meta.url ), 'utf8' ) );
 const durations = Object.fromEntries( Object.entries( recorded.groups ).map( ( [ id, group ] ) => [ id, group.ms ] ) );
@@ -20,6 +20,26 @@ test( 'shards are disjoint and their union is the listing, for 1–24 shards', (
 		assert.equal( shards.reduce( ( sum, shard ) => sum + shard.length, 0 ), ids.length );
 
 	}
+
+} );
+
+test( 'isolated groups get the last shards, one each; the rest share the others', () => {
+
+	// The first isolated id is missing from this listing (as under --only), so it gets no shard.
+	const isolated = secondDeviceGroups.slice( 1 );
+	const listing = [ ...ids.filter( id => ! secondDeviceGroups.includes( id ) ), ...isolated ];
+	for ( const table of [ durations, {} ] ) for ( const total of [ 5, 14, 18 ] ) {
+
+		const shards = assignShards( listing, total, table, secondDeviceGroups );
+		assert.equal( shards.length, total );
+		assert.deepEqual( partitionProblems( listing, shards ), [], `${ total } shards` );
+		assert.deepEqual( shards.slice( - isolated.length ), isolated.map( id => [ id ] ) );
+		assert.ok( shards.slice( 0, - isolated.length ).every( shard => shard.every( id => ! isolated.includes( id ) ) ) );
+
+	}
+
+	assert.deepEqual( assignShards( listing, 7, durations, [] ), assignShards( listing, 7, durations ) );
+	assert.throws( () => assignShards( listing, isolated.length, durations, secondDeviceGroups ), /needs more than/ );
 
 } );
 

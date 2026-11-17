@@ -16,14 +16,38 @@ export function parseShard( value ) {
 }
 
 /**
+ * The case groups that open a second device. On Intel UHD (D3D12) a second device's work after a
+ * long run on the first loses the device (DXGI_ERROR_DEVICE_HUNG, the driver; see
+ * results/windows/round2/intel-device-hung.md), so `--isolate-devices` gives each its own shard.
+ */
+export const secondDeviceGroups = [
+	'downsampler/options',
+	'downsampler/float32-sample',
+	'region/default-limits/rgba8unorm-srgb/average',
+	'packed/buffer-path',
+	'scalar/options',
+];
+
+/**
  * Splits `ids` (in enumeration order) into `total` disjoint shards that cover them.
+ * Ids in `isolate` that the listing has each get a shard of their own, the last ones, in
+ * `isolate`'s order; the other ids share the shards before them.
  * With durations (id → ms): longest first onto the least-loaded shard (LPT), ties by id
  * and then by the lower shard, so the result doesn't depend on the order of `ids`. Ids
  * without a recorded duration count as the median of those with one. Without any
  * recorded duration for these ids: round-robin in enumeration order.
  * Each shard lists its ids in enumeration order.
  */
-export function assignShards( ids, total, durations = {} ) {
+export function assignShards( ids, total, durations = {}, isolate = [] ) {
+
+	const alone = [ ...new Set( isolate ) ].filter( id => ids.includes( id ) );
+	if ( alone.length ) {
+
+		if ( total <= alone.length ) throw new Error( `isolating ${ alone.length } case groups needs more than ${ alone.length } shards, got ${ total }` );
+		const rest = ids.filter( id => ! alone.includes( id ) );
+		return [ ...assignShards( rest, total - alone.length, durations ), ...alone.map( id => [ id ] ) ];
+
+	}
 
 	const unique = [ ...new Set( ids ) ];
 	const order = new Map( unique.map( ( id, i ) => [ id, i ] ) );

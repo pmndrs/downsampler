@@ -4,6 +4,7 @@
 //   node test/parallel.js -- --quick --power=high
 //   node test/parallel.js --cap=8 -- --power=low --durations=results/windows/durations-intel-uhd.json
 //   node test/parallel.js --shards=48 --part=1/3 -- --power=high    a third of the shards (a suite too big for one budget)
+//   node test/parallel.js --shards=18 -- --quick --power=low --isolate-devices   Intel UHD: second-device groups alone
 //
 // The suite is CPU-bound (each case's oracle is computed in JavaScript on the page), so one page
 // uses one core while the GPU idles. This runs `--shards` disjoint shards (test/ci/shard.js),
