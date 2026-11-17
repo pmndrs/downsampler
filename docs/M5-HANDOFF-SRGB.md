@@ -1,10 +1,9 @@
 # Mac handoff for the downsampler
 
-Branch `web-performance-review` on GitHub: `main` (PR #2, the merged `srgb-store`) plus the DS review fixes. It was
-`codex/web-performance-review` in a bundle; use the GitHub branch instead.
+Run this on `main`: it has the sRGB work (PR #2) and the DS review (PR #3, branch `web-performance-review`).
 
 ```sh
-git fetch && git checkout web-performance-review
+git checkout main && git pull
 npm ci && npm run build && npm run test:core
 ```
 
