@@ -682,8 +682,15 @@ async function validateRegionOptions( device ) {
 			const target = createTexture( device, { width: 64, height: 32, format: 'rgba16float' } );
 			upload( device, target, makeData( 64, 32, 1, 'rgba16float', 'random', 9 ) );
 			device.pushErrorScope( 'validation' );
+			const earlyBatches = owner.prepare( target, { rect: { x: 0, y: 0, width: 1, height: 1 } } );
 			const early = device.createCommandEncoder();
-			owner.encode( early, target, { rect: { x: 0, y: 0, width: 1, height: 1 } } );
+			const earlyPass = early.beginComputePass();
+			for ( const batch of earlyBatches ) {
+				earlyPass.setPipeline( batch.pipeline );
+				earlyPass.setBindGroup( 0, batch.bindGroup );
+				earlyPass.dispatchWorkgroups( batch.groupsX, batch.groupsY, batch.layers[ 1 ] );
+			}
+			earlyPass.end();
 			for ( let i = 1; i <= 16; i ++ ) owner.prepare( target, { rect: { x: i, y: 0, width: 1, height: 1 } } );
 			device.queue.submit( [ early.finish() ] );
 			const error = await device.popErrorScope();
@@ -709,6 +716,100 @@ async function validateRegionOptions( device ) {
 		} finally {
 
 			tracker.restore();
+
+		}
+
+	}
+
+	if ( ! compatibility( device ) ) {
+
+		// Moving brush updates on the ordinary storage path: keep over two uniform-page worth
+		// of unique rects in two unsubmitted encoders. The layer-disjoint encoders are submitted
+		// in reverse order; public prepare() batches remain stable across internal encode() calls.
+
+		const [ width, height, layers ] = [ 512, 512, 2 ];
+		const owner = new Downsampler( device );
+		const texture = createTexture( device, { width, height, layers, format: 'rgba8unorm' } );
+		const full = createTexture( device, { width, height, layers, format: 'rgba8unorm' } );
+		const data = makeData( width, height, layers, 'rgba8unorm', 'random', 141 );
+		upload( device, texture, data );
+		owner.generate( texture );
+		const grid = Array.from( { length: 18 * 18 }, ( _, i ) => ( { x: ( i % 18 ) * 28, y: Math.floor( i / 18 ) * 28, width: 16, height: 16 } ) ).slice( 0, 257 );
+		const updates = grid.flatMap( rect => [ { rect, layers: [ 0, 1 ] }, { rect, layers: [ 1, 1 ] } ] );
+		const changed = data.slice();
+		for ( let index = 0; index < updates.length; index ++ ) {
+
+			const { rect, layers: [ layer ] } = updates[ index ];
+			for ( let y = rect.y; y < rect.y + rect.height; y ++ ) for ( let x = rect.x; x < rect.x + rect.width; x ++ ) {
+
+				const offset = ( ( layer * height + y ) * width + x ) * 4;
+				changed[ offset ] = ( index * 17 + x ) & 255;
+				changed[ offset + 1 ] = ( index * 31 + y ) & 255;
+				changed[ offset + 2 ] = ( x + y + layer * 83 ) & 255;
+				changed[ offset + 3 ] = 255;
+
+			}
+
+		}
+		upload( device, texture, changed );
+		upload( device, full, changed );
+		owner.generate( full );
+		const heldOptions = updates[ 0 ];
+		const held = owner.prepare( texture, heldOptions );
+		const heldBindings = held.map( batch => batch.bindGroup );
+		const tracker = trackBuffers( device );
+		const hadCreateBindGroup = Object.hasOwn( device, 'createBindGroup' );
+		const createBindGroup = device.createBindGroup;
+		let bindGroups = 0;
+		device.createBindGroup = descriptor => { bindGroups ++; return createBindGroup.call( device, descriptor ); };
+		try {
+
+			device.pushErrorScope( 'validation' );
+			const encoders = [ device.createCommandEncoder(), device.createCommandEncoder() ];
+			for ( let i = 0; i < grid.length; i ++ ) {
+
+				owner.encode( encoders[ 0 ], texture, { rect: grid[ i ], layers: [ 0, 1 ] } );
+				const pass = encoders[ 1 ].beginComputePass();
+				owner.encodePass( pass, texture, { rect: grid[ i ], layers: [ 1, 1 ] } );
+				pass.end();
+
+			}
+			if ( held.some( ( batch, i ) => batch.bindGroup !== heldBindings[ i ] ) ) throw new Error( 'storage brush: ordinary encode() changed a held prepare() binding' );
+			const finished = encoders.map( encoder => encoder.finish() );
+			await tracker.settle();
+			device.queue.submit( [ finished[ 1 ] ] );
+			device.queue.submit( [ finished[ 0 ] ] );
+			await device.queue.onSubmittedWorkDone();
+			const error = await device.popErrorScope();
+			if ( error !== null ) throw new Error( `storage brush: reverse encoder submission failed: ${ error.message }` );
+			const gpuAllocations = tracker.created.length + bindGroups;
+			if ( gpuAllocations >= 64 ) throw new Error( `storage brush: expected fewer than 64 GPU allocations for ${ updates.length } strokes, got ${ gpuAllocations }` );
+			const [ actual, expected ] = await Promise.all( [ readMips( device, texture, 0 ), readMips( device, full, 0 ) ] );
+			same( actual, expected, width, height, layers, () => true, '514 moving storage updates vs full recompute' );
+
+			// Reuse public prepare() bindings only after the dynamic encoders complete.
+			const heldEncoder = device.createCommandEncoder();
+			const heldPass = heldEncoder.beginComputePass();
+			for ( const batch of held ) {
+				heldPass.setPipeline( batch.pipeline );
+				heldPass.setBindGroup( 0, batch.bindGroup );
+				heldPass.dispatchWorkgroups( batch.groupsX, batch.groupsY, batch.layers[ 1 ] );
+			}
+			heldPass.end();
+			device.pushErrorScope( 'validation' );
+			device.queue.submit( [ heldEncoder.finish() ] );
+			await device.queue.onSubmittedWorkDone();
+			const heldError = await device.popErrorScope();
+			if ( heldError !== null ) throw new Error( `storage brush: held prepare() plan failed after dynamic encoding: ${ heldError.message }` );
+			results.push( { option: '514 moving storage updates', gpuAllocations } );
+
+		} finally {
+
+			tracker.restore();
+			if ( hadCreateBindGroup ) device.createBindGroup = createBindGroup;
+			else delete device.createBindGroup;
+			owner.release( texture ); owner.release( full );
+			texture.destroy(); full.destroy();
 
 		}
 

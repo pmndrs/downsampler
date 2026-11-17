@@ -233,9 +233,10 @@ export interface EncodeOptions {
 	 * output path, the tail kernel, compatibility mode and separate sources.
 	 * An empty rect (width or height 0) records nothing, as WebGPU's zero-size copies
 	 * do; it must still lie inside the level (x ≤ width, y ≤ height).
-	 * Each distinct rect and layer range costs a small uniform buffer and bind groups
-	 * (the 16 most recent are cached per texture; older ones are destroyed once the
-	 * queue has finished the work submitted so far). See SPEC.md §5.
+	 * encode/encodePass reuse storage-path bindings and append immutable uniform slots
+	 * as the rect moves (outside compatibility mode). prepare and the other paths
+	 * create a small uniform buffer and bind groups per distinct rect/layer range.
+	 * The 16 most recent static partial plans and 16 private encode plans are cached separately per texture. See SPEC.md §5.
 	 */
 	rect?: Rect;
 	/**
@@ -323,13 +324,24 @@ interface RenderLevel {
 	scissor: Rect | null;
 }
 
+/** Internal encode-only binding contract; public PreparedBatch always uses static offsets. */
+interface EncodeBatch extends PreparedBatch {
+	dynamicOffsets?: readonly number[];
+}
+interface RegionTemplate {
+	plan: CachedPlan;
+	bindings: { layout: GPUBindGroupLayout; entries: GPUBindGroupEntry[] }[];
+	chunk?: { buffer: GPUBuffer; groups: GPUBindGroup[]; used: number; capacity: number };
+	capacity: number;
+}
+
 interface CachedPlan {
 	source: GPUTexture | undefined;
 	/** Render path: the levels, in order (`batches` is then empty). */
 	render?: RenderLevel[];
-	/** The caller's scratch buffer the plan writes (EncodeOptions.scratch), if any. */
+	/** The caller's scratch buffer (EncodeOptions.scratch), if any; unused by internal storage plans. */
 	scratch: GPUBuffer | undefined;
-	batches: PreparedBatch[];
+	batches: EncodeBatch[];
 	/** Buffer path: the scratch buffer and layout uniforms, destroyed on release. */
 	buffers: GPUBuffer[];
 }
@@ -352,11 +364,13 @@ interface BatchKernelKey {
 	box: boolean;
 	/** A partial update: the region uniform offsets the grid and restricts stores. */
 	region: boolean;
+	/** Internal encode path: region uniform uses a dynamic offset. */
+	dynamic?: boolean;
 	/** A halo batch ({@link Batch.halo}). */
 	halo?: { x: number[]; y: number[] };
 }
 
-/** Recent partial-update plans kept per texture (each holds a uniform buffer and bind groups). */
+/** Recent partial-update plans and internal topologies kept per texture. */
 const regionPlanLimit = 16;
 /** Uniform slot stride: the default minUniformBufferOffsetAlignment. */
 const slotBytes = 256;
@@ -428,6 +442,10 @@ export class Downsampler {
 	private readonly plans = new WeakMap<GPUTexture, Map<string, CachedPlan>>();
 	/** Partial-update plans per texture, least recently used first. */
 	private readonly regionPlans = new WeakMap<GPUTexture, Map<string, CachedPlan>>();
+	/** Private encode plans must not evict public prepare() batches. */
+	private readonly encodeRegionPlans = new WeakMap<GPUTexture, Map<string, CachedPlan>>();
+	/** Internal storage encode topology, least recently used first (bounded per texture). */
+	private readonly regionTemplates = new WeakMap<GPUTexture, Map<string, RegionTemplate>>();
 	/** Buffer path, partial updates: one scratch buffer per texture, shared by its region plans. */
 	private readonly regionScratch = new WeakMap<GPUTexture, GPUBuffer>();
 	private readonly sampler: GPUSampler;
@@ -677,7 +695,7 @@ export class Downsampler {
 	/** Record the mip chain into an encoder. Throws for unsupported textures. */
 	encode( encoder: GPUCommandEncoder, texture: GPUTexture, options: EncodeOptions = {} ): void {
 
-		const plan = this.plan( texture, options );
+		const plan = this.plan( texture, options, true );
 		for ( const level of plan.render ?? [] ) {
 
 			for ( const { layer, view } of level.targets ) {
@@ -698,7 +716,8 @@ export class Downsampler {
 
 			const pass = encoder.beginComputePass( { label: 'downsampler' } );
 			pass.setPipeline( batch.pipeline );
-			pass.setBindGroup( 0, batch.bindGroup );
+			if ( batch.dynamicOffsets === undefined ) pass.setBindGroup( 0, batch.bindGroup );
+			else pass.setBindGroup( 0, batch.bindGroup, batch.dynamicOffsets );
 			pass.dispatchWorkgroups( batch.groupsX, batch.groupsY, batch.layers[ 1 ] );
 			pass.end();
 			// Buffer path: each level into its texture, before the next batch reads it.
@@ -722,12 +741,15 @@ export class Downsampler {
 	 */
 	encodePass( pass: GPUComputePassEncoder, texture: GPUTexture, options: EncodeOptions = {} ): void {
 
-		const batches = this.prepare( texture, options );
+		const plan = this.plan( texture, options, true );
+		if ( plan.render !== undefined ) throw new Error( `downsampler: this ${ texture.format } chain takes the render path; use encode().` );
+		const batches = plan.batches;
 		if ( batches.some( batch => batch.output === 'buffer' ) ) throw new Error( `downsampler: ${ texture.format } levels are written through a buffer and copied into the texture between dispatches, which a compute pass can't record; use encode().` );
 		for ( const batch of batches ) {
 
 			pass.setPipeline( batch.pipeline );
-			pass.setBindGroup( 0, batch.bindGroup );
+			if ( batch.dynamicOffsets === undefined ) pass.setBindGroup( 0, batch.bindGroup );
+			else pass.setBindGroup( 0, batch.bindGroup, batch.dynamicOffsets );
 			pass.dispatchWorkgroups( batch.groupsX, batch.groupsY, batch.layers[ 1 ] );
 
 		}
@@ -767,7 +789,7 @@ export class Downsampler {
 	}
 
 	/** The cached plan of a chain: `prepare()`'s batches, or the render path's levels. */
-	private plan( texture: GPUTexture, options: EncodeOptions ): CachedPlan {
+	private plan( texture: GPUTexture, options: EncodeOptions, encoding = false ): CachedPlan {
 
 		const reason = this.unsupportedReason( texture );
 		if ( reason !== null ) throw new Error( `downsampler: ${ reason }.` );
@@ -820,11 +842,14 @@ export class Downsampler {
 		// An empty rect: nothing depends on it, so nothing is recorded (and nothing cached).
 		if ( width === 0 || height === 0 ) return { source: undefined, scratch: undefined, batches: [], buffers: [], ...( path === 'render' ? { render: [] } : {} ) };
 		const rect = { x, y, width, height };
+		// Only storage without compatibility copies uses the private dynamic binding contract.
+		const dynamic = encoding && path === 'storage' && ! this.usesCompatibility( texture );
 		const regionKey = `${ key }|${ layers.join() }|${ x },${ y },${ width },${ height }`;
-		let cache = this.regionPlans.get( texture );
-		if ( cache === undefined ) this.regionPlans.set( texture, cache = new Map() );
+		const regionCache = dynamic ? this.encodeRegionPlans : this.regionPlans;
+		let cache = regionCache.get( texture );
+		if ( cache === undefined ) regionCache.set( texture, cache = new Map() );
 		const cached = cache.get( regionKey );
-		if ( cached !== undefined && cached.source === source?.texture && cached.scratch === options.scratch ) {
+		if ( cached !== undefined && cached.source === source?.texture && ( dynamic || cached.scratch === options.scratch ) ) {
 
 			cache.delete( regionKey );
 			cache.set( regionKey, cached );
@@ -832,21 +857,87 @@ export class Downsampler {
 
 		}
 
-		const plan = this.build( texture, parameters, { rect, layers } );
+		const plan = dynamic ? this.encodeRegion( texture, key, parameters, rect, layers, rw, rh ) : this.build( texture, parameters, { rect, layers } );
 		cache.delete( regionKey );
 		cache.set( regionKey, plan );
-		if ( cached !== undefined ) retireBuffers( this.device, cached.buffers );
-		// Evicted plans may still be recorded in an encoder not yet submitted: their
+		if ( ! dynamic && cached !== undefined ) retireBuffers( this.device, cached.buffers );
+		// Evicted static plans may still be recorded in an encoder not yet submitted: their
 		// region uniforms are destroyed once the queue has finished the work submitted so far.
 		while ( cache.size > regionPlanLimit ) {
 
 			const oldest = cache.keys().next().value!;
-			retireBuffers( this.device, cache.get( oldest )!.buffers );
+			if ( ! dynamic ) retireBuffers( this.device, cache.get( oldest )!.buffers );
 			cache.delete( oldest );
 
 		}
 
 		return plan;
+
+	}
+
+	/**
+	 * Reuse the topology and texture bindings while a rect moves. Slots are append-only:
+	 * queue.writeBuffer must never change data already referenced by any encoder, even
+	 * one the caller has not submitted. Old chunks are left to GC, which preserves
+	 * WebGPU references in command buffers; queue completion alone cannot retire them.
+	 */
+	private encodeRegion( texture: GPUTexture, key: string, parameters: PlanParameters, rect: Rect, layers: readonly [ number, number ], width: number, height: number ): CachedPlan {
+
+		let cache = this.regionTemplates.get( texture );
+		if ( cache === undefined ) this.regionTemplates.set( texture, cache = new Map() );
+		let template = cache.get( key );
+		if ( template === undefined || template.plan.source !== parameters.source?.texture ) {
+
+			const bindings: RegionTemplate['bindings'] = [];
+			const plan = this.buildCompute( texture, { ...parameters, scratch: undefined }, { rect: { x: 0, y: 0, width, height }, layers: [ 0, texture.depthOrArrayLayers ] }, [], bindings );
+			template = { plan, bindings, capacity: 8 };
+
+		}
+
+		cache.delete( key );
+		cache.set( key, template );
+		while ( cache.size > regionPlanLimit ) cache.delete( cache.keys().next().value! );
+		const planned = template.plan.batches;
+		const source = parameters.source;
+		const sourceSize = source === undefined ? [] : levelSizeOf( source );
+		const regions = planRegions( planned, rect, texture.width, texture.height, sourceSize[ 0 ], sourceSize[ 1 ] );
+		if ( ! regions.some( region => region.groupsX * region.groupsY > 0 ) ) return { source: source?.texture, scratch: undefined, batches: [], buffers: [] };
+		let chunk = template.chunk;
+		if ( chunk === undefined || chunk.used === chunk.capacity ) {
+
+			const capacity = template.capacity;
+			const buffer = this.device.createBuffer( { label: 'downsampler encode regions', size: capacity * planned.length * slotBytes, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+			try {
+
+				const groups = template.bindings.map( ( { layout, entries } ) => this.device.createBindGroup( { label: 'downsampler encode regions', layout, entries: [ ...entries, { binding: regionBinding, resource: { buffer, size: regionBytes } } ] } ) );
+				template.chunk = chunk = { buffer, groups, used: 0, capacity };
+				template.capacity = Math.min( 256, capacity * 4 );
+
+			} catch ( error ) {
+
+				buffer.destroy();
+				throw error;
+
+			}
+
+		}
+
+		// Reserve before writing: a failed upload can be retried without reusing a slot.
+		const offset = chunk.used ++ * planned.length * slotBytes;
+		const words = new Uint32Array( planned.length * slotBytes / 4 );
+		const batches: EncodeBatch[] = [];
+		planned.forEach( ( batch, i ) => {
+
+			const update = regions[ i ];
+			if ( update.groupsX * update.groupsY === 0 ) return;
+			const start = i * slotBytes / 4;
+			words.set( [ update.groupX, update.groupY, layers[ 0 ], 0 ], start );
+			update.levels.forEach( ( r, level ) => words.set( r === null ? [ 0, 0, 0, 0 ] : [ r.x, r.y, r.x + r.width, r.y + r.height ], start + 4 + level * 4 ) );
+			batches.push( { ...batch, bindGroup: chunk!.groups[ i ], layers, groupX: update.groupX, groupY: update.groupY, groupsX: update.groupsX, groupsY: update.groupsY, regions: update.levels, dynamicOffsets: [ offset + i * slotBytes ] } );
+
+		} );
+		this.device.queue.writeBuffer( chunk.buffer, offset, words );
+		return { source: source?.texture, scratch: undefined, batches, buffers: [] };
 
 	}
 
@@ -895,7 +986,7 @@ export class Downsampler {
 		}
 	}
 
-	private buildCompute( texture: GPUTexture, parameters: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null, buffers: GPUBuffer[] ): CachedPlan {
+	private buildCompute( texture: GPUTexture, parameters: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null, buffers: GPUBuffer[], dynamicBindings?: RegionTemplate['bindings'] ): CachedPlan {
 
 		if ( parameters.path === 'render' ) return this.buildRender( texture, parameters, region );
 		const { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel, scratch: scratchBuffer, srgb } = parameters;
@@ -1003,7 +1094,7 @@ export class Downsampler {
 			const box = boxFirst || ( batch.halo !== undefined && oddSizes === 'box' && reduction === 'average' );
 			const area = boxFirst || ( batch.kernel !== 'clamp' && external && resample );
 			const access = area || ( external && copySource && batch.firstMipLevel === baseMipLevel ) ? 'load' : this.access( reduction, sourceFormat );
-			const kernel: BatchKernelKey = { format, dimension, count: batch.count, access, reduction, sourceFormat, output, kind: batch.kernel, tile: batch.tile, area, box, region: region !== null, ...( batch.halo ? { halo: batch.halo } : {} ) };
+			const kernel: BatchKernelKey = { format, dimension, count: batch.count, access, reduction, sourceFormat, output, kind: batch.kernel, tile: batch.tile, area, box, region: region !== null, dynamic: dynamicBindings !== undefined, ...( batch.halo ? { halo: batch.halo } : {} ) };
 			const layout = this.layout( kernel );
 			const pipeline = this.pipeline( kernel );
 			const entries: GPUBindGroupEntry[] = access === 'sample' ? [ { binding: 0, resource: this.sampler } ] : [];
@@ -1014,7 +1105,7 @@ export class Downsampler {
 			if ( update !== undefined ) {
 
 				Object.assign( prepared, { groupX: update.groupX, groupY: update.groupY, groupsX: update.groupsX, groupsY: update.groupsY, regions: update.levels } );
-				entries.push( uniformEntry( regionBinding, slot( regionWords( update.groupX, update.groupY, update.levels ) ), regionBytes ) );
+				if ( dynamicBindings === undefined ) entries.push( uniformEntry( regionBinding, slot( regionWords( update.groupX, update.groupY, update.levels ) ), regionBytes ) );
 
 			}
 
@@ -1052,7 +1143,8 @@ export class Downsampler {
 
 			}
 
-			deferred.push( () => { prepared.bindGroup = this.device.createBindGroup( { label: 'downsampler', layout, entries } ); } );
+			if ( dynamicBindings !== undefined ) dynamicBindings.push( { layout, entries } );
+			else deferred.push( () => { prepared.bindGroup = this.device.createBindGroup( { label: 'downsampler', layout, entries } ); } );
 			return prepared;
 
 		} );
@@ -1130,18 +1222,20 @@ export class Downsampler {
 
 	/**
 	 * Drop cached bind groups for a destination texture (pipelines stay cached per
-	 * device), and destroy its buffer-path and partial-update buffers: call it after
-	 * submitting work that uses them.
+	 * device), and destroy its buffer-path and static partial-update buffers: call it
+	 * after submitting work that uses them. Internal encode-region chunks are dropped
+	 * for GC, so their immutable slots remain valid in outstanding command buffers.
 	 */
 	release( texture: GPUTexture ): void {
 
-		for ( const plans of [ this.plans, this.regionPlans ] ) {
+		for ( const plans of [ this.plans, this.regionPlans, this.encodeRegionPlans ] ) {
 
 			for ( const plan of plans.get( texture )?.values() ?? [] ) for ( const buffer of plan.buffers ) buffer.destroy();
 			plans.delete( texture );
 
 		}
 
+		this.regionTemplates.delete( texture );
 		this.regionScratch.get( texture )?.destroy();
 		this.regionScratch.delete( texture );
 		for ( const scratch of this.scratch.get( texture )?.values() ?? [] ) scratch.destroy();
@@ -1268,21 +1362,21 @@ export class Downsampler {
 
 	private layout( key: BatchKernelKey ): GPUBindGroupLayout {
 
-		const { format, dimension, count, access, output, kind, region } = key;
+		const { format, dimension, count, access, output, kind, region, dynamic } = key;
 		// Exact and tail kernels share layouts; 'clamp' ones differ (no sampler under 'load').
 		// An sRGB source or destination adds the table binding.
 		const srgb = usesSrgbTable( this.kernelOptions( key ) );
-		const id = `${ format }:${ dimension }:${ count }:${ access }:${ output }${ kind === 'clamp' ? ':clamp' : '' }${ region ? ':region' : '' }${ srgb ? ':srgb' : '' }`;
+		const id = `${ format }:${ dimension }:${ count }:${ access }:${ output }${ kind === 'clamp' ? ':clamp' : '' }${ region ? ':region' : '' }${ dynamic ? ':dynamic' : '' }${ srgb ? ':srgb' : '' }`;
 		let layout = this.layouts.get( id );
-		if ( layout === undefined ) this.layouts.set( id, layout = this.device.createBindGroupLayout( { label: `downsampler ${ id }`, entries: kernelLayoutEntries( this.kernelOptions( key ) ) } ) );
+		if ( layout === undefined ) this.layouts.set( id, layout = this.device.createBindGroupLayout( { label: `downsampler ${ id }`, entries: kernelLayoutEntries( this.kernelOptions( key ) ).map( entry => dynamic && entry.binding === regionBinding ? { ...entry, buffer: { ...entry.buffer, hasDynamicOffset: true } } : entry ) } ) );
 		return layout;
 
 	}
 
 	private pipeline( key: BatchKernelKey ): GPUComputePipeline {
 
-		const { format, dimension, count, access, reduction, sourceFormat, output, kind, tile, area, box, region, halo } = key;
-		const id = `${ kind }${ kind === 'clamp' ? '' : tile }${ box ? ':box' : area ? ':area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }:${ output }${ region ? ':region' : '' }${ halo ? `:halo${ area ? 'a' : '' }${ halo.x.join( '.' ) }/${ halo.y.join( '.' ) }` : '' }`;
+		const { format, dimension, count, access, reduction, sourceFormat, output, kind, tile, area, box, region, halo, dynamic } = key;
+		const id = `${ kind }${ kind === 'clamp' ? '' : tile }${ box ? ':box' : area ? ':area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }:${ output }${ region ? ':region' : '' }${ dynamic ? ':dynamic' : '' }${ halo ? `:halo${ area ? 'a' : '' }${ halo.x.join( '.' ) }/${ halo.y.join( '.' ) }` : '' }`;
 		let pipeline = this.pipelines.get( id );
 		if ( pipeline !== undefined ) return pipeline;
 		const label = `downsampler ${ kind }${ box ? ' box' : area ? ' area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ typeof reduction === 'string' ? reduction : 'custom' }:${ output }${ region ? ':region' : '' }`;
