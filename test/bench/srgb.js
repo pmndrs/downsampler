@@ -36,7 +36,8 @@ export function srgbStrategies( device ) {
 		bufferLoad: { ...run( load ), parity: true },
 		scratch: { ...scratchPrototype( device, buffer ), parity: true },
 		alias: { ...aliasPrototype( device, buffer ), parity: false },
-		colorSpace: { ...aliasLibrary( device, new Downsampler( device ) ), parity: false },
+		// Compute ('storage'): its twins can render (for the timing markers), which would make 'auto' take the render path.
+		colorSpace: { ...aliasLibrary( device, new Downsampler( device, { output: 'storage' } ) ), parity: false },
 		renderPath: { ...rendered( new Downsampler( device, { output: 'render' } ) ), parity: true },
 		renderPathLoad: { ...rendered( new Downsampler( device, { output: 'render', averageAccess: 'load' } ) ), parity: true },
 		renderDevice: { ...rendered( new Downsampler( device, { output: 'render', srgbRounding: 'device' } ) ), check: againstRenderPath( device ), parity: true }
@@ -94,7 +95,7 @@ export function aliasPrototype( device, downsampler ) {
 		if ( plans.has( texture ) ) return plans.get( texture );
 		const linear = srgbScratchFormat( texture.format );
 		const dimension = texture.depthOrArrayLayers > 1 ? '2d-array' : '2d';
-		const alias = device.createTexture( { label: 'srgb alias', format: linear, viewFormats: [ texture.format ], size: [ texture.width, texture.height, texture.depthOrArrayLayers ], mipLevelCount: texture.mipLevelCount, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST } );
+		const alias = device.createTexture( { label: 'srgb alias', format: linear, viewFormats: [ texture.format ], size: [ texture.width, texture.height, texture.depthOrArrayLayers ], mipLevelCount: texture.mipLevelCount, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST } );
 		const copy = device.createCommandEncoder();
 		copy.copyTextureToTexture( { texture }, { texture: alias }, [ texture.width, texture.height, texture.depthOrArrayLayers ] );
 		device.queue.submit( [ copy.finish() ] );
@@ -119,6 +120,7 @@ export function aliasPrototype( device, downsampler ) {
 
 	return {
 		passes: texture => plan( texture ).batches.length,
+		target: texture => plan( texture ).alias,
 		encode( encoder, texture ) {
 
 			const { batches } = plan( texture );
@@ -155,7 +157,7 @@ export function aliasLibrary( device, downsampler ) {
 	const twin = texture => {
 
 		if ( twins.has( texture ) ) return twins.get( texture );
-		const alias = device.createTexture( { label: 'srgb colorSpace', format: srgbScratchFormat( texture.format ), viewFormats: [ texture.format ], size: [ texture.width, texture.height, texture.depthOrArrayLayers ], mipLevelCount: texture.mipLevelCount, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST } );
+		const alias = device.createTexture( { label: 'srgb colorSpace', format: srgbScratchFormat( texture.format ), viewFormats: [ texture.format ], size: [ texture.width, texture.height, texture.depthOrArrayLayers ], mipLevelCount: texture.mipLevelCount, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST } );
 		const copy = device.createCommandEncoder();
 		copy.copyTextureToTexture( { texture }, { texture: alias }, [ texture.width, texture.height, texture.depthOrArrayLayers ] );
 		device.queue.submit( [ copy.finish() ] );
@@ -166,6 +168,7 @@ export function aliasLibrary( device, downsampler ) {
 
 	return {
 		passes: texture => downsampler.prepare( twin( texture ), { colorSpace: 'srgb' } ).length,
+		target: twin,
 		encode: ( encoder, texture ) => downsampler.encode( encoder, twin( texture ), { colorSpace: 'srgb' } ),
 		async check( textures, name ) {
 
@@ -258,6 +261,7 @@ export function scratchPrototype( device, downsampler ) {
 
 	return {
 		passes: texture => plan( texture ).batches.length,
+		target: texture => plan( texture ).alias,
 		encode( encoder, texture ) {
 
 			const { scratch, batches } = plan( texture );
@@ -338,11 +342,11 @@ export function srgbCostStrategies( device ) {
 	const linear = new WeakMap();
 	const linearTexture = texture => {
 
-		if ( ! linear.has( texture ) ) linear.set( texture, device.createTexture( { label: 'srgb-cost linear', format: 'rgba8unorm', size: [ texture.width, texture.height, texture.depthOrArrayLayers ], mipLevelCount: texture.mipLevelCount, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST } ) );
+		if ( ! linear.has( texture ) ) linear.set( texture, device.createTexture( { label: 'srgb-cost linear', format: 'rgba8unorm', size: [ texture.width, texture.height, texture.depthOrArrayLayers ], mipLevelCount: texture.mipLevelCount, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST } ) );
 		return linear.get( texture );
 
 	};
-	const onLinear = downsampler => ( { passes: texture => downsampler.prepare( linearTexture( texture ) ).length, encode: ( encoder, texture ) => downsampler.encode( encoder, linearTexture( texture ) ) } );
+	const onLinear = downsampler => ( { passes: texture => downsampler.prepare( linearTexture( texture ) ).length, target: linearTexture, encode: ( encoder, texture ) => downsampler.encode( encoder, linearTexture( texture ) ) } );
 	const strategies = {
 		render: { ...createRenderBaseline( device ), parity: false },
 		buffer: { ...run( new Downsampler( device, { output: 'buffer' } ) ), parity: true }
