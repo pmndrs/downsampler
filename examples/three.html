@@ -13,7 +13,7 @@
 	</head>
 	<body>
 		<nav><a href="./">Examples</a> · <a href="../docs/getting-started.md">Guide</a> · <a href="../docs/guide.md">Reference</a></nav>
-		<h1>three.js integration: <code>downsampler/three</code></h1>
+		<h1>three.js integration: <code>@pmndrs/downsampler/three</code></h1>
 		<p>
 			<code>generateMipmaps( renderer, texture )</code> generates a three.js texture's mip chain with compute shaders. The
 			texture must already be allocated on the GPU with storage usage, which in current three.js means a
@@ -29,7 +29,7 @@
 			The default odd-size policy matches render passes, so they should look the same. The readout checks our levels
 			against the library's CPU reference and reports how far three's levels are from ours.
 		</p>
-		<pre><code>import { generateMipmaps, requiredLimits, unsupportedReason } from 'downsampler/three';
+		<pre><code>import { generateMipmaps, requiredLimits, unsupportedReason } from '@pmndrs/downsampler/three';
 
 const renderer = new THREE.WebGPURenderer( { requiredLimits: requiredLimits( await navigator.gpu.requestAdapter() ) } );
 await renderer.init();

@@ -48,7 +48,7 @@ const downsamplers = new WeakMap<GPUDevice, Map<string, Downsampler>>();
 function backendOf( renderer: ThreeRendererLike ): ThreeBackendLike {
 
 	const backend = renderer.backend;
-	if ( backend?.isWebGPUBackend !== true || ! backend.device ) throw new Error( 'downsampler/three: requires an initialized WebGPURenderer with the WebGPU backend (await renderer.init()).' );
+	if ( backend?.isWebGPUBackend !== true || ! backend.device ) throw new Error( '@pmndrs/downsampler/three: requires an initialized WebGPURenderer with the WebGPU backend (await renderer.init()).' );
 	return backend;
 
 }
@@ -129,7 +129,7 @@ export { Downsampler };
 /**
  * Device limits to pass as `new WebGPURenderer( { requiredLimits } )`, so six
  * levels fit in one dispatch (and 5- or 6-level `Reducer`s and `ScalarReduction`
- * work in compatibility mode): `requiredLimits` from `downsampler/webgpu`.
+ * work in compatibility mode): `requiredLimits` from `@pmndrs/downsampler/webgpu`.
  * Requires an adapter, e.g. from `await navigator.gpu.requestAdapter()`.
  */
 export { requiredFeatures, requiredLimits };

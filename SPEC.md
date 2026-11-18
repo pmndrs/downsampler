@@ -239,7 +239,7 @@ Tail tiles follow the first output, not the level count: SwiftShader took 30 s o
 ### Levels per dispatch
 
 - `min(6, maxStorageTexturesPerShaderStage)`. The default WebGPU limit is 4.
-- `requiredLimits( adapter )` (from `downsampler/webgpu`; also `Downsampler.requiredLimits`) gives apps the limits to request, for `Reducer` and `ScalarReduction` too.
+- `requiredLimits( adapter )` (from `@pmndrs/downsampler/webgpu`; also `Downsampler.requiredLimits`) gives apps the limits to request, for `Reducer` and `ScalarReduction` too.
 - Around 94 % of devices report at least 8 (web3dsurvey).
 - Storage texture views must cover exactly one mip level ([WebGPU spec](https://gpuweb.github.io/gpuweb/)), so each output level needs its own binding.
 
@@ -313,7 +313,7 @@ WebGPU compatibility mode is a device without `'core-features-and-limits'` (`req
 ### Implemented
 
 ```ts
-import { Downsampler, requiredLimits } from 'downsampler/webgpu';
+import { Downsampler, requiredLimits } from '@pmndrs/downsampler/webgpu';
 
 const device = await adapter.requestDevice( { requiredLimits: requiredLimits( adapter ) } ); // also Downsampler.requiredLimits; covers Reducer and ScalarReduction
 const downsampler = new Downsampler( device );          // { levelsPerDispatch?, output?: 'auto' | 'storage' | 'buffer' (§6.1), averageAccess?: 'sample' | 'load', compatibility?: 'auto' | boolean (§4), tail? (§2.1), f16Rounding?: 'nearest' | 'device' (below), exactTile?: 8 | 16 | 32, maxResampleRatio?: number (§4 Separate source) }
@@ -334,12 +334,12 @@ downsampler.release( texture );                          // drop its plans, dest
 downsampler.scratchSize( texture, options );             // bytes a shared buffer-path scratch needs (0 on the storage path)
 downsampler.encode( encoder, texture, { scratch } );     // buffer path: write through a caller's buffer (STORAGE | COPY_SRC), shared across textures
 
-import { generateMipmaps, getDownsampler, requiredLimits, unsupportedReason } from 'downsampler/three';
+import { generateMipmaps, getDownsampler, requiredLimits, unsupportedReason } from '@pmndrs/downsampler/three';
 generateMipmaps( renderer, texture, { reduction, encoder, downsampler: { averageAccess: 'load' } } ); // false if it declines; no submit with `encoder`
 unsupportedReason( renderer, texture, options );          // why it declines: not allocated, one level, or the Downsampler's reason
 getDownsampler( renderer, downsamplerOptions );          // shared per device and option set
 
-import { planBatches, reduceReference, footprint, spdReference, maxViolations, boxReference, areaReference } from 'downsampler'; // backend-neutral core
+import { planBatches, reduceReference, footprint, spdReference, maxViolations, boxReference, areaReference } from '@pmndrs/downsampler'; // backend-neutral core
 ```
 
 ```ts
@@ -352,7 +352,7 @@ downsampler.encode( encoder, hiZ /* 2048×1024 r32float */, { source: { texture:
 
 ```ts
 // Scalar reductions (§4 Scalar reductions): one vec4f + weight per layer, 2 dispatches.
-import { ScalarReduction } from 'downsampler/webgpu';
+import { ScalarReduction } from '@pmndrs/downsampler/webgpu';
 const range = new ScalarReduction( device, { reduction: 'minmax' } ); // = [ 'min', 'max', 'min', 'max' ]; or 'average', [ 'weighted', …, 'weight' ]
 range.encode( encoder, { source: depth, output: { buffer, offset: 0 } } ); // { value: vec4f, weight: f32 } per layer; offset aligned to minStorageBufferOffsetAlignment
 const exposure = new ScalarReduction( device, {
@@ -373,12 +373,12 @@ reducer.encodePass( pass, dispatch );                                         //
 mean.encodePass( pass, { partials: { buffer, count: tiles }, bindGroup } );   // also `texels` for 'average'
 mean.combineKernel();           // { wgsl, layout, combine } for self-dispatch
 
-import { scalarReference, scalarCombineReference } from 'downsampler'; // oracles: GPU pairing in f32, exact f64 result, error bound
+import { scalarReference, scalarCombineReference } from '@pmndrs/downsampler'; // oracles: GPU pairing in f32, exact f64 result, error bound
 ```
 
 ```ts
 // Tile reductions for tools (§14.1): FSR 3.1 shading-change pyramid shape.
-import { Reducer } from 'downsampler/webgpu';
+import { Reducer } from '@pmndrs/downsampler/webgpu';
 
 const shadingChange = new Reducer( device, {
 	reduction: [ 'average', 'average', 'sum', 'max' ],   // per channel; 'weight'/'weighted' for weighted means
@@ -411,7 +411,7 @@ shadingChange.encodePass( pass, {                        // or encode( encoder, 
 // Without a load hook: { source: texture | { texture, mipLevel } }. Output textures must be at least each level's size.
 // Array layers: { layerCount } from layer 0 (a count: the tile kernel has no layer offset, and hooks see the workgroup's layer).
 
-import { reducePyramid, levelSize } from 'downsampler';  // the CPU oracle and level sizes
+import { reducePyramid, levelSize } from '@pmndrs/downsampler';  // the CPU oracle and level sizes
 ```
 
 **Sources: one shape (2026-11-13, ship prep).** Every class takes `source: GPUTexture | TextureLevel`, with `TextureLevel = { texture, mipLevel? }` (`src/webgpu/source.ts`): `Downsampler`'s `EncodeOptions.source` (a `SourceOptions`, which adds `resample`), the `Reducer` dispatch's `source` and `outputs`, and the `ScalarRun`'s `source` (it replaced `texture` + `mipLevel`). One module holds the checks, with one wording: dimension `2d`, `textureBindingViewDimension` (where defined) `2d` or `2d-array`, sample count 1, `TEXTURE_BINDING`, the sample kind wanted (float-sampleable by default, depth through its depth aspect; an integer `Downsampler` destination takes an integer source of its signedness, M2.3.7), `mipLevel` in range; and the source view (`depth-only` aspect for depth-stencil formats). Field names follow two rules: sizes are `width`/`height` (`ScalarRun.size: [ w, h ]` became `width`, `height`; with a source they default to its level's size and must match it), and a `layers` field is always `[ first, count ]` (`EncodeOptions.layers`, `ScalarRun.layers`, `PreparedBatch.layers`, `BufferCopy.layers`, which replaced `layer` + `layers`), while a bare count is `layerCount` (the `Reducer` dispatch, `ReducerCopy`). A first layer for the `Reducer` was declined: its tile kernel has no layer offset (a uniform and a kernel change), hook kernels pass the workgroup's layer to the hooks, and compatibility mode can't bind views of part of the layers. The keys used before 0.1 (`ScalarRun.texture`, `mipLevel`, `size`; the Reducer's `layers`) are rejected with a message naming the new ones, not silently ignored.
@@ -420,7 +420,7 @@ import { reducePyramid, levelSize } from 'downsampler';  // the CPU oracle and l
 
 ```ts
 // Vendoring (§10): in-place 'average' chains in one self-contained file, dist/mipmap.js (no imports).
-import { createMipmapKernel, planMipmapBatches, kernelDefaults, mipmapFormats, mipmapAccess } from 'downsampler/mipmap';
+import { createMipmapKernel, planMipmapBatches, kernelDefaults, mipmapFormats, mipmapAccess } from '@pmndrs/downsampler/mipmap';
 
 const defaults = kernelDefaults( device.limits, device.adapterInfo ); // { levelsPerDispatch, bufferLevelsPerDispatch, exactTile, tailMaxTile, tail }: Downsampler's defaults
 const batches = planMipmapBatches( width, height, { mipLevelCount, ...defaults } ); // = planBatches in place under 'exact' (tail on by default)
@@ -444,14 +444,14 @@ downsampler.encode( encoder, cubeAs2dArray, { layers: [ 2, 1 ] } );          // 
 downsampler.encode( encoder, hiZ, { source: { texture: depth }, rect, reduction: 'minmax' } ); // rect in source texels
 downsampler.prepare( texture, { rect } );   // batches carry regions (per level), groupX/groupY and layers
 
-import { planRegions, exactDependents, clampDependents } from 'downsampler'; // the region math (core)
+import { planRegions, exactDependents, clampDependents } from '@pmndrs/downsampler'; // the region math (core)
 ```
 
 **Scratch (M2.3.5, 2026-11-13).** sRGB destinations take the buffer output path (§6.1 sRGB), so the planned `scratch: GPUTexture` became `scratch: GPUBuffer`: by default each texture's plan keeps its own buffer, sized for its largest batch (about a third of the base level), until `release( texture )`. Many textures (three.js) can share one: commands run in order, and each batch's copies are recorded before the next dispatch writes the buffer, also across chains in one encoder (GPU-tested: two chains through one buffer in one encoder, bit-identical). `scratchSize( texture, options )` is every written level in the buffer layout, which holds any batch; a smaller buffer is rejected with the size the chain needs, a buffer without STORAGE | COPY_SRC with the usage. Ignored on the storage path (so one option set can serve every texture); never destroyed by the library. Plans are cached per scratch buffer, as per source texture.
 
 ### Package (0.1.0, 2026-11-13)
 
-- **Entry points** (`exports`, each with its types): `downsampler` (core), `downsampler/webgpu`, `downsampler/three`, `downsampler/mipmap` (the self-contained vendoring file, §10), plus `./package.json`. ESM only (`"type": "module"`), `sideEffects: false`. `typesVersions` maps the subpaths for TypeScript's old `node10` resolution; `bundler` and `node16` resolve through `exports`.
+- **Entry points** (`exports`, each with its types): `@pmndrs/downsampler` (core), `@pmndrs/downsampler/webgpu`, `@pmndrs/downsampler/three`, `@pmndrs/downsampler/mipmap` (the self-contained vendoring file, §10), plus `./package.json`. ESM only (`"type": "module"`), `sideEffects: false`. `typesVersions` maps the subpaths for TypeScript's old `node10` resolution; `bundler` and `node16` resolve through `exports`.
 - **Contents** (`files`): `dist` without source maps (they point at `src/`, which isn't shipped), `README.md`, `LICENSE`, `CHANGELOG.md`. SPEC.md doesn't ship: it is the design record, with process notes and measurements, and the README links to it in the repository. `prepack` cleans and rebuilds `dist`, so no stale module ships.
 - **Types:** the declarations use the WebGPU types of `@webgpu/types` without referencing them (a consumer without them would get an unresolvable reference); the README asks TypeScript users to add it, as any WebGPU project does. Checked from a consumer project against the packed tarball with `moduleResolution` `bundler` and `node16`.
 - **No runtime dependencies;** `three` is an optional peer (`>=0.170.0`), typed structurally. No `engines`: the package runs in browsers, and the core runs in any ES2022 runtime.
@@ -700,12 +700,12 @@ CI runs the unit tests and the quick GPU suite on SwiftShader, split into disjoi
 
 three.js does not take runtime dependencies for core features. The plan:
 
-1. **`downsampler/three` (this repo).** `generateMipmaps(renderer, texture)` for textures three allocates with storage usage (`StorageTexture`). Useful today, opt-in.
+1. **`@pmndrs/downsampler/three` (this repo).** `generateMipmaps(renderer, texture)` for textures three allocates with storage usage (`StorageTexture`). Useful today, opt-in.
 2. **In-tree PR to three.js.** Vendor the kernel generator into `WebGPUTextureMipmapUtils`, behind `new WebGPURenderer({ mipmapGeneration: 'compute' })`.
    - The renderer adds `STORAGE_BINDING` to eligible textures and requests the storage texture limit unless `requiredLimits` sets it.
    - It falls back to render passes for unsupported textures.
    - A prototype with these semantics passes three's integration tests in the `webgpu-spd-audit` branch.
-   - The first PR adds sRGB (most three.js color textures) and cube maps. Hi-Z follows separately. sRGB works in `downsampler/three` since M2.3.5: three's sRGB color textures are `rgba8unorm-srgb` with COPY_DST, so they take the buffer path with no STORAGE_BINDING (which an sRGB texture can't have anyway). Many textures can share one `scratch` buffer (§5).
+   - The first PR adds sRGB (most three.js color textures) and cube maps. Hi-Z follows separately. sRGB works in `@pmndrs/downsampler/three` since M2.3.5: three's sRGB color textures are `rgba8unorm-srgb` with COPY_DST, so they take the buffer path with no STORAGE_BINDING (which an sRGB texture can't have anyway). Many textures can share one `scratch` buffer (§5).
    - Keep this repo's GPU suite as the shared oracle, so the vendored copy can't drift.
    - **Done (2026-11-13):** `WebGPUTextureMipmapUtils` (611 lines, branch `compute-mipmaps`) vendors the in-place `'average'` subset by hand from commit 488eff6: layers and cube maps as 2d-array views, but no sRGB (the buffer path) in this first PR; textures it can't write keep render passes, as does every texture in compatibility mode.
 
@@ -713,7 +713,7 @@ three.js does not take runtime dependencies for core features. The plan:
 
 What three.js's integration needed, built so that a copy is one file and its drift is a test failure:
 
-- **One file.** `downsampler/mipmap` (`src/mipmap.ts` → `dist/mipmap.js`, plain ES2022, no imports, ~19 KB with comments): `createMipmapKernel`, `planMipmapBatches`, `kernelDefaults` and the format subset (`mipmapFormats`, `mipmapAccess`). It is a pruned copy of the generator, not a bundle: the full `kernel.ts` with its imports is several thousand lines, nearly all for paths an engine's in-place chain never takes. A core test (`test/core/mipmap.test.js`) requires it to equal the full generator on its whole option space (every format × dimension × count × tile × tail × access × `f16Rounding`, ~34 000 kernels) and `planBatches` on 16 shapes × every plan option, so a change to the kernel bodies fails there until the copy follows.
+- **One file.** `@pmndrs/downsampler/mipmap` (`src/mipmap.ts` → `dist/mipmap.js`, plain ES2022, no imports, ~19 KB with comments): `createMipmapKernel`, `planMipmapBatches`, `kernelDefaults` and the format subset (`mipmapFormats`, `mipmapAccess`). It is a pruned copy of the generator, not a bundle: the full `kernel.ts` with its imports is several thousand lines, nearly all for paths an engine's in-place chain never takes. A core test (`test/core/mipmap.test.js`) requires it to equal the full generator on its whole option space (every format × dimension × count × tile × tail × access × `f16Rounding`, ~34 000 kernels) and `planBatches` on 16 shapes × every plan option, so a change to the kernel bodies fails there until the copy follows.
 - **Defaults as a pure function.** `kernelDefaults( limits, adapterInfo )`; `Downsampler`'s constructor resolves its defaults from it, so an engine using the function gets the library's levels per dispatch, tiles and tail.
 - **float16.** `float16Wgsl( rounding, false )` and `KernelOptions.f16Pack: false` give `ds_round_f16` alone: `ds_half_bits` and `ds_pack_f16` serve only the buffer output path. The default stays true, so every existing option set's WGSL is unchanged byte for byte (compared before and after over 723 240 option sets); the mipmap entry uses false.
 - **Goldens.** `test/golden/mipmap/` holds the WGSL of 56 fixed option sets (every format at a 4-level batch and a 6-level tail with its usual access; every batch shape for rgba8unorm; both accesses, both dimensions and `'device'` rounding) and `cases.json`. `test/core/golden.test.js` fails when either generator's output changes; `npm run golden:update` (`node test/core/golden.test.js --update`) rewrites them, and their diff is what a vendored copy must follow.
@@ -746,7 +746,7 @@ Build first, benchmark once coverage is broad (decided 2026-11-10). Live status 
 
 ## 12. Open questions
 
-- ~~Publish as bare `downsampler` or `@pmndrs/downsampler`?~~ Decided (owner, 2026-11-12): `downsampler`, unscoped while it is free (still free on 2026-11-13: `npm view downsampler` is a 404), else `@pmndrs/downsampler`. Package shape: §5 Package.
+- ~~Publish as bare `downsampler` or `@pmndrs/downsampler`?~~ Decided (owner, 2026-11-18, replacing the unscoped choice of 2026-11-12): `@pmndrs/downsampler`, like the other recent pmndrs packages (`@pmndrs/uikit`, `@pmndrs/xr`); the org owns publishing, not one account. Changed before the first publish, so nothing to migrate. Package shape: §5 Package.
 - ~~Buffer output path (§6.1): should `output: 'auto'` take the buffer path for textures without STORAGE_BINDING?~~ Decided (owner, 2026-11-12): no. `'auto'` takes it only for formats the device can't store; a missing STORAGE_BINDING usage is an error, and the buffer path for storable formats is opt-in (`output: 'buffer'`). ~~Should `Reducer` round rgba16float outputs before the store?~~ Yes: it quantizes with `pack2x16float` first, like `Downsampler`.
 - Cube maps in compatibility mode: they can't be viewed as 2d-array, so either per-face views or the render fallback. (2026-11-11: per-face views don't help either; compatibility mode binds whole textures only, and a `'cube'` texture has no storage view. A 6-layer `'2d-array'` texture works, which is what reflections bakes into, then copies to a cube; §4 Compatibility mode.)
 - ~~`'box'` for `'minmax'` and other folds is meaningless (they already use the full footprint). Should `'box'` simply be ignored there, or rejected?~~ Decided (coordinator, 2026-11-13; owner can overrule): accepted, and identical to `'exact'`. A pipeline can then set `oddSizes: 'box'` once for its average and Hi-Z chains.

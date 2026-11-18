@@ -21,10 +21,18 @@ It also does the jobs render passes can't:
 By default the results match render-pass mipmaps, so you can swap it in without a visual change. Every kernel is
 tested against a CPU reference on real GPUs. Zero dependencies; a three.js adapter is included.
 
-> **Status:** 0.1, not yet on npm. Build it from this repository for now. The API can still change before 1.0
-> ([CHANGELOG](CHANGELOG.md)).
+> **Status:** 0.1. The API can still change before 1.0 ([CHANGELOG](CHANGELOG.md)).
 
 ## Install
+
+```sh
+npm install @pmndrs/downsampler
+```
+
+The types use the standard WebGPU types, so add [`@webgpu/types`](https://www.npmjs.com/package/@webgpu/types) to
+your project. `three` is optional and only needed for `@pmndrs/downsampler/three`.
+
+To run the examples, build from a checkout:
 
 ```sh
 git clone https://github.com/pmndrs/downsampler.git
@@ -35,17 +43,12 @@ npm run examples
 # Open http://localhost:8080/examples/
 ```
 
-The examples import `../dist/webgpu/index.js` directly from this built checkout. To use it in a separate
-bundler project, run `npm install /absolute/path/to/downsampler` there after the build; then the package imports
-below resolve through its exports. No npm registry release is required.
-
-The types use the standard WebGPU types, so add [`@webgpu/types`](https://www.npmjs.com/package/@webgpu/types) to
-your project. `three` is optional and only needed for `downsampler/three`.
+The examples import `../dist/webgpu/index.js` directly from the built checkout.
 
 ## Quick start
 
 ```js
-import { Downsampler, requiredFeatures, requiredLimits } from 'downsampler/webgpu';
+import { Downsampler, requiredFeatures, requiredLimits } from '@pmndrs/downsampler/webgpu';
 
 const adapter = await navigator.gpu.requestAdapter();
 // requiredLimits asks for six storage textures, so one dispatch can write six levels;
@@ -80,7 +83,7 @@ See [getting started](docs/getting-started.md) for complete feature walkthroughs
 ## three.js
 
 ```js
-import { generateMipmaps, requiredLimits } from 'downsampler/three';
+import { generateMipmaps, requiredLimits } from '@pmndrs/downsampler/three';
 
 const renderer = new THREE.WebGPURenderer( { requiredLimits: requiredLimits( await navigator.gpu.requestAdapter() ) } );
 await renderer.init();

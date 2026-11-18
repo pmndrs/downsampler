@@ -1,5 +1,5 @@
 /**
- * `downsampler/mipmap`: in-place `'average'` mip chains, in one self-contained module.
+ * `@pmndrs/downsampler/mipmap`: in-place `'average'` mip chains, in one self-contained module.
  *
  * This file imports nothing, so an engine can copy its build output (`dist/mipmap.js`,
  * plain ES2022) into its own tree, as three.js does for `WebGPUTextureMipmapUtils`. It is
@@ -284,7 +284,7 @@ function float16RoundWgsl( rounding: 'nearest' | 'device' ): string {
  * partial tiles. A tail kernel is one workgroup: the first output as above, then each further
  * level from the previous one by the same rule at any parity, with shader bilinear weights.
  *
- * Equal to `createKernel( { ...options, f16Pack: false } )` of `downsampler/webgpu`.
+ * Equal to `createKernel( { ...options, f16Pack: false } )` of `@pmndrs/downsampler/webgpu`.
  */
 export function createMipmapKernel( options: MipmapKernelOptions ): string {
 

@@ -117,7 +117,7 @@ export interface KernelOptions {
 	 * 'exact' kernels writing float16 storage textures: whether the WGSL also defines
 	 * `ds_half_bits` and `ds_pack_f16`, which only the buffer output path calls. Default
 	 * true (the output of earlier versions, byte for byte); false defines `ds_round_f16`
-	 * alone, as `downsampler/mipmap` does. Ignored on the buffer path, which needs them.
+	 * alone, as `@pmndrs/downsampler/mipmap` does. Ignored on the buffer path, which needs them.
 	 */
 	f16Pack?: boolean;
 	/**

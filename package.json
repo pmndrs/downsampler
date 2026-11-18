@@ -1,5 +1,5 @@
 {
-  "name": "downsampler",
+  "name": "@pmndrs/downsampler",
   "version": "0.1.0",
   "description": "GPU texture downsampling for WebGPU: mip chains, Hi-Z (min/max) pyramids, tile reductions and reductions to one value, as generated WGSL compute kernels. Engine agnostic, with a three.js adapter.",
   "type": "module",
@@ -14,6 +14,7 @@
   },
   "keywords": [ "webgpu", "wgsl", "compute", "mipmaps", "mipmap", "mip-chain", "downsample", "hi-z", "hzb", "depth-pyramid", "spd", "reduction", "three", "threejs" ],
   "sideEffects": false,
+  "publishConfig": { "access": "public" },
   "files": [ "dist", "!dist/**/*.map", "CHANGELOG.md" ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",

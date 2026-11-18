@@ -1,4 +1,4 @@
-// Golden WGSL of `downsampler/mipmap` (SPEC.md §10 Vendoring). Fails when the generator's
+// Golden WGSL of `@pmndrs/downsampler/mipmap` (SPEC.md §10 Vendoring). Fails when the generator's
 // output changes; after an intended change, regenerate with
 //   npm run build && node test/core/golden.test.js --update
 // and commit test/golden/mipmap/. Vendored copies are checked against these files with
