@@ -1,0 +1,5 @@
+{"vendor":"apple","architecture":"metal-3","device":"","description":"","isFallbackAdapter":false,"timestamps":true,"features":["texture-formats-tier1","bgra8unorm-storage"],"compatibility":false,"maxStorageTexturesPerShaderStage":6,"subgroupMinSize":32,"subgroupMaxSize":32,"adapterFeatures":["bgra8unorm-storage","chromium-experimental-subgroup-matrix","clip-distances","core-features-and-limits","depth-clip-control","depth32float-stencil8","dual-source-blending","float32-blendable","float32-filterable","indirect-first-instance","primitive-index","rg11b10ufloat-renderable","shader-f16","subgroups","texture-component-swizzle","texture-compression-astc","texture-compression-astc-sliced-3d","texture-compression-bc","texture-compression-bc-sliced-3d","texture-compression-etc2","texture-formats-tier1","texture-formats-tier2","timestamp-query"],"maxTextureDimension2D":8192}
+load average (1, 5, 15 min): before 6.8 3.3 2.5, after 6.1 3.4 2.5
+validation passed: 19 cases, 0 pattern runs, 20344 ms
+4 case groups (listing dfcdf0d1)
+node test/run.js --quick  --keep-going   12.06s user 1.36s system 62% cpu 21.490 total

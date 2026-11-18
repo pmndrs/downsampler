@@ -47,3 +47,5 @@ float32 and exact-policy halo. The [threshold matrix, part 1](../results/m5/thre
   `colorSpace`/buffer was 0.40–0.68. Float32 sample/load was 0.71–1.01. No outstanding Mac rerun is needed for these.
 
 The corrected Windows measurements and threshold validation are tracked in the [combined review](../WEB-PERFORMANCE-REVIEW.md#m5-and-windows-srgb-selection).
+
+**Accepted on the M5 Pro (2026-11-18, `5a656c3`):** core 161, the four groups (19 cases), 12/12 example pages and the warm-up probe ([review-warmup.md](../results/m5/review-warmup.md)) pass; see PROGRESS, verification log.
