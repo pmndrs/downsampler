@@ -1,0 +1,15 @@
+adapter: apple metal-3  (Chrome/148.0.0.0)
+PASS hi-z-pow2.html (2.3 s)
+PASS hi-z.html (1.2 s)
+PASS partial-update.html (2.1 s)
+PASS partial-update.html?odd=box (1.6 s)
+PASS partial-update.html?size=257x255&odd=spd (1.2 s)
+PASS partial-update.html?size=1920x1080 (2.6 s)
+PASS partial-update.html?size=257x255&benchmark=1 (0.9 s)
+PASS partial-update.html?size=257x255&benchmark=1&timestamps=0 (0.6 s)
+PASS hi-z.html?size=257x255 (0.2 s)
+PASS hi-z-pow2.html?hiz=2048x1024 (3.3 s)
+PASS hi-z-pow2.html?size=1129x635&hiz=512x256 (0.8 s)
+PASS hi-z-pow2.html?hiz=1024x1024 (2.5 s)
+all 12 example pages passed
+node test/examples.js --only=partial-update,hi-z  20.35s user 2.32s system 109% cpu 20.751 total
