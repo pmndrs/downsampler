@@ -1,7 +1,7 @@
 import { bufferWritable, formats, isIntFormat, isSupportedFormat, sampleKind, srgbViewFormat, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { outputBufferLayout, planBatches, type Batch, type BatchKernel, type OddSizePolicy } from '../core/plan.js';
 import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
-import { layersProblem, planRegions, rectProblem, type BatchRegion, type Rect } from '../core/region.js';
+import { layersProblem, planRegions, rectProblem, type Rect } from '../core/region.js';
 import { isCompatibilityTexture } from './compat.js';
 import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, regionBinding, regionBytes, srgbTable, srgbTableBinding, usesSrgbTable, type F16Rounding, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
 import { requiredLimits } from './limits.js';
@@ -256,9 +256,10 @@ export interface EncodeOptions {
 	 * output path, the tail kernel, compatibility mode and separate sources.
 	 * An empty rect (width or height 0) records nothing, as WebGPU's zero-size copies
 	 * do; it must still lie inside the level (x ≤ width, y ≤ height).
-	 * Each distinct rect and layer range costs a small uniform buffer and bind groups
-	 * (the 16 most recent are cached per texture; older ones are destroyed once the
-	 * queue has finished the work submitted so far). See SPEC.md §5.
+	 * encode/encodePass reuse storage-path bindings and append immutable uniform slots
+	 * as the rect moves (outside compatibility mode). prepare and the other paths
+	 * create a small uniform buffer and bind groups per distinct rect/layer range.
+	 * The 16 most recent static partial plans and 16 private encode plans are cached separately per texture. See SPEC.md §5.
 	 */
 	rect?: Rect;
 	/**
@@ -275,10 +276,10 @@ export interface EncodeOptions {
 	 * 'srgb': the texture is rgba8unorm or bgra8unorm and holds sRGB color, created with its
 	 * sRGB format in `viewFormats` (`viewFormats: [ 'rgba8unorm-srgb' ]`). Levels are averaged in
 	 * linear light and stored as sRGB codes, exactly as for an rgba8unorm-srgb texture with the
-	 * same bytes, but written directly: by render passes when the texture has RENDER_ATTACHMENT
-	 * usage (as for sRGB formats, {@link DownsamplerOptions.output}), else as storage textures, with
-	 * no buffer and no copies (19–30 % less time than the buffer path on an RTX 3060), and then
-	 * `encodePass` works. Sample it through an sRGB view
+	 * same bytes, but written directly: under auto, render passes when RENDER_ATTACHMENT is
+	 * available and the chain reaches renderPathMinTexels (or only rendering can write it),
+	 * otherwise storage textures with STORAGE_BINDING. The storage path uses no buffer or
+	 * copies and supports `encodePass`. Explicit output selects its path. Sample through an sRGB view
 	 * (`createView( { format: 'rgba8unorm-srgb', usage: GPUTextureUsage.TEXTURE_BINDING } )`), so
 	 * filtering decodes first. Not with `oddSizes: 'spd'`, nor on the compatibility path
 	 * (compatibility mode has no `viewFormats`). 'linear' (default): the texture's own format
@@ -346,13 +347,24 @@ interface RenderLevel {
 	scissor: Rect | null;
 }
 
+/** Internal encode-only binding contract; public PreparedBatch always uses static offsets. */
+interface EncodeBatch extends PreparedBatch {
+	dynamicOffsets?: readonly number[];
+}
+interface RegionTemplate {
+	plan: CachedPlan;
+	bindings: { layout: GPUBindGroupLayout; entries: GPUBindGroupEntry[] }[];
+	chunk?: { buffer: GPUBuffer; groups: GPUBindGroup[]; used: number; capacity: number };
+	capacity: number;
+}
+
 interface CachedPlan {
 	source: GPUTexture | undefined;
 	/** Render path: the levels, in order (`batches` is then empty). */
 	render?: RenderLevel[];
-	/** The caller's scratch buffer the plan writes (EncodeOptions.scratch), if any. */
+	/** The caller's scratch buffer (EncodeOptions.scratch), if any; unused by internal storage plans. */
 	scratch: GPUBuffer | undefined;
-	batches: PreparedBatch[];
+	batches: EncodeBatch[];
 	/** Buffer path: the scratch buffer and layout uniforms, destroyed on release. */
 	buffers: GPUBuffer[];
 }
@@ -375,11 +387,13 @@ interface BatchKernelKey {
 	box: boolean;
 	/** A partial update: the region uniform offsets the grid and restricts stores. */
 	region: boolean;
+	/** Internal encode path: region uniform uses a dynamic offset. */
+	dynamic?: boolean;
 	/** A halo batch ({@link Batch.halo}). */
 	halo?: { x: number[]; y: number[] };
 }
 
-/** Recent partial-update plans kept per texture (each holds a uniform buffer and bind groups). */
+/** Recent partial-update plans and internal topologies kept per texture. */
 const regionPlanLimit = 16;
 /** Uniform slot stride: the default minUniformBufferOffsetAlignment. */
 const slotBytes = 256;
@@ -449,10 +463,18 @@ export class Downsampler {
 	private readonly scratch = new WeakMap<GPUTexture, Map<number, GPUTexture>>();
 	private readonly pipelines = new Map<string, GPUComputePipeline>();
 	private readonly renderPipelines = new Map<string, GPURenderPipeline>();
+	private readonly pipelinePromises = new Map<string, Promise<GPUComputePipeline>>();
+	private readonly renderPipelinePromises = new Map<string, Promise<GPURenderPipeline>>();
+	/** Sync creation can return an invalid object and report its error later. */
+	private readonly pipelineStates = new WeakMap<GPUComputePipeline | GPURenderPipeline, 'validated' | 'superseded'>();
 	private readonly layouts = new Map<string, GPUBindGroupLayout>();
 	private readonly plans = new WeakMap<GPUTexture, Map<string, CachedPlan>>();
 	/** Partial-update plans per texture, least recently used first. */
 	private readonly regionPlans = new WeakMap<GPUTexture, Map<string, CachedPlan>>();
+	/** Private encode plans must not evict public prepare() batches. */
+	private readonly encodeRegionPlans = new WeakMap<GPUTexture, Map<string, CachedPlan>>();
+	/** Internal storage encode topology, least recently used first (bounded per texture). */
+	private readonly regionTemplates = new WeakMap<GPUTexture, Map<string, RegionTemplate>>();
 	/** Buffer path, partial updates: one scratch buffer per texture, shared by its region plans. */
 	private readonly regionScratch = new WeakMap<GPUTexture, GPUBuffer>();
 	private readonly sampler: GPUSampler;
@@ -518,8 +540,12 @@ export class Downsampler {
 
 	}
 
-	/** Why a texture cannot be a destination, or null if it can. */
-	unsupportedReason( texture: GPUTexture ): string | null {
+	/**
+	 * Why the texture cannot be a destination, or null. Options account for destination
+	 * eligibility through an sRGB alias; mip ranges, reductions and sources are validated
+	 * when preparing/encoding the chain. Without options, describes its own format.
+	 */
+	unsupportedReason( texture: GPUTexture, options: EncodeOptions = {} ): string | null {
 
 		if ( ! isSupportedFormat( texture.format ) ) return `format ${ texture.format } is not supported`;
 		if ( texture.dimension !== '2d' ) return `dimension ${ texture.dimension } is not supported`;
@@ -528,9 +554,13 @@ export class Downsampler {
 		const viewDimension = ( texture as GPUTexture & { textureBindingViewDimension?: string } ).textureBindingViewDimension;
 		if ( viewDimension !== undefined && viewDimension !== '2d' && viewDimension !== '2d-array' ) return `textureBindingViewDimension ${ viewDimension } is not supported`;
 		if ( this.outputPath( texture ) !== null ) return null;
+		// An option-blind query describes the linear texture. Its sRGB alias may
+		// still render under auto even when the texture has no storage usage.
+		const alias = this.output === 'auto' && options.colorSpace === 'srgb' ? srgbViewFormat( texture.format ) : undefined;
+		if ( alias !== undefined && ! this.usesCompatibility( texture ) && this.renderReason( texture, alias ) === null ) return null;
 
 		// Why no path applies.
-		const format = texture.format;
+		const format = texture.format as SupportedFormat;
 		const info: FormatInfo = formats[ format ];
 		const formatReason = this.storageFormatReason( texture );
 		const storageReason = formatReason ?? 'texture needs STORAGE_BINDING usage';
@@ -547,18 +577,13 @@ export class Downsampler {
 	}
 
 	/**
-	 * How levels of `texture` are written by default: 'storage' (storage textures),
-	 * 'buffer' (a storage buffer and copies) or 'render' (render passes), or null
-	 * when none applies (see {@link Downsampler.unsupportedReason}). Follows the
-	 * `output` option; 'auto' takes the render path for sRGB formats that can be
-	 * render attachments from `renderPathMinTexels` texels (the whole texture's
-	 * chain; smaller ones, or any size where no compute path can write it), and the
-	 * buffer path only for formats the device can't write as storage textures,
-	 * never for a texture that merely lacks STORAGE_BINDING usage. Under 'auto', a
-	 * chain the render path doesn't cover (folds, 'spd', a separate source) takes the
-	 * buffer path instead, a chain whose first level is smaller than
-	 * `renderPathMinTexels` (a sub-range, a rect) the compute path, and
-	 * `colorSpace: 'srgb'` chains take the render path when the texture can.
+	 * How the whole texture's default chain is written, using its own format:
+	 * 'storage', 'buffer', 'render', or null if no output path can write it.
+	 * Under 'auto', native sRGB formats render from renderPathMinTexels texels,
+	 * or at any size when only render usage is available; otherwise they use a buffer.
+	 * Encode options such as colorSpace, baseMipLevel and rect may select another path.
+	 * This query does not resolve those options; use unsupportedReason(texture, options)
+	 * for destination eligibility and scratchSize(texture, options) for scratch allocation.
 	 */
 	outputPath( texture: GPUTexture ): ChainPath | null {
 
@@ -670,10 +695,10 @@ export class Downsampler {
 
 	}
 
-	/** Whether `texture` can be a destination: {@link Downsampler.unsupportedReason} is null. */
-	supports( texture: GPUTexture ): boolean {
+	/** Whether `texture` is an eligible destination with these options; full chain validation occurs on encode. */
+	supports( texture: GPUTexture, options: EncodeOptions = {} ): boolean {
 
-		return this.unsupportedReason( texture ) === null;
+		return this.unsupportedReason( texture, options ) === null;
 
 	}
 
@@ -719,7 +744,8 @@ export class Downsampler {
 	scratchSize( texture: GPUTexture, options: EncodeOptions = {} ): number {
 
 		const chain = Downsampler.renderChainReason( options.oddSizes ?? 'exact', options.reduction ?? 'average', options.source === undefined ? undefined : resolveSource( options.source ) );
-		const path = this.output === 'auto' && isSupportedFormat( texture.format ) ? this.autoPath( texture, undefined, chain, Downsampler.chainTexels( texture, options ) ) : this.outputPath( texture );
+		const srgb = this.output === 'auto' && options.colorSpace === 'srgb' && isSupportedFormat( texture.format ) ? this.srgbAlias( texture, options.colorSpace, options.oddSizes ?? 'exact' ) : undefined;
+		const path = this.output === 'auto' && isSupportedFormat( texture.format ) ? this.autoPath( texture, srgb, chain, Downsampler.chainTexels( texture, options ) ) : this.outputPath( texture );
 		if ( path === 'storage' || path === 'render' && chain === null ) return 0;
 		const baseMipLevel = options.baseMipLevel ?? 0;
 		const end = options.mipLevelCount === undefined ? texture.mipLevelCount : baseMipLevel + options.mipLevelCount;
@@ -732,7 +758,7 @@ export class Downsampler {
 	/** Record the mip chain into an encoder. Throws for unsupported textures. */
 	encode( encoder: GPUCommandEncoder, texture: GPUTexture, options: EncodeOptions = {} ): void {
 
-		const plan = this.plan( texture, options );
+		const plan = this.plan( texture, options, true );
 		for ( const level of plan.render ?? [] ) {
 
 			for ( const { layer, view } of level.targets ) {
@@ -753,7 +779,8 @@ export class Downsampler {
 
 			const pass = encoder.beginComputePass( { label: 'downsampler' } );
 			pass.setPipeline( batch.pipeline );
-			pass.setBindGroup( 0, batch.bindGroup );
+			if ( batch.dynamicOffsets === undefined ) pass.setBindGroup( 0, batch.bindGroup );
+			else pass.setBindGroup( 0, batch.bindGroup, batch.dynamicOffsets );
 			pass.dispatchWorkgroups( batch.groupsX, batch.groupsY, batch.layers[ 1 ] );
 			pass.end();
 			// Buffer path: each level into its texture, before the next batch reads it.
@@ -777,12 +804,15 @@ export class Downsampler {
 	 */
 	encodePass( pass: GPUComputePassEncoder, texture: GPUTexture, options: EncodeOptions = {} ): void {
 
-		const batches = this.prepare( texture, options );
+		const plan = this.plan( texture, options, true );
+		if ( plan.render !== undefined ) throw new Error( `downsampler: this ${ texture.format } chain takes the render path; use encode().` );
+		const batches = plan.batches;
 		if ( batches.some( batch => batch.output === 'buffer' ) ) throw new Error( `downsampler: ${ texture.format } levels are written through a buffer and copied into the texture between dispatches, which a compute pass can't record; use encode().` );
 		for ( const batch of batches ) {
 
 			pass.setPipeline( batch.pipeline );
-			pass.setBindGroup( 0, batch.bindGroup );
+			if ( batch.dynamicOffsets === undefined ) pass.setBindGroup( 0, batch.bindGroup );
+			else pass.setBindGroup( 0, batch.bindGroup, batch.dynamicOffsets );
 			pass.dispatchWorkgroups( batch.groupsX, batch.groupsY, batch.layers[ 1 ] );
 
 		}
@@ -821,10 +851,57 @@ export class Downsampler {
 
 	}
 
-	/** The cached plan of a chain: `prepare()`'s batches, or the render path's levels. */
-	private plan( texture: GPUTexture, options: EncodeOptions ): CachedPlan {
+	/**
+	 * Compile the pipelines used by encode/generate for this real texture and option set.
+	 * Await before interactive use. No commands, bindings, scratch or region uniforms are
+	 * allocated. Concurrent requests share compilation; a rejected pipeline can be retried.
+	 * Encoding stays synchronous and can fall back to synchronous creation if not awaited.
+	 */
+	async warmup( texture: GPUTexture, options: EncodeOptions = {} ): Promise<void> {
 
-		const reason = this.unsupportedReason( texture );
+		const pending: Promise<unknown>[] = [];
+		try {
+
+			this.plan( texture, options, true, pending );
+
+		} catch ( error ) {
+
+			// Discovery may fail after earlier compiles have started. Observe every one
+			// before propagating the discovery error (no orphaned rejections).
+			await Promise.allSettled( pending );
+			throw error;
+
+		}
+		await Promise.all( pending );
+		this.refreshWarmedPlans( texture );
+
+	}
+
+	/** Drop bindings made with an unverified sync pipeline after async replacement.
+	 * Leave resources to GC: a caller may still hold prepared batches or an unsubmitted
+	 * command buffer. Render bind groups must be rebuilt too, since getBindGroupLayout
+	 * on an invalid synchronous render pipeline returns an invalid layout.
+	 */
+	private refreshWarmedPlans( texture: GPUTexture ): void {
+
+		const stale = ( plan: CachedPlan ) => plan.batches.some( batch => this.pipelineStates.get( batch.pipeline ) === 'superseded' ) || ( plan.render?.some( level => this.pipelineStates.get( level.pipeline ) === 'superseded' ) ?? false );
+		for ( const plans of [ this.plans, this.regionPlans, this.encodeRegionPlans ] ) {
+
+			const cache = plans.get( texture );
+			if ( cache === undefined ) continue;
+			for ( const [ key, plan ] of cache ) if ( stale( plan ) ) cache.delete( key );
+
+		}
+		const templates = this.regionTemplates.get( texture );
+		if ( templates === undefined ) return;
+		for ( const [ key, template ] of templates ) if ( stale( template.plan ) ) templates.delete( key );
+
+	}
+
+	/** The cached plan of a chain: `prepare()`'s batches, or the render path's levels. */
+	private plan( texture: GPUTexture, options: EncodeOptions, encoding = false, warming?: Promise<unknown>[] ): CachedPlan {
+
+		const reason = this.unsupportedReason( texture, options );
 		if ( reason !== null ) throw new Error( `downsampler: ${ reason }.` );
 		const baseMipLevel = options.baseMipLevel ?? 0;
 		const mipLevelCount = options.mipLevelCount ?? texture.mipLevelCount - baseMipLevel;
@@ -851,14 +928,16 @@ export class Downsampler {
 
 		if ( options.rect === undefined && options.layers === undefined ) {
 
+			if ( warming !== undefined ) return this.warmPipelines( texture, parameters, null, false, warming );
+
 			let cache = this.plans.get( texture );
 			if ( cache === undefined ) this.plans.set( texture, cache = new Map() );
 			const cached = cache.get( key );
 			if ( cached !== undefined && cached.source === source?.texture && cached.scratch === options.scratch ) return cached;
-			// A new source texture (e.g. a depth buffer recreated on resize) or scratch buffer replaces the plan.
-			if ( cached !== undefined ) retireBuffers( this.device, cached.buffers );
 			const plan = this.build( texture, parameters, null );
 			cache.set( key, plan );
+			// Keep the old plan alive until its replacement has been constructed successfully.
+			if ( cached !== undefined ) retireBuffers( this.device, cached.buffers );
 			return plan;
 
 		}
@@ -875,32 +954,103 @@ export class Downsampler {
 		// An empty rect: nothing depends on it, so nothing is recorded (and nothing cached).
 		if ( width === 0 || height === 0 ) return { source: undefined, scratch: undefined, batches: [], buffers: [], ...( path === 'render' ? { render: [] } : {} ) };
 		const rect = { x, y, width, height };
+		// Only storage without compatibility copies uses the private dynamic binding contract.
+		const dynamic = encoding && path === 'storage' && ! this.usesCompatibility( texture );
+		if ( warming !== undefined ) return this.warmPipelines( texture, parameters, { rect, layers }, dynamic, warming );
 		const regionKey = `${ key }|${ layers.join() }|${ x },${ y },${ width },${ height }`;
-		let cache = this.regionPlans.get( texture );
-		if ( cache === undefined ) this.regionPlans.set( texture, cache = new Map() );
+		const regionCache = dynamic ? this.encodeRegionPlans : this.regionPlans;
+		let cache = regionCache.get( texture );
+		if ( cache === undefined ) regionCache.set( texture, cache = new Map() );
 		const cached = cache.get( regionKey );
-		cache.delete( regionKey );
-		if ( cached !== undefined && cached.source === source?.texture && cached.scratch === options.scratch ) {
+		if ( cached !== undefined && cached.source === source?.texture && ( dynamic || cached.scratch === options.scratch ) ) {
 
+			cache.delete( regionKey );
 			cache.set( regionKey, cached );
 			return cached;
 
 		}
 
-		if ( cached !== undefined ) retireBuffers( this.device, cached.buffers );
-		const plan = this.build( texture, parameters, { rect, layers } );
+		const plan = dynamic ? this.encodeRegion( texture, key, parameters, rect, layers, rw, rh ) : this.build( texture, parameters, { rect, layers } );
+		cache.delete( regionKey );
 		cache.set( regionKey, plan );
-		// Evicted plans may still be recorded in an encoder not yet submitted: their
+		if ( ! dynamic && cached !== undefined ) retireBuffers( this.device, cached.buffers );
+		// Evicted static plans may still be recorded in an encoder not yet submitted: their
 		// region uniforms are destroyed once the queue has finished the work submitted so far.
 		while ( cache.size > regionPlanLimit ) {
 
 			const oldest = cache.keys().next().value!;
-			retireBuffers( this.device, cache.get( oldest )!.buffers );
+			if ( ! dynamic ) retireBuffers( this.device, cache.get( oldest )!.buffers );
 			cache.delete( oldest );
 
 		}
 
 		return plan;
+
+	}
+
+	/**
+	 * Reuse the topology and texture bindings while a rect moves. Slots are append-only:
+	 * queue.writeBuffer must never change data already referenced by any encoder, even
+	 * one the caller has not submitted. Old chunks are left to GC, which preserves
+	 * WebGPU references in command buffers; queue completion alone cannot retire them.
+	 */
+	private encodeRegion( texture: GPUTexture, key: string, parameters: PlanParameters, rect: Rect, layers: readonly [ number, number ], width: number, height: number ): CachedPlan {
+
+		let cache = this.regionTemplates.get( texture );
+		if ( cache === undefined ) this.regionTemplates.set( texture, cache = new Map() );
+		let template = cache.get( key );
+		if ( template === undefined || template.plan.source !== parameters.source?.texture ) {
+
+			const bindings: RegionTemplate['bindings'] = [];
+			const plan = this.buildCompute( texture, { ...parameters, scratch: undefined }, { rect: { x: 0, y: 0, width, height }, layers: [ 0, texture.depthOrArrayLayers ] }, [], bindings );
+			template = { plan, bindings, capacity: 8 };
+
+		}
+
+		cache.delete( key );
+		cache.set( key, template );
+		while ( cache.size > regionPlanLimit ) cache.delete( cache.keys().next().value! );
+		const planned = template.plan.batches;
+		const source = parameters.source;
+		const sourceSize = source === undefined ? [] : levelSizeOf( source );
+		const regions = planRegions( planned, rect, texture.width, texture.height, sourceSize[ 0 ], sourceSize[ 1 ] );
+		if ( ! regions.some( region => region.groupsX * region.groupsY > 0 ) ) return { source: source?.texture, scratch: undefined, batches: [], buffers: [] };
+		let chunk = template.chunk;
+		if ( chunk === undefined || chunk.used === chunk.capacity ) {
+
+			const capacity = template.capacity;
+			const buffer = this.device.createBuffer( { label: 'downsampler encode regions', size: capacity * planned.length * slotBytes, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+			try {
+
+				const groups = template.bindings.map( ( { layout, entries } ) => this.device.createBindGroup( { label: 'downsampler encode regions', layout, entries: [ ...entries, { binding: regionBinding, resource: { buffer, size: regionBytes } } ] } ) );
+				template.chunk = chunk = { buffer, groups, used: 0, capacity };
+				template.capacity = Math.min( 256, capacity * 4 );
+
+			} catch ( error ) {
+
+				buffer.destroy();
+				throw error;
+
+			}
+
+		}
+
+		// Reserve before writing: a failed upload can be retried without reusing a slot.
+		const offset = chunk.used ++ * planned.length * slotBytes;
+		const words = new Uint32Array( planned.length * slotBytes / 4 );
+		const batches: EncodeBatch[] = [];
+		planned.forEach( ( batch, i ) => {
+
+			const update = regions[ i ];
+			if ( update.groupsX * update.groupsY === 0 ) return;
+			const start = i * slotBytes / 4;
+			words.set( [ update.groupX, update.groupY, layers[ 0 ], 0 ], start );
+			update.levels.forEach( ( r, level ) => words.set( r === null ? [ 0, 0, 0, 0 ] : [ r.x, r.y, r.x + r.width, r.y + r.height ], start + 4 + level * 4 ) );
+			batches.push( { ...batch, bindGroup: chunk!.groups[ i ], layers, groupX: update.groupX, groupY: update.groupY, groupsX: update.groupsX, groupsY: update.groupsY, regions: update.levels, dynamicOffsets: [ offset + i * slotBytes ] } );
+
+		} );
+		this.device.queue.writeBuffer( chunk.buffer, offset, words );
+		return { source: source?.texture, scratch: undefined, batches, buffers: [] };
 
 	}
 
@@ -931,9 +1081,97 @@ export class Downsampler {
 
 	/** Prepares the batches of one plan; `region` makes it a partial update. */
 	private build( texture: GPUTexture, parameters: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null ): CachedPlan {
+		const buffers: GPUBuffer[] = [];
+		const previousRegionScratch = region === null ? undefined : this.regionScratch.get( texture );
+		try {
+			return this.buildCompute( texture, parameters, region, buffers );
+		} catch ( error ) {
+			for ( const buffer of buffers ) buffer.destroy();
+			if ( region !== null ) {
+				const allocatedScratch = this.regionScratch.get( texture );
+				if ( allocatedScratch !== undefined && allocatedScratch !== previousRegionScratch ) {
+					allocatedScratch.destroy();
+					if ( previousRegionScratch === undefined ) this.regionScratch.delete( texture );
+					else this.regionScratch.set( texture, previousRegionScratch );
+				}
+			}
+			throw error;
+		}
+	}
+
+	/** Shared resource-free topology and exact pipeline keys for warmup and execution. */
+	private computeTopology( texture: GPUTexture, parameters: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null, dynamic: boolean ) {
+
+		const { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel, srgb } = parameters;
+		const format = srgb ?? texture.format as SupportedFormat;
+		const dimension = bindingViewDimension( texture );
+		const output = parameters.path as OutputPath;
+		const levelsPerDispatch = output === 'buffer' && this.output === 'auto' ? this.bufferLevelsPerDispatch : this.levelsPerDispatch;
+		const sourceWidth = source === undefined ? undefined : mipSize( source.texture.width, sourceMipLevel ), sourceHeight = source === undefined ? undefined : mipSize( source.texture.height, sourceMipLevel );
+		const copySource = source !== undefined && sourceWidth === mipSize( texture.width, baseMipLevel ) && sourceHeight === mipSize( texture.height, baseMipLevel );
+		const { tailMaxTile } = this;
+		// Under 'spd', a resampled source is its own 1-level batch, like a copy.
+		const resample = source?.resample === 'area';
+		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch, oddSizes, fromSource: source !== undefined, copySource: copySource || resample, tail: oddSizes !== 'spd' && this.tail, tailMaxTile, exactMinTile: this.exactTile, ...this.haloPlan( format, oddSizes ) } );
+		const regions = region === null ? null : planRegions( planned, region.rect, texture.width, texture.height, sourceWidth, sourceHeight );
+		const sourceSize = ( batch: Batch ): [ number, number ] => batch.sourceMipLevel === null ? [ sourceWidth!, sourceHeight! ] : [ mipSize( texture.width, batch.sourceMipLevel ), mipSize( texture.height, batch.sourceMipLevel ) ];
+		const odd = ( size: number ) => size > 1 && size % 2 === 1;
+		const included = planned.map( ( batch, index ) => {
+
+			const external = batch.sourceMipLevel === null;
+			const sourceFormat = external ? source!.texture.format : format;
+			// A same-size converting copy loads: a sampler at texel centers isn't exact on every
+			// GPU (Intel truncates the coordinate a hair below the center and blends in 1/256 of a
+			// neighbor; results/windows/correctness.md).
+			// Area-weighted batches load: a resampled source (any reduction), and under 'box' the
+			// averages that read an odd level, or reduce odd levels in a tail. The others are
+			// the 'exact' kernels: an even step is the same 2×2 box, and folds are the same.
+			const [ sw, sh ] = sourceSize( batch );
+			const boxFirst = batch.kernel !== 'clamp' && oddSizes === 'box' && reduction === 'average' && ( batch.kernel === 'tail' || odd( sw ) || odd( sh ) );
+			// A halo batch under 'box' takes area weights at its odd steps, whatever its first output's source.
+			const box = boxFirst || ( batch.halo !== undefined && oddSizes === 'box' && reduction === 'average' );
+			const area = boxFirst || ( batch.kernel !== 'clamp' && external && resample );
+			const access = area || ( external && copySource && batch.firstMipLevel === baseMipLevel ) ? 'load' : this.access( reduction, sourceFormat );
+			const kernel: BatchKernelKey = { format, dimension, count: batch.count, access, reduction, sourceFormat, output, kind: batch.kernel, tile: batch.tile, area, box, region: region !== null, dynamic, ...( batch.halo ? { halo: batch.halo } : {} ) };
+			return { batch, index, kernel };
+
+		} ).filter( ( { index } ) => regions === null || regions[ index ].groupsX * regions[ index ].groupsY > 0 );
+		return { planned, regions, included };
+
+	}
+
+	private warmPipelines( texture: GPUTexture, parameters: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null, dynamic: boolean, pending: Promise<unknown>[] ): CachedPlan {
+
+		if ( parameters.path === 'render' ) {
+
+			const { baseMipLevel, mipLevelCount, oddSizes } = parameters;
+			const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch: 1, oddSizes } );
+			const regions = region === null ? null : planRegions( planned, region.rect, texture.width, texture.height );
+			planned.forEach( ( batch, index ) => {
+
+				if ( regions === null || regions[ index ].levels[ 0 ] !== null ) pending.push( this.renderPipelineAsync( this.renderOptions( texture, parameters, batch.firstMipLevel ) ) );
+
+			} );
+
+		} else {
+
+			// Dynamic encode constructs its invariant template for the whole source, including
+			// pipelines for batches a particular dirty rectangle may leave untouched.
+			const [ width, height ] = parameters.source === undefined ? [ mipSize( texture.width, parameters.baseMipLevel ), mipSize( texture.height, parameters.baseMipLevel ) ] : levelSizeOf( parameters.source );
+			const discoveryRegion = dynamic ? { rect: { x: 0, y: 0, width, height }, layers: [ 0, texture.depthOrArrayLayers ] as const } : region;
+			const { included } = this.computeTopology( texture, parameters, discoveryRegion, dynamic );
+			for ( const { kernel } of included ) pending.push( this.pipelineAsync( kernel ) );
+			if ( included.length > 0 && parameters.path === 'storage' && this.usesCompatibility( texture ) ) pending.push( this.pipelineAsync( this.compatKernel( texture, region !== null ) ) );
+
+		}
+		return { source: undefined, scratch: undefined, batches: [], buffers: [] };
+
+	}
+
+	private buildCompute( texture: GPUTexture, parameters: PlanParameters, region: { rect: Rect; layers: readonly [ number, number ] } | null, buffers: GPUBuffer[], dynamicBindings?: RegionTemplate['bindings'] ): CachedPlan {
 
 		if ( parameters.path === 'render' ) return this.buildRender( texture, parameters, region );
-		const { source, baseMipLevel, mipLevelCount, oddSizes, reduction, sourceMipLevel, scratch: scratchBuffer, srgb } = parameters;
+		const { source, baseMipLevel, scratch: scratchBuffer, srgb } = parameters;
 
 		// colorSpace 'srgb': reduced as the sRGB format, read through sRGB views (named usage: the
 		// texture's STORAGE_BINDING isn't valid for an sRGB view), written through its own.
@@ -943,20 +1181,9 @@ export class Downsampler {
 		const read = srgb === undefined ? view : ( level: number ) => texture.createView( { label: `downsampler mip ${ level } (sRGB)`, format: srgb, usage: GPUTextureUsage.TEXTURE_BINDING, dimension, baseMipLevel: level, mipLevelCount: 1 } );
 
 		const output = parameters.path as OutputPath;
-		const levelsPerDispatch = output === 'buffer' && this.output === 'auto' ? this.bufferLevelsPerDispatch : this.levelsPerDispatch;
-		const sourceWidth = source === undefined ? undefined : mipSize( source.texture.width, sourceMipLevel ), sourceHeight = source === undefined ? undefined : mipSize( source.texture.height, sourceMipLevel );
-		const copySource = source !== undefined && sourceWidth === mipSize( texture.width, baseMipLevel ) && sourceHeight === mipSize( texture.height, baseMipLevel );
-		const { tailMaxTile } = this;
-		// Under 'spd', a resampled source is its own 1-level batch, like a copy.
-		const resample = source?.resample === 'area';
-		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch, oddSizes, fromSource: source !== undefined, copySource: copySource || resample, tail: oddSizes !== 'spd' && this.tail, tailMaxTile, exactMinTile: this.exactTile, ...this.haloPlan( format, oddSizes ) } );
+		const { planned, regions, included } = this.computeTopology( texture, parameters, region, dynamicBindings !== undefined );
 		const layerCount = texture.depthOrArrayLayers;
 		const layers: readonly [ number, number ] = region?.layers ?? [ 0, layerCount ];
-		const regions: BatchRegion[] | null = region === null ? null : planRegions( planned, region.rect, texture.width, texture.height, sourceWidth, sourceHeight );
-		// A partial update leaves out batches that write nothing (possible under 'spd' only).
-		const included = planned.map( ( batch, index ) => ( { batch, index } ) ).filter( ( { index } ) => regions === null || regions[ index ].groupsX * regions[ index ].groupsY > 0 );
-		const sourceSize = ( batch: Batch ): [ number, number ] => batch.sourceMipLevel === null ? [ sourceWidth!, sourceHeight! ] : [ mipSize( texture.width, batch.sourceMipLevel ), mipSize( texture.height, batch.sourceMipLevel ) ];
-		const odd = ( size: number ) => size > 1 && size % 2 === 1;
 
 		// Buffer path: one scratch buffer, sized for the largest batch, serves every
 		// batch in turn (each batch's copies are recorded before the next dispatch).
@@ -964,7 +1191,6 @@ export class Downsampler {
 		// at the same offsets and copy their regions out.
 		const bytesPerTexel = formats[ format ].bytesPerTexel;
 		const layouts = output === 'buffer' ? planned.map( batch => outputBufferLayout( Array.from( { length: batch.count }, ( _, i ) => [ mipSize( texture.width, batch.firstMipLevel + i ), mipSize( texture.height, batch.firstMipLevel + i ) ] as const ), layerCount, bytesPerTexel ) ) : [];
-		const buffers: GPUBuffer[] = [];
 		let scratch: GPUBuffer | undefined;
 		if ( output === 'buffer' && included.length > 0 ) {
 
@@ -1023,23 +1249,10 @@ export class Downsampler {
 		// Bind groups are created after the uniform buffer.
 		const deferred: ( () => void )[] = [];
 
-		let batches = included.map( ( { batch, index } ): PreparedBatch => {
+		let batches = included.map( ( { batch, index, kernel } ): PreparedBatch => {
 
 			const external = batch.sourceMipLevel === null;
-			const sourceFormat = external ? source!.texture.format : format;
-			// A same-size converting copy loads: a sampler at texel centers isn't exact on every
-			// GPU (Intel truncates the coordinate a hair below the center and blends in 1/256 of a
-			// neighbor; results/windows/correctness.md).
-			// Area-weighted batches load: a resampled source (any reduction), and under 'box' the
-			// averages that read an odd level, or reduce odd levels in a tail. The others are
-			// the 'exact' kernels: an even step is the same 2×2 box, and folds are the same.
-			const [ sw, sh ] = sourceSize( batch );
-			const boxFirst = batch.kernel !== 'clamp' && oddSizes === 'box' && reduction === 'average' && ( batch.kernel === 'tail' || odd( sw ) || odd( sh ) );
-			// A halo batch under 'box' takes area weights at its odd steps, whatever its first output's source.
-			const box = boxFirst || ( batch.halo !== undefined && oddSizes === 'box' && reduction === 'average' );
-			const area = boxFirst || ( batch.kernel !== 'clamp' && external && resample );
-			const access = area || ( external && copySource && batch.firstMipLevel === baseMipLevel ) ? 'load' : this.access( reduction, sourceFormat );
-			const kernel: BatchKernelKey = { format, dimension, count: batch.count, access, reduction, sourceFormat, output, kind: batch.kernel, tile: batch.tile, area, box, region: region !== null, ...( batch.halo ? { halo: batch.halo } : {} ) };
+			const { access } = kernel;
 			const layout = this.layout( kernel );
 			const pipeline = this.pipeline( kernel );
 			const entries: GPUBindGroupEntry[] = access === 'sample' ? [ { binding: 0, resource: this.sampler } ] : [];
@@ -1050,7 +1263,7 @@ export class Downsampler {
 			if ( update !== undefined ) {
 
 				Object.assign( prepared, { groupX: update.groupX, groupY: update.groupY, groupsX: update.groupsX, groupsY: update.groupsY, regions: update.levels } );
-				entries.push( uniformEntry( regionBinding, slot( regionWords( update.groupX, update.groupY, update.levels ) ), regionBytes ) );
+				if ( dynamicBindings === undefined ) entries.push( uniformEntry( regionBinding, slot( regionWords( update.groupX, update.groupY, update.levels ) ), regionBytes ) );
 
 			}
 
@@ -1068,8 +1281,8 @@ export class Downsampler {
 				if ( update === undefined ) {
 
 					const uniform = this.device.createBuffer( { label: 'downsampler output layout', size: outputLayoutBytes, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
-					this.device.queue.writeBuffer( uniform, 0, words );
 					buffers.push( uniform );
+					this.device.queue.writeBuffer( uniform, 0, words );
 					entries.push( { binding: outputLayoutBinding, resource: { buffer: uniform } } );
 
 				} else entries.push( uniformEntry( outputLayoutBinding, slot( words ), outputLayoutBytes ) );
@@ -1088,7 +1301,8 @@ export class Downsampler {
 
 			}
 
-			deferred.push( () => { prepared.bindGroup = this.device.createBindGroup( { label: 'downsampler', layout, entries } ); } );
+			if ( dynamicBindings !== undefined ) dynamicBindings.push( { layout, entries } );
+			else deferred.push( () => { prepared.bindGroup = this.device.createBindGroup( { label: 'downsampler', layout, entries } ); } );
 			return prepared;
 
 		} );
@@ -1097,10 +1311,10 @@ export class Downsampler {
 		if ( slots.length > 0 ) {
 
 			const uniform = this.device.createBuffer( { label: 'downsampler region', size: slots.length * slotBytes, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+			buffers.push( uniform );
 			const data = new Uint32Array( slots.length * slotBytes / 4 );
 			slots.forEach( ( words, i ) => data.set( words, i * slotBytes / 4 ) );
 			this.device.queue.writeBuffer( uniform, 0, data );
-			buffers.push( uniform );
 			for ( const { entry, offset, size } of pending ) entry.resource = { buffer: uniform, offset, size };
 
 		}
@@ -1124,14 +1338,12 @@ export class Downsampler {
 		const layers: readonly [ number, number ] = region?.layers ?? [ 0, texture.depthOrArrayLayers ];
 		const planned = planBatches( texture.width, texture.height, { baseMipLevel, mipLevelCount, levelsPerDispatch: 1, oddSizes } );
 		const regions = region === null ? null : planRegions( planned, region.rect, texture.width, texture.height );
-		const odd = ( size: number ) => size > 1 && size % 2 === 1;
 		const render: RenderLevel[] = [];
 		planned.forEach( ( { firstMipLevel: level }, index ) => {
 
 			const scissor = regions === null ? null : regions[ index ].levels[ 0 ];
 			if ( regions !== null && scissor === null ) return;
-			const area = oddSizes === 'box' && ( odd( mipSize( texture.width, level - 1 ) ) || odd( mipSize( texture.height, level - 1 ) ) );
-			const options: RenderKernelOptions = { format, dimension, access: area ? 'load' : this.access( 'average', format ), area, f16Rounding: this.f16Rounding, srgbRounding: this.srgbRounding };
+			const options = this.renderOptions( texture, { oddSizes, srgb }, level );
 			const pipeline = this.renderPipeline( options );
 			const entries: GPUBindGroupEntry[] = options.access === 'sample' ? [ { binding: 0, resource: this.sampler } ] : [];
 			// An sRGB view of colorSpace 'srgb' names its usage: the texture's STORAGE_BINDING isn't valid for it.
@@ -1149,35 +1361,80 @@ export class Downsampler {
 
 	}
 
-	private renderPipeline( options: RenderKernelOptions ): GPURenderPipeline {
+	private renderOptions( texture: GPUTexture, { oddSizes, srgb }: Pick<PlanParameters, 'oddSizes' | 'srgb'>, level: number ): RenderKernelOptions {
+
+		const format = srgb ?? texture.format as SupportedFormat;
+		const odd = ( size: number ) => size > 1 && size % 2 === 1;
+		const area = oddSizes === 'box' && ( odd( mipSize( texture.width, level - 1 ) ) || odd( mipSize( texture.height, level - 1 ) ) );
+		return { format, dimension: bindingViewDimension( texture ), access: area ? 'load' : this.access( 'average', format ), area, f16Rounding: this.f16Rounding, srgbRounding: this.srgbRounding };
+
+	}
+
+	private renderPipelineId( options: RenderKernelOptions ): string {
 
 		const { format, dimension, access, area = false, f16Rounding = 'nearest', srgbRounding = 'exact' } = options;
-		const id = `${ format }:${ dimension }:${ access }${ area ? ':box' : '' }:${ f16Rounding }:${ srgbRounding }`;
-		let pipeline = this.renderPipelines.get( id );
-		if ( pipeline !== undefined ) return pipeline;
-		const label = `downsampler render ${ id }`;
+		return `${ format }:${ dimension }:${ access }${ area ? ':box' : '' }:${ f16Rounding }:${ srgbRounding }`;
+
+	}
+
+	private renderDescriptor( options: RenderKernelOptions ): GPURenderPipelineDescriptor {
+
+		const label = `downsampler render ${ this.renderPipelineId( options ) }`;
 		const module = this.device.createShaderModule( { label, code: createRenderKernel( options ) } );
 		const layout = this.device.createPipelineLayout( { label, bindGroupLayouts: [ this.device.createBindGroupLayout( { label, entries: renderLayoutEntries( options ) } ) ] } );
-		pipeline = this.device.createRenderPipeline( { label, layout, vertex: { module, entryPoint: 'ds_vertex' }, fragment: { module, entryPoint: 'ds_fragment', targets: [ { format } ] }, primitive: { topology: 'triangle-list' } } );
-		this.renderPipelines.set( id, pipeline );
+		return { label, layout, vertex: { module, entryPoint: 'ds_vertex' }, fragment: { module, entryPoint: 'ds_fragment', targets: [ { format: options.format } ] }, primitive: { topology: 'triangle-list' } };
+
+	}
+
+	private renderPipeline( options: RenderKernelOptions ): GPURenderPipeline {
+
+		const id = this.renderPipelineId( options );
+		let pipeline = this.renderPipelines.get( id );
+		if ( pipeline === undefined ) this.renderPipelines.set( id, pipeline = this.device.createRenderPipeline( this.renderDescriptor( options ) ) );
 		return pipeline;
+
+	}
+
+	private async renderPipelineAsync( options: RenderKernelOptions ): Promise<GPURenderPipeline> {
+
+		const id = this.renderPipelineId( options );
+		const cached = this.renderPipelines.get( id );
+		if ( cached !== undefined && this.pipelineStates.get( cached ) === 'validated' ) return cached;
+		let pending = this.renderPipelinePromises.get( id );
+		if ( pending === undefined ) {
+
+			pending = this.device.createRenderPipelineAsync( this.renderDescriptor( options ) ).then( pipeline => {
+
+				const previous = this.renderPipelines.get( id );
+				if ( previous !== undefined && previous !== pipeline ) this.pipelineStates.set( previous, 'superseded' );
+				this.renderPipelines.set( id, pipeline );
+				this.pipelineStates.set( pipeline, 'validated' );
+				return pipeline;
+
+			} ).finally( () => { this.renderPipelinePromises.delete( id ); } );
+			this.renderPipelinePromises.set( id, pending );
+
+		}
+		return pending;
 
 	}
 
 	/**
 	 * Drop cached bind groups for a destination texture (pipelines stay cached per
-	 * device), and destroy its buffer-path and partial-update buffers: call it after
-	 * submitting work that uses them.
+	 * device), and destroy its buffer-path and static partial-update buffers: call it
+	 * after submitting work that uses them. Internal encode-region chunks are dropped
+	 * for GC, so their immutable slots remain valid in outstanding command buffers.
 	 */
 	release( texture: GPUTexture ): void {
 
-		for ( const plans of [ this.plans, this.regionPlans ] ) {
+		for ( const plans of [ this.plans, this.regionPlans, this.encodeRegionPlans ] ) {
 
 			for ( const plan of plans.get( texture )?.values() ?? [] ) for ( const buffer of plan.buffers ) buffer.destroy();
 			plans.delete( texture );
 
 		}
 
+		this.regionTemplates.delete( texture );
 		this.regionScratch.get( texture )?.destroy();
 		this.regionScratch.delete( texture );
 		for ( const scratch of this.scratch.get( texture )?.values() ?? [] ) scratch.destroy();
@@ -1213,6 +1470,13 @@ export class Downsampler {
 	 * output (an exact copy; an average could turn an Inf neighbor into NaN).
 	 * A partial update copies only each level's region of the layers in range.
 	 */
+	private compatKernel( texture: GPUTexture, region: boolean ): BatchKernelKey {
+
+		const format = texture.format as SupportedFormat;
+		return { format, dimension: bindingViewDimension( texture ), count: 1, access: 'load', reduction: 'max', sourceFormat: format, output: 'storage', kind: 'exact', tile: 8, area: false, box: false, region };
+
+	}
+
 	private compatCopies( texture: GPUTexture, batch: PreparedBatch, dimension: ViewDimension, view: ( level: number ) => GPUTextureView, partial: {
 		slot: ( words: ArrayLike<number> ) => number;
 		regionWords: ( groupX: number, groupY: number, levels: readonly ( Rect | null )[] ) => number[];
@@ -1220,8 +1484,7 @@ export class Downsampler {
 		deferred: ( () => void )[];
 	} | null ): PreparedBatch[] {
 
-		const format = texture.format as SupportedFormat;
-		const kernel: BatchKernelKey = { format, dimension, count: 1, access: 'load', reduction: 'max', sourceFormat: format, output: 'storage', kind: 'exact', tile: 8, area: false, box: false, region: partial !== null };
+		const kernel = this.compatKernel( texture, partial !== null );
 		const layout = this.layout( kernel );
 		const pipeline = this.pipeline( kernel );
 		const tile = 8;
@@ -1304,29 +1567,64 @@ export class Downsampler {
 
 	private layout( key: BatchKernelKey ): GPUBindGroupLayout {
 
-		const { format, dimension, count, access, output, kind, region } = key;
+		const { format, dimension, count, access, output, kind, region, dynamic } = key;
 		// Exact and tail kernels share layouts; 'clamp' ones differ (no sampler under 'load').
 		// An sRGB source or destination adds the table binding.
 		const srgb = usesSrgbTable( this.kernelOptions( key ) );
-		const id = `${ format }:${ dimension }:${ count }:${ access }:${ output }${ kind === 'clamp' ? ':clamp' : '' }${ region ? ':region' : '' }${ srgb ? ':srgb' : '' }`;
+		const id = `${ format }:${ dimension }:${ count }:${ access }:${ output }${ kind === 'clamp' ? ':clamp' : '' }${ region ? ':region' : '' }${ dynamic ? ':dynamic' : '' }${ srgb ? ':srgb' : '' }`;
 		let layout = this.layouts.get( id );
-		if ( layout === undefined ) this.layouts.set( id, layout = this.device.createBindGroupLayout( { label: `downsampler ${ id }`, entries: kernelLayoutEntries( this.kernelOptions( key ) ) } ) );
+		if ( layout === undefined ) this.layouts.set( id, layout = this.device.createBindGroupLayout( { label: `downsampler ${ id }`, entries: kernelLayoutEntries( this.kernelOptions( key ) ).map( entry => dynamic && entry.binding === regionBinding ? { ...entry, buffer: { ...entry.buffer, hasDynamicOffset: true } } : entry ) } ) );
 		return layout;
+
+	}
+
+	private pipelineId( key: BatchKernelKey ): string {
+
+		const { format, dimension, count, access, reduction, sourceFormat, output, kind, tile, area, box, region, halo, dynamic } = key;
+		return `${ kind }${ kind === 'clamp' ? '' : tile }${ box ? ':box' : area ? ':area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }:${ output }${ region ? ':region' : '' }${ dynamic ? ':dynamic' : '' }${ halo ? `:halo${ area ? 'a' : '' }${ halo.x.join( '.' ) }/${ halo.y.join( '.' ) }` : '' }`;
+
+	}
+
+	private pipelineDescriptor( key: BatchKernelKey ): GPUComputePipelineDescriptor {
+
+		const { format, dimension, count, access, reduction, sourceFormat, output, kind, area, box, region } = key;
+		const label = `downsampler ${ kind }${ box ? ' box' : area ? ' area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ typeof reduction === 'string' ? reduction : 'custom' }:${ output }${ region ? ':region' : '' }`;
+		const module = this.device.createShaderModule( { label, code: createKernel( this.kernelOptions( key ) ) } );
+		const layout = this.device.createPipelineLayout( { label, bindGroupLayouts: [ this.layout( key ) ] } );
+		return { label, layout, compute: { module, entryPoint: 'main' } };
 
 	}
 
 	private pipeline( key: BatchKernelKey ): GPUComputePipeline {
 
-		const { format, dimension, count, access, reduction, sourceFormat, output, kind, tile, area, box, region, halo } = key;
-		const id = `${ kind }${ kind === 'clamp' ? '' : tile }${ box ? ':box' : area ? ':area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }:${ output }${ region ? ':region' : '' }${ halo ? `:halo${ area ? 'a' : '' }${ halo.x.join( '.' ) }/${ halo.y.join( '.' ) }` : '' }`;
+		const id = this.pipelineId( key );
 		let pipeline = this.pipelines.get( id );
-		if ( pipeline !== undefined ) return pipeline;
-		const label = `downsampler ${ kind }${ box ? ' box' : area ? ' area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ typeof reduction === 'string' ? reduction : 'custom' }:${ output }${ region ? ':region' : '' }`;
-		const module = this.device.createShaderModule( { label, code: createKernel( this.kernelOptions( key ) ) } );
-		const layout = this.device.createPipelineLayout( { label, bindGroupLayouts: [ this.layout( key ) ] } );
-		pipeline = this.device.createComputePipeline( { label, layout, compute: { module, entryPoint: 'main' } } );
-		this.pipelines.set( id, pipeline );
+		if ( pipeline === undefined ) this.pipelines.set( id, pipeline = this.device.createComputePipeline( this.pipelineDescriptor( key ) ) );
 		return pipeline;
+
+	}
+
+	private async pipelineAsync( key: BatchKernelKey ): Promise<GPUComputePipeline> {
+
+		const id = this.pipelineId( key );
+		const cached = this.pipelines.get( id );
+		if ( cached !== undefined && this.pipelineStates.get( cached ) === 'validated' ) return cached;
+		let pending = this.pipelinePromises.get( id );
+		if ( pending === undefined ) {
+
+			pending = this.device.createComputePipelineAsync( this.pipelineDescriptor( key ) ).then( pipeline => {
+
+				const previous = this.pipelines.get( id );
+				if ( previous !== undefined && previous !== pipeline ) this.pipelineStates.set( previous, 'superseded' );
+				this.pipelines.set( id, pipeline );
+				this.pipelineStates.set( pipeline, 'validated' );
+				return pipeline;
+
+			} ).finally( () => { this.pipelinePromises.delete( id ); } );
+			this.pipelinePromises.set( id, pending );
+
+		}
+		return pending;
 
 	}
 

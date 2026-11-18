@@ -27,8 +27,17 @@ tested against a CPU reference on real GPUs. Zero dependencies; a three.js adapt
 ## Install
 
 ```sh
-npm install downsampler
+git clone https://github.com/pmndrs/downsampler.git
+cd downsampler
+npm ci
+npm run build
+npm run examples
+# Open http://localhost:8080/examples/
 ```
+
+The examples import `../dist/webgpu/index.js` directly from this built checkout. To use it in a separate
+bundler project, run `npm install /absolute/path/to/downsampler` there after the build; then the package imports
+below resolve through its exports. No npm registry release is required.
 
 The types use the standard WebGPU types, so add [`@webgpu/types`](https://www.npmjs.com/package/@webgpu/types) to
 your project. `three` is optional and only needed for `downsampler/three`.
@@ -57,20 +66,16 @@ downsampler.generate( texture );               // records and submits the work
 
 Already have a command encoder? Use `downsampler.encode( encoder, texture )` instead, and it records into yours.
 
-## What else it can do
+## Choose the operation
 
-```js
-// A conservative min/max depth pyramid for occlusion culling (depth can't be written, so it goes into its own texture).
-downsampler.encode( encoder, hiZ, { source: depthTexture, reduction: 'minmax' } );
+| Task | Setting | Runnable example |
+|---|---|---|
+| Ordinary color mipmaps | Defaults (`oddSizes: 'exact'`) | [Mip chain](examples/mip-chain.html) |
+| Exact sRGB rounding | sRGB texture with `RENDER_ATTACHMENT`, default `srgbRounding: 'exact'` | [three.js](examples/three.html) |
+| Conservative Hi-Z | Separate `rg32float` destination, `{ source: depth, reduction: 'minmax' }` | [Hi-Z decisions](examples/hi-z.html) |
+| Dirty regions | `{ rect: { x, y, width, height } }` | [Brush replay and timings](examples/partial-update.html) |
 
-// Refresh only what a 32×32 brush stroke changed.
-downsampler.encode( encoder, texture, { rect: { x: 128, y: 64, width: 32, height: 32 } } );
-
-// A true area average at odd sizes, for lighting and roughness chains.
-downsampler.encode( encoder, irradiance, { oddSizes: 'box' } );
-```
-
-Each of these has a runnable page in [examples/](examples/) that checks its own output.
+See [getting started](docs/getting-started.md) for complete feature walkthroughs.
 
 ## three.js
 
@@ -104,7 +109,10 @@ the exact rounding and matches them.
 The big wins are small textures and cube maps, where the cost of starting many render passes dominates. Very large
 textures (4096²) are limited by memory bandwidth, so every method takes about the same time there. If you can accept
 SPD's handling of odd sizes, `oddSizes: 'spd'` takes about 25 % less time on the RTX. Methods and full numbers:
-[SPEC.md §8](SPEC.md#8-performance-methodology) and [docs/WINDOWS-REPORT.md](docs/WINDOWS-REPORT.md).
+[SPEC.md §8](SPEC.md#8-performance-methodology) and the [November 15 Windows measurements](results/windows/round2/rtx3060-bench.txt).
+The [earlier Windows report](docs/WINDOWS-REPORT.md) is historical; its open NVIDIA sampled-sRGB tolerance question
+was resolved in the November 16 owner decision (`f7248a3`). Exact sRGB rounding remains the default
+([current reference](docs/guide.md#srgb-color)).
 
 ## Browser support
 

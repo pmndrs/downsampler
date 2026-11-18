@@ -14,6 +14,22 @@ runnable page in [examples/](../examples/) that checks its own output. For the f
 - [When a texture isn't supported](#when-a-texture-isnt-supported)
 - [The same results on every GPU](#the-same-results-on-every-gpu)
 
+## Build and run from a checkout
+
+The package is not published on npm yet. Clone and build it first:
+
+```sh
+git clone https://github.com/pmndrs/downsampler.git
+cd downsampler
+npm ci
+npm run build
+npm run examples
+```
+
+Open http://localhost:8080/examples/. The pages import `../dist/webgpu/index.js` from the built checkout.
+For the package imports below in your own bundler project, run `npm install /absolute/path/to/downsampler`
+in that project after building the checkout. TypeScript consumers also need `@webgpu/types`; `three` is optional.
+
 ## Set up a device
 
 ```js
@@ -111,6 +127,10 @@ const hiZ = device.createTexture( {
 downsampler.encode( encoder, hiZ, { source: depth, reduction: 'minmax' } ); // r = min, g = max depth
 ```
 
+The Hi-Z page also tests candidate draws beside a three-pixel occluder at odd sizes. It compares GPU-pyramid
+queries with direct full-resolution depth, counts culled draws and visible objects lost, and shows hidden draws
+kept conservatively by coarse tiles. Decisions run on CPU readbacks for inspection; they are not a GPU culling benchmark.
+
 Use `'max'` alone (an `r32float` pyramid) if you only need the farthest depth, or `'min'` with reverse-Z.
 
 **A power-of-two pyramid.** Screen sizes make awkward pyramids. With `resample: 'area'`, level 0 of the pyramid can
@@ -139,9 +159,16 @@ downsampler.encode( encoder, cubeFaces, { layers: [ 4, 1 ], rect: decal } ); // 
 
 An empty rectangle does nothing, so you can pass this frame's dirty region without checking it first.
 
-It pays off most on big textures and cube maps. The dispatches still run, so a small change costs about the same
-whatever its size: on an RTX 3060, a 32 × 32 rectangle costs 3 % of a full chain at 4096², a fifth to a third at 1080p, and
-one cube face a fifth to a third of the cube.
+The partial-update page's **Benchmark identical brush path** button starts both modes from the same image and
+replays 40 deterministic moving/clipped strokes in alternating order. CPU encoding and GPU compute-pass timestamps
+are reported separately; uploads, submission, waits, reference recomputation and readback are outside the intervals.
+The final chains are checked bit for bit. Without `timestamp-query` the GPU column says unavailable and CPU and
+correctness checks still run. Use `?benchmark=1&timestamps=0` to reproduce that fallback.
+
+Historical GPU-only timings ([November 15 partial-update report](../results/windows/round2/partial.md)) show where
+it pays off most: big textures and cube maps. Dispatch overhead remains, so the saving depends on texture and brush
+size: on an RTX 3060, a 32 × 32 rectangle costs 3 % of a full chain at 4096², a fifth to a third at 1080p, and one cube
+face a fifth to a third of the cube.
 
 ## Statistics and single values
 

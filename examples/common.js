@@ -10,12 +10,13 @@ import { requiredLimits } from '../dist/webgpu/index.js';
  * the adapter has them. Without them it still works, with four levels per
  * dispatch.
  */
-export async function initDevice() {
+export async function initDevice( { timestamps = false } = {} ) {
 
 	if ( ! navigator.gpu ) throw new Error( 'WebGPU is not available in this browser.' );
 	const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance' } );
 	if ( ! adapter ) throw new Error( 'No WebGPU adapter.' );
-	const device = await adapter.requestDevice( { requiredLimits: requiredLimits( adapter ) } );
+	const requiredFeatures = timestamps && adapter.features.has( 'timestamp-query' ) ? [ 'timestamp-query' ] : [];
+	const device = await adapter.requestDevice( { requiredLimits: requiredLimits( adapter ), requiredFeatures } );
 	device.lost.then( info => { if ( info.reason !== 'destroyed' ) fail( new Error( `GPU device lost: ${ info.message }` ) ); } );
 	device.addEventListener( 'uncapturederror', event => fail( new Error( `WebGPU error: ${ event.error.message }` ) ) );
 	const info = adapter.info ?? {};

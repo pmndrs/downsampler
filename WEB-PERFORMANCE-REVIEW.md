@@ -1,0 +1,68 @@
+# Downsampler performance and code review
+
+November 17, 2026 · Baseline `d8368d0` · Handoff branch `codex/web-performance-review` includes `windows-3` at `0210cd1` and the M5 work through `1ff808b`, and the separate Windows verification in `b6e97c5`. [Review Page](https://chatgpt.com/space/page_31c5c354d25c81918908d3903f124634) · [Mac checkout and M5 tests](docs/M5-HANDOFF-SRGB.md)
+
+## DS1 · Keep a working plan after a failed replacement
+
+On a 65×47 RGBA8 texture, replacing a working plan with a four-byte scratch buffer raised the expected error. Retrying the original options after editing the image then produced one WebGPU validation error and six stale mip levels. Full and partial caches now publish a replacement before retiring the previous buffers. On the RTX 3060 the retry preserved both plans, with zero errors and all six levels matching a fresh recompute. Implemented in `5c59385`. [Browser regression](test/browser/validate.js)
+
+## DS2 · Reuse bindings as the brush moves
+
+Moving a 32×32 brush 64 times across a warmed 1920×1080 texture previously created 64 uniform buffers and 256 bind groups. The same run on NVIDIA now creates two buffers and eight bind groups. A fixed brush creates zero of either. Storage encoding shares bindings and views while giving each recorded update its own immutable uniform data. Public `prepare()` keeps its existing batches. Implemented in `db4c381`. [Paired benchmark](results/probes/ds2-region.mjs)
+
+With default device limits and 320 moving strokes, CPU encode p95 fell from 70 to 20 µs on the RTX and from 75 to 20–25 µs on Intel. Moving strokes allocated 319 → 1 buffers, 1,595 → 5 bind groups and 4,785 → 0 views on each adapter. Intel’s fixed-brush GPU median rose by 0.60–1.50 µs across two runs. The storage regression records 514 updates over two layers and submits the two command buffers in reverse order. All mip contents matched a full recompute. [Region regression](test/browser/validate-region.js)
+
+## DS3 · Compile pipelines before interactive use
+
+Call `await downsampler.warmup(texture, options)` before the first interactive `encode()` or `generate()` for that texture and path. The API shares in-flight native compiles, validates pipelines created synchronously and allows a retry after rejection. It uses the actual storage, buffer-copy, compatibility or render descriptors and leaves command submission to the caller. Implemented in `5702f5b` and `a7f3060`. Commits `7f96b7f` and `ff785d9` also verify size-based selection and render-only aliases through both WebGPU and three.js. [API guide](docs/guide.md) · [Probe and reproduction](results/probes/ds3-warmup.md)
+
+On fresh Chrome 157 profiles, the time from the first submission to queue completion fell on all three devices. Each value below is the median of three alternating A/B pairs for a 512×288 texture, in milliseconds. The last column is the time spent in `await warmup()` before submission. The operating system and driver caches were retained.
+
+| Device | Storage, sync → warm | Buffer, sync → warm | sRGB render, sync → warm | Prior warmup, storage / buffer / render |
+| --- | ---: | ---: | ---: | ---: |
+| NVIDIA RTX 3060 Laptop | 128.0 → 3.2 | 174.5 → 10.6 | 48.9 → 2.6 | 70.5 / 120.4 / 42.8 |
+| Intel UHD | 128.1 → 4.1 | 173.5 → 4.0 | 42.3 → 4.7 | 73.7 / 93.1 / 41.5 |
+| SwiftShader | 414.8 → 19.2 | 488.9 → 30.8 | 58.2 → 44.7 | 365.4 / 480.2 / 13.6 |
+
+All 108 page runs used one build under the shared GPU lock. Across 972 generated-mip readbacks, the A/B hashes matched and warmed first encode created zero pipelines. Both hardware arms showed two shader-compiler events per fresh-profile path and zero on reload. The main benefit is control over when the application pays the startup cost. [Full medians, frame gaps and compiler traces](results/windows/ds3/summary.md)
+
+## DS4 · Capped halo stays opt-in
+
+With the cap at its current default, the NVIDIA RTX 3060 Laptop benefited most on the odd-size box reductions. Intel UHD showed gains and losses across the same inputs. Each cell is capped-halo GPU time divided by plain GPU time. The median and range summarize 16 paired size/format ratios, from 960×540 through 3840×2160 with RGBA8 and RGBA16F. Each timing is the median of 11 rotating rounds with 16 repetitions in Chrome 148.0.7778.97. Drivers were NVIDIA 592.00 and Intel 31.0.101.5333. The ratios compare strategies within the same run. This pass did not record GPU clocks.
+
+| Windows GPU | Policy | Median | Range | 1080p RGBA8 / RGBA16F |
+| --- | --- | ---: | ---: | ---: |
+| RTX 3060 Laptop | Exact | 0.956 | 0.866–1.002 | 0.940 / 0.935 |
+| RTX 3060 Laptop | Box | 0.915 | 0.731–1.002 | 0.834 / 0.880 |
+| Intel UHD | Exact | 0.997 | 0.920–1.082 | 1.022 / 0.941 |
+| Intel UHD | Box | 1.011 | 0.981–1.113 | 0.983 / 1.055 |
+
+On Apple M5 Pro, two independent exact-policy runs gave a median halo/plain ratio of 0.98–0.99. At 1024² RGBA8 the capped halo took 3–4% longer both times. It misses the owner’s requirement of a 5% gain and no regressions. The default decision is closed. Apple box timings would add policy-specific data if that workload becomes important. [M5 measurements](results/m5/srgb-m5.md#halo-batches) · [NVIDIA exact](results/windows/round2/handoff-halo-high-exact.json) · [NVIDIA box](results/windows/round2/handoff-halo-high-box.json) · [Intel exact](results/windows/round2/handoff-halo-low-exact.json) · [Intel box](results/windows/round2/handoff-halo-low-box.json)
+
+## DS5 · Show what partial updates and Hi-Z buy
+
+The [brush example](examples/partial-update.html) replays the same 40 strokes in both modes, alternates measurement order and compares every edited mip with a full recompute outside the timing window. It reports CPU encode time and GPU timestamps separately and works on devices without timestamps. The [Hi-Z example](examples/hi-z.html) tests five objects against a thin occluder and a depth block. It compares the hierarchy’s decisions with full-resolution depth so a false cull is visible. Implemented in `f80f5a9`. [Setup from checkout](docs/getting-started.md)
+
+## M5 and Windows sRGB selection
+
+The merged `renderPathMinTexels` option defaults to 1920 × 1080 texels per layer. On M5, exact render took 1.25–2.18× the buffer path below 1080p, reached parity at 1080p and won at larger sizes. Automatic selection uses the size of the source level or dirty rectangle, including for pipeline warmup. `renderPathMinTexels: 0` enables rendering at any size that supports it. [M5 report](results/m5/srgb-m5.md) · [Selection rules](docs/guide.md)
+
+With the markers bracketing the texture each strategy actually writes, `colorSpace`/buffer GPU time was 0.726–0.841 on the RTX and 0.771–0.927 on Intel. At 1080p, the old → corrected ratios were 0.757 → 0.761 and 0.884 → 0.866, respectively. In this run, three ratios moved by more than 5%: RTX 1440p 0.797 → 0.745, Intel 960×540 0.848 → 0.771, and Intel 720p 0.906 → 0.805. An independent corrected-marker RTX run measured 0.757 at 1440p. These are run-to-run differences, and both runs favor the alias over buffer output at this size. [Independent RTX data](results/windows/round3/rtx3060-srgb-renderpath.json)
+
+Each run used 11 rotating rounds of 32 repetitions over eight sizes. The RTX clock check passed. Intel ratios compare strategies in the same round. [RTX data](results/windows/round3/review-rtx3060-srgb.json) · [RTX clock log](results/windows/round3/review-rtx3060-srgb.clock.json) · [Intel data](results/windows/round3/review-intel-srgb.json)
+
+## Windows verification
+
+The combined runtime at `ff785d9` built, typechecked and passed all **161 core tests**. A clean clone of the Git bundle produced a 153,782-byte tarball with 56 files. All five public export paths loaded in a fresh consumer with the optional three.js peer absent. Its declarations passed strict NodeNext and Bundler checks.
+
+| Chrome 148 on Windows | Groups run / listed | Cases | Pattern runs | Outcome |
+| --- | ---: | ---: | ---: | --- |
+| RTX 3060 Laptop, full | 3,239 / 3,239 | 35,840 | 79,132 | Two FSR fixtures flagged at five sizes |
+| Intel UHD, quick | 1,864 / 1,864 | 21,791 | 33,288 | Same two fixtures at two sizes |
+| RTX, compatibility quick | 1,800 / 1,800 | 21,074 | 32,452 | Passed |
+
+All 84 shards finished. The two fixture oracles are `fsr/luma-pyramid` and `generator/luma-pyramid-clamp`. Their D3D12 FrameInfo values show the previously recorded f16 packing difference. Every other listed group passed. [RTX part 1](results/windows/round3/review-rtx-full-1/summary.md) · [Part 2](results/windows/round3/review-rtx-full-2/summary.md) · [Part 3](results/windows/round3/review-rtx-full-3/summary.md) · [Part 4](results/windows/round3/review-rtx-full-4/summary.md) · [Intel quick](results/windows/round3/review-intel-quick/summary.md) · [RTX compatibility](results/windows/round3/review-compat-quick/summary.md)
+
+The targeted tests passed 21 cases on each hardware adapter, eight on SwiftShader and seven in compatibility mode. They checked a native rejection and retry, warmed render-only sRGB aliases through core WebGPU, and read back patterned two-layer textures. At the 1080p sRGB threshold, render and buffer differed by one code in two of 84 near ties on RTX and one of 2,371 on Intel. All 24 example pages and presets passed on each hardware adapter, including the no-timestamps brush replay and odd-size Hi-Z checks.
+
+The Intel default benchmark covered 14 format/shape pairs. At 1080p RGBA8, four-level compute, six-level compute and per-level rendering took 0.251, 0.359 and 0.437 ms respectively. The Intel tools run checked 15 fixtures at each of five sizes. The same two FSR fixtures flagged at all five sizes. [Benchmark](results/windows/round3/review-intel-bench.json) · [Tools and oracles](results/windows/round3/review-intel-tools.json)

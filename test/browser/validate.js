@@ -15,6 +15,7 @@ import { validatePayload } from './validate-payload.js';
 import { validateRegion } from './validate-region.js';
 import { validateSrgb } from './validate-srgb.js';
 import { validateWide } from './validate-wide.js';
+import { validateWarmup } from './validate-warmup.js';
 import { assignShards, digest, Selection } from '../ci/shard.js';
 
 // [ width, height, layers?, viewDimension? ]: 1×1, 1D tails, odd sizes, partial
@@ -503,6 +504,7 @@ async function suite( device, { onProgress = () => {}, quick = false, only, sele
 
 				results.push( ...await validateSource( device, { quick, onProgress, select } ) );
 				results.push( ...await select.run( 'downsampler/options', () => validateOptions( device ) ) );
+				results.push( ...await select.run( 'downsampler/warmup', () => validateWarmup( device ) ) );
 				results.push( ...await select.run( 'downsampler/float32-sample', () => validateFloat32Sample( device, { quick } ) ) );
 				results.push( ...await select.run( 'downsampler/mipmap', () => validateMipmap( device, { quick } ) ) );
 				results.push( ...await validateRegion( device, { quick, onProgress, select } ) );
@@ -853,6 +855,51 @@ async function validateOptions( device ) {
 
 	const results = [];
 	const downsampler = new Downsampler( device );
+
+	// A failed replacement must leave the previously cached buffer plan usable.
+	{
+
+		const bufferDownsampler = new Downsampler( device, { output: 'buffer' } );
+		const texture = createTexture( device, { width: 64, height: 32, format: 'rgba8unorm' } );
+		const input = makeData( 64, 32, 1, 'rgba8unorm', 'random' );
+		upload( device, texture, input );
+		const originalPlan = bufferDownsampler.prepare( texture );
+		bufferDownsampler.generate( texture );
+		await device.queue.onSubmittedWorkDone();
+		const expected = await readMips( device, texture, 0 );
+		const small = device.createBuffer( { size: 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC } );
+		let failed = false;
+		try { bufferDownsampler.prepare( texture, { scratch: small } ); } catch ( error ) { failed = error.message.includes( 'needs' ); }
+		if ( ! failed ) throw new Error( 'buffer-plan retry: undersized scratch did not fail with its size error' );
+		if ( bufferDownsampler.prepare( texture ) !== originalPlan ) throw new Error( 'buffer-plan retry: failed replacement evicted the cached plan' );
+		await device.queue.onSubmittedWorkDone();
+		device.pushErrorScope( 'validation' );
+		bufferDownsampler.generate( texture );
+		await device.queue.onSubmittedWorkDone();
+		const validation = await device.popErrorScope();
+		if ( validation !== null ) throw new Error( `buffer-plan retry: GPU validation error: ${ validation.message }` );
+		const actual = await readMips( device, texture, 0 );
+		if ( actual.length !== expected.length || actual.some( ( level, i ) => level.some( ( value, j ) => value !== expected[ i ][ j ] ) ) ) throw new Error( 'buffer-plan retry: mip contents differ after failed replacement' );
+		const rect = { x: 4, y: 4, width: 8, height: 8 };
+		const regionPlan = bufferDownsampler.prepare( texture, { rect } );
+		failed = false;
+		try { bufferDownsampler.prepare( texture, { rect, scratch: small } ); } catch ( error ) { failed = error.message.includes( 'needs' ); }
+		if ( ! failed ) throw new Error( 'region-plan retry: undersized scratch did not fail with its size error' );
+		if ( bufferDownsampler.prepare( texture, { rect } ) !== regionPlan ) throw new Error( 'region-plan retry: failed replacement evicted the cached plan' );
+		await device.queue.onSubmittedWorkDone();
+		device.pushErrorScope( 'validation' );
+		bufferDownsampler.generate( texture, { rect } );
+		await device.queue.onSubmittedWorkDone();
+		const regionValidation = await device.popErrorScope();
+		if ( regionValidation !== null ) throw new Error( `region-plan retry: GPU validation error: ${ regionValidation.message }` );
+		const regionActual = await readMips( device, texture, 0 );
+		if ( regionActual.length !== expected.length || regionActual.some( ( level, i ) => level.some( ( value, j ) => value !== expected[ i ][ j ] ) ) ) throw new Error( 'region-plan retry: mip contents differ after failed replacement' );
+		small.destroy();
+		bufferDownsampler.release( texture );
+		texture.destroy();
+		results.push( { option: 'buffer and region plans survive failed replacement' } );
+
+	}
 
 	// Sub-range: only levels after baseMipLevel are written, from that level.
 	const texture = createTexture( device, { width: 256, height: 256, format: 'rgba8unorm' } );
