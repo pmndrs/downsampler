@@ -11,13 +11,13 @@ in [SPEC.md](../SPEC.md).
 - [ScalarReduction: an image to one value](#scalarreduction-an-image-to-one-value)
 - [three.js](#threejs)
 - [The core package: CPU references and planning](#the-core-package-cpu-references-and-planning)
-- [Vendoring: `downsampler/mipmap`](#vendoring-downsamplermipmap)
+- [Vendoring: `@pmndrs/downsampler/mipmap`](#vendoring-pmndrsdownsamplermipmap)
 - [Not built (yet)](#not-built-yet)
 
 ## Setup
 
 ```js
-import { Downsampler, Reducer, ScalarReduction, requiredFeatures, requiredLimits } from 'downsampler/webgpu';
+import { Downsampler, Reducer, ScalarReduction, requiredFeatures, requiredLimits } from '@pmndrs/downsampler/webgpu';
 
 const adapter = await navigator.gpu.requestAdapter();
 const device = await adapter.requestDevice( {
@@ -26,7 +26,7 @@ const device = await adapter.requestDevice( {
 } );
 ```
 
-`requiredFeatures( adapter )` (also re-exported by `downsampler/three`) returns the optional features the library uses that the adapter has:
+`requiredFeatures( adapter )` (also re-exported by `@pmndrs/downsampler/three`) returns the optional features the library uses that the adapter has:
 
 | Feature | What it changes |
 |---|---|
@@ -36,7 +36,7 @@ const device = await adapter.requestDevice( {
 
 Everything works without them; add your own features to the list.
 
-`requiredLimits( adapter )` (also `Downsampler.requiredLimits`, and re-exported by `downsampler/three`) returns the limits worth requesting for all three classes:
+`requiredLimits( adapter )` (also `Downsampler.requiredLimits`, and re-exported by `@pmndrs/downsampler/three`) returns the limits worth requesting for all three classes:
 
 | Limit | Requested | Why |
 |---|---|---|
@@ -449,10 +449,10 @@ A Reducer whose deepest level is 6 emits one texel per 64 × 64 tile. Its store 
 
 ## three.js
 
-`downsampler/three` works with `WebGPURenderer` on the WebGPU backend. `three` is an optional peer and is typed structurally, so the adapter imports nothing from it.
+`@pmndrs/downsampler/three` works with `WebGPURenderer` on the WebGPU backend. `three` is an optional peer and is typed structurally, so the adapter imports nothing from it.
 
 ```js
-import { generateMipmaps, getDownsampler, getGPUTexture, requiredLimits, unsupportedReason } from 'downsampler/three';
+import { generateMipmaps, getDownsampler, getGPUTexture, requiredLimits, unsupportedReason } from '@pmndrs/downsampler/three';
 
 const renderer = new THREE.WebGPURenderer( { requiredLimits: requiredLimits( await navigator.gpu.requestAdapter() ) } );
 await renderer.init();
@@ -475,14 +475,14 @@ generateMipmaps( renderer, texture, { encoder, downsampler: { averageAccess: 'lo
 | `unsupportedReason( renderer, texture, options? )` | Why `generateMipmaps` would return `false` with these options, or `null`. |
 | `getDownsampler( renderer, options? )` | The shared `Downsampler` of the renderer's device for an option set (one per distinct set, any key order). Use it for `encode`, `prepare`, `release`, or Hi-Z with a separate source. |
 | `getGPUTexture( renderer, texture )` | The `GPUTexture` behind a three.js texture, or `undefined`. |
-| `requiredLimits( adapter )` | The same function as in `downsampler/webgpu`, for `new WebGPURenderer( { requiredLimits } )`. |
+| `requiredLimits( adapter )` | The same function as in `@pmndrs/downsampler/webgpu`, for `new WebGPURenderer( { requiredLimits } )`. |
 | `Downsampler` | Re-exported. |
 
 For native sRGB textures, `output: 'auto'` uses the render path at the configured size threshold when the texture has `RENDER_ATTACHMENT`. Smaller chains use the buffer path with `COPY_DST`. A texture whose only writable usage is `RENDER_ATTACHMENT` can render at any size for supported chains. For ordinary linear textures, use a three.js `StorageTexture` or `StorageArrayTexture` when the format supports storage. The example shows how to query support on an allocated three.js texture. [three.js example](../examples/three.html)
 
 ## The core package: CPU references and planning
 
-`import { … } from 'downsampler'` is backend-neutral (no WebGPU types). It holds the CPU reference implementations the GPU kernels are tested against ("oracles"), useful for testing your own use of the library:
+`import { … } from '@pmndrs/downsampler'` is backend-neutral (no WebGPU types). It holds the CPU reference implementations the GPU kernels are tested against ("oracles"), useful for testing your own use of the library:
 
 | Export | What it is |
 |---|---|
@@ -498,14 +498,14 @@ For native sRGB textures, `output: 'auto'` uses the render path at the configure
 | `formats`, `quantize`, `quantizeTexel`, `toHalf`, `fromHalf`, `packRgb9e5`, … | Format table and encoders. |
 | `srgbCode`, `srgbDecodeTable`, `quantizeSrgb`, `srgbThresholds`, `srgbBounds`, `srgbDecode`, `srgbEncode` | sRGB: the correctly rounded encoder, the exact decode table, the rounding thresholds and the f32 bounds the shader compares against. The oracles take the quantization `'srgb8'`. |
 
-The WGSL generators are exported from `downsampler/webgpu` for vendoring: `createKernel`, `kernelLayoutEntries`, `float16Wgsl`, `packedFloatWgsl`, `srgbWgsl`, `bufferOutputWgsl`, `createIntKernel`, `intMeanWgsl`, `createScalarKernel`. Kernels that read or write sRGB (`usesSrgbTable( options )`) take the exact tables from a storage buffer: bind `srgbTable( device )` at `srgbTableBinding` (12); `kernelLayoutEntries` declares it. An exact kernel for an sRGB format with `output: 'storage'` writes the encoded bytes to storage textures of the linear alias format (`srgbScratchFormat`: `rgba8unorm` or `bgra8unorm`), for a self-dispatching tool that copies them into the sRGB level with `copyTextureToTexture`.
+The WGSL generators are exported from `@pmndrs/downsampler/webgpu` for vendoring: `createKernel`, `kernelLayoutEntries`, `float16Wgsl`, `packedFloatWgsl`, `srgbWgsl`, `bufferOutputWgsl`, `createIntKernel`, `intMeanWgsl`, `createScalarKernel`. Kernels that read or write sRGB (`usesSrgbTable( options )`) take the exact tables from a storage buffer: bind `srgbTable( device )` at `srgbTableBinding` (12); `kernelLayoutEntries` declares it. An exact kernel for an sRGB format with `output: 'storage'` writes the encoded bytes to storage textures of the linear alias format (`srgbScratchFormat`: `rgba8unorm` or `bgra8unorm`), for a self-dispatching tool that copies them into the sRGB level with `copyTextureToTexture`.
 
-## Vendoring: `downsampler/mipmap`
+## Vendoring: `@pmndrs/downsampler/mipmap`
 
 An engine that can't take a dependency (three.js's `WebGPUTextureMipmapUtils`) copies one file: `dist/mipmap.js`, built from `src/mipmap.ts`. It imports nothing, is plain ES2022 (about 19 KB, 350 lines with comments) and holds in-place `'average'` chains only: the `'exact'` and tail kernels, the planner, the default rules and the formats they write.
 
 ```js
-import { createMipmapKernel, kernelDefaults, mipmapAccess, mipmapFormats, planMipmapBatches } from 'downsampler/mipmap';
+import { createMipmapKernel, kernelDefaults, mipmapAccess, mipmapFormats, planMipmapBatches } from '@pmndrs/downsampler/mipmap';
 
 const defaults = kernelDefaults( device.limits, device.adapterInfo ); // { levelsPerDispatch, bufferLevelsPerDispatch, exactTile, tailMaxTile, tail }
 const access = mipmapAccess( texture.format, device.features );       // 'sample', or 'load' for unfilterable formats
@@ -520,7 +520,7 @@ for ( const batch of planMipmapBatches( texture.width, texture.height, { mipLeve
 
 | Export | What it is |
 |---|---|
-| `createMipmapKernel( { format, dimension?, count, access?, tail?, tile?, f16Rounding? } )` | One batch's WGSL. Equal to `createKernel( { ...options, f16Pack: false } )` of `downsampler/webgpu`: float16 kernels define `ds_round_f16` alone, without the buffer path's `ds_half_bits` and `ds_pack_f16`. |
+| `createMipmapKernel( { format, dimension?, count, access?, tail?, tile?, f16Rounding? } )` | One batch's WGSL. Equal to `createKernel( { ...options, f16Pack: false } )` of `@pmndrs/downsampler/webgpu`: float16 kernels define `ds_round_f16` alone, without the buffer path's `ds_half_bits` and `ds_pack_f16`. |
 | `planMipmapBatches( width, height, { mipLevelCount?, levelsPerDispatch, tail?, tailMaxTile?, exactMinTile? } )` | The batches, equal to core `planBatches` in place under `'exact'`; the tail is on by default. Takes `exactTile` for `exactMinTile`, so `kernelDefaults( … )` spreads in. |
 | `kernelDefaults( limits, adapterInfo? )` | The device defaults `Downsampler` resolves its options from: levels per dispatch (storage textures, and the buffer path's), the `'exact'` tile (32, 16 on Apple, 8 below 256 invocations and on software adapters), the largest tail tile, and `tail: true`. Pure. |
 | `mipmapFormats`, `mipmapAccess( format, features? )` | The 19 storage formats with a float view (8- and 16-bit normalized, float16, float32), each with its quantization, filterability and storage feature. sRGB, packed, `rgb10a2unorm` and integer formats need the full library. |

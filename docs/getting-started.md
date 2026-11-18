@@ -14,9 +14,15 @@ runnable page in [examples/](../examples/) that checks its own output. For the f
 - [When a texture isn't supported](#when-a-texture-isnt-supported)
 - [The same results on every GPU](#the-same-results-on-every-gpu)
 
-## Build and run from a checkout
+## Install
 
-The package is not published on npm yet. Clone and build it first:
+```sh
+npm install @pmndrs/downsampler
+```
+
+TypeScript consumers also need `@webgpu/types`; `three` is optional.
+
+To run the examples, build from a checkout:
 
 ```sh
 git clone https://github.com/pmndrs/downsampler.git
@@ -27,13 +33,11 @@ npm run examples
 ```
 
 Open http://localhost:8080/examples/. The pages import `../dist/webgpu/index.js` from the built checkout.
-For the package imports below in your own bundler project, run `npm install /absolute/path/to/downsampler`
-in that project after building the checkout. TypeScript consumers also need `@webgpu/types`; `three` is optional.
 
 ## Set up a device
 
 ```js
-import { Downsampler, requiredFeatures, requiredLimits } from 'downsampler/webgpu';
+import { Downsampler, requiredFeatures, requiredLimits } from '@pmndrs/downsampler/webgpu';
 
 const adapter = await navigator.gpu.requestAdapter();
 const device = await adapter.requestDevice( { requiredFeatures: requiredFeatures( adapter ), requiredLimits: requiredLimits( adapter ) } );
@@ -214,7 +218,7 @@ metering.encode( encoder, { width, height, bindGroup } );
 ([three.html](../examples/three.html))
 
 ```js
-import { generateMipmaps, requiredLimits, unsupportedReason } from 'downsampler/three';
+import { generateMipmaps, requiredLimits, unsupportedReason } from '@pmndrs/downsampler/three';
 
 const renderer = new THREE.WebGPURenderer( { requiredLimits: requiredLimits( await navigator.gpu.requestAdapter() ) } );
 await renderer.init();

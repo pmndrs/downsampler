@@ -1,5 +1,5 @@
 /**
- * Device limits worth requesting for every class in `downsampler/webgpu`, as
+ * Device limits worth requesting for every class in `@pmndrs/downsampler/webgpu`, as
  * `adapter.requestDevice( { requiredLimits: requiredLimits( adapter ) } )`:
  * - `maxStorageTexturesPerShaderStage`: up to 6 (default 4), so a `Downsampler`
  *   writes six levels per dispatch and a `Reducer` emits five or six levels to

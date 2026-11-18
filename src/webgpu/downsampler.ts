@@ -481,7 +481,7 @@ export class Downsampler {
 
 	/**
 	 * Limits to request when creating a device: the standalone
-	 * {@link requiredLimits} (exported from `downsampler/webgpu`), which also
+	 * {@link requiredLimits} (exported from `@pmndrs/downsampler/webgpu`), which also
 	 * covers 5- and 6-level `Reducer`s and `ScalarReduction`.
 	 */
 	static requiredLimits( adapter: GPUAdapter ): Record<string, number> {
@@ -494,7 +494,7 @@ export class Downsampler {
 
 		const output = options.output ?? 'auto';
 		if ( output !== 'auto' && output !== 'storage' && output !== 'buffer' && output !== 'render' ) throw new Error( 'downsampler: output must be "auto", "storage", "buffer" or "render".' );
-		// The device's defaults (`kernelDefaults`, shared with `downsampler/mipmap`). 5 and 6 levels
+		// The device's defaults (`kernelDefaults`, shared with `@pmndrs/downsampler/mipmap`). 5 and 6 levels
 		// take 16 × 16 invocations; compatibility mode defaults to 128. Software adapters
 		// (SwiftShader) keep 8×8 'exact' tiles: they take 30 s or more to compile a 32×32-tile pipeline.
 		const defaults = kernelDefaults( device.limits, ( device as GPUDevice & { adapterInfo?: GPUAdapterInfo } ).adapterInfo );

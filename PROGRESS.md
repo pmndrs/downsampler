@@ -137,10 +137,11 @@ Last updated 2026-11-18. `main` has `srgb-store` (PR #2, `0d91892`). The Windows
 
 - **three.js cube-mipmap fix upstream**: branch `fix-compat-cube-mipmaps` (`4bf8797c22`, on `dev`, local); PR text in [three-compat-cube-pr.md](results/windows/round2/three-compat-cube-pr.md). Push and file when ready
 - **three.js and `colorSpace: 'srgb'`**: it now meets the recommendation rule (beats the render path on the M5 at every size, sampling 1.00×). Should the three.js fork create 8-bit color textures as `rgba8unorm` + `viewFormats: ['rgba8unorm-srgb']` (core devices only; compat has no `viewFormats`)? That's what it takes for three.js to use it. The agent's suggestion: not yet: it changes how three.js creates every 8-bit color texture, compatibility mode can't, and the fork keeps render passes for sRGB, so nothing is lost by waiting; revisit as an opt-in
-- Publishing (owner-only step): turn on npm trusted publishing for pmndrs/downsampler on npmjs.com (decided over an `NPM_TOKEN` secret: no long-lived token), then run `release.yml` (dry run first). npm `downsampler` is free
+- Publishing (owner-only step): turn on npm trusted publishing for `@pmndrs/downsampler` on npmjs.com (repo `pmndrs/downsampler`, workflow `release.yml`; decided over an `NPM_TOKEN` secret: no long-lived token), then run `release.yml` (dry run first) for 0.1.0 on `latest`
 
 ## Decided (owner, 2026-11-18)
 
+- **npm name `@pmndrs/downsampler`**, scoped like the other recent pmndrs packages, replacing the unscoped `downsampler` (SPEC §12). Nothing was published under the old name
 - **`warmup()` is public API** (DS3, [WEB-PERFORMANCE-REVIEW.md](WEB-PERFORMANCE-REVIEW.md#ds3--compile-pipelines-before-interactive-use)): `await downsampler.warmup( texture, options )` takes the same options as `encode`, is optional (encode still compiles synchronously on a miss) and cut the first fresh-profile submission from 128 to 3 ms on the RTX (storage path; Intel and the buffer and render paths alike). One method returning `Promise<void>` is little to keep stable; covered by `test/core/warmup.test.js` and the `downsampler/warmup` GPU group
 
 ## Decided (owner, 2026-11-17)
@@ -177,7 +178,7 @@ Last updated 2026-11-18. `main` has `srgb-store` (PR #2, `0d91892`). The Windows
 ## Decided (owner, 2026-11-12)
 
 - Upscaler uses the library through a local reference until npm; the upscaler releases after this is published. Upscaler changes happen in that project when the owner picks it up; this repo only keeps `docs/UPSCALER-HANDOFF.md`
-- Package: npm `downsampler` (unscoped; free on 2026-11-12), else `@pmndrs/downsampler`; GitHub `pmndrs/downsampler`
+- Package: npm `@pmndrs/downsampler` (owner, 2026-11-18; was unscoped `downsampler`, changed before any publish); GitHub `pmndrs/downsampler`
 - Devices: RTX 3060 laptop + Intel UHD now (maybe more NVIDIA); wider coverage after publish
 - `oddSizes: 'spd'` stays a public opt-in
 - ~~Tail kernel stays opt-in~~ → 2026-11-13: default if faster on most devices. Measured: RTX 0.82 / 0.90 of `'exact'`, Intel 0.97 / 0.97, M5 Pro 0.81–1.02 with 16 tiles → `tail: true` by default (`198728a`)

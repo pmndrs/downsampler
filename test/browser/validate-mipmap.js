@@ -1,4 +1,4 @@
-// `downsampler/mipmap` (SPEC.md §10 Vendoring): an engine's in-place chain built from the
+// `@pmndrs/downsampler/mipmap` (SPEC.md §10 Vendoring): an engine's in-place chain built from the
 // standalone entry alone (kernelDefaults, planMipmapBatches, createMipmapKernel, the bindings
 // its documentation names), as three.js vendors it, must give a Downsampler's chain bit for
 // bit. Its kernels equal the Downsampler's but for float16, where they define ds_round_f16
@@ -13,7 +13,7 @@ const quickShapes = [ [ 255, 257 ], [ 31, 31 ], [ 1, 300 ], [ 33, 17, 3 ] ];
 const chainFormats = [ 'rgba8unorm', 'bgra8unorm', 'rgba8snorm', 'r8unorm', 'rgba16unorm', 'r16snorm', 'rgba16float', 'r16float', 'rg16float', 'rgba32float', 'r32float' ];
 const quickFormats = [ 'rgba8unorm', 'rgba16float', 'r16float', 'rgba32float' ];
 
-/** An in-place chain recorder from `downsampler/mipmap` alone. */
+/** An in-place chain recorder from `@pmndrs/downsampler/mipmap` alone. */
 function mipmapChain( device ) {
 
 	const defaults = kernelDefaults( device.limits, device.adapterInfo );

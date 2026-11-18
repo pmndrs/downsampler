@@ -200,7 +200,7 @@ export const compatibility = device => ! device.features.has( 'core-features-and
  * 'box' the main matrix's 'box' variants and validate-box.js (M2.5; also part of 'downsampler').
  * 'region' runs only the partial updates (`rect`, `layers`; validate-region.js; part of 'downsampler').
  * 'halo' runs only the halo-batch groups (validate-halo.js; part of 'downsampler').
- * 'mipmap' runs only the `downsampler/mipmap` entry's chains against a Downsampler's (validate-mipmap.js; part of 'downsampler').
+ * 'mipmap' runs only the `@pmndrs/downsampler/mipmap` entry's chains against a Downsampler's (validate-mipmap.js; part of 'downsampler').
  * 'srgb' runs the sRGB formats of the main matrix, sRGB separate sources and validate-srgb.js (M2.3.5; part of 'downsampler').
  * 'integer' runs only the integer formats (validate-integer.js; part of 'downsampler'), and 'format:<name>'
  * the main matrix of one format (for debugging and mutation checks).
