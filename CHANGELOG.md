@@ -2,7 +2,18 @@
 
 The package follows [semantic versioning](https://semver.org); before 1.0, a minor version may change the API.
 
-## 0.1.0 (unreleased)
+## Unreleased
+
+### Added
+
+- Async compilation for the tool kernels, so recording never compiles synchronously (a synchronous `createComputePipeline` stalls rendering on Dawn/D3D12): `ScalarReduction.warmup( run? )`, `kernelAsync( shape? )` and `combineKernelAsync()`, and `Reducer.create( device, options )`. Apps that require zero synchronous pipeline creation await them before the first encode ([guide](docs/guide.md#compiling-without-hitches)).
+- Self-dispatch helpers for `createScalarKernel`'s WGSL: `scalarParams`, `scalarCombineParams` and `scalarParamsBytes` (the `DsParams` uniform), and `scalarWorkgroups` and `scalarBlock`, now also exported from `@pmndrs/downsampler/webgpu`.
+
+### Changed
+
+- `ScalarReduction` pipelines and tool layouts are cached per device, shared between equal reductions (as `Reducer` pipelines already were). The generated WGSL and every call the classes make on a fresh device are unchanged.
+
+## 0.1.0
 
 The first release.
 

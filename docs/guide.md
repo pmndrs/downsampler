@@ -307,7 +307,7 @@ new Downsampler( device, { f16Rounding: 'device' } );  // the device's conversio
 
 ## Reducer: tile reductions for tools
 
-A `Reducer` is one compute kernel that reduces up to six levels inside a workgroup tile and stores only the levels you choose. It is the building block for the passes tools fuse around SPD: luminance pyramids, shading-change pyramids, block statistics, G-buffer downsamples. The kernel is compiled in the constructor; pipelines are shared between equal Reducers on a device.
+A `Reducer` is one compute kernel that reduces up to six levels inside a workgroup tile and stores only the levels you choose. It is the building block for the passes tools fuse around SPD: luminance pyramids, shading-change pyramids, block statistics, G-buffer downsamples. The kernel is compiled in the constructor; pipelines are shared between equal Reducers on a device. `await Reducer.create( device, options )` builds the same Reducer with the pipeline compiled by `createComputePipelineAsync` ([Compiling without hitches](#compiling-without-hitches)).
 
 ```js
 const stats = new Reducer( device, {
@@ -381,6 +381,7 @@ Custom reductions: `kind: 'fold'` (default) must be idempotent; `kind: 'sum'` is
 | `levelSize( level, width, height )` | Size of an emitted level under this Reducer's edges. |
 | `release( texture? )` | Drops cached bind groups (all, or those using `texture`) and destroys the buffers the Reducer created for them: size uniforms and buffer-output buffers. Call it after the last submitted use. Entries evicted from the 16-entry cache are destroyed once the queue has finished the work submitted so far. Your textures and buffers are never destroyed. |
 | `wgsl`, `entryPoint`, `pipeline`, `layout`, `bindGroupLayouts` | The kernel, its entry point (`'main'`), compiled pipeline, pipeline layout and `[ group 0, group 1 ]` layouts. |
+| `Reducer.create( device, options )` | Static: `Promise<Reducer>`, the constructor with the pipeline compiled asynchronously. Afterwards `new Reducer( device, options )` with equal options compiles nothing either. Rejects for the options the constructor rejects; concurrent calls share one compile, and a rejected compile can be retried. |
 | `levels`, `edges`, `channels`, `output`, `label` | The resolved options. |
 
 Errors are thrown with a reason: a missing hook or binding, an output that is too small or of the wrong format or usage, more output textures than `maxStorageTexturesPerShaderStage`, a tile larger than the workgroup memory limit (6 levels of 8 channels need 32 KiB), or, in compatibility mode, a source and output sharing a texture.
@@ -434,14 +435,29 @@ metering.encodePass( pass, { width, height, bindGroup } );
 | `encode( encoder, run )` | Each dispatch in its own compute pass. |
 | `encodePass( pass, run )` | Both dispatches (or the combine alone) into your pass. |
 | `prepare( run )` | What `encodePass` records, for dispatching it yourself: `{ partials, combine, bindGroup, toolBindGroup, workgroups, combineWorkgroups }`; `partials` is `null` for a combine-only run. Validates and throws like `encode`. |
-| `kernel( { dimension, splat } )` | `{ wgsl, layout, partials, combine }` for a source shape. |
-| `combineKernel()` | `{ wgsl, layout, combine }` for combine-only runs. |
+| `warmup( run? )` | `Promise<void>`: compile the pipelines `encode( run )` uses with `createComputePipelineAsync`. Only the run's `source` (view dimension, single-channel splat) and `partials` (combine only) matter, so `warmup()` covers a load hook or a multi-channel `'2d'` source. Creates no buffers or bind groups. |
+| `kernel( { dimension, splat } )` | `{ wgsl, layout, partials, combine }` for a source shape. Compiles synchronously unless already compiled. |
+| `kernelAsync( { dimension, splat } )` | The same, compiled with `createComputePipelineAsync`. |
+| `combineKernel()`, `combineKernelAsync()` | `{ wgsl, layout, combine }` for combine-only runs, compiled synchronously or asynchronously. |
 | `workgroups( width, height, layerCount? )`, `partialsBytes( width, height, layerCount? )` | Sizes of the partials dispatch and buffer. |
 | `release( resource? )` | Drops the cached plans of a source texture, partials buffer or output buffer (without one: every plan) and destroys the params and partials buffers the reduction created for them, never yours. Call it after the last submitted use. Plans are kept for 4 run shapes per resource; older ones are destroyed once the queue has finished the work submitted so far. |
 | `bindGroupLayouts` | `[ group 0, group 1 ]` as on a `Reducer`: create your hooks' bind group from index 1 (with `bindings`). Group 0 is that of a `'2d'` source, a load hook or a combine-only run. |
 | `ops`, `block`, `partialBytes`, `resultBytes`, `combinesOnly` | The resolved options. |
 
-`createScalarKernel( options )` and `scalarLayoutEntries( … )` are the pure WGSL generator and its layout, for vendoring.
+`createScalarKernel( options )` and `scalarLayoutEntries( … )` are the pure WGSL generator and its layout, for vendoring. To dispatch that WGSL yourself, `scalarParams( { width, height, firstLayer?, block? } )` returns the `DsParams` uniform (a `Uint32Array` of `scalarParamsBytes`, 32 bytes) and `scalarWorkgroups( width, height, block? )` the partials dispatch's `[ x, y ]` (z is the layer count; the combine is `( 1, 1, layers )`); `scalarCombineParams( { count, texels?, firstLayer? } )` is the uniform of a combine-only run. They are the numbers a `ScalarReduction` writes and dispatches, so a self-dispatching tool needn't copy the struct layout.
+
+### Compiling without hitches
+
+A synchronous `createComputePipeline` compiles on the calling thread: on Dawn/D3D12 (Chrome on Windows) it runs on the device thread and stalls rendering the frame a kernel is first used. Pipelines are cached per device and shared between equal reductions, so each kernel compiles once; compile it ahead of time with the async calls:
+
+```js
+const metering = new ScalarReduction( device, options );
+await metering.warmup();                          // or warmup( run ), with the run's source or partials
+const stats = await Reducer.create( device, reducerOptions );
+// From here encode, encodePass, prepare and kernel() for these shapes compile nothing.
+```
+
+**If your app requires zero synchronous pipeline creation** (the upscaler's contract on Windows), await `warmup` for every source shape you will encode (a `'2d'` and a `'2d-array'` source, or a depth source, are separate variants) and create Reducers with `Reducer.create`, before the first encode. A run whose shape wasn't warmed still works, by compiling synchronously; to make that impossible to miss, wrap `device.createComputePipeline` in development and fail on any call. `Downsampler` has the same guarantee through `warmup( texture, options )`. A compile that is in flight when you encode doesn't block: the encode compiles synchronously, and its pipeline is the one kept.
 
 ### Reducer levels and a scalar from one read
 
