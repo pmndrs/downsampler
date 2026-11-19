@@ -3,7 +3,7 @@
 // 2^24 (texel counts, bit sums, coordinates, min/max), and within the oracle's
 // stated error bound for float sums.
 import { fromHalf, levelSize, scalarCombineReference, scalarReference, toHalf } from '/dist/index.js';
-import { Reducer, requiredLimits, ScalarReduction, scalarResultBytes } from '/dist/webgpu/index.js';
+import { Reducer, requiredLimits, ScalarReduction, scalarParams, scalarResultBytes, scalarWorkgroups } from '/dist/webgpu/index.js';
 import { createDepthSource, makeData, toFloats, trackBuffers, upload } from './gpu.js';
 
 // [ width, height, layers?, viewDimension? ]
@@ -699,7 +699,89 @@ async function validateScalarOptions( device ) {
 	}
 
 	results.push( ...await validateScalarLifetime( device ) );
+	results.push( ...await validateScalarAsync( device ) );
 	return results;
+
+}
+
+// The async compile path: after warmup() (or Reducer.create), recording compiles nothing
+// synchronously, the results are exact, and a self-dispatch from scalarParams and
+// scalarWorkgroups over the warmed kernel gives the same bits as encode.
+async function validateScalarAsync( device ) {
+
+	const counts = { sync: 0, async: 0 };
+	const { createComputePipeline, createComputePipelineAsync } = device;
+	device.createComputePipeline = descriptor => { counts.sync ++; return createComputePipeline.call( device, descriptor ); };
+	device.createComputePipelineAsync = descriptor => { counts.async ++; return createComputePipelineAsync.call( device, descriptor ); };
+	const output = makeBuffer( device, 256 + 3 * scalarResultBytes );
+	const seed = device.createBuffer( { size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+	try {
+
+		// A load hook no other case uses, so the per-device cache can't already hold it.
+		const variant = procedural[ 0 ];
+		const options = { reduction: variant.reduce, load: `${ variant.load }\n// async warm-up case`, bindings: proceduralBindings };
+		const reduction = new ScalarReduction( device, options );
+		await reduction.warmup();
+		if ( counts.sync !== 0 || counts.async !== 2 ) throw new Error( `scalar warmup(): expected 2 async compiles and no sync one, got ${ counts.async } and ${ counts.sync }` );
+		const bindGroup = device.createBindGroup( { layout: reduction.bindGroupLayouts[ 1 ], entries: [ { binding: 0, resource: { buffer: seed } } ] } );
+		for ( const [ width, height, layers ] of [ [ 1, 1, 1 ], [ 65, 129, 1 ], [ 300, 200, 3 ] ] ) {
+
+			device.queue.writeBuffer( seed, 0, Uint32Array.of( 7, width, 0, 0 ) );
+			for ( const mode of [ 'encode', 'encodePass', 'self' ] ) {
+
+				poisonBuffer( device, output );
+				if ( mode !== 'self' ) run( device, reduction, { width, height, layers: [ 0, layers ], bindGroup, output: { buffer: output, offset: 256 } }, mode );
+				else {
+
+					// Self-dispatch: our own uniform and partials, the warmed (shared) pipelines.
+					const kernel = new ScalarReduction( device, options ).kernel();
+					const [ x, y ] = scalarWorkgroups( width, height );
+					const words = scalarParams( { width, height } );
+					const params = device.createBuffer( { size: words.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST } );
+					device.queue.writeBuffer( params, 0, words );
+					const partials = device.createBuffer( { size: x * y * layers * 16, usage: GPUBufferUsage.STORAGE } );
+					const group0 = device.createBindGroup( { layout: kernel.layout, entries: [ { binding: 0, resource: { buffer: params } }, { binding: 1, resource: { buffer: partials } }, { binding: 3, resource: { buffer: output, offset: 256, size: layers * scalarResultBytes } } ] } );
+					const encoder = device.createCommandEncoder();
+					const pass = encoder.beginComputePass();
+					pass.setBindGroup( 0, group0 );
+					pass.setBindGroup( 1, bindGroup );
+					pass.setPipeline( kernel.partials );
+					pass.dispatchWorkgroups( x, y, layers );
+					pass.setPipeline( kernel.combine );
+					pass.dispatchWorkgroups( 1, 1, layers );
+					pass.end();
+					device.queue.submit( [ encoder.finish() ] );
+					params.destroy();
+					partials.destroy();
+
+				}
+				checkExact( await readResults( device, output, 256, layers ), proceduralReference( variant, width, height, layers, 7 ), `scalar after warmup() ${ width }x${ height }x${ layers } ${ mode }` );
+
+			}
+
+		}
+		reduction.release();
+
+		// Combine-only and Reducer.create: compiled asynchronously too.
+		const combine = new ScalarReduction( device, { reduction: [ 'sum', 'sum', 'sum', 'max' ], finish: 'fn finish(value: vec4f, weight: f32) { } // async warm-up case' } );
+		await combine.warmup( { partials: { buffer: output, count: 1 } } );
+		const reducer = await Reducer.create( device, { levels: [ 1 ], load: 'fn load(texel: vec2i, layer: u32) -> vec4f { return vec4f(1.0); } // async warm-up case', store: 'fn store(level: u32, texel: vec2i, layer: u32, value: vec4f) { }' } );
+		combine.prepare( { partials: { buffer: makeBuffer( device, 256 ), count: 1 }, texels: 1 } );
+		const encoder = device.createCommandEncoder();
+		reducer.encode( encoder, { width: 9, height: 9 } );
+		device.queue.submit( [ encoder.finish() ] );
+		if ( counts.sync !== 0 || counts.async !== 4 ) throw new Error( `scalar combine warmup() and Reducer.create(): expected 4 async compiles and no sync one, got ${ counts.async } and ${ counts.sync }` );
+
+	} finally {
+
+		delete device.createComputePipeline;
+		delete device.createComputePipelineAsync;
+		output.destroy();
+		seed.destroy();
+
+	}
+
+	return [ { option: 'scalar warmup, Reducer.create and self-dispatch helpers' } ];
 
 }
 

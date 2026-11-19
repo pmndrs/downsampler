@@ -131,6 +131,46 @@ export function scalarLayoutEntries( { load, finish, dimension = '2d', combineOn
 
 }
 
+/** Bytes of the `DsParams` uniform at `@group(0) @binding(0)`: six u32 words, padded to 32. */
+export const scalarParamsBytes = 32;
+
+/**
+ * The `DsParams` uniform of an image run, as `ScalarReduction` writes it, for
+ * tools that dispatch {@link createScalarKernel}'s WGSL themselves:
+ * `{ size: vec2u, firstLayer, groupsX, partialCount, count }` = width, height,
+ * the first layer, ⌈width / 16·block⌉, the workgroups per layer and the texel
+ * count (the divisor of 'average' channels), then two zero words.
+ * Dispatch the partials with {@link scalarWorkgroups}`( width, height, block )`
+ * and the layer count as z, the combine with `( 1, 1, layers )`.
+ */
+export function scalarParams( { width, height, firstLayer = 0, block = scalarBlock }: { width: number, height: number, firstLayer?: number, block?: number } ): Uint32Array {
+
+	if ( ! Number.isInteger( width ) || ! Number.isInteger( height ) || width < 1 || height < 1 ) throw new Error( 'downsampler: width and height must be positive integers.' );
+	if ( ! Number.isInteger( firstLayer ) || firstLayer < 0 ) throw new Error( 'downsampler: firstLayer must be an integer >= 0.' );
+	if ( ! [ 1, 2, 4, 8 ].includes( block ) ) throw new Error( 'downsampler: block must be 1, 2, 4 or 8.' );
+	const [ groupsX, groupsY ] = scalarWorkgroups( width, height, block );
+	const words = new Uint32Array( scalarParamsBytes / 4 );
+	words.set( [ width, height, firstLayer, groupsX, groupsX * groupsY, width * height ] );
+	return words;
+
+}
+
+/**
+ * The `DsParams` uniform of a combine-only run (`ScalarRun.partials`):
+ * `partialCount` = `count` partials per layer, `count` = `texels` (0 when the
+ * run has none: a 'weight' channel and no 'average'), size and groupsX unused.
+ */
+export function scalarCombineParams( { count, texels = 0, firstLayer = 0 }: { count: number, texels?: number, firstLayer?: number } ): Uint32Array {
+
+	if ( ! Number.isInteger( count ) || count < 1 ) throw new Error( 'downsampler: count must be a positive integer.' );
+	if ( ! Number.isInteger( texels ) || texels < 0 || texels > 0xffffffff ) throw new Error( 'downsampler: texels must be an integer in [ 0, 2^32 ).' );
+	if ( ! Number.isInteger( firstLayer ) || firstLayer < 0 ) throw new Error( 'downsampler: firstLayer must be an integer >= 0.' );
+	const words = new Uint32Array( scalarParamsBytes / 4 );
+	words.set( [ 0, 0, firstLayer, 0, count, texels ] );
+	return words;
+
+}
+
 /**
  * WGSL for both dispatches, entry points `partials` (16 × 16 invocations, one
  * workgroup per tile of 16·block texels square, z = layer) and `combine` (256
@@ -320,12 +360,48 @@ export interface ScalarCombineKernel {
 	wgsl: string;
 }
 
+/** Everything a compiled variant is built from (its per-device cache key is the WGSL and both groups' entries). */
+interface KernelRecipe {
+	label: string;
+	wgsl: string;
+	entries: GPUBindGroupLayoutEntry[];
+	/** Entry points to compile: `partials` and `combine`, or `combine` alone. */
+	entryPoints: readonly ( 'partials' | 'combine' )[];
+}
+
+/** A source shape, resolved: `key` is `dimension:splat`. */
+interface Variant {
+	key: string;
+	dimension: ViewDimension;
+	splat: boolean;
+}
+
+type CompiledKernel = { layout: GPUBindGroupLayout, wgsl: string, partials?: GPUComputePipeline, combine: GPUComputePipeline };
+
+// Per device: compiled variants (by WGSL and both groups' layout entries, so
+// equal reductions share them across instances), compiles in flight, and the
+// tools' group-1 layouts (by entries, so every instance with equal bindings
+// hands out the very layout its pipelines use).
+const kernels = new WeakMap<GPUDevice, Map<string, CompiledKernel>>();
+const compiling = new WeakMap<GPUDevice, Map<string, Promise<CompiledKernel>>>();
+const toolLayouts = new WeakMap<GPUDevice, Map<string, GPUBindGroupLayout>>();
+
+function deviceMap<T>( maps: WeakMap<GPUDevice, Map<string, T>>, device: GPUDevice ): Map<string, T> {
+
+	let map = maps.get( device );
+	if ( map === undefined ) maps.set( device, map = new Map() );
+	return map;
+
+}
+
 /**
  * Reduce an image to one value per layer in two dispatches: per-workgroup
  * partials into a storage buffer, then one workgroup per layer combines them
  * and calls `finish` (or writes the result to a buffer). Every texel is counted
  * once at any size. Pipelines are compiled per source view dimension and
- * channel count; bind groups and the partials buffer are cached per source
+ * splat, and shared per device between equal reductions; `await warmup( run )`
+ * compiles them with `createComputePipelineAsync`, so recording never compiles
+ * synchronously. Bind groups and the partials buffer are cached per source
  * (or output buffer) and run shape.
  *
  * Exposure, as in FSR 3:
@@ -377,7 +453,15 @@ export class ScalarReduction {
 		this.partialBytes = this.ops.length * 4;
 		this.resultBytes = scalarResultSize( this.ops.length );
 		createScalarKernel( options ); // validates
-		this.toolLayout = toolBindGroupLayout( device, 'downsampler scalar tool', options.bindings );
+		if ( options.bindings !== undefined ) {
+
+			const layouts = deviceMap( toolLayouts, device );
+			const key = JSON.stringify( options.bindings.entries );
+			let layout = layouts.get( key );
+			if ( layout === undefined ) layouts.set( key, layout = toolBindGroupLayout( device, 'downsampler scalar tool', options.bindings )! );
+			this.toolLayout = layout;
+
+		}
 
 	}
 
@@ -396,25 +480,36 @@ export class ScalarReduction {
 
 	}
 
-	/** WGSL, `@group(0)` layout and pipelines for a source shape, for tools that dispatch themselves. */
-	kernel( { dimension = '2d', splat = false }: { dimension?: ViewDimension, splat?: boolean } = {} ): Readonly<ScalarKernel> {
+	/**
+	 * WGSL, `@group(0)` layout and pipelines for a source shape, for tools that
+	 * dispatch themselves. Compiles with the synchronous `createComputePipeline`
+	 * unless this variant is already compiled: by {@link ScalarReduction.kernelAsync}
+	 * or {@link ScalarReduction.warmup}, here or in an equal reduction on the device.
+	 */
+	kernel( shape: { dimension?: ViewDimension, splat?: boolean } = {} ): Readonly<ScalarKernel> {
 
-		if ( this.combinesOnly ) throw new Error( 'downsampler: an 8-channel reduction without a load hook only combines partials; use combineKernel().' );
-		if ( this.options.load !== undefined ) dimension = '2d', splat = false;
-		const key = `${ dimension }:${ splat }`;
-		let variant = this.variants.get( key );
-		if ( variant !== undefined ) return variant;
-		const wgsl = createScalarKernel( { ...this.options, dimension, splat } );
-		const label = `downsampler scalar ${ this.ops.join( ',' ) } ${ key }`;
-		const layout = this.device.createBindGroupLayout( { label, entries: scalarLayoutEntries( { ...this.options, dimension } ) } );
-		const pipelineLayout = toolPipelineLayout( this.device, label, layout, this.toolLayout );
-		const module = this.device.createShaderModule( { label, code: wgsl } );
-		variant = {
-			dimension, splat, layout, wgsl,
-			partials: this.device.createComputePipeline( { label: `${ label } partials`, layout: pipelineLayout, compute: { module, entryPoint: 'partials' } } ),
-			combine: this.device.createComputePipeline( { label: `${ label } combine`, layout: pipelineLayout, compute: { module, entryPoint: 'combine' } } )
-		};
-		this.variants.set( key, variant );
+		const resolved = this.variant( shape );
+		let variant = this.variants.get( resolved.key );
+		if ( variant === undefined ) this.variants.set( resolved.key, variant = this.asKernel( resolved, this.compiled( this.kernelRecipe( resolved ) ) ) );
+		return variant;
+
+	}
+
+	/**
+	 * {@link ScalarReduction.kernel}, compiled with `createComputePipelineAsync`.
+	 * Once it resolves, `kernel`, `encode`, `encodePass` and `prepare` for this
+	 * source shape compile nothing. Concurrent calls, and equal reductions on the
+	 * same device, share one compile; a variant already compiled (even
+	 * synchronously) is returned as is; a rejected compile isn't cached.
+	 */
+	async kernelAsync( shape: { dimension?: ViewDimension, splat?: boolean } = {} ): Promise<Readonly<ScalarKernel>> {
+
+		const resolved = this.variant( shape );
+		const cached = this.variants.get( resolved.key );
+		if ( cached !== undefined ) return cached;
+		const compiled = await this.compiledAsync( this.kernelRecipe( resolved ) );
+		let variant = this.variants.get( resolved.key );
+		if ( variant === undefined ) this.variants.set( resolved.key, variant = this.asKernel( resolved, compiled ) );
 		return variant;
 
 	}
@@ -422,18 +517,155 @@ export class ScalarReduction {
 	/**
 	 * The combine pass alone (entry point `combine` of the same WGSL), with a
 	 * group 0 that has no source texture, for combine-only runs and tools that
-	 * dispatch them themselves.
+	 * dispatch them themselves. Compiles synchronously unless
+	 * {@link ScalarReduction.combineKernelAsync} (or `warmup`) already did.
 	 */
 	combineKernel(): Readonly<ScalarCombineKernel> {
 
 		if ( this.combineOnly !== undefined ) return this.combineOnly;
+		const { layout, combine, wgsl } = this.compiled( this.combineRecipe() );
+		return this.combineOnly = { layout, combine, wgsl };
+
+	}
+
+	/** {@link ScalarReduction.combineKernel}, compiled with `createComputePipelineAsync` (as {@link ScalarReduction.kernelAsync}). */
+	async combineKernelAsync(): Promise<Readonly<ScalarCombineKernel>> {
+
+		if ( this.combineOnly !== undefined ) return this.combineOnly;
+		const { layout, combine, wgsl } = await this.compiledAsync( this.combineRecipe() );
+		return this.combineOnly ??= { layout, combine, wgsl };
+
+	}
+
+	/**
+	 * Compile, with `createComputePipelineAsync`, the pipelines `encode( run )`
+	 * uses: the combine pass for a combine-only run (or a reduction that only
+	 * combines), else both passes for the run's source shape (view dimension,
+	 * and splat for single-channel formats; a load hook has one shape). Only
+	 * `source` and `partials` are read, so `warmup()` covers a load hook or a
+	 * multi-channel '2d' source. Creates no buffers or bind groups. Once it
+	 * resolves, `encode`, `encodePass`, `prepare` and `kernel` for that shape
+	 * never compile synchronously (SPEC.md §4 Scalar reductions, Compiling).
+	 */
+	async warmup( run: ScalarRun = {} ): Promise<void> {
+
+		if ( run.partials !== undefined || this.combinesOnly ) await this.combineKernelAsync();
+		else await this.kernelAsync( this.shapeOf( this.sourceTexture( run ) ) );
+
+	}
+
+	/** The source shape a run's texture takes: its binding view dimension, and splat for single-channel formats. */
+	private shapeOf( texture: GPUTexture | undefined ): { dimension: ViewDimension, splat: boolean } {
+
+		return { dimension: texture === undefined ? '2d' : bindingViewDimension( texture ), splat: texture !== undefined && sampledChannels( texture.format ) === 1 };
+
+	}
+
+	/** A source shape with its defaults (a load hook has one: '2d', no splat). */
+	private variant( { dimension = '2d', splat = false }: { dimension?: ViewDimension, splat?: boolean } ): Variant {
+
+		if ( this.combinesOnly ) throw new Error( 'downsampler: an 8-channel reduction without a load hook only combines partials; use combineKernel().' );
+		if ( this.options.load !== undefined ) dimension = '2d', splat = false;
+		return { key: `${ dimension }:${ splat }`, dimension, splat };
+
+	}
+
+	private kernelRecipe( { key, dimension, splat }: Variant ): KernelRecipe {
+
+		const wgsl = createScalarKernel( { ...this.options, dimension, splat } );
+		const entries = scalarLayoutEntries( { ...this.options, dimension } );
+		return { label: `downsampler scalar ${ this.ops.join( ',' ) } ${ key }`, wgsl, entries, entryPoints: [ 'partials', 'combine' ] };
+
+	}
+
+	private combineRecipe(): KernelRecipe {
+
 		// The combine entry point never reads the source, so any variant's WGSL serves.
 		const wgsl = createScalarKernel( this.options );
-		const label = `downsampler scalar ${ this.ops.join( ',' ) } combine-only`;
-		const layout = this.device.createBindGroupLayout( { label, entries: scalarLayoutEntries( { ...this.options, combineOnly: true } ) } );
-		const module = this.device.createShaderModule( { label, code: wgsl } );
-		const combine = this.device.createComputePipeline( { label, layout: toolPipelineLayout( this.device, label, layout, this.toolLayout ), compute: { module, entryPoint: 'combine' } } );
-		return this.combineOnly = { layout, combine, wgsl };
+		const entries = scalarLayoutEntries( { ...this.options, combineOnly: true } );
+		return { label: `downsampler scalar ${ this.ops.join( ',' ) } combine-only`, wgsl, entries, entryPoints: [ 'combine' ] };
+
+	}
+
+	private asKernel( { dimension, splat }: Variant, { layout, wgsl, partials, combine }: CompiledKernel ): ScalarKernel {
+
+		return { dimension, splat, layout, wgsl, partials: partials!, combine };
+
+	}
+
+	/** Per-device cache key: the WGSL and both groups' layout entries decide a pipeline. */
+	private deviceKey( recipe: KernelRecipe ): string {
+
+		return JSON.stringify( [ recipe.entryPoints, recipe.wgsl, recipe.entries, this.options.bindings?.entries ?? null ] );
+
+	}
+
+	/** Group 0, the pipeline layout and the pipeline descriptors of a recipe (creating these compiles nothing). */
+	private descriptors( recipe: KernelRecipe ): { layout: GPUBindGroupLayout, pipelines: GPUComputePipelineDescriptor[] } {
+
+		const { label, wgsl, entries, entryPoints } = recipe;
+		const single = entryPoints.length === 1;
+		const layout = this.device.createBindGroupLayout( { label, entries } );
+		// Created in the order 0.1.0 created them (combine-only: the module first).
+		const module = single ? this.device.createShaderModule( { label, code: wgsl } ) : undefined;
+		const pipelineLayout = toolPipelineLayout( this.device, label, layout, this.toolLayout );
+		const shared = module ?? this.device.createShaderModule( { label, code: wgsl } );
+		// A single entry point keeps the recipe's label (the combine-only pipeline's name).
+		const pipelines = entryPoints.map( entryPoint => ( { label: single ? label : `${ label } ${ entryPoint }`, layout: pipelineLayout, compute: { module: shared, entryPoint } } ) );
+		return { layout, pipelines };
+
+	}
+
+	private assemble( recipe: KernelRecipe, layout: GPUBindGroupLayout, pipelines: GPUComputePipeline[] ): CompiledKernel {
+
+		return recipe.entryPoints.length > 1 ? { layout, wgsl: recipe.wgsl, partials: pipelines[ 0 ], combine: pipelines[ 1 ] } : { layout, wgsl: recipe.wgsl, combine: pipelines[ 0 ] };
+
+	}
+
+	/** The compiled recipe from the device cache, or compiled now with `createComputePipeline`. */
+	private compiled( recipe: KernelRecipe ): CompiledKernel {
+
+		const cache = deviceMap( kernels, this.device );
+		const key = this.deviceKey( recipe );
+		let compiled = cache.get( key );
+		if ( compiled === undefined ) {
+
+			const { layout, pipelines } = this.descriptors( recipe );
+			cache.set( key, compiled = this.assemble( recipe, layout, pipelines.map( descriptor => this.device.createComputePipeline( descriptor ) ) ) );
+
+		}
+
+		return compiled;
+
+	}
+
+	/** The compiled recipe from the device cache, or compiled with `createComputePipelineAsync`, one compile per key in flight. */
+	private compiledAsync( recipe: KernelRecipe ): Promise<CompiledKernel> {
+
+		const key = this.deviceKey( recipe );
+		const cached = deviceMap( kernels, this.device ).get( key );
+		if ( cached !== undefined ) return Promise.resolve( cached );
+		const inFlight = deviceMap( compiling, this.device );
+		let pending = inFlight.get( key );
+		if ( pending === undefined ) {
+
+			const { layout, pipelines } = this.descriptors( recipe );
+			pending = Promise.all( pipelines.map( descriptor => this.device.createComputePipelineAsync( descriptor ) ) ).then( compiled => {
+
+				// A synchronous compile that finished first stays: plans may already hold its pipelines.
+				const cache = deviceMap( kernels, this.device );
+				const existing = cache.get( key );
+				if ( existing !== undefined ) return existing;
+				const result = this.assemble( recipe, layout, compiled );
+				cache.set( key, result );
+				return result;
+
+			} ).finally( () => { inFlight.delete( key ); } );
+			inFlight.set( key, pending );
+
+		}
+
+		return pending;
 
 	}
 
@@ -672,9 +904,9 @@ export class ScalarReduction {
 
 	}
 
-	private params( values: number[] ): GPUBuffer {
+	private params( values: Uint32Array ): GPUBuffer {
 
-		const params = this.device.createBuffer( { label: 'downsampler scalar params', size: 32, usage: GPUBufferUsage.UNIFORM, mappedAtCreation: true } );
+		const params = this.device.createBuffer( { label: 'downsampler scalar params', size: scalarParamsBytes, usage: GPUBufferUsage.UNIFORM, mappedAtCreation: true } );
 		new Uint32Array( params.getMappedRange() ).set( values );
 		params.unmap();
 		return params;
@@ -697,7 +929,7 @@ export class ScalarReduction {
 			return this.cachedPlan( buffer, plan => plan.key === key && plan.output === output?.buffer, () => {
 
 				const kernel = this.combineKernel();
-				const params = this.params( [ 0, 0, first, 0, partialCount, texels ] );
+				const params = this.params( scalarCombineParams( { count: partialCount, texels, firstLayer: first } ) );
 				const entries: GPUBindGroupEntry[] = [ { binding: 0, resource: { buffer: params } }, { binding: 1, resource: { buffer, offset: partialsOffset, size: partialCount * count * this.partialBytes } }, ...this.outputEntry( run, count ) ];
 				return {
 					key, texture: undefined, output: output?.buffer, partials: buffer, params, owned: [ params ], partialsPipeline: null, combine: kernel.combine,
@@ -714,13 +946,13 @@ export class ScalarReduction {
 		const key = `${ width }:${ height }:${ first }:${ count }:${ mipLevel }:${ offset }`;
 		return this.cachedPlan( texture ?? output?.buffer ?? this, plan => plan.key === key && plan.texture === texture && plan.output === output?.buffer, () => {
 
-			const dimension: ViewDimension = texture === undefined ? '2d' : bindingViewDimension( texture );
-			const variant = this.kernel( { dimension, splat: texture !== undefined && sampledChannels( texture.format ) === 1 } );
+			const shape = this.shapeOf( texture );
+			const variant = this.kernel( shape );
 			const [ groupsX, groupsY ] = scalarWorkgroups( width, height, this.block );
-			const params = this.params( [ width, height, first, groupsX, groupsX * groupsY, width * height ] );
+			const params = this.params( scalarParams( { width, height, firstLayer: first, block: this.block } ) );
 			const partials = this.device.createBuffer( { label: 'downsampler scalar partials', size: this.partialsBytes( width, height, count ), usage: GPUBufferUsage.STORAGE } );
 			const entries: GPUBindGroupEntry[] = [ { binding: 0, resource: { buffer: params } }, { binding: 1, resource: { buffer: partials } } ];
-			if ( source !== undefined ) entries.push( { binding: 2, resource: sourceView( source, dimension, 'downsampler scalar source' ) } );
+			if ( source !== undefined ) entries.push( { binding: 2, resource: sourceView( source, shape.dimension, 'downsampler scalar source' ) } );
 
 			entries.push( ...this.outputEntry( run, count ) );
 			return {
