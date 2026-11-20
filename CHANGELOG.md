@@ -2,7 +2,7 @@
 
 The package follows [semantic versioning](https://semver.org); before 1.0, a minor version may change the API.
 
-## Unreleased
+## 0.1.1 (2026-11-20)
 
 ### Added
 
