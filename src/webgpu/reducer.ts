@@ -9,7 +9,7 @@ import { checkToolBindings, retireBuffers, setToolBindGroup, toolBindGroupLayout
 
 export type { ToolBindings } from './tool.js';
 
-/** Options of `new Reducer( device, options )`. The kernel is generated and compiled in the constructor. See SPEC.md §14.1. */
+/** Options of `new Reducer( device, options )`. The kernel is generated and compiled in the constructor (asynchronously: `Reducer.create`). See SPEC.md §14.1. */
 export interface ReducerOptions {
 	/**
 	 * Per-channel ops (`[ 'average', 'average', 'sum', 'max' ]`, with 'weight' and
@@ -136,6 +136,7 @@ interface CachedPipeline {
 }
 
 const pipelines = new WeakMap<GPUDevice, Map<string, CachedPipeline>>();
+const compiling = new WeakMap<GPUDevice, Map<string, Promise<CachedPipeline>>>();
 const textureIds = new WeakMap<GPUTexture, number>();
 let nextTextureId = 0;
 const idOf = ( texture: GPUTexture ) => {
@@ -150,6 +151,76 @@ const mipSize = ( size: number, level: number ) => Math.max( 1, size >> level );
 
 /** Bind groups (and their size uniforms and output buffers) kept per Reducer, most recent last. */
 const cacheSize = 16;
+
+interface ResolvedReducer {
+	edges: TileEdgePolicy;
+	reduction: Reduction;
+	channels: Channels;
+	output: OutputPath | undefined;
+	kernel: KernelOptions;
+	wgsl: string;
+	label: string;
+	/** Per-device pipeline cache key: the WGSL and both groups' layout entries. */
+	key: string;
+}
+
+/** Validates a Reducer's options against the device and derives its kernel (generating WGSL compiles nothing). */
+function resolveReducer( device: GPUDevice, options: ReducerOptions ): ResolvedReducer {
+
+	const edges = options.edges ?? 'zero-weight';
+	if ( edges !== 'zero-weight' && edges !== 'clamp' ) throw new Error( `downsampler: a Reducer takes edges 'zero-weight' or 'clamp', got ${ JSON.stringify( edges ) }; 'exact' mip chains (a batch per odd size) are Downsampler's.` );
+	const reduction = options.reduction ?? 'average';
+	const { channels } = resolveReduction( reduction, options.channels );
+	checkToolBindings( options.bindings );
+	const format = options.format;
+	let output: OutputPath | undefined;
+
+	if ( options.store === undefined && format !== undefined && isSupportedFormat( format ) && isIntFormat( format ) ) throw new Error( `downsampler: a Reducer accumulates floats, so it doesn't write integer formats (${ format }); use a store hook, or a Downsampler (exact integer chains).` );
+	if ( options.store === undefined && format !== undefined && isSupportedFormat( format ) ) {
+
+		output = options.output ?? ( storageWritable( format, device.features ) || ! bufferWritable( format ) ? 'storage' : 'buffer' );
+		if ( output === 'storage' ) {
+
+			const { feature, storage }: FormatInfo = formats[ format ];
+			if ( storage === false ) throw new Error( `downsampler: ${ format } can't be a storage texture; use output 'buffer'.` );
+			if ( feature !== undefined && ! device.features.has( feature ) ) throw new Error( `downsampler: output format ${ format } needs the "${ feature }" device feature${ bufferWritable( format ) ? ', or output \'buffer\'' : '' }.` );
+			if ( options.levels.length > device.limits.maxStorageTexturesPerShaderStage ) throw new Error( `downsampler: ${ options.levels.length } output textures exceed this device's maxStorageTexturesPerShaderStage (${ device.limits.maxStorageTexturesPerShaderStage }); emit fewer levels, use output 'buffer' or a store hook.` );
+
+		} else if ( output === 'buffer' ) {
+
+			if ( ! bufferWritable( format ) ) throw new Error( `downsampler: format ${ format } has ${ formats[ format ].bytesPerTexel }-byte texels, and the buffer output path writes 4-byte words.` );
+
+		} else throw new Error( `downsampler: output must be 'storage' or 'buffer', got ${ JSON.stringify( output ) }.` );
+
+	} else if ( options.output !== undefined && options.store !== undefined ) throw new Error( 'downsampler: a store hook replaces the output textures, so it takes no output path.' );
+
+	const kernel: KernelOptions = {
+		edges, levels: options.levels, reduction, format, dimension: options.dimension ?? '2d', sourceFormat: options.sourceFormat,
+		load: options.load, store: options.store, size: options.size, bindings: options.bindings?.wgsl, output, f16Rounding: options.f16Rounding, ...( channels === 8 ? { channels } : {} )
+	};
+	const deepest = options.levels[ options.levels.length - 1 ];
+	const invocations = workgroupSide( tileSize( deepest ) ) ** 2;
+	if ( Number.isInteger( deepest ) && invocations > device.limits.maxComputeInvocationsPerWorkgroup ) throw new Error( `downsampler: ${ deepest } levels take workgroups of ${ invocations } invocations; this device allows ${ device.limits.maxComputeInvocationsPerWorkgroup } (maxComputeInvocationsPerWorkgroup; compatibility mode defaults to 128). Emit at most 4 levels or request a higher limit (requiredLimits( adapter ) from downsampler/webgpu).` );
+	const tileBytes = tileSize( deepest ) ** 2 * channels * 4;
+	if ( Number.isInteger( deepest ) && tileBytes > device.limits.maxComputeWorkgroupStorageSize ) throw new Error( `downsampler: ${ deepest } levels of ${ channels }-channel accumulators take ${ tileBytes } bytes of workgroup memory; this device allows ${ device.limits.maxComputeWorkgroupStorageSize } (maxComputeWorkgroupStorageSize). Emit fewer levels or request a higher limit.` );
+
+	const wgsl = createKernel( kernel );
+	const label = options.label ?? `downsampler reducer ${ edges } ${ options.levels.join( ',' ) }`;
+	const key = `${ wgsl }\n${ JSON.stringify( kernelLayoutEntries( kernel ) ) }\n${ JSON.stringify( options.bindings?.entries ?? null ) }`;
+	return { edges, reduction, channels, output, kernel, wgsl, label, key };
+
+}
+
+/** The layouts and pipeline descriptor of a Reducer kernel (creating these compiles nothing). */
+function pipelineDescriptor( device: GPUDevice, options: ReducerOptions, kernel: KernelOptions, wgsl: string, label: string ): { layout: GPUPipelineLayout, bindGroupLayouts: GPUBindGroupLayout[], descriptor: GPUComputePipelineDescriptor } {
+
+	const group0 = device.createBindGroupLayout( { label: `${ label } group 0`, entries: kernelLayoutEntries( kernel ) } );
+	const tool = toolBindGroupLayout( device, `${ label } group 1`, options.bindings );
+	const layout = toolPipelineLayout( device, label, group0, tool );
+	const module = device.createShaderModule( { label, code: wgsl } );
+	return { layout, bindGroupLayouts: toolGroupLayouts( group0, tool ), descriptor: { label, layout, compute: { module, entryPoint: 'main' } } };
+
+}
 
 /**
  * A tile reduction kernel for tools (SPEC.md §14.1): a custom or texture source,
@@ -190,59 +261,15 @@ export class Reducer {
 
 	constructor( device: GPUDevice, options: ReducerOptions ) {
 
-		const edges = options.edges ?? 'zero-weight';
-		if ( edges !== 'zero-weight' && edges !== 'clamp' ) throw new Error( `downsampler: a Reducer takes edges 'zero-weight' or 'clamp', got ${ JSON.stringify( edges ) }; 'exact' mip chains (a batch per odd size) are Downsampler's.` );
-		const reduction = options.reduction ?? 'average';
-		const { channels } = resolveReduction( reduction, options.channels );
-		checkToolBindings( options.bindings );
-		const format = options.format;
-		let output: OutputPath | undefined;
-
-		if ( options.store === undefined && format !== undefined && isSupportedFormat( format ) && isIntFormat( format ) ) throw new Error( `downsampler: a Reducer accumulates floats, so it doesn't write integer formats (${ format }); use a store hook, or a Downsampler (exact integer chains).` );
-		if ( options.store === undefined && format !== undefined && isSupportedFormat( format ) ) {
-
-			output = options.output ?? ( storageWritable( format, device.features ) || ! bufferWritable( format ) ? 'storage' : 'buffer' );
-			if ( output === 'storage' ) {
-
-				const { feature, storage }: FormatInfo = formats[ format ];
-				if ( storage === false ) throw new Error( `downsampler: ${ format } can't be a storage texture; use output 'buffer'.` );
-				if ( feature !== undefined && ! device.features.has( feature ) ) throw new Error( `downsampler: output format ${ format } needs the "${ feature }" device feature${ bufferWritable( format ) ? ', or output \'buffer\'' : '' }.` );
-				if ( options.levels.length > device.limits.maxStorageTexturesPerShaderStage ) throw new Error( `downsampler: ${ options.levels.length } output textures exceed this device's maxStorageTexturesPerShaderStage (${ device.limits.maxStorageTexturesPerShaderStage }); emit fewer levels, use output 'buffer' or a store hook.` );
-
-			} else if ( output === 'buffer' ) {
-
-				if ( ! bufferWritable( format ) ) throw new Error( `downsampler: format ${ format } has ${ formats[ format ].bytesPerTexel }-byte texels, and the buffer output path writes 4-byte words.` );
-
-			} else throw new Error( `downsampler: output must be 'storage' or 'buffer', got ${ JSON.stringify( output ) }.` );
-
-		} else if ( options.output !== undefined && options.store !== undefined ) throw new Error( 'downsampler: a store hook replaces the output textures, so it takes no output path.' );
-
-		const kernel: KernelOptions = {
-			edges, levels: options.levels, reduction, format, dimension: options.dimension ?? '2d', sourceFormat: options.sourceFormat,
-			load: options.load, store: options.store, size: options.size, bindings: options.bindings?.wgsl, output, f16Rounding: options.f16Rounding, ...( channels === 8 ? { channels } : {} )
-		};
-		const deepest = options.levels[ options.levels.length - 1 ];
-		const invocations = workgroupSide( tileSize( deepest ) ) ** 2;
-		if ( Number.isInteger( deepest ) && invocations > device.limits.maxComputeInvocationsPerWorkgroup ) throw new Error( `downsampler: ${ deepest } levels take workgroups of ${ invocations } invocations; this device allows ${ device.limits.maxComputeInvocationsPerWorkgroup } (maxComputeInvocationsPerWorkgroup; compatibility mode defaults to 128). Emit at most 4 levels or request a higher limit (requiredLimits( adapter ) from downsampler/webgpu).` );
-		const tileBytes = tileSize( deepest ) ** 2 * channels * 4;
-		if ( Number.isInteger( deepest ) && tileBytes > device.limits.maxComputeWorkgroupStorageSize ) throw new Error( `downsampler: ${ deepest } levels of ${ channels }-channel accumulators take ${ tileBytes } bytes of workgroup memory; this device allows ${ device.limits.maxComputeWorkgroupStorageSize } (maxComputeWorkgroupStorageSize). Emit fewer levels or request a higher limit.` );
-
-		const wgsl = createKernel( kernel );
-		const label = options.label ?? `downsampler reducer ${ edges } ${ options.levels.join( ',' ) }`;
-		const toolEntries = options.bindings?.entries;
-		const key = `${ wgsl }\n${ JSON.stringify( kernelLayoutEntries( kernel ) ) }\n${ JSON.stringify( toolEntries ?? null ) }`;
+		const { edges, reduction, channels, output, kernel, wgsl, label, key } = resolveReducer( device, options );
 		let cache = pipelines.get( device );
 		if ( cache === undefined ) pipelines.set( device, cache = new Map() );
 		let cached = cache.get( key );
 
 		if ( cached === undefined ) {
 
-			const group0 = device.createBindGroupLayout( { label: `${ label } group 0`, entries: kernelLayoutEntries( kernel ) } );
-			const tool = toolBindGroupLayout( device, `${ label } group 1`, options.bindings );
-			const layout = toolPipelineLayout( device, label, group0, tool );
-			const bindGroupLayouts = toolGroupLayouts( group0, tool );
-			const module = device.createShaderModule( { label, code: wgsl } );
-			cached = { pipeline: device.createComputePipeline( { label, layout, compute: { module, entryPoint: 'main' } } ), layout, bindGroupLayouts };
+			const { layout, bindGroupLayouts, descriptor } = pipelineDescriptor( device, options, kernel, wgsl, label );
+			cached = { pipeline: device.createComputePipeline( descriptor ), layout, bindGroupLayouts };
 			cache.set( key, cached );
 
 		}
@@ -259,6 +286,48 @@ export class Reducer {
 		this.output = output;
 		this.options = { ...options, reduction };
 		this.srgbTable = usesSrgbTable( kernel );
+
+	}
+
+	/**
+	 * `new Reducer( device, options )`, with the pipeline compiled by
+	 * `createComputePipelineAsync`, so neither this nor any later equal Reducer on
+	 * the device compiles synchronously. Throws (rejects) for the same options the
+	 * constructor rejects. Concurrent calls share one compile; a pipeline already
+	 * compiled (even synchronously) is reused; a rejected compile isn't cached.
+	 */
+	static async create( device: GPUDevice, options: ReducerOptions ): Promise<Reducer> {
+
+		// The Reducer is built after the await: from the options as they were passed.
+		options = { ...options, levels: [ ...options.levels ] };
+		const { kernel, wgsl, label, key } = resolveReducer( device, options );
+		if ( pipelines.get( device )?.has( key ) !== true ) {
+
+			let inFlight = compiling.get( device );
+			if ( inFlight === undefined ) compiling.set( device, inFlight = new Map() );
+			let pending = inFlight.get( key );
+			if ( pending === undefined ) {
+
+				const { layout, bindGroupLayouts, descriptor } = pipelineDescriptor( device, options, kernel, wgsl, label );
+				pending = device.createComputePipelineAsync( descriptor ).then( pipeline => {
+
+					let cache = pipelines.get( device );
+					if ( cache === undefined ) pipelines.set( device, cache = new Map() );
+					// A synchronous compile that finished first stays: Reducers may already hold it.
+					let cached = cache.get( key );
+					if ( cached === undefined ) cache.set( key, cached = { pipeline, layout, bindGroupLayouts } );
+					return cached;
+
+				} ).finally( () => { inFlight.delete( key ); } );
+				inFlight.set( key, pending );
+
+			}
+
+			await pending;
+
+		}
+
+		return new Reducer( device, options );
 
 	}
 

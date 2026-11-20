@@ -69,6 +69,10 @@ downsampler.generate( texture );               // records and submits the work
 
 Already have a command encoder? Use `downsampler.encode( encoder, texture )` instead, and it records into yours.
 
+Pipelines compile on first use. To keep that off the frame (a synchronous compile stalls rendering on Windows), await
+`downsampler.warmup( texture )`, `scalarReduction.warmup()` or `Reducer.create( device, options )` first
+([compiling without hitches](docs/guide.md#compiling-without-hitches)).
+
 ## Choose the operation
 
 | Task | Setting | Runnable example |
