@@ -2,7 +2,7 @@ import { channelDomain, formats, intDomains, isIntegerDomain, isIntQuantization,
 import { srgbBounds, srgbDecodeTable } from '../core/srgb.js';
 import { tailTile, tileSize, workgroupSide } from '../core/plan.js';
 import { checkLevels } from '../core/pyramid.js';
-import { isBuiltinReduction, needsTileEdges, reductionKey, resolveReduction, type Channels, type CustomReduction, type EdgePolicy, type Reduction } from '../core/reduction.js';
+import { isBuiltinReduction, isOrderedFold, needsTileEdges, reductionKey, resolveReduction, type Channels, type CustomReduction, type EdgePolicy, type Reduction } from '../core/reduction.js';
 import { lanes, payloadCombine } from './lanes.js';
 import { createIntKernel, intSampleType } from './integer.js';
 import { checkHooks } from './tool.js';
@@ -76,6 +76,14 @@ export interface KernelOptions {
 	 * with access 'load'. With `box`, the first output is area-weighted only if `area`.
 	 */
 	halo?: { x: readonly number[]; y: readonly number[] };
+	/**
+	 * 'exact' folds only (not 'average', `area`, `box` or `halo`): `oddSizes: 'floor'`. A fold
+	 * combines texels `2x` and `2x + 1` per axis (clamped at unit sizes), dropping an odd level's
+	 * last row or column, at the first output and at a tail's further levels. Every fold is then
+	 * `fold(fold(a, b), fold(c, d))` over the 2×2 children in raster order (top left, top right,
+	 * bottom left, bottom right), which ordered folds (`kind: 'ordered'`) rely on.
+	 */
+	floor?: boolean;
 	/**
 	 * The tile edge, 8, 16 or 32. Tail kernels: at least the first output's larger
 	 * side, default 32. Exact kernels: at least what `count` levels need (8 up to four
@@ -695,7 +703,7 @@ fn quantize(value: vec4f) -> vec4f { return value; }
  * (with `load` for 'load' access, and the area helpers when asked). Shared by the exact compute
  * kernels and the render path's fragment shader (`createRenderKernel`).
  */
-export function firstWgsl( { access, array, splat, srgbSource, exactLoads, srgb, average, area, areaHelpers }: { access: SourceAccess; array: boolean; splat: string; srgbSource: boolean; exactLoads: boolean; srgb: boolean; average: boolean; area: boolean; areaHelpers: boolean } ): string {
+export function firstWgsl( { access, array, splat, srgbSource, exactLoads, srgb, average, area, areaHelpers, floor = false }: { access: SourceAccess; array: boolean; splat: string; srgbSource: boolean; exactLoads: boolean; srgb: boolean; average: boolean; area: boolean; areaHelpers: boolean; floor?: boolean } ): string {
 
 	let code = '';
 	if ( access === 'load' ) {
@@ -770,21 +778,22 @@ ${ average ? `	var sum = vec4f(0.0);
 
 	} else {
 
-		// The footprint: 2x and 2x + 1, plus 2x + 2 along odd source dimensions.
-		// A same-size source (separate source copied into the first level) reads
-		// one texel per axis.
+		// The footprint: 2x and 2x + 1, plus 2x + 2 along odd source dimensions
+		// (not under `floor`, which drops an odd level's last row or column). A
+		// same-size source (separate source copied into the first level) reads one
+		// texel per axis.
 		code += `	let sourceSize = textureDimensions(source);
 	let last = sourceSize - vec2u(1);
 	let same = sourceSize == size;
 	let lo = select(min(pos * 2u, last), pos, same);
 	let hi = select(min(lo + vec2u(1), last), lo, same);
 	var v = fold(fold(load(lo, layer), load(vec2u(hi.x, lo.y), layer)), fold(load(vec2u(lo.x, hi.y), layer), load(hi, layer)));
-	let odd = ((sourceSize & vec2u(1)) == vec2u(1)) & (sourceSize > vec2u(1)) & !same;
+${ floor ? '' : `	let odd = ((sourceSize & vec2u(1)) == vec2u(1)) & (sourceSize > vec2u(1)) & !same;
 	let far = min(lo + vec2u(2), last);
 	if (odd.x) { v = fold(v, fold(load(vec2u(far.x, lo.y), layer), load(vec2u(far.x, hi.y), layer))); }
 	if (odd.y) { v = fold(v, fold(load(vec2u(lo.x, far.y), layer), load(vec2u(hi.x, far.y), layer))); }
 	if (odd.x && odd.y) { v = fold(v, load(far, layer)); }
-	return quantize(v);
+` }	return quantize(v);
 `;
 
 	}
@@ -805,9 +814,30 @@ const builtinFolds = {
  * - 'exact' (default): a mip chain batch, as `Downsampler` plans them.
  * - 'zero-weight' or 'clamp': a tile reduction, as `Reducer` runs it (SPEC §14.1).
  */
+/**
+ * Validates the `floor` kernel option (`oddSizes: 'floor'`): folds only, on 2:1 steps, so not
+ * with area weights or halo batches. Ordered folds (`kind: 'ordered'`) need it: only the floor
+ * footprint folds the children in raster order at every step.
+ */
+export function checkFloor( floor: boolean, reduction: Reduction, area: boolean, box: boolean, halo: boolean ): void {
+
+	if ( floor ) {
+
+		if ( reduction === 'average' ) throw new Error( 'downsampler: floor footprints (oddSizes \'floor\') are for folds; \'average\' with SPD\'s footprints is oddSizes \'spd\'.' );
+		if ( area || box || halo ) throw new Error( 'downsampler: floor footprints (oddSizes \'floor\') are 2:1 steps, not area-weighted or halo batches.' );
+
+	} else if ( isOrderedFold( reduction ) ) throw new Error( 'downsampler: an ordered fold (kind \'ordered\') needs floor footprints (oddSizes \'floor\'), where every step folds the 2×2 children in raster order.' );
+
+}
+
 export function createKernel( options: KernelOptions ): string {
 
-	if ( ( options.edges ?? 'exact' ) !== 'exact' ) return createTileKernel( options );
+	if ( ( options.edges ?? 'exact' ) !== 'exact' ) {
+
+		if ( options.floor ) throw new Error( 'downsampler: floor footprints (the \'floor\' option) are an \'exact\' kernel option; a Reducer\'s \'clamp\' edges have ⌊n/2⌋ sizes already.' );
+		return createTileKernel( options );
+
+	}
 	const { reduction = 'average' } = options;
 	if ( needsTileEdges( reduction ) ) throw new Error( 'downsampler: sums, per-channel reductions and custom sums need edges \'zero-weight\' or \'clamp\' (a Reducer); \'exact\' only has meaning for averages and folds.' );
 	for ( const name of [ 'load', 'store', 'size', 'bindings', 'levels', 'channels' ] as const ) {
@@ -837,11 +867,12 @@ export function createKernel( options: KernelOptions ): string {
  * tile by the 'exact' rule at any parity (shader bilinear weights for 'average',
  * the `2x … 2x+2` footprint for folds), each quantized as stored.
  */
-function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage', tail = false, box = false, area = box, tile: tileOption, f16Rounding = 'nearest', f16Pack = true, region = false, halo: haloOption }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
+function createExactKernel( { format, dimension, count, reduction = 'average', access, sourceFormat = format, output = 'storage', tail = false, box = false, area = box, tile: tileOption, f16Rounding = 'nearest', f16Pack = true, region = false, halo: haloOption, floor = false }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
 
 	reductionKey( reduction );
 	const average = reduction === 'average';
 	const halo = haloOption !== undefined && ( haloOption.x.some( e => e > 0 ) || haloOption.y.some( e => e > 0 ) ) ? haloOption : null;
+	checkFloor( floor, reduction, area, box, halo !== null );
 	if ( halo !== null ) checkHalo( halo, count, tail );
 	if ( box && ! area && halo === null ) throw new Error( 'downsampler: a box kernel\'s first output is area-weighted (area true).' );
 	access ??= average && ! area ? 'sample' : 'load';
@@ -888,7 +919,7 @@ var<workgroup> tile: array<vec4f, ${ tileW * tileH }>;
 
 	}
 
-	code += firstWgsl( { access, array, splat, srgbSource, exactLoads, srgb, average, area, areaHelpers: area || ( halo !== null && box && average ) } );
+	code += firstWgsl( { access, array, splat, srgbSource, exactLoads, srgb, average, area, areaHelpers: area || ( halo !== null && box && average ), floor } );
 
 	// Level i of the batch: its size, and the store of one texel. The buffer path
 	// derives sizes from the first output's (exact batches halve, floored, at least 1).
@@ -937,12 +968,12 @@ fn tailStep(pos: vec2u, sourceSize: vec2u, size: vec2u) -> vec4f {
 ` : `	let lo = min(pos * 2u, last);
 	let hi = min(lo + vec2u(1), last);
 	var v = fold(fold(tileAt(lo), tileAt(vec2u(hi.x, lo.y))), fold(tileAt(vec2u(lo.x, hi.y)), tileAt(hi)));
-	let odd = ((sourceSize & vec2u(1)) == vec2u(1)) & (sourceSize > vec2u(1));
+${ floor ? '' : `	let odd = ((sourceSize & vec2u(1)) == vec2u(1)) & (sourceSize > vec2u(1));
 	let far = min(lo + vec2u(2), last);
 	if (odd.x) { v = fold(v, fold(tileAt(vec2u(far.x, lo.y)), tileAt(vec2u(far.x, hi.y)))); }
 	if (odd.y) { v = fold(v, fold(tileAt(vec2u(lo.x, far.y)), tileAt(vec2u(hi.x, far.y)))); }
 	if (odd.x && odd.y) { v = fold(v, tileAt(far)); }
-	return quantize(v);
+` }	return quantize(v);
 }
 `;
 

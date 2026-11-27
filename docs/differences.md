@@ -55,7 +55,9 @@ WGSL. [Notes for SPD users](spd-users.md) map every SPD option to ours. The diff
 - **Odd sizes match render passes by default.** SPD drops the last row or column. If you want SPD's results (it's
   the fastest), use `oddSizes: 'spd'`. ([#3](../DIVERGES.md#3-odd-sizes-match-render-passes))
 - **Min/max stays conservative.** SPD's dropped rows and columns make its Hi-Z miss texels; ours covers every texel
-  at every size. ([#4](../DIVERGES.md#4-conservative-minmax-footprint-at-odd-edges))
+  at every size. ([#4](../DIVERGES.md#4-conservative-minmax-footprint-at-odd-edges)) If you need SPD's dropped
+  rows and columns for a fold, such as a "first valid" probe mask, use `oddSizes: 'floor'`, with an ordered fold
+  (`kind: 'ordered'`) when the order matters. ([#8](../DIVERGES.md#8-binary-reductions-not-a-4-way-spdreduce4))
 - **No zero reads past the edge.** SPD reads zeros there unless you pad the texture; AMD's own D3D12 sample darkens
   the 1×1 that way. We clamp. ([#5](../DIVERGES.md#5-clamped-edges-no-zero-reads))
 - **Each level is rounded as it's stored**, so a chain equals level-by-level generation. Under `oddSizes: 'spd'` we

@@ -2,6 +2,14 @@
 
 The package follows [semantic versioning](https://semver.org); before 1.0, a minor version may change the API.
 
+## Unreleased
+
+### Added
+
+- `oddSizes: 'floor'` for folds: each texel folds its 2×2 children `2x`, `2x + 1`, dropping the last row or column of an odd size, as SPD and Capsaicin do. Not a conservative Hi-Z. The batches of `'exact'`, with the tail kernel; integer and float formats ([#6](https://github.com/pmndrs/downsampler/issues/6)).
+- Ordered folds, `{ wgsl, kind: 'ordered' }`: associative and idempotent but not necessarily commutative, with `oddSizes: 'floor'`. `reduce( a, b )` always gets `a` before `b` in raster order, e.g. the first valid value of GI-1's r32uint probe-mask mips ([guide](docs/guide.md#reductions)).
+- Core: `floorFootprint`, `isOrderedFold`, and `floor: true` in `intReference` and `reduceReference`.
+
 ## 0.1.1 (2026-11-20)
 
 ### Added

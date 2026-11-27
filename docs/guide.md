@@ -139,6 +139,7 @@ A 2:1 reduction is exact only when a dimension halves cleanly. At odd, non-unit 
   - Folds (`'min'`, `'max'`, `'minmax'`, custom) are accepted and give exactly the `'exact'` result: their footprint already covers every overlapping texel.
   - Works with the tail kernel, both output paths, compatibility mode, `encodePass` and partial updates (`rect`, `layers`).
   - Recommended for GI, irradiance and roughness chains, and UI.
+- **`'floor'` (opt-in, folds only).** Each output texel folds its 2×2 children `2x`, `2x+1` (clamped at unit sizes), so the last row or column of an odd size is dropped, as SPD and Capsaicin's probe-mask mips do. Not a conservative Hi-Z (use `'exact'` for that). Same batches as `'exact'`, with the tail kernel; no halo batches and no resampled source. It is the footprint where every step folds the children in raster order, which ordered folds need (below).
 
 Like render-pass mipmaps, `'exact'` 3 → 1 takes only the center texel, so a 31×31 texture can reduce to an unrepresentative 1×1. Under `'box'` its 1×1 is the mean of all 961 texels.
 
@@ -154,6 +155,14 @@ downsampler.generate( irradiance, { oddSizes: 'box' } );
 | `'min'`, `'max'` | per channel min / max over every texel the output covers | conservative at odd edges |
 | `'minmax'` | even channels min, odd channels max | `rg` = (min, max) and `ba` a second pair; levels read pairs back as already reduced |
 | `{ wgsl: 'fn reduce( a: vec4f, b: vec4f ) -> vec4f { … }' }` | a custom fold | must be associative, commutative and **idempotent** (like min, max, bitwise or); values are in normalized units |
+| `{ wgsl, kind: 'ordered' }` | an ordered fold | associative and idempotent, **not necessarily commutative**; needs `oddSizes: 'floor'`. Each texel is `reduce(reduce(tl, tr), reduce(bl, br))` of its 2×2 children, so `a` always precedes `b` in raster order |
+
+An ordered fold keeps, for example, the first valid value of each 2×2 block, as GI-1's probe-mask mips do (r32uint, `0xffffffff` where no probe):
+
+```js
+const firstValid = { wgsl: 'fn reduce(a: vec4u, b: vec4u) -> vec4u { return select(b, a, a.x != 0xffffffffu); }', kind: 'ordered' };
+downsampler.generate( probeMask, { reduction: firstValid, oddSizes: 'floor' } );
+```
 
 Folds select existing values, so they match the CPU oracle exactly. Sums, per-channel op lists and custom `kind: 'sum'` reductions have no meaning under `'exact'` odd sizes and are rejected: use a [`Reducer`](#reducer-tile-reductions-for-tools).
 

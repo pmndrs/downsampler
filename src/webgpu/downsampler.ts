@@ -1,6 +1,6 @@
 import { bufferWritable, formats, isIntFormat, isSupportedFormat, sampleKind, srgbViewFormat, type FormatInfo, type SupportedFormat } from '../core/formats.js';
 import { outputBufferLayout, planBatches, type Batch, type BatchKernel, type OddSizePolicy } from '../core/plan.js';
-import { needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
+import { isOrderedFold, needsTileEdges, reductionKey, type Reduction } from '../core/reduction.js';
 import { layersProblem, planRegions, rectProblem, type Rect } from '../core/region.js';
 import { isCompatibilityTexture } from './compat.js';
 import { createKernel, kernelLayoutEntries, outputBufferBinding, outputLayoutBinding, outputLayoutBytes, regionBinding, regionBytes, srgbTable, srgbTableBinding, usesSrgbTable, type F16Rounding, type KernelOptions, type OutputPath, type SourceAccess, type ViewDimension } from './kernel.js';
@@ -225,6 +225,11 @@ export interface EncodeOptions {
 	 * batches) load, with weights (n − x, n, x + 1) / (2n + 1) along an odd size
 	 * 2n + 1. Folds are the same as under 'exact' (the same 2x … 2x+2 footprint).
 	 * Works with the tail kernel, both output paths and compatibility mode.
+	 * 'floor': folds only (not 'average'). Each texel folds its 2×2 children
+	 * `2x`, `2x + 1` in raster order (clamped at unit sizes), so the last row or
+	 * column of an odd size is dropped, as SPD's and Capsaicin's probe-mask mips
+	 * do. Not a conservative Hi-Z. The batches of 'exact', without halo batches;
+	 * not with a resampled source. Ordered folds (`kind: 'ordered'`) need it.
 	 * See SPEC.md §2.1.
 	 */
 	oddSizes?: OddSizePolicy;
@@ -238,6 +243,11 @@ export interface EncodeOptions {
 	 * Integer formats (SPEC.md §6.1): 'average' is the exact mean rounded to nearest,
 	 * ties to even; a custom fold takes and returns `vec4u` (uint formats) or `vec4i`
 	 * (sint formats), e.g. a bitwise or for occupancy pyramids.
+	 * `{ wgsl, kind: 'ordered' }` is a fold that need not be commutative (associative and
+	 * idempotent): with `oddSizes: 'floor'`, each texel is
+	 * `reduce(reduce(tl, tr), reduce(bl, br))` of its 2×2 children, so `a` always comes
+	 * before `b` in raster order. "The first valid value" of an r32uint mask is
+	 * `fn reduce(a: vec4u, b: vec4u) -> vec4u { return select(b, a, a.x != 0xffffffffu); }`.
 	 */
 	reduction?: Reduction;
 	/**
@@ -391,6 +401,8 @@ interface BatchKernelKey {
 	dynamic?: boolean;
 	/** A halo batch ({@link Batch.halo}). */
 	halo?: { x: number[]; y: number[] };
+	/** `oddSizes: 'floor'`: 2×2 fold footprints ({@link KernelOptions.floor}). */
+	floor?: boolean;
 }
 
 /** Recent partial-update plans and internal topologies kept per texture. */
@@ -915,8 +927,11 @@ export class Downsampler {
 
 		const source = options.source === undefined ? undefined : resolveSource( options.source );
 		const oddSizes = options.oddSizes ?? 'exact';
-		if ( oddSizes !== 'exact' && oddSizes !== 'spd' && oddSizes !== 'box' ) throw new Error( `downsampler: odd size policy ${ JSON.stringify( oddSizes ) } is not implemented ('exact', 'box' or 'spd').` );
+		if ( oddSizes !== 'exact' && oddSizes !== 'spd' && oddSizes !== 'box' && oddSizes !== 'floor' ) throw new Error( `downsampler: odd size policy ${ JSON.stringify( oddSizes ) } is not implemented ('exact', 'box', 'spd' or 'floor').` );
 		const reduction = options.reduction ?? 'average';
+		if ( oddSizes === 'floor' && reduction === 'average' ) throw new Error( `downsampler: oddSizes 'floor' is for folds (min, max, minmax, custom and ordered folds). For 'average' with SPD's footprints use oddSizes 'spd'.` );
+		if ( oddSizes === 'floor' && source?.resample === 'area' ) throw new Error( `downsampler: oddSizes 'floor' takes 2:1 steps; a resampled source (resample 'area') has no floor footprint. Resample with oddSizes 'exact' first, or use a same-size or half-size source.` );
+		if ( oddSizes !== 'floor' && isOrderedFold( reduction ) ) throw new Error( `downsampler: an ordered fold (kind 'ordered') needs oddSizes 'floor', got ${ JSON.stringify( oddSizes ) }: only floor footprints fold the 2×2 children in raster order at every step.` );
 		if ( needsTileEdges( reduction ) ) throw new Error( 'downsampler: sums, per-channel reductions and custom sums have no \'exact\' mip-chain meaning; use a Reducer (edges \'zero-weight\' or \'clamp\').' );
 		if ( oddSizes === 'spd' && isIntFormat( texture.format as SupportedFormat ) ) throw new Error( `downsampler: oddSizes 'spd' isn't available for integer formats (${ texture.format }): its batches carry unrounded float sums between levels, which can't hold 32-bit integers exactly. Use oddSizes 'exact' (the default) or 'box', which reduce integers exactly.` );
 		if ( oddSizes === 'spd' && reduction !== 'average' ) throw new Error( 'downsampler: oddSizes \'spd\' is for \'average\' only. It drops the last odd row or column, so min/max/minmax and custom folds would not be a conservative Hi-Z; use oddSizes \'exact\' (the default), or a Reducer with edges \'zero-weight\' (⌈n/2⌉ sizes, every texel counted).' );
@@ -1132,7 +1147,7 @@ export class Downsampler {
 			const box = boxFirst || ( batch.halo !== undefined && oddSizes === 'box' && reduction === 'average' );
 			const area = boxFirst || ( batch.kernel !== 'clamp' && external && resample );
 			const access = area || ( external && copySource && batch.firstMipLevel === baseMipLevel ) ? 'load' : this.access( reduction, sourceFormat );
-			const kernel: BatchKernelKey = { format, dimension, count: batch.count, access, reduction, sourceFormat, output, kind: batch.kernel, tile: batch.tile, area, box, region: region !== null, dynamic, ...( batch.halo ? { halo: batch.halo } : {} ) };
+			const kernel: BatchKernelKey = { format, dimension, count: batch.count, access, reduction, sourceFormat, output, kind: batch.kernel, tile: batch.tile, area, box, region: region !== null, dynamic, ...( batch.halo ? { halo: batch.halo } : {} ), ...( oddSizes === 'floor' && batch.kernel !== 'clamp' ? { floor: true } : {} ) };
 			return { batch, index, kernel };
 
 		} ).filter( ( { index } ) => regions === null || regions[ index ].groupsX * regions[ index ].groupsY > 0 );
@@ -1550,15 +1565,15 @@ export class Downsampler {
 	/** Halo planning for a texture of `format` (none for integer formats, whose kernel has no halo, or 'spd'). */
 	private haloPlan( format: SupportedFormat, oddSizes: OddSizePolicy ): { halo?: boolean; haloMaxTexels?: number; haloMaxExtra?: number; haloMaxOutput?: number } {
 
-		if ( ! this.halo || oddSizes === 'spd' || ! isSupportedFormat( format ) || isIntFormat( format ) ) return {};
+		if ( ! this.halo || oddSizes === 'spd' || oddSizes === 'floor' || ! isSupportedFormat( format ) || isIntFormat( format ) ) return {};
 		return { halo: true, haloMaxTexels: Math.floor( this.device.limits.maxComputeWorkgroupStorageSize / 16 ), haloMaxExtra: this.haloMaxExtra, haloMaxOutput: this.haloMaxOutput };
 
 	}
 
-	private kernelOptions( { format, dimension, count, access, reduction, sourceFormat, output, kind, tile, area, box, region, halo }: BatchKernelKey ): KernelOptions {
+	private kernelOptions( { format, dimension, count, access, reduction, sourceFormat, output, kind, tile, area, box, region, halo, floor }: BatchKernelKey ): KernelOptions {
 
 		const { f16Rounding } = this;
-		const partial = region ? { region: true } : {};
+		const partial = { ...( region ? { region: true } : {} ), ...( floor ? { floor: true } : {} ) };
 		if ( halo !== undefined ) return { format, dimension, count, reduction, access, sourceFormat, output, f16Rounding, tile, halo, box, area, ...partial };
 		if ( kind !== 'clamp' ) return { format, dimension, count, reduction, access, sourceFormat, output, f16Rounding, tile, ...( kind === 'tail' ? { tail: true } : {} ), ...( box ? { box: true } : area ? { area: true } : {} ), ...partial };
 		return { format, dimension, edges: 'clamp', count, reduction, access, sourceFormat, output, f16Rounding, ...partial };
@@ -1580,8 +1595,8 @@ export class Downsampler {
 
 	private pipelineId( key: BatchKernelKey ): string {
 
-		const { format, dimension, count, access, reduction, sourceFormat, output, kind, tile, area, box, region, halo, dynamic } = key;
-		return `${ kind }${ kind === 'clamp' ? '' : tile }${ box ? ':box' : area ? ':area' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }:${ output }${ region ? ':region' : '' }${ dynamic ? ':dynamic' : '' }${ halo ? `:halo${ area ? 'a' : '' }${ halo.x.join( '.' ) }/${ halo.y.join( '.' ) }` : '' }`;
+		const { format, dimension, count, access, reduction, sourceFormat, output, kind, tile, area, box, region, halo, dynamic, floor } = key;
+		return `${ kind }${ kind === 'clamp' ? '' : tile }${ box ? ':box' : area ? ':area' : '' }${ floor ? ':floor' : '' }:${ format }:${ dimension }:${ count }:${ access }:${ sourceFormat }:${ reductionKey( reduction ) }:${ output }${ region ? ':region' : '' }${ dynamic ? ':dynamic' : '' }${ halo ? `:halo${ area ? 'a' : '' }${ halo.x.join( '.' ) }/${ halo.y.join( '.' ) }` : '' }`;
 
 	}
 
