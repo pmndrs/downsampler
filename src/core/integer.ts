@@ -20,7 +20,7 @@
  */
 import { intDomains, intRange, type IntQuantization } from './formats.js';
 import { areaOverlap, areaSpan } from './box.js';
-import { footprint, foldChannel, type BuiltinReduction } from './reduction.js';
+import { floorFootprint, footprint, foldChannel, type BuiltinReduction } from './reduction.js';
 
 /** A reduction of integer values: a builtin, or a JS fold `( a, b, channel ) => value` on the integers the WGSL `reduce` sees. */
 export type IntReduction = BuiltinReduction | ( ( a: number, b: number, channel: number ) => number );
@@ -33,6 +33,12 @@ export interface IntReferenceOptions {
 	height?: number;
 	/** The source's integer format, when it isn't the destination's (a separate source): only its signedness must agree. */
 	source?: IntQuantization;
+	/**
+	 * Folds only, 2:1 steps: floor footprints (`oddSizes: 'floor'`), texels `2x` and `2x + 1`
+	 * per axis, clamped; an odd level's last row or column is dropped. Folds visit the footprint
+	 * in raster order, `fold( earlier, later )`, so ordered folds (first valid) work too.
+	 */
+	floor?: boolean;
 }
 
 export interface IntLevel {
@@ -106,10 +112,10 @@ function areaTaps( x: number, sourceSize: number, size: number ): Taps {
 }
 
 /** Fold texels along one axis: the footprint at 2:1 (bilinear rule), the area span otherwise. */
-function foldSpan( x: number, sourceSize: number, size: number, area: boolean ): [ number, number ] {
+function foldSpan( x: number, sourceSize: number, size: number, area: boolean, floor: boolean ): [ number, number ] {
 
 	if ( sourceSize === size ) return [ x, x ];
-	return area ? areaSpan( x, sourceSize, size ) : footprint( x, sourceSize );
+	return area ? areaSpan( x, sourceSize, size ) : floor ? floorFootprint( x, sourceSize ) : footprint( x, sourceSize );
 
 }
 
@@ -120,11 +126,12 @@ function foldSpan( x: number, sourceSize: number, size: number, area: boolean ):
  */
 export function intReference( source: ArrayLike<number>, width: number, height: number, layers: number, quantization: IntQuantization, reduction: IntReduction = 'average', options: IntReferenceOptions = {} ): IntLevel {
 
-	const { weights = 'bilinear' } = options;
+	const { weights = 'bilinear', floor = false } = options;
 	const w = options.width ?? Math.max( 1, width >> 1 ), h = options.height ?? Math.max( 1, height >> 1 );
 	if ( ! Number.isInteger( w ) || ! Number.isInteger( h ) || w < 1 || h < 1 ) throw new Error( `downsampler: integer reference size ${ w }×${ h } is not a texture size.` );
 	if ( weights !== 'bilinear' && weights !== 'area' ) throw new Error( `downsampler: integer reference weights must be 'bilinear' or 'area', got ${ JSON.stringify( weights ) }.` );
 	const area = weights === 'area';
+	if ( floor && ( area || reduction === 'average' ) ) throw new Error( "downsampler: floor footprints are for folds on 2:1 steps (not 'average' or area weights)." );
 	const step = ( s: number, n: number ) => n === s || n === Math.max( 1, s >> 1 );
 	if ( ! area && ( ! step( width, w ) || ! step( height, h ) ) ) throw new Error( `downsampler: bilinear integer steps are 2:1 or same-size; ${ width }×${ height } → ${ w }×${ h } needs weights 'area'.` );
 	const { signed } = intDomains[ quantization ];
@@ -135,8 +142,8 @@ export function intReference( source: ArrayLike<number>, width: number, height: 
 	const values = new Float64Array( w * h * layers * 4 );
 	const at = ( layer: number, sx: number, sy: number, c: number ) => source[ ( ( layer * height + sy ) * width + sx ) * 4 + c ];
 
-	const columns = Array.from( { length: w }, ( _, x ) => reduction === 'average' ? ( area ? areaTaps : bilinearTaps )( x, width, w ) : foldSpan( x, width, w, area ) );
-	const rows = Array.from( { length: h }, ( _, y ) => reduction === 'average' ? ( area ? areaTaps : bilinearTaps )( y, height, h ) : foldSpan( y, height, h, area ) );
+	const columns = Array.from( { length: w }, ( _, x ) => reduction === 'average' ? ( area ? areaTaps : bilinearTaps )( x, width, w ) : foldSpan( x, width, w, area, floor ) );
+	const rows = Array.from( { length: h }, ( _, y ) => reduction === 'average' ? ( area ? areaTaps : bilinearTaps )( y, height, h ) : foldSpan( y, height, h, area, floor ) );
 	const fold = reduction === 'average' ? null : typeof reduction === 'function' ? reduction : ( a: number, b: number, c: number ) => foldChannel( reduction, a, b, c );
 
 	for ( let layer = 0; layer < layers; layer ++ ) for ( let y = 0; y < h; y ++ ) for ( let x = 0; x < w; x ++ ) for ( let c = 0; c < 4; c ++ ) {

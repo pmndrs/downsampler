@@ -6,7 +6,7 @@
  * covers (see `footprint`). Results are quantized to the storage format.
  */
 import { channelDomain, isIntegerDomain, isIntQuantization, isPackedQuantization, packedStep, quantize, quantizeTexel, roundHalfEven, type Quantization } from './formats.js';
-import { foldChannel, footprint, type ReferenceReduction } from './reduction.js';
+import { floorFootprint, foldChannel, footprint, type ReferenceReduction } from './reduction.js';
 import { srgbLevel, srgbSteps } from './srgb.js';
 
 export interface ReferenceLevel {
@@ -40,6 +40,12 @@ export interface ReferenceOptions {
 	 */
 	quantizedInput?: boolean;
 	/**
+	 * Folds only: floor footprints (`oddSizes: 'floor'`), texels `2x` and `2x + 1` per axis,
+	 * clamped; the last row or column of an odd level is dropped. Folds visit the
+	 * footprint in raster order, `fold( earlier, later )`, so ordered folds work too.
+	 */
+	floor?: boolean;
+	/**
 	 * 'float32': compute an exact 2:1 average (each dimension even or 1) as the
 	 * kernels do in workgroup memory, `(((a + b) + c) + d) · 0.25` with float32
 	 * rounding after every add, so the result can be required to match bit for
@@ -65,11 +71,12 @@ export interface ReferenceOptions {
  * per-value `filterTolerance` for hardware bilinear weights. Compare with
  * {@link tolerance}.
  */
-export function reduceReference( source: Float32Array, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction = 'average', { quantizedInput = true, pairing, weights = 'shader' }: ReferenceOptions = {} ): ReferenceLevel {
+export function reduceReference( source: Float32Array, width: number, height: number, layers: number, quantization: Quantization, reduction: ReferenceReduction = 'average', { quantizedInput = true, pairing, weights = 'shader', floor = false }: ReferenceOptions = {} ): ReferenceLevel {
 
 	if ( isIntQuantization( quantization ) ) throw new Error( `downsampler: ${ quantization } is an integer format; use intReference (exact integers, not float32 values).` );
 	// sRGB: color in linear float32 then encoded as stored, alpha as unorm8 (src/core/srgb.ts).
-	if ( quantization === 'srgb8' ) return srgbLevel( ( q, input ) => reduceReference( source, width, height, layers, q, reduction, { quantizedInput: input, pairing, weights } ), quantizedInput );
+	if ( floor && reduction === 'average' ) throw new Error( 'downsampler: floor footprints are for folds.' );
+	if ( quantization === 'srgb8' ) return srgbLevel( ( q, input ) => reduceReference( source, width, height, layers, q, reduction, { quantizedInput: input, pairing, weights, floor } ), quantizedInput );
 
 	const w = Math.max( 1, Math.floor( width / 2 ) ), h = Math.max( 1, Math.floor( height / 2 ) );
 	const values = new Float32Array( w * h * layers * 4 );
@@ -89,7 +96,8 @@ export function reduceReference( source: Float32Array, width: number, height: nu
 		const fold = typeof reduction === 'function' ? reduction : ( a: number, b: number, c: number ) => foldChannel( reduction, a, b, c );
 		for ( let layer = 0; layer < layers; layer ++ ) for ( let y = 0; y < h; y ++ ) for ( let x = 0; x < w; x ++ ) {
 
-			const [ y0, y1 ] = footprint( y, height ), [ x0, x1 ] = footprint( x, width );
+			const span = floor ? floorFootprint : footprint;
+			const [ y0, y1 ] = span( y, height ), [ x0, x1 ] = span( x, width );
 			for ( let c = 0; c < 4; c ++ ) {
 
 				let value = source[ ( ( layer * height + y0 ) * width + x0 ) * 4 + c ];

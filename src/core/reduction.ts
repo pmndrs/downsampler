@@ -116,8 +116,17 @@ export interface CustomReduction {
 	 * idempotent, so every texel the edge policy counts is combined exactly once,
 	 * and the result is emitted as is. 'sum' needs a tile edge policy
 	 * ('zero-weight' or 'clamp').
+	 *
+	 * 'ordered': a fold that is associative and idempotent but need not be
+	 * commutative, such as "the first valid value"
+	 * (`select(b, a, a.x != 0xffffffffu)`). `reduce(a, b)` always gets `a` before
+	 * `b` in raster order: each texel of a level is
+	 * `reduce(reduce(tl, tr), reduce(bl, br))` of its 2×2 children (top left, top
+	 * right, bottom left, bottom right), clamped at unit sizes. Needs a
+	 * `Downsampler` with `oddSizes: 'floor'`, the only footprint where every step
+	 * folds the children in that order.
 	 */
-	kind?: 'fold' | 'sum';
+	kind?: 'fold' | 'sum' | 'ordered';
 }
 
 /** 'sum' is shorthand for four 'sum' channels (tile edge policies only). */
@@ -178,11 +187,18 @@ export function needsTileEdges( reduction: Reduction ): boolean {
 
 }
 
-function checkKind( kind: unknown ): 'fold' | 'sum' {
+function checkKind( kind: unknown ): 'fold' | 'sum' | 'ordered' {
 
 	if ( kind === undefined ) return 'fold';
-	if ( kind !== 'fold' && kind !== 'sum' ) throw new Error( `downsampler: custom reduction kind must be 'fold' or 'sum', got ${ JSON.stringify( kind ) }.` );
+	if ( kind !== 'fold' && kind !== 'sum' && kind !== 'ordered' ) throw new Error( `downsampler: custom reduction kind must be 'fold', 'sum' or 'ordered', got ${ JSON.stringify( kind ) }.` );
 	return kind;
+
+}
+
+/** Is this a custom ordered fold (`kind: 'ordered'`)? */
+export function isOrderedFold( reduction: unknown ): boolean {
+
+	return typeof reduction === 'object' && reduction !== null && ! Array.isArray( reduction ) && ( reduction as { kind?: unknown } ).kind === 'ordered';
 
 }
 
@@ -219,7 +235,9 @@ export function resolveReduction( reduction: Reduction | PyramidReferenceReducti
 	if ( typeof reduction !== 'object' || reduction === null ) throw new Error( `downsampler: unknown reduction ${ JSON.stringify( reduction ) }.` );
 	if ( 'wgsl' in reduction ) reductionKey( reduction );
 	else if ( typeof ( reduction as { reference?: unknown } ).reference !== 'function' ) throw new Error( 'downsampler: a reference custom reduction needs a `reference` function.' );
-	return { custom: checkKind( reduction.kind ), channels: count };
+	const kind = checkKind( reduction.kind );
+	if ( kind === 'ordered' ) throw new Error( `downsampler: an ordered fold (kind 'ordered') is a Downsampler reduction with oddSizes 'floor'; tile reductions (a Reducer, scalar reductions) pair texels in no fixed order.` );
+	return { custom: kind, channels: count };
 
 }
 
@@ -236,7 +254,8 @@ export function reductionKey( reduction: Reduction ): string {
 
 	if ( typeof reduction !== 'object' || reduction === null || typeof reduction.wgsl !== 'string' ) throw new Error( `downsampler: unknown reduction ${ JSON.stringify( reduction ) }.` );
 	if ( ! /\bfn\s+reduce\s*\(/.test( reduction.wgsl ) ) throw new Error( 'downsampler: a custom reduction must define `fn reduce(a: vec4f, b: vec4f) -> vec4f` (`DsWide` with 8 channels).' );
-	return checkKind( reduction.kind ) === 'fold' ? `custom:${ reduction.wgsl }` : `custom-sum:${ reduction.wgsl }`;
+	const kind = checkKind( reduction.kind );
+	return kind === 'fold' ? `custom:${ reduction.wgsl }` : `custom-${ kind }:${ reduction.wgsl }`;
 
 }
 
@@ -245,6 +264,17 @@ export function foldChannel( reduction: Exclude<BuiltinReduction, 'average'>, a:
 
 	if ( reduction === 'min' || ( reduction === 'minmax' && channel % 2 === 0 ) ) return Math.min( a, b );
 	return Math.max( a, b );
+
+}
+
+/**
+ * Source texels of output texel `x` along one axis under floor footprints
+ * (`oddSizes: 'floor'`), inclusive: `2x` and `2x + 1`, clamped to the source.
+ * The last row or column of an odd size belongs to no output texel.
+ */
+export function floorFootprint( x: number, size: number ): [ number, number ] {
+
+	return [ Math.min( 2 * x, size - 1 ), Math.min( 2 * x + 1, size - 1 ) ];
 
 }
 

@@ -35,12 +35,16 @@
  *   levels in one tile with clamped loads and ⌊n/2⌋ sizes, dropping the last
  *   odd row or column; the next batch reads the last stored level. Lower
  *   quality at odd sizes, and min/max are NOT conservative (not a valid Hi-Z).
+ * - 'floor': folds only. Each texel folds its 2×2 children `2x`, `2x + 1` (clamped
+ *   at unit sizes), so the last row or column of an odd size is dropped, as SPD and
+ *   Capsaicin do; not a conservative Hi-Z. Planned as 'exact' (an odd size still ends a
+ *   batch), without halo batches. Ordered folds (`kind: 'ordered'`) need it.
  * - 'box': area-weighted odd sizes (nvpro_pyramid's weights, `areaReference` in
  *   core). Each source texel contributes in proportion to its overlap; for an
  *   odd size 2n+1, three taps weighted (n − x, n, x + 1) / (2n + 1). Same
  *   batches as 'exact'. Folds are the same as under 'exact'.
  */
-export type OddSizePolicy = 'exact' | 'spd' | 'box';
+export type OddSizePolicy = 'exact' | 'spd' | 'box' | 'floor';
 
 /**
  * Kernel family of a batch:
@@ -189,7 +193,8 @@ export function planBatches( width: number, height: number, options: PlanOptions
 
 	const { baseMipLevel = 0, mipLevelCount, levelsPerDispatch, oddSizes = 'exact', fromSource = false, copySource = false, tail = false, tailMaxTile = tailTile, exactMinTile = 8, halo = false, haloMaxTexels = 1024, haloMaxExtra = 0.25, haloMaxOutput = 16384 } = options;
 	if ( exactMinTile !== 8 && exactMinTile !== 16 && exactMinTile !== 32 ) throw new Error( 'downsampler: exactMinTile must be 8, 16 or 32.' );
-	if ( oddSizes !== 'exact' && oddSizes !== 'spd' && oddSizes !== 'box' ) throw new Error( `downsampler: odd size policy "${ oddSizes }" is not implemented.` );
+	if ( oddSizes !== 'exact' && oddSizes !== 'spd' && oddSizes !== 'box' && oddSizes !== 'floor' ) throw new Error( `downsampler: odd size policy "${ oddSizes }" is not implemented.` );
+	if ( oddSizes === 'floor' && halo ) throw new Error( `downsampler: halo batches carry the 2x … 2x+2 taps of odd steps; oddSizes 'floor' has none.` );
 	if ( ! Number.isInteger( levelsPerDispatch ) || levelsPerDispatch < 1 || levelsPerDispatch > 6 ) throw new Error( 'downsampler: levelsPerDispatch must be an integer from 1 to 6.' );
 	if ( oddSizes === 'spd' && halo ) throw new Error( 'downsampler: halo batches are an \'exact\' or \'box\' plan; \'spd\' chains never end a batch at odd sizes.' );
 	if ( oddSizes === 'spd' && tail ) throw new Error( 'downsampler: the tail kernel is an \'exact\' or \'box\' plan; \'spd\' chains never end a batch at odd sizes.' );

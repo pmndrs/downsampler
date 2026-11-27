@@ -5,7 +5,7 @@
 // `roundedMean` across the u32 range, separate sources (clamped to a narrower destination,
 // resampled), partial updates, the buffer and compatibility paths and `encodePass`
 // (bit-identical to `encode`), and what is rejected ('spd', Reducer, mixed signedness).
-import { bufferWritable, formats, intReference, isIntFormat, roundedMean, sampledChannels, storageWritable } from '/dist/index.js';
+import { bufferWritable, formats, intReference, isIntFormat, reduceReference, roundedMean, sampledChannels, storageWritable } from '/dist/index.js';
 import { Downsampler, Reducer, ScalarReduction, intMeanWgsl } from '/dist/webgpu/index.js';
 import { createTexture, makeData, poison, readMips, toFloats, upload } from './gpu.js';
 import { check, compatibility, expectThrow, levelOptions, shapes, splat, subsetShapes } from './validate.js';
@@ -31,6 +31,15 @@ const customFolds = {
 	}
 };
 
+// Ordered folds (kind 'ordered', oddSizes 'floor'; downsampler#6): the first value in raster order
+// whose channel is even, per channel. Associative and idempotent, not commutative, so any
+// child visited out of order changes the result.
+const orderedFolds = {
+	uint: { wgsl: 'fn reduce(a: vec4u, b: vec4u) -> vec4u { return select(b, a, (a & vec4u(1u)) == vec4u(0u)); }', kind: 'ordered' },
+	sint: { wgsl: 'fn reduce(a: vec4i, b: vec4i) -> vec4i { return select(b, a, (a & vec4i(1)) == vec4i(0)); }', kind: 'ordered' },
+	reference: ( a, b ) => ( a & 1 ) === 0 ? a : b
+};
+
 const foldPatterns = [ 'random', 'small', 'edge' ];
 const averagePatterns = [ 'constant', 'random', 'small', 'edge', 'tiles' ];
 export const intVariants = [
@@ -44,12 +53,16 @@ export const intVariants = [
 	{ name: 'tail custom', custom: true, tail: true, patterns: foldPatterns },
 	{ name: 'box average', reduction: 'average', oddSizes: 'box', patterns: averagePatterns },
 	{ name: 'box max', reduction: 'max', oddSizes: 'box', patterns: foldPatterns },
-	{ name: 'tail box average', reduction: 'average', oddSizes: 'box', tail: true, patterns: averagePatterns }
+	{ name: 'tail box average', reduction: 'average', oddSizes: 'box', tail: true, patterns: averagePatterns },
+	{ name: 'floor max', reduction: 'max', oddSizes: 'floor', patterns: foldPatterns },
+	{ name: 'floor ordered', ordered: true, oddSizes: 'floor', patterns: foldPatterns },
+	{ name: 'tail floor max', reduction: 'max', oddSizes: 'floor', tail: true, patterns: foldPatterns },
+	{ name: 'tail floor ordered', ordered: true, oddSizes: 'floor', tail: true, patterns: foldPatterns }
 ];
 
 const signedOf = format => formats[ format ].quantization.startsWith( 's' );
-const reductionOf = ( variant, format ) => variant.custom ? { wgsl: customFolds[ signedOf( format ) ? 'sint' : 'uint' ].wgsl } : variant.reduction;
-const referenceOf = ( variant, format ) => variant.custom ? customFolds[ signedOf( format ) ? 'sint' : 'uint' ].reference : variant.reduction;
+const reductionOf = ( variant, format ) => variant.ordered ? orderedFolds[ signedOf( format ) ? 'sint' : 'uint' ] : variant.custom ? { wgsl: customFolds[ signedOf( format ) ? 'sint' : 'uint' ].wgsl } : variant.reduction;
+const referenceOf = ( variant, format ) => variant.ordered ? orderedFolds.reference : variant.custom ? customFolds[ signedOf( format ) ? 'sint' : 'uint' ].reference : variant.reduction;
 
 /** An exact comparison of the stored channels (check() with zero tolerance, so --keep-going collects it). */
 function compare( actual, expected, format, label ) {
@@ -60,14 +73,14 @@ function compare( actual, expected, format, label ) {
 }
 
 /** Every level from level 1 on against `intReference` from the GPU's previous level (level 0 is `input`). */
-function checkChain( mips, input, width, height, layers, format, reduction, weights, label, cache ) {
+function checkChain( mips, input, width, height, layers, format, reduction, weights, label, cache, floor = false ) {
 
 	let previous = input, w = width, h = height;
 	mips.forEach( ( actual, i ) => {
 
 		const level = i + 1;
 		let expected = level === 1 ? cache?.get( label.key ) : undefined;
-		expected ??= intReference( previous, w, h, layers, formats[ format ].quantization, reduction, { weights } );
+		expected ??= intReference( previous, w, h, layers, formats[ format ].quantization, reduction, { weights, floor } );
 		if ( level === 1 ) cache?.set( label.key, expected );
 		compare( actual, expected, format, `${ label.text } mip ${ level }` );
 		previous = actual; w = expected.width; h = expected.height;
@@ -264,7 +277,7 @@ async function validateIntMatrix( device, { quick, onProgress, select } ) {
 						downsampler.generate( texture, options );
 						const mips = await readMips( device, texture, 1 );
 						const text = `${ width }x${ height }x${ layers } ${ format } ${ s.output } ${ variant.name } ${ pattern } L${ s.levels }`;
-						checkChain( mips, inputs.get( pattern ), width, height, layers, format, referenceOf( variant, format ), weights, { text, key: `${ weights }:${ variant.custom ? 'custom' : variant.reduction }:${ pattern }` }, firstLevels );
+						checkChain( mips, inputs.get( pattern ), width, height, layers, format, referenceOf( variant, format ), weights, { text, key: `${ weights }:${ variant.oddSizes === 'floor' ? 'floor:' : '' }${ variant.ordered ? 'ordered' : variant.custom ? 'custom' : variant.reduction }:${ pattern }` }, firstLevels, variant.oddSizes === 'floor' );
 
 					}
 
@@ -422,6 +435,8 @@ async function validateIntApi( device ) {
 
 	}
 
+	results.push( ...await validateFloorApi( device ) );
+
 	// Rejections: 'spd', mixed signedness, float sources, integer sources of float destinations, Reducer.
 	const texture = createTexture( device, { width: 16, height: 16, format: 'r32uint' } );
 	expectThrow( () => direct.prepare( texture, { oddSizes: 'spd' } ), 'oddSizes \'spd\' isn\'t available for integer formats', 'spd on r32uint' );
@@ -446,6 +461,122 @@ async function validateIntApi( device ) {
 
 	for ( const t of [ texture, sint, float, floatDestination ] ) t.destroy();
 	results.push( { api: 'rejections' } );
+	return results;
+
+}
+
+// GI-1's probe-mask mips (downsampler#6): r32uint, 0xffffffff where a tile has no probe, each texel
+// the first valid of its 2×2 children in raster order with the odd last row and column dropped.
+const INVALID = 0xffffffff;
+const firstValid = { wgsl: 'fn reduce(a: vec4u, b: vec4u) -> vec4u { return select(b, a, a.x != 0xffffffffu); }', kind: 'ordered' };
+
+/** Capsaicin's FilterProbeMask (gi1.comp:248-284) on the CPU: children past the edge are invalid. */
+function filterProbeMask( level, width, height ) {
+
+	const w = Math.max( 1, width >> 1 ), h = Math.max( 1, height >> 1 );
+	const out = new Array( w * h ).fill( INVALID );
+	for ( let y = 0; y < h; y ++ ) for ( let x = 0; x < w; x ++ ) {
+
+		let mask = INVALID;
+		for ( let dy = 0; dy < 2 && mask === INVALID; dy ++ ) for ( let dx = 0; dx < 2 && mask === INVALID; dx ++ ) {
+
+			const px = 2 * x + dx, py = 2 * y + dy;
+			mask = px < width && py < height ? level[ py * width + px ] : INVALID;
+
+		}
+
+		out[ y * w + x ] = mask;
+
+	}
+
+	return out;
+
+}
+
+/** `oddSizes: 'floor'` and ordered folds: the probe mask end to end, the paths bit-identical, a float fold, rejections. */
+async function validateFloorApi( device ) {
+
+	const results = [];
+	const direct = new Downsampler( device );
+	let state = 5;
+	const next = () => ( state = ( Math.imul( state, 1664525 ) + 1013904223 ) >>> 0 );
+	const floor = { reduction: firstValid, oddSizes: 'floor' };
+
+	// Screen-tile sizes (1920×1080 and 1280×720 at 8-texel tiles), odd strips and a 1×1.
+	for ( const [ width, height ] of [ [ 240, 135 ], [ 160, 90 ], [ 129, 67 ], [ 1, 37 ], [ 45, 1 ], [ 1, 1 ] ] ) for ( const density of [ 0.03, 0.5 ] ) {
+
+		const texture = createTexture( device, { width, height, format: 'r32uint' } );
+		const data = new Uint32Array( width * height ).map( () => next() / 2 ** 32 < density ? next() % 0xfffffff0 : INVALID );
+		upload( device, texture, data );
+		poison( device, texture );
+		direct.generate( texture, floor );
+		const mips = await readMips( device, texture, 1 );
+		let level = [ ...data ], w = width, h = height;
+		mips.forEach( ( actual, i ) => {
+
+			const expected = filterProbeMask( level, w, h );
+			w = Math.max( 1, w >> 1 ); h = Math.max( 1, h >> 1 );
+			const got = Array.from( { length: w * h }, ( _, t ) => actual[ t * 4 ] >>> 0 );
+			const bad = got.findIndex( ( v, t ) => v !== expected[ t ] );
+			if ( bad >= 0 ) throw new Error( `probe mask ${ width }×${ height } (density ${ density }) mip ${ i + 1 } texel ${ bad }: ${ got[ bad ] } != ${ expected[ bad ] }` );
+			level = expected;
+
+		} );
+		texture.destroy();
+		results.push( { api: 'floor probe mask', width, height, density } );
+
+	}
+
+	// encodePass, the buffer path, the compatibility path, tail off, one level per dispatch and a
+	// rect update: bit-identical to encode.
+	const texture = createTexture( device, { width: 133, height: 75, format: 'r32uint' } );
+	const data = new Uint32Array( 133 * 75 ).map( () => next() % 3 === 0 ? next() : INVALID );
+	const reference = await generateBits( device, direct, texture, data, floor );
+	sameBits( await generateBits( device, direct, texture, data, floor, { pass: true } ), reference, 'floor encodePass' );
+	sameBits( await generateBits( device, new Downsampler( device, { output: 'buffer' } ), texture, data, floor ), reference, 'floor buffer path' );
+	sameBits( await generateBits( device, new Downsampler( device, { compatibility: true } ), texture, data, floor ), reference, 'floor compatibility path' );
+	sameBits( await generateBits( device, new Downsampler( device, { tail: false } ), texture, data, floor ), reference, 'floor tail off' );
+	sameBits( await generateBits( device, new Downsampler( device, { levelsPerDispatch: 1 } ), texture, data, floor ), reference, 'floor one level per dispatch' );
+	const rect = { x: 40, y: 9, width: 23, height: 31 };
+	const patched = data.slice();
+	for ( let y = rect.y; y < rect.y + rect.height; y ++ ) for ( let x = rect.x; x < rect.x + rect.width; x ++ ) patched[ y * 133 + x ] = next() % 2 === 0 ? next() : INVALID;
+	upload( device, texture, data );
+	direct.generate( texture, floor );
+	upload( device, texture, patched );
+	direct.generate( texture, { ...floor, rect } );
+	const updated = ( await readMips( device, texture, 1 ) ).map( level => [ ...level ] );
+	sameBits( updated, await generateBits( device, direct, texture, patched, floor ), 'floor rect update' );
+	results.push( { api: 'floor paths' } );
+
+	// A float fold under floor: every level the floor max of the GPU's previous level.
+	const float = createTexture( device, { width: 37, height: 21, format: 'rgba16float' } );
+	const floatData = makeData( 37, 21, 1, 'rgba16float', 'random', 3 );
+	upload( device, float, floatData );
+	poison( device, float );
+	direct.generate( float, { reduction: 'max', oddSizes: 'floor' } );
+	let previous = toFloats( floatData, 'rgba16float' ), fw = 37, fh = 21;
+	for ( const [ i, actual ] of ( await readMips( device, float, 1 ) ).entries() ) {
+
+		const expected = reduceReference( new Float32Array( previous ), fw, fh, 1, 'float16', 'max', { floor: true } );
+		const bad = expected.values.findIndex( ( v, t ) => v !== actual[ t ] );
+		if ( bad >= 0 ) throw new Error( `rgba16float floor max mip ${ i + 1 } value ${ bad }: ${ actual[ bad ] } != ${ expected.values[ bad ] }` );
+		previous = actual; fw = expected.width; fh = expected.height;
+
+	}
+
+	float.destroy();
+	results.push( { api: 'floor float max' } );
+
+	// Rejections.
+	expectThrow( () => direct.prepare( texture, { reduction: firstValid } ), "needs oddSizes 'floor'", 'ordered fold under exact' );
+	expectThrow( () => direct.prepare( texture, { reduction: firstValid, oddSizes: 'box' } ), "needs oddSizes 'floor'", 'ordered fold under box' );
+	expectThrow( () => direct.prepare( texture, { oddSizes: 'floor' } ), 'is for folds', 'floor average' );
+	const half = createTexture( device, { width: 67, height: 37, format: 'r32uint', storage: false } );
+	expectThrow( () => direct.prepare( texture, { ...floor, source: { texture: half, resample: 'area' } } ), 'has no floor footprint', 'floor resampled source' );
+	expectThrow( () => new Reducer( device, { levels: [ 1 ], format: 'r32float', reduction: { wgsl: 'fn reduce(a: vec4f, b: vec4f) -> vec4f { return a; }', kind: 'ordered' } } ), 'tile reductions', 'Reducer ordered fold' );
+	half.destroy();
+	texture.destroy();
+	results.push( { api: 'floor rejections' } );
 	return results;
 
 }

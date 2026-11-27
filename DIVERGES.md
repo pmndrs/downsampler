@@ -161,7 +161,7 @@ Last updated: 2026-11-15 (review of every entry after Windows round 2 and M3: su
 - **We (since M2T.1):** `Reducer` takes a reduction per channel: sum, average, min, max, a weight channel for weighted means, or a custom binary `{ wgsl, kind: 'fold' | 'sum' }`. `Downsampler` keeps idempotent folds only, because its `'exact'` odd sizes have no defined meaning for sums.
 - **Why binary:** a pairwise reduction composes inside the tile, and normalization happens once when a level is emitted. A 4-way custom reduction adds nothing that a binary sum plus a weight channel can't express.
 - **Payload folds (built):** `'argmin'` / `'argmax'` keys with `'payload'` channels carried from the winning texel (ssgiDev's normal taken from the min-depth texel), ties to the smaller payload (SPEC §4; `validate-payload.js`).
-- **Still missing:** a non-commutative "first valid" scan (GI-1 probe masks). No user has asked.
+- **Ordered folds (built 2026-11-27, downsampler#6):** `{ wgsl, kind: 'ordered' }`, associative and idempotent but not commutative, with `oddSizes: 'floor'` (SPD's and Capsaicin's floor footprints, folds only). Each texel is `reduce(reduce(tl, tr), reduce(bl, br))` of its 2×2 children, so GI-1's probe-mask mips ("first valid" in raster order, r32uint) are a `Downsampler` chain. Not in tile reductions, whose pairing order isn't fixed.
 - **Verdict:** done.
 
 ### 9. No alpha-coverage preservation

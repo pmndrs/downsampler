@@ -14,7 +14,7 @@
 import { formats, intDomains, intRange, isIntQuantization, isSupportedFormat, sampledChannels, sampleKind, type FormatInfo, type IntQuantization, type SupportedFormat } from '../core/formats.js';
 import { tailTile, tileSize, workgroupSide } from '../core/plan.js';
 import { isBuiltinReduction, reductionKey, type CustomReduction } from '../core/reduction.js';
-import { bufferOutputWgsl, regionWgsl, type KernelOptions, type ViewDimension } from './kernel.js';
+import { bufferOutputWgsl, checkFloor, regionWgsl, type KernelOptions, type ViewDimension } from './kernel.js';
 
 const builtinFolds = {
 	min: 'min(a, b)',
@@ -81,9 +81,10 @@ const hex = ( value: number ) => `0x${ ( value >>> 0 ).toString( 16 ) }u`;
  * always loaded. Custom folds define `fn reduce(a: vec4u, b: vec4u) -> vec4u` for uint
  * formats and `fn reduce(a: vec4i, b: vec4i) -> vec4i` for sint formats.
  */
-export function createIntKernel( { format, dimension, count, reduction = 'average', access = 'load', sourceFormat = format, output = 'storage', tail = false, box = false, area = box, tile: tileOption, region = false }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
+export function createIntKernel( { format, dimension, count, reduction = 'average', access = 'load', sourceFormat = format, output = 'storage', tail = false, box = false, area = box, tile: tileOption, region = false, floor = false }: KernelOptions & { format: SupportedFormat, dimension: ViewDimension, count: number } ): string {
 
 	reductionKey( reduction );
+	checkFloor( floor, reduction, area, box, false );
 	const quantization = formats[ format ].quantization;
 	if ( ! isIntQuantization( quantization ) ) throw new Error( `downsampler: ${ format } is not an integer format.` );
 	const average = reduction === 'average';
@@ -179,18 +180,19 @@ ${ average ? `fn ds_overlap(t: u32, x: u32, s: u32, n: u32) -> u32 { return min(
 	m = ds_mean_row(m, wx.x * ds_hi(c) + wx.y * ds_hi(e), wx.x * ds_lo(c) + wx.y * ds_lo(e), d.x, r.y);
 	return quantize(ds_mean(m, d.x, d.y));
 `;
-		// Folds: 2x and 2x + 1, plus 2x + 2 along odd source dimensions.
+		// Folds: 2x and 2x + 1, plus 2x + 2 along odd source dimensions (not under `floor`).
 		return `	let last = ${ sourceSize } - vec2u(1);
 	let lo = min(pos * 2u, last);
 	let hi = min(lo + vec2u(1), last);
 	var v = fold(fold(${ at( 'lo' ) }, ${ at( 'vec2u(hi.x, lo.y)' ) }), fold(${ at( 'vec2u(lo.x, hi.y)' ) }, ${ at( 'hi' ) }));
-	let odd = ((${ sourceSize } & vec2u(1)) == vec2u(1)) & (${ sourceSize } > vec2u(1));
+${ floor ? `	return quantize(v);
+` : `	let odd = ((${ sourceSize } & vec2u(1)) == vec2u(1)) & (${ sourceSize } > vec2u(1));
 	let far = min(lo + vec2u(2), last);
 	if (odd.x) { v = fold(v, fold(${ at( 'vec2u(far.x, lo.y)' ) }, ${ at( 'vec2u(far.x, hi.y)' ) })); }
 	if (odd.y) { v = fold(v, fold(${ at( 'vec2u(lo.x, far.y)' ) }, ${ at( 'vec2u(hi.x, far.y)' ) })); }
 	if (odd.x && odd.y) { v = fold(v, ${ at( 'far' ) }); }
 	return quantize(v);
-`;
+` }`;
 
 	};
 

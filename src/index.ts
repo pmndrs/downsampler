@@ -10,7 +10,7 @@ export { areaDependents, clampDependents, exactDependents, layersProblem, planRe
 export type { BatchRegion, Rect } from './core/region.js';
 export { copyReference, reduceReference, tolerance } from './core/reference.js';
 export type { ReferenceLevel, ReferenceOptions, ToleranceTexel } from './core/reference.js';
-export { checkChannels, footprint, foldChannel, isBuiltinReduction, isChannelOps, needsTileEdges, payloadGroups, payloadWins, reductionKey, resolveReduction } from './core/reduction.js';
+export { checkChannels, floorFootprint, footprint, foldChannel, isBuiltinReduction, isChannelOps, isOrderedFold, needsTileEdges, payloadGroups, payloadWins, reductionKey, resolveReduction } from './core/reduction.js';
 export type { BuiltinReduction, ChannelOp, ChannelOps, Channels, CustomReduction, PayloadGroup, EdgePolicy, PyramidReferenceReduction, Reduction, ReferenceReduction, ResolvedReduction, TileEdgePolicy } from './core/reduction.js';
 export { maxViolations, spdChainReference, spdReference } from './core/spd.js';
 export { areaOverlap, areaReference, areaSpan, boxChainReference, boxReference } from './core/box.js';
